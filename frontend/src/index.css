@@ -1,0 +1,198 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap");
+@import "tailwindcss";
+
+/* ═════════════ SISTEMA DE DISEÑO · FYAG ═════════════
+   Todos los pares texto/fondo cumplen WCAG AA (≥ 4.5:1 texto, ≥ 3:1 UI).
+   Los ratios medidos se muestran en /sistema-diseno. */
+@theme {
+  /* Tipografía */
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Escala tipográfica: text-display · h1 · h2 · h3 · body · body-sm · label · caption */
+  --text-display: 2rem;
+  --text-display--line-height: 1.2;
+  --text-h1: 1.5rem;
+  --text-h1--line-height: 1.3;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.35;
+  --text-h3: 1.0625rem;
+  --text-h3--line-height: 1.4;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5;
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.45;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.25;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.3;
+
+  /* Primario · azul profesional */
+  --color-brand-50: #eff5ff;
+  --color-brand-100: #dbe7ff;
+  --color-brand-200: #bdd0ff;
+  --color-brand-500: #3b6cf0;
+  --color-brand-600: #2450c8; /* 6.9:1 sobre blanco */
+  --color-brand-700: #1d41a3;
+  --color-brand-900: #14275f;
+
+  /* Neutros · grises */
+  --color-ink-900: #0f172a;
+  --color-ink-700: #334155;
+  --color-ink-500: #505d70; /* 6.5:1 sobre blanco · 5.9:1 sobre canvas */
+  --color-ink-300: #cbd5e1;
+  --color-ink-200: #dfe5ee;
+  --color-ink-100: #f1f5f9;
+  --color-surface: #ffffff;
+  --color-canvas: #f4f7fb;
+
+  /* Semánticos: fg (texto) / soft (fondo) / line (borde) */
+  --color-ok: #14602f; /* Éxito · verde */
+  --color-ok-soft: #dcf5e4;
+  --color-ok-line: #86d3a0;
+  --color-warn: #8a3c06; /* Advertencia · ámbar */
+  --color-warn-soft: #fdf0c8;
+  --color-warn-line: #f0c04a;
+  --color-danger: #a91b1b; /* Peligro · rojo */
+  --color-danger-soft: #fde4e4;
+  --color-danger-line: #f19a9a;
+  --color-transit: #1a43b0; /* En tránsito · azul */
+  --color-transit-soft: #dde8ff;
+  --color-transit-line: #8fb0f5;
+  --color-info: #045a83; /* Info / Planificado · celeste */
+  --color-info-soft: #def2fd;
+  --color-info-line: #7cc8ee;
+  --color-mute: #374151; /* Cerrado / Anulada · gris */
+  --color-mute-soft: #e8ebf0;
+  --color-mute-line: #aab2c0;
+
+  /* Forma y elevación */
+  --radius-card: 1rem;
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 4px 16px rgb(15 23 42 / 0.04);
+
+  /* Tamaño mínimo táctil (tablet y celular) */
+  --spacing-touch: 2.75rem; /* 44 px */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--color-canvas);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* Foco SIEMPRE visible (≥ 3:1 contra el fondo) */
+:focus-visible {
+  outline: 3px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: 0.375rem;
+}
+[data-surface="dark"] :focus-visible,
+[data-surface="dark"]:focus-visible {
+  outline-color: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Safe areas para móvil/tablet */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Campos de formulario: 40 px en escritorio, 44 px en táctil */
+.field {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--color-ink-500);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.55rem 0.875rem;
+  color: var(--color-ink-900);
+  font-size: var(--text-body-sm);
+  transition: border-color 160ms, box-shadow 160ms;
+}
+@media (pointer: coarse) {
+  .field {
+    min-height: var(--spacing-touch);
+    font-size: var(--text-body); /* evita zoom automático en iOS */
+  }
+}
+.field::placeholder {
+  color: var(--color-ink-500);
+  opacity: 0.8;
+}
+.field:hover:not(:disabled) {
+  border-color: var(--color-ink-900);
+}
+.field:focus-visible {
+  outline: 3px solid var(--color-brand-600);
+  outline-offset: 1px;
+  border-color: var(--color-brand-600);
+}
+.field[aria-invalid="true"] {
+  border-color: var(--color-danger);
+}
+.field:disabled {
+  background: var(--color-ink-100);
+  color: var(--color-ink-500);
+  cursor: not-allowed;
+}
+
+/* -- Animaciones -- */
+@theme {
+  --animate-pop: pop 180ms ease-out;
+  --animate-slide-in: slide-in 220ms ease-out;
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(100%); }
+  }
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
+
+/* -- Animaciones -- */
+@theme {
+  --animate-pop: pop 180ms ease-out;
+  --animate-slide-in: slide-in 220ms ease-out;
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(100%); }
+  }
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+}
