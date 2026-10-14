@@ -28,6 +28,7 @@ import {
   QrScannerModal,
   StockCell,
   ScreenStateWrapper,
+  Toast,
 } from "@/components/common";
 import {
   CardexEntry,
@@ -664,12 +665,11 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
     <ScreenStateWrapper screenTitle="Inventario y Bodega" skeletonType="table">
     <View style={styles.container}>
       {/* Toast Notification */}
-      {toastMessage && (
-        <View style={styles.toastCard}>
-          <Ionicons name="checkmark-circle" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-          <Text style={styles.toastText}>{toastMessage}</Text>
-        </View>
-      )}
+      <Toast
+        visible={Boolean(toastMessage)}
+        message={toastMessage || ""}
+        onDismiss={() => setToastMessage(null)}
+      />
 
       {/* TOP NAVIGATION TABS (Scroll horizontal para tablet y móvil) */}
       <View style={styles.tabBarContainer}>
@@ -2900,9 +2900,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   wasteObsBox: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: "#fef2f2",
+    marginTop: theme.spacing.sm,
+    padding: theme.spacing.sm,
+    backgroundColor: theme.colors.dangerLight,
     borderRadius: theme.radius.sm,
   },
   wasteObsTitle: {
@@ -2993,21 +2993,21 @@ const styles = StyleSheet.create({
   lockedWarningBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fef2f2",
+    backgroundColor: theme.colors.dangerLight,
     borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: "#f87171",
-    padding: 10,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
+    padding: theme.spacing.sm,
     marginBottom: theme.spacing.md,
   },
   lockedBannerTitle: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
-    color: "#991b1b",
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.dangerDark,
   },
   lockedBannerTxt: {
-    fontSize: 11,
-    color: "#991b1b",
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.dangerDark,
     marginTop: 1,
   },
   pendingCountCard: {
@@ -3283,38 +3283,38 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   lackingStockFormRow: {
-    backgroundColor: "#fff5f5",
-    borderWidth: 1,
-    borderColor: "#fca5a5",
+    backgroundColor: theme.colors.dangerLight,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
   },
   itemSkuLabel: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   itemStockAvailable: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
   },
   quantityInput: {
     width: 60,
     height: 36,
     backgroundColor: theme.colors.card,
-    borderWidth: 1,
+    borderWidth: theme.borders.thin,
     borderColor: theme.colors.borderDark,
     borderRadius: theme.radius.sm,
     textAlign: "center",
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   missingAlertCard: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: theme.colors.dangerLight,
     borderRadius: theme.radius.md,
     padding: theme.spacing.md,
     marginVertical: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.danger,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
   },
   titleWithIcon: {
     flexDirection: "row",
@@ -3322,13 +3322,13 @@ const styles = StyleSheet.create({
   },
   missingAlertTitle: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
-    color: theme.colors.danger,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.dangerDark,
     marginLeft: 6,
   },
   missingAlertLine: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.danger,
+    color: theme.colors.dangerDark,
     marginTop: 2,
   },
   timelineStep: {

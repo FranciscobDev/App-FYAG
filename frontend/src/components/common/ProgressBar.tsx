@@ -79,17 +79,17 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   labelText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: "500",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.medium,
     color: theme.colors.textSecondary,
   },
   percentText: {
-    fontSize: theme.fontSize.xs,
-    fontWeight: "700",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
   },
   track: {
     width: "100%",
-    backgroundColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: theme.radius.full,
     overflow: "hidden",
   },

@@ -25,6 +25,7 @@ import {
   NumberInput,
   StarRating,
   ScreenStateWrapper,
+  Toast,
 } from "@/components/common";
 import {
   Client,
@@ -474,12 +475,11 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
     <ScreenStateWrapper screenTitle="Compras y Terceros" skeletonType="table">
     <View style={styles.container}>
       {/* Toast Notification */}
-      {toastMessage && (
-        <View style={styles.toastCard}>
-          <Ionicons name="checkmark-circle" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-          <Text style={styles.toastText}>{toastMessage}</Text>
-        </View>
-      )}
+      <Toast
+        visible={Boolean(toastMessage)}
+        message={toastMessage || ""}
+        onDismiss={() => setToastMessage(null)}
+      />
 
       {/* TABS DE NAVEGACIÓN SUPERIOR */}
       <View style={styles.tabBar}>
@@ -1016,7 +1016,7 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
               {/* Alerta de discrepancia si lo contado no coincide con lo pedido */}
               {hasReceptionDiscrepancy && (
                 <View style={styles.discrepancyBanner}>
-                  <Ionicons name="warning" size={18} color="#92400e" style={{ marginRight: 6 }} />
+                  <Ionicons name="warning" size={18} color={theme.colors.warnDark} style={{ marginRight: 6 }} />
                   <Text style={styles.discrepancyBannerTxt}>
                     Alerta: Se detectaron discrepancias entre lo físico verificado y lo solicitado/facturado en la OC.
                   </Text>
@@ -1737,30 +1737,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  toastCard: {
-    position: "absolute",
-    top: 10,
-    left: 20,
-    right: 20,
-    zIndex: 9999,
-    backgroundColor: "#065f46",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: theme.radius.md,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 6,
-  },
-  toastText: {
-    color: "#ffffff",
-    fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
-    flex: 1,
-  },
   tabBar: {
     flexDirection: "row",
     backgroundColor: theme.colors.card,
@@ -2014,21 +1990,21 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   pmpImpactCard: {
-    backgroundColor: "#f0fdf4",
-    borderColor: "#bbf7d0",
-    borderWidth: 1,
+    backgroundColor: theme.colors.okLight,
+    borderColor: theme.colors.okBorder,
+    borderWidth: theme.borders.thin,
     borderRadius: theme.radius.sm,
-    padding: 6,
-    marginTop: 6,
+    padding: theme.spacing.xs,
+    marginTop: theme.spacing.xs,
   },
   pmpImpactTitle: {
-    fontSize: 10,
-    fontWeight: "bold",
-    color: "#166534",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.okDark,
   },
   pmpImpactTxt: {
-    fontSize: 10,
-    color: "#15803d",
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.okDark,
     marginTop: 2,
   },
   financialSummaryCard: {
@@ -2050,7 +2026,7 @@ const styles = StyleSheet.create({
   },
   summaryVal: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   summaryTotalLine: {
@@ -2060,47 +2036,47 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.borderLight,
   },
   totalLabelBig: {
-    fontSize: theme.fontSize.md,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   totalValBig: {
     fontSize: theme.fontSize.lg,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.primaryDark,
   },
   stockNoticeBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#eff6ff",
+    backgroundColor: theme.colors.primaryLight,
     borderRadius: theme.radius.sm,
-    padding: 8,
+    padding: theme.spacing.sm,
     marginTop: 10,
   },
   stockNoticeTxt: {
-    fontSize: 11,
-    color: "#1e40af",
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.primaryDark,
     flex: 1,
   },
   ocTitle: {
-    fontSize: theme.fontSize.md,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   discrepancyBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fef3c7",
-    borderWidth: 1,
-    borderColor: "#f59e0b",
+    backgroundColor: theme.colors.warnLight,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.warnBorder,
     borderRadius: theme.radius.sm,
-    padding: 8,
-    marginVertical: 8,
+    padding: theme.spacing.sm,
+    marginVertical: theme.spacing.sm,
   },
   discrepancyBannerTxt: {
     fontSize: theme.fontSize.xs,
-    color: "#92400e",
-    fontWeight: "600",
+    color: theme.colors.warnDark,
+    fontWeight: theme.fontWeight.semibold,
     flex: 1,
   },
   checkItemCard: {

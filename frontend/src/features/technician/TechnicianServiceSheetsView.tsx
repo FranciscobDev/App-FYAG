@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     maxWidth: 240,
   },
   conflictBanner: {
-    backgroundColor: "#fff1f2",
+    backgroundColor: theme.colors.dangerLight,
     borderRadius: theme.radius.md,
     padding: 12,
     marginBottom: theme.spacing.md,
@@ -698,15 +698,15 @@ const styles = StyleSheet.create({
   photoErrorBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fee2e2",
+    backgroundColor: theme.colors.dangerLight,
     padding: 8,
     borderRadius: theme.radius.sm,
     marginBottom: 8,
   },
   photoErrorTxt: {
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.danger,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     flex: 1,
   },
   photoItemCard: {

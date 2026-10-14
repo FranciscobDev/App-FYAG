@@ -31,22 +31,15 @@ export const Card: React.FC<CardProps> = ({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colors.card,
-    borderRadius: theme.radius.lg,
+    borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,
-    borderWidth: 1,
+    borderWidth: theme.borders.thin,
     borderColor: theme.colors.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    ...theme.shadows.subtle,
     marginBottom: theme.spacing.md,
   },
   elevated: {
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    ...theme.shadows.md,
     borderColor: theme.colors.borderLight,
   },
   outlined: {

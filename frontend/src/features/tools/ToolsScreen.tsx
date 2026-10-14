@@ -1030,17 +1030,17 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.borderDark,
   },
   kpiCardDanger: {
-    backgroundColor: "#fff1f2",
-    borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.dangerLight,
+    borderColor: theme.colors.dangerBorder,
   },
   kpiVal: {
     fontSize: theme.fontSize.md,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   kpiLbl: {
-    fontSize: 9,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
     textAlign: "center",
     marginTop: 2,
@@ -1102,9 +1102,9 @@ const styles = StyleSheet.create({
   },
   overdueCard: {
     borderLeftColor: theme.colors.danger,
-    borderWidth: 2,
-    borderColor: theme.colors.danger,
-    backgroundColor: "#fff1f2",
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
+    backgroundColor: theme.colors.dangerLight,
   },
   nearDueCard: {
     borderLeftColor: theme.colors.warn,
@@ -1190,22 +1190,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   maintenanceRowOverdue: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: theme.colors.dangerLight,
   },
   maintenanceRowNearDue: {
-    backgroundColor: "#fef3c7",
+    backgroundColor: theme.colors.warnLight,
   },
   maintCol: {
     flex: 1,
   },
   maintDateLabel: {
-    fontSize: 10,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
   },
   maintDateVal: {
-    fontSize: 12,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     marginTop: 1,
   },
@@ -1348,20 +1348,20 @@ const styles = StyleSheet.create({
   },
   conditionBtnBueno: {
     borderColor: theme.colors.ok,
-    backgroundColor: "#f0fdf4",
+    backgroundColor: theme.colors.okLight,
   },
   conditionBtnDanado: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff1f2",
+    backgroundColor: theme.colors.dangerLight,
   },
   conditionTitle: {
-    fontSize: 13,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     marginTop: 4,
   },
   conditionSubtitle: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
     marginTop: 2,
     textAlign: "center",
@@ -1384,19 +1384,19 @@ const styles = StyleSheet.create({
   historySubTabActive: {
     backgroundColor: theme.colors.card,
     elevation: 1,
-    shadowColor: "#000000",
-    shadowOpacity: 0.05,
+    shadowColor: theme.colors.text,
+    shadowOpacity: 0.03,
     shadowRadius: 2,
   },
   historySubTabTxt: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
     marginLeft: 6,
   },
   historySubTabTxtActive: {
     color: theme.colors.primary,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   historyItemCard: {
     backgroundColor: theme.colors.surface,
@@ -1413,17 +1413,17 @@ const styles = StyleSheet.create({
   },
   historyItemTech: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   historyItemRut: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
   },
   historyItemProj: {
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.primaryDark,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     marginTop: 2,
   },
   historyDatesRow: {
@@ -1435,22 +1435,22 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.border,
   },
   historyDateTxt: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
   },
   historyNotesBox: {
-    backgroundColor: "#fffbeb",
+    backgroundColor: theme.colors.warnLight,
     padding: 6,
     borderRadius: theme.radius.sm,
     marginTop: 6,
   },
   historyNotesTxt: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.warnDark,
     fontStyle: "italic",
   },
   emptyNote: {
-    fontSize: 12,
+    fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
     textAlign: "center",
     paddingVertical: 20,

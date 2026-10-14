@@ -88,10 +88,14 @@ export const Button: React.FC<ButtonProps> = ({
 
   // Altura mínima garantizada de 44 px (mínimo touch target AA en tablet y celular)
   const minHeight =
-    size === "lg" ? 52 : size === "sm" ? 44 : 46;
+    size === "lg"
+      ? theme.touchTargets.largeHeight
+      : size === "sm"
+      ? theme.touchTargets.minHeight
+      : theme.touchTargets.tabletHeight;
 
-  const paddingH = size === "sm" ? 14 : size === "lg" ? 22 : 18;
-  const fontSize = size === "sm" ? 13 : size === "lg" ? 16 : 14;
+  const paddingH = size === "sm" ? theme.spacing.md : size === "lg" ? theme.spacing.xxl : theme.spacing.lg;
+  const fontSize = size === "sm" ? theme.fontSize.xs : size === "lg" ? theme.fontSize.base : theme.fontSize.sm;
   const iconSize = size === "sm" ? 16 : size === "lg" ? 20 : 18;
 
   return (
@@ -110,7 +114,7 @@ export const Button: React.FC<ButtonProps> = ({
         {
           backgroundColor: bg,
           borderColor: isFocused ? theme.colors.primaryDeep : borderColor,
-          borderWidth: isOutline || variant === "secondary" || isFocused ? 2 : 0,
+          borderWidth: isOutline || variant === "secondary" || isFocused ? theme.borders.focus : 0,
           minHeight,
           paddingHorizontal: paddingH,
           width: fullWidth ? "100%" : undefined,
@@ -170,12 +174,12 @@ const styles = StyleSheet.create({
   focusRing: {
     shadowColor: theme.colors.primary,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   text: {
-    fontWeight: "700",
+    fontWeight: theme.fontWeight.semibold,
     letterSpacing: 0.2,
   },
   iconLeft: {

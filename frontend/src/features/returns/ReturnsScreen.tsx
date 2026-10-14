@@ -398,7 +398,7 @@ export const ReturnsScreen: React.FC = () => {
 
                     <View style={styles.qtyCol}>
                       <Text style={styles.qtyLabel}>Máx Sobrante</Text>
-                      <View style={[styles.maxBox, maxAllowed === 0 && { backgroundColor: "#fee2e2" }]}>
+                      <View style={[styles.maxBox, maxAllowed === 0 && { backgroundColor: theme.colors.dangerLight }]}>
                         <Text style={[styles.maxTxt, maxAllowed === 0 && { color: theme.colors.danger }]}>
                           {maxAllowed} {prod ? prod.unit : "un"}
                         </Text>
@@ -810,7 +810,7 @@ export const ReturnsScreen: React.FC = () => {
                   keyboardType="numeric"
                   style={[
                     styles.verifyTextInput,
-                    hasDiff && { borderColor: theme.colors.warn, backgroundColor: "#fffbeb" },
+                    hasDiff && { borderColor: theme.colors.warn, backgroundColor: theme.colors.warnLight },
                   ]}
                 />
               </View>
@@ -1163,7 +1163,7 @@ const styles = StyleSheet.create({
   },
   returnItemCardError: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff1f2",
+    backgroundColor: theme.colors.dangerLight,
   },
   itemCardTop: {
     flexDirection: "row",
@@ -1237,12 +1237,12 @@ const styles = StyleSheet.create({
   },
   qtyInputError: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fee2e2",
-    color: theme.colors.danger,
+    backgroundColor: theme.colors.dangerLight,
+    color: theme.colors.dangerDark,
   },
   operatorSign: {
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
     marginHorizontal: 4,
     marginTop: 14,
@@ -1254,25 +1254,25 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primaryLight,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
+    borderWidth: theme.borders.thin,
     borderColor: theme.colors.primaryLight,
   },
   maxTxt: {
-    fontSize: 12,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.primaryDark,
   },
   blockNotice: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 8,
-    backgroundColor: "#fee2e2",
+    backgroundColor: theme.colors.dangerLight,
     padding: 6,
     borderRadius: theme.radius.sm,
   },
   exceedsWarning: {
-    fontSize: 11,
-    color: theme.colors.danger,
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.dangerDark,
     fontWeight: "bold",
     marginLeft: 4,
     flex: 1,
@@ -1405,12 +1405,12 @@ const styles = StyleSheet.create({
   discrepancyAlert: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fef3c7",
-    padding: 8,
+    backgroundColor: theme.colors.warnLight,
+    padding: theme.spacing.sm,
     borderRadius: theme.radius.sm,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: "#fde68a",
+    marginTop: theme.spacing.sm,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.warnBorder,
   },
   discrepancyTitle: {
     fontSize: 11,
@@ -1521,28 +1521,28 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
   },
   discrepancyBoxSmall: {
-    backgroundColor: "#fffbeb",
+    backgroundColor: theme.colors.warnLight,
     padding: 6,
     borderRadius: theme.radius.sm,
     marginTop: 6,
   },
   discrepancyNoteLine: {
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.warnDark,
     fontStyle: "italic",
   },
   receivedConfirmBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0fdf4",
+    backgroundColor: theme.colors.okLight,
     padding: 8,
     borderRadius: theme.radius.sm,
     marginTop: 10,
   },
   receivedConfirmTxt: {
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.ok,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   topActionsRow: {
     flexDirection: "row",
@@ -1559,7 +1559,7 @@ const styles = StyleSheet.create({
   },
   supRetCode: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.danger,
     marginRight: 8,
   },
@@ -1569,8 +1569,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   supRetProduct: {
-    fontSize: 12,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.primaryDark,
     marginTop: 2,
   },
@@ -1586,35 +1586,35 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   supRetText: {
-    fontSize: 12,
+    fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
     marginLeft: 6,
   },
   resolutionBox: {
-    backgroundColor: "#f0fdf4",
+    backgroundColor: theme.colors.okLight,
     padding: 8,
     borderRadius: theme.radius.sm,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: "#bbf7d0",
+    borderColor: theme.colors.okBorder,
   },
   resolutionHeader: {
     flexDirection: "row",
     alignItems: "center",
   },
   resolutionTitle: {
-    fontSize: 12,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.ok,
   },
   resolutionTxt: {
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.text,
     fontStyle: "italic",
     marginTop: 2,
   },
   resolutionDate: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
     marginTop: 4,
   },
@@ -1636,7 +1636,7 @@ const styles = StyleSheet.create({
   },
   verifyItemCardDiff: {
     borderColor: theme.colors.warn,
-    backgroundColor: "#fffbeb",
+    backgroundColor: theme.colors.warnLight,
   },
   verifyItemTop: {
     flexDirection: "row",

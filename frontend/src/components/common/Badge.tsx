@@ -27,9 +27,9 @@ export const Badge: React.FC<BadgeProps> = ({
   const isSm = size === "sm";
   const isLg = size === "lg";
 
-  const paddingV = isSm ? 3 : isLg ? 6 : 4;
-  const paddingH = isSm ? 8 : isLg ? 12 : 10;
-  const fontSize = isSm ? 11 : isLg ? 14 : 12;
+  const paddingV = isSm ? 2 : isLg ? 6 : 4;
+  const paddingH = isSm ? theme.spacing.sm : isLg ? theme.spacing.md : 10;
+  const fontSize = isSm ? theme.fontSize.caption : isLg ? theme.fontSize.sm : theme.fontSize.xs;
   const iconSize = isSm ? 12 : isLg ? 16 : 14;
 
   return (
@@ -73,14 +73,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    borderWidth: 1.5,
+    borderWidth: theme.borders.thin,
     borderRadius: theme.radius.full,
   },
   icon: {
-    marginRight: 5,
+    marginRight: 4,
   },
   text: {
-    fontWeight: "700",
-    letterSpacing: 0.3,
+    fontWeight: theme.fontWeight.semibold,
+    letterSpacing: 0.2,
   },
 });

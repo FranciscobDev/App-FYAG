@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.colors.danger,
     borderWidth: 1.5,
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff1f2",
+    backgroundColor: theme.colors.dangerLight,
   },
   projectCardWarn: {
     borderLeftColor: theme.colors.warn,

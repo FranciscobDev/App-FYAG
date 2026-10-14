@@ -23,6 +23,7 @@ import {
   ModalView,
   ProgressBar,
   ScreenStateWrapper,
+  Toast,
 } from "@/components/common";
 import { Project, ProjectKind, ProjectStatus } from "@/core/types";
 
@@ -266,12 +267,11 @@ export const ProjectsScreen: React.FC = () => {
     <ScreenStateWrapper screenTitle="Proyectos y Obras" skeletonType="cards">
     <View style={styles.container}>
       {/* Toast Notification */}
-      {toastMessage && (
-        <View style={styles.toastCard}>
-          <Ionicons name="checkmark-circle" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-          <Text style={styles.toastText}>{toastMessage}</Text>
-        </View>
-      )}
+      <Toast
+        visible={Boolean(toastMessage)}
+        message={toastMessage || ""}
+        onDismiss={() => setToastMessage(null)}
+      />
 
       {/* =====================================================================
           1. VISTA DE DETALLE CON PESTAÑAS (SI HAY PROYECTO SELECCIONADO)
@@ -1527,16 +1527,16 @@ const styles = StyleSheet.create({
   auditClosedNotice: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#f0fdf4",
-    borderWidth: 1,
-    borderColor: "#bbf7d0",
+    backgroundColor: theme.colors.okLight,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.okBorder,
     borderRadius: theme.radius.md,
-    padding: 10,
+    padding: theme.spacing.sm,
     marginBottom: theme.spacing.md,
   },
   closedAtNote: {
     fontSize: theme.fontSize.xs,
-    color: "#166534",
+    color: theme.colors.okDark,
     flex: 1,
   },
   compSectionTitle: {
@@ -1710,44 +1710,44 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   blockNoticeBox: {
-    backgroundColor: "#fef2f2",
+    backgroundColor: theme.colors.dangerLight,
     borderRadius: theme.radius.md,
     padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: "#fca5a5",
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
   },
   blockNoticeTitle: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
-    color: theme.colors.danger,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.dangerDark,
     marginLeft: 8,
     flex: 1,
   },
   blockNoticeSub: {
     fontSize: theme.fontSize.xs,
-    color: "#991b1b",
+    color: theme.colors.dangerDark,
     marginBottom: 8,
   },
   blockItemRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    backgroundColor: "#ffffff",
+    backgroundColor: theme.colors.card,
     borderRadius: theme.radius.sm,
-    padding: 8,
+    padding: theme.spacing.sm,
     marginBottom: 6,
-    borderWidth: 1,
-    borderColor: "#fecaca",
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.dangerBorder,
   },
   blockItemTxt: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.danger,
+    color: theme.colors.dangerDark,
     marginLeft: 6,
     flex: 1,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
   },
   blockAdvice: {
-    fontSize: 11,
-    color: "#7f1d1d",
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.dangerDark,
     marginTop: 6,
     lineHeight: 16,
   },
