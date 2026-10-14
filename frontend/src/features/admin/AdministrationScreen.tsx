@@ -2153,7 +2153,8 @@ const styles = StyleSheet.create({
   },
   paramInput: {
     flex: 1,
-    height: 38,
+    height: 44,
+    minHeight: 44,
     fontSize: theme.fontSize.sm,
     fontWeight: "bold",
     color: theme.colors.text,
