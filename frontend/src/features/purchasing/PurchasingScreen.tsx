@@ -1151,12 +1151,12 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
               />
             </Card>
           ) : (
-            <Card variant="outlined" style={{ padding: 24, alignItems: "center" }}>
-              <Ionicons name="checkmark-done-circle-outline" size={32} color={theme.colors.ok} />
-              <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>
-                No hay órdenes de compra esperando recepción o seleccione una arriba.
-              </Text>
-            </Card>
+            <EmptyState
+              icon="checkmark-done-circle-outline"
+              title="Sin recepciones pendientes"
+              description="No hay órdenes de compra esperando recepción física en bodega. Seleccione una orden arriba para verificar."
+              containerStyle={{ marginVertical: 24 }}
+            />
           )}
         </ScrollView>
       )}
@@ -1236,7 +1236,21 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
 
           {/* Lista de Proveedores */}
           {thirdPartyTab === "proveedores" ? (
-            filteredSuppliers.map((s) => (
+            filteredSuppliers.length === 0 ? (
+              <EmptyState
+                icon="people-outline"
+                title="No se encontraron proveedores"
+                description={
+                  thirdPartySearch
+                    ? `No hay proveedores que coincidan con "${thirdPartySearch}".`
+                    : "No hay proveedores registrados en el sistema."
+                }
+                actionTitle="+ Nuevo Proveedor"
+                onAction={handleOpenPartyModal}
+                containerStyle={{ marginVertical: 24 }}
+              />
+            ) : (
+              filteredSuppliers.map((s) => (
               <Card
                 key={s.id}
                 variant="default"
@@ -1301,8 +1315,23 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 </View>
               </Card>
             ))
+            )
           ) : (
-            filteredClients.map((c) => (
+            filteredClients.length === 0 ? (
+              <EmptyState
+                icon="business-outline"
+                title="No se encontraron clientes"
+                description={
+                  thirdPartySearch
+                    ? `No hay clientes que coincidan con "${thirdPartySearch}".`
+                    : "No hay clientes registrados en el sistema."
+                }
+                actionTitle="+ Nuevo Cliente"
+                onAction={handleOpenPartyModal}
+                containerStyle={{ marginVertical: 24 }}
+              />
+            ) : (
+              filteredClients.map((c) => (
               <Card
                 key={c.id}
                 variant="default"
@@ -1346,6 +1375,7 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 </View>
               </Card>
             ))
+            )
           )}
         </ScrollView>
       )}
@@ -2154,7 +2184,8 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   checkInput: {
-    height: 36,
+    height: 44,
+    minHeight: 44,
     backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderRadius: theme.radius.sm,
@@ -2305,8 +2336,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   poNumInput: {
-    width: 60,
-    height: 34,
+    width: 68,
+    height: 44,
+    minHeight: 44,
     backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.borderDark,
