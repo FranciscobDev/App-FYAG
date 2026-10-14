@@ -115,7 +115,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
       <View style={styles.topbar}>
         <View style={styles.topLeft}>
           <View style={styles.brandCircle}>
-            <Ionicons name="hammer" size={16} color="#ffffff" />
+            <Ionicons name="hammer" size={16} color={theme.colors.textInverse} />
           </View>
           <View>
             <Text style={styles.brandTitle}>FYAG TÉCNICO</Text>
@@ -175,7 +175,9 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
       {/* 3. ÁREA DE CONTENIDO CENTRAL                                              */}
       {/* ========================================================================= */}
       <View style={styles.mainContent}>
-        {renderContent()}
+        <View style={styles.contentContainer}>
+          {renderContent()}
+        </View>
       </View>
 
       {/* ========================================================================= */}
@@ -459,11 +461,18 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   avatarText: {
-    fontSize: 11,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textInverse,
   },
   mainContent: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    alignItems: "center",
+  },
+  contentContainer: {
+    width: "100%",
+    maxWidth: 680,
     flex: 1,
   },
   bottomNav: {
@@ -490,13 +499,13 @@ const styles = StyleSheet.create({
   },
   navTabLabel: {
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
     marginTop: 2,
   },
   navTabLabelActive: {
     color: theme.colors.okDark,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   alertBadgeDot: {
     position: "absolute",
@@ -511,9 +520,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   alertBadgeText: {
-    color: "#ffffff",
+    color: theme.colors.textInverse,
     fontSize: 8,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   alertsContainer: {
     flex: 1,
@@ -587,12 +596,12 @@ const styles = StyleSheet.create({
   },
   avatarLargeText: {
     fontSize: 16,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textInverse,
   },
   userMenuName: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
   },
   userMenuRut: {

@@ -209,7 +209,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
         {/* LOGO CENTRADO CON ESTÉTICA PROFESIONAL */}
         <View style={styles.brandContainer}>
           <View style={styles.logoCircle}>
-            <Ionicons name="flash" size={32} color="#ffffff" />
+            <Ionicons name="flash" size={32} color={theme.colors.textInverse} />
           </View>
           <Text style={styles.brandTitle}>FYAG</Text>
           <Text style={styles.brandSubtitle}>MULTISYSTEM</Text>
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   countdownBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.dangerBorder,
     paddingHorizontal: 10,
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
   },
   countdownText: {
     fontSize: 12,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.dangerDark,
     marginLeft: 6,
   },

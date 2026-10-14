@@ -18,6 +18,7 @@ import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
+import { PageHeader } from "@/components/common/PageHeader";
 import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
 import { Tool, ToolStatus } from "@/core/types";
 
@@ -190,34 +191,31 @@ export const ToolsScreen: React.FC = () => {
     <ScreenStateWrapper screenTitle="Control de Herramientas" skeletonType="table">
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* ========================================================================= */}
-      {/* HEADER & BARRA DE ACCIÓN PRINCIPAL                                        */}
+      {/* HEADER & BARRA DE ACCIÓN PRINCIPAL (PAGEHEADER)                           */}
       {/* ========================================================================= */}
-      <View style={styles.topBar}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.heading}>Control de Herramientas y Maquinaria</Text>
-          <Text style={styles.subHeading}>
-            Asignaciones a faena, control de mantenciones preventivas y calibración.
-          </Text>
-        </View>
-
-        {currentRole !== "technician" && (
-          <Button
-            title="+ Alta Herramienta"
-            variant="primary"
-            size="md"
-            icon="add-outline"
-            onPress={() => {
-              setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
-              setToolSerial("");
-              setToolName("");
-              setToolModel("");
-              setToolError("");
-              setNewToolModal(true);
-            }}
-            style={{ height: 44 }}
-          />
-        )}
-      </View>
+      <PageHeader
+        title="Control de Herramientas y Maquinaria"
+        subtitle="Asignaciones a faena, control de mantenciones preventivas y calibración"
+        breadcrumbs={["Inicio", "Administración", "Control Herramientas"]}
+        rightAction={
+          currentRole !== "technician" ? (
+            <Button
+              title="+ Alta Herramienta"
+              variant="primary"
+              size="sm"
+              icon="add-outline"
+              onPress={() => {
+                setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
+                setToolSerial("");
+                setToolName("");
+                setToolModel("");
+                setToolError("");
+                setNewToolModal(true);
+              }}
+            />
+          ) : undefined
+        }
+      />
 
       {/* ========================================================================= */}
       {/* KPIS DE RESUMEN                                                           */}

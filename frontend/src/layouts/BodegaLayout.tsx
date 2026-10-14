@@ -122,7 +122,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
       <View style={styles.topbar}>
         <View style={styles.topLeft}>
           <View style={styles.brandIconCircle}>
-            <Ionicons name="cube" size={20} color="#ffffff" />
+            <Ionicons name="cube" size={20} color={theme.colors.textInverse} />
           </View>
           <View>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -221,7 +221,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
               style={styles.sidebarScanBtn}
               activeOpacity={0.8}
             >
-              <Ionicons name="barcode-outline" size={24} color="#ffffff" />
+              <Ionicons name="barcode-outline" size={24} color={theme.colors.textInverse} />
               <Text style={styles.sidebarScanText}>Scan</Text>
             </TouchableOpacity>
           </View>
@@ -234,7 +234,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
             <View style={styles.scannedNotice}>
               <Ionicons name="checkmark-circle" size={20} color={theme.colors.ok} />
               <Text style={styles.scannedNoticeText}>
-                Última lectura: <Text style={{ fontWeight: "bold" }}>{scannedCode}</Text>
+                Última lectura: <Text style={{ fontWeight: theme.fontWeight.semibold }}>{scannedCode}</Text>
               </Text>
               <TouchableOpacity onPress={() => setScannedCode(null)} style={{ marginLeft: "auto" }}>
                 <Ionicons name="close" size={18} color={theme.colors.textMuted} />
@@ -242,7 +242,9 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
             </View>
           )}
 
-          {renderContent()}
+          <View style={styles.contentContainer}>
+            {renderContent()}
+          </View>
         </View>
       </View>
 
@@ -256,7 +258,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
         accessibilityLabel="Escanear código QR o código de barras de material"
         accessibilityRole="button"
       >
-        <Ionicons name="barcode-outline" size={28} color="#ffffff" />
+        <Ionicons name="barcode-outline" size={28} color={theme.colors.textInverse} />
         <Text style={styles.floatingFabText}>Escanear QR / Barras</Text>
       </TouchableOpacity>
 
@@ -529,14 +531,20 @@ const styles = StyleSheet.create({
   },
   sidebarScanText: {
     fontSize: 10,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textInverse,
     marginTop: 2,
   },
   mainContent: {
     flex: 1,
     backgroundColor: theme.colors.background,
     position: "relative",
+    alignItems: "center",
+  },
+  contentContainer: {
+    width: "100%",
+    maxWidth: 1280,
+    flex: 1,
   },
   scannedNotice: {
     flexDirection: "row",
@@ -546,6 +554,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.okBorder,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 8,
+    width: "100%",
   },
   scannedNoticeText: {
     fontSize: theme.fontSize.xs,
@@ -567,8 +576,8 @@ const styles = StyleSheet.create({
     zIndex: 99,
   },
   floatingFabText: {
-    color: "#ffffff",
-    fontWeight: "bold",
+    color: theme.colors.textInverse,
+    fontWeight: theme.fontWeight.semibold,
     fontSize: theme.fontSize.sm,
     marginLeft: 8,
   },

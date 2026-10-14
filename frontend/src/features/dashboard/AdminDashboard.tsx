@@ -24,6 +24,7 @@ import { KpiCard } from "@/components/common/KpiCard";
 import { ModalView } from "@/components/common/ModalView";
 import { ProgressBar } from "@/components/common/ProgressBar";
 import { SemaforoBadge } from "@/components/common/SemaforoBadge";
+import { PageHeader } from "@/components/common/PageHeader";
 import { Toast, ToastType } from "@/components/common/Toast";
 import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
 import { MaterialRequest } from "@/core/types";
@@ -201,8 +202,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
       }}
     >
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* 1. KPI CARDS */}
-      <View style={styles.kpiGrid}>
+        {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+        <PageHeader
+          title="Dashboard General"
+          subtitle="Monitoreo ejecutivo de bodega, compras y estados de obra en tiempo real"
+          breadcrumbs={["Inicio", "Operación", "Dashboard General"]}
+          rightAction={
+            <Button
+              title="Ver Inventario"
+              variant="secondary"
+              icon="cube-outline"
+              size="sm"
+              onPress={() => onNavigate && onNavigate("inventario")}
+            />
+          }
+        />
+
+        {/* 1. KPI CARDS */}
+        <View style={styles.kpiGrid}>
         <KpiCard
           label="Solicitudes Pendientes"
           value={pendingRequests.length}

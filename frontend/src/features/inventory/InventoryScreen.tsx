@@ -24,6 +24,7 @@ import {
   Input,
   ModalView,
   NumberInput,
+  PageHeader,
   ProgressBar,
   QrScannerModal,
   StockCell,
@@ -669,6 +670,24 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
         visible={Boolean(toastMessage)}
         message={toastMessage || ""}
         onDismiss={() => setToastMessage(null)}
+      />
+
+      {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+      <PageHeader
+        title="Inventario & Cardex"
+        subtitle="Control de existencias, kardex físico valorizado y egresos a faena"
+        breadcrumbs={["Inicio", "Operación", "Inventario & Cardex"]}
+        rightAction={
+          currentRole === "admin" ? (
+            <Button
+              title="+ Nuevo Insumo"
+              variant="primary"
+              size="sm"
+              icon="add-outline"
+              onPress={handleOpenNewProduct}
+            />
+          ) : undefined
+        }
       />
 
       {/* TOP NAVIGATION TABS (Scroll horizontal para tablet y móvil) */}

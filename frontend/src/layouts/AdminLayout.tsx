@@ -182,7 +182,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
 
           <View style={styles.brandRow}>
             <View style={styles.brandLogoBox}>
-              <Ionicons name="flash" size={16} color="#ffffff" />
+              <Ionicons name="flash" size={16} color={theme.colors.textInverse} />
             </View>
             <Text style={styles.brandName}>FYAG</Text>
             <Badge label="ADMIN" tone="primary" size="sm" style={styles.roleBadge} />
@@ -318,9 +318,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
           )}
         </View>
 
-        {/* CONTENIDO PRINCIPAL */}
+        {/* CONTENIDO PRINCIPAL CENTRADO (MÁXIMO 1280 PX) */}
         <View style={styles.mainContent}>
-          {renderContent()}
+          <View style={styles.contentContainer}>
+            {renderContent()}
+          </View>
         </View>
       </View>
 
@@ -545,15 +547,15 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 12,
-    fontWeight: "bold",
-    color: "#ffffff",
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textInverse,
   },
   userInfo: {
     marginHorizontal: 8,
   },
   userName: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     maxWidth: 120,
   },
@@ -610,19 +612,21 @@ const styles = StyleSheet.create({
   },
   navItemActive: {
     backgroundColor: theme.colors.primaryLight,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.primary,
   },
   navIcon: {
     marginRight: 10,
   },
   navLabel: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textSecondary,
     flex: 1,
   },
   navLabelActive: {
     color: theme.colors.primaryDark,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   sidebarFooter: {
     padding: theme.spacing.md,
@@ -631,8 +635,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
   },
   footerVersion: {
-    fontSize: 11,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textSecondary,
   },
   footerStatus: {
@@ -643,6 +647,12 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     backgroundColor: theme.colors.background,
+    alignItems: "center",
+  },
+  contentContainer: {
+    width: "100%",
+    maxWidth: 1280,
+    flex: 1,
   },
   modalBackdrop: {
     flex: 1,

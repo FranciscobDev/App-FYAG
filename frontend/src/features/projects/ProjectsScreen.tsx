@@ -21,6 +21,7 @@ import {
   ExportButton,
   Input,
   ModalView,
+  PageHeader,
   ProgressBar,
   ScreenStateWrapper,
   Toast,
@@ -278,14 +279,17 @@ export const ProjectsScreen: React.FC = () => {
           ===================================================================== */}
       {selectedProject ? (
         <ScrollView style={styles.detailContainer} contentContainerStyle={styles.detailScroll}>
-          {/* Botón Volver */}
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => setSelectedProject(null)}
-          >
-            <Ionicons name="arrow-back" size={18} color={theme.colors.primary} />
-            <Text style={styles.backTxt}>Volver al listado de proyectos</Text>
-          </TouchableOpacity>
+          {/* Encabezado con Migas de Pan y Botón Volver */}
+          <PageHeader
+            title={`${selectedProject.code} - ${selectedProject.name}`}
+            subtitle={`Cliente: ${selectedProject.client} • Dirección: ${selectedProject.address}`}
+            breadcrumbs={[
+              { label: "Inicio" },
+              { label: "Proyectos", onPress: () => setSelectedProject(null) },
+              { label: selectedProject.code },
+            ]}
+            onBack={() => setSelectedProject(null)}
+          />
 
           {/* Encabezado del Proyecto */}
           <Card variant="elevated" style={styles.detailHeaderCard}>
@@ -770,23 +774,22 @@ export const ProjectsScreen: React.FC = () => {
             2. VISTA DE LISTADO GENERAL DE PROYECTOS
             ===================================================================== */
         <ScrollView style={styles.listContainer} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.topBar}>
-            <View>
-              <Text style={styles.heading}>Control de Obras y Proyectos</Text>
-              <Text style={styles.sectionSubtitle}>
-                Monitoreo presupuestario en tiempo real con semáforo de costo y margen.
-              </Text>
-            </View>
-            {currentRole === "admin" && (
-              <Button
-                title="Nuevo Proyecto"
-                variant="primary"
-                size="sm"
-                icon="add-outline"
-                onPress={handleOpenNewProject}
-              />
-            )}
-          </View>
+          <PageHeader
+            title="Control de Obras y Proyectos"
+            subtitle="Monitoreo presupuestario en tiempo real con semáforo de costo y margen"
+            breadcrumbs={["Inicio", "Proyectos", "Proyectos y Obras"]}
+            rightAction={
+              currentRole === "admin" ? (
+                <Button
+                  title="+ Nuevo Proyecto"
+                  variant="primary"
+                  size="sm"
+                  icon="add-outline"
+                  onPress={handleOpenNewProject}
+                />
+              ) : undefined
+            }
+          />
 
           {/* Buscador de Proyecto */}
           <View style={styles.searchBoxWrapper}>

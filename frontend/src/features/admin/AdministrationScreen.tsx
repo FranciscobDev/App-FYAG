@@ -342,10 +342,11 @@ export const AdministrationScreen: React.FC = () => {
   return (
     <ScreenStateWrapper screenTitle="Administración y Auditoría" skeletonType="table">
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Encabezado de página */}
+      {/* Encabezado de página con migas de pan */}
       <PageHeader
         title="Administración y Control de Sistema"
         subtitle="Gestión de usuarios, auditoría inmutable, parámetros operativos, reportes y respaldos"
+        breadcrumbs={["Inicio", "Administración", "Panel de Control"]}
       />
 
       {/* Banner de Feedback Global */}

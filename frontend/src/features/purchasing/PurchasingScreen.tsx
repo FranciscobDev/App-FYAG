@@ -23,6 +23,7 @@ import {
   Input,
   ModalView,
   NumberInput,
+  PageHeader,
   StarRating,
   ScreenStateWrapper,
   Toast,
@@ -479,6 +480,34 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
         visible={Boolean(toastMessage)}
         message={toastMessage || ""}
         onDismiss={() => setToastMessage(null)}
+      />
+
+      {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+      <PageHeader
+        title="Órdenes de Compra y Proveedores"
+        subtitle="Gestión de adquisiciones, recepción física en bodega y conciliación de facturas"
+        breadcrumbs={[
+          "Inicio",
+          "Compras",
+          activeTab === "ordenes"
+            ? "Órdenes de Compra"
+            : activeTab === "facturas"
+            ? "Facturas Proveedor"
+            : activeTab === "recepcion"
+            ? "Recepción Física"
+            : "Evaluación Proveedores",
+        ]}
+        rightAction={
+          currentRole !== "technician" ? (
+            <Button
+              title="+ Nueva Orden"
+              variant="primary"
+              size="sm"
+              icon="add-outline"
+              onPress={handleOpenNewOrder}
+            />
+          ) : undefined
+        }
       />
 
       {/* TABS DE NAVEGACIÓN SUPERIOR */}

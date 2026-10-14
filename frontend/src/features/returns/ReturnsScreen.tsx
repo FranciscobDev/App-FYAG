@@ -17,6 +17,7 @@ import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
+import { PageHeader } from "@/components/common/PageHeader";
 import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
 import { ReturnOrder, ReturnOrderItem, SupplierReturn } from "@/core/types";
 
@@ -238,6 +239,21 @@ export const ReturnsScreen: React.FC = () => {
   return (
     <ScreenStateWrapper screenTitle="Devoluciones y Faena" skeletonType="cards">
     <View style={styles.container}>
+      {/* ENCABEZADO CON MIGAS DE PAN */}
+      <PageHeader
+        title="Devoluciones de Faena"
+        subtitle="Recepción física de sobrantes de técnicos, verificación en bodega y devoluciones a proveedores"
+        breadcrumbs={[
+          "Inicio",
+          "Operación",
+          activeTab === "tecnico"
+            ? "Devolución Técnico"
+            : activeTab === "bodega"
+            ? "Recepción en Bodega"
+            : "Devolución Proveedor",
+        ]}
+      />
+
       {/* ========================================================================= */}
       {/* BARRA DE PESTAÑAS                                                         */}
       {/* ========================================================================= */}
