@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -59,6 +61,17 @@ export const Button: React.FC<ButtonProps> = ({
   accessibilityHint,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const isOutline = variant === "outline";
   const isGhost = variant === "ghost";
@@ -119,8 +132,15 @@ export const Button: React.FC<ButtonProps> = ({
           paddingHorizontal: paddingH,
           width: fullWidth ? "100%" : undefined,
           opacity: disabled ? 0.5 : pressed ? 0.82 : 1,
-          transform: [{ scale: pressed ? 0.985 : 1 }],
+          transform: [{ scale: pressed && !reduceMotion ? 0.985 : 1 }],
         },
+        Platform.select({
+          web: {
+            transition: reduceMotion ? "none" : `all ${theme.transitions.fast}ms ease`,
+            cursor: disabled || loading ? "not-allowed" : "pointer",
+          } as any,
+          default: {},
+        }),
         isFocused && styles.focusRing,
         style,
       ]}

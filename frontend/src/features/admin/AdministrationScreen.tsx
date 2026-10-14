@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -72,9 +72,15 @@ export const AdministrationScreen: React.FC = () => {
   const [toggleConfirmOpen, setToggleConfirmOpen] = useState(false);
 
   // New user form state
+  const rutInputRef = useRef<TextInput>(null);
+  const nameInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<TextInput>(null);
   const [formRut, setFormRut] = useState("");
+  const [formRutError, setFormRutError] = useState("");
   const [formName, setFormName] = useState("");
+  const [formNameError, setFormNameError] = useState("");
   const [formEmail, setFormEmail] = useState("");
+  const [formEmailError, setFormEmailError] = useState("");
   const [formRole, setFormRole] = useState<Role>("technician");
   const [formError, setFormError] = useState("");
 
@@ -96,17 +102,33 @@ export const AdministrationScreen: React.FC = () => {
   }, [systemUsers, userSearch, userRoleFilter, userStatusFilter]);
 
   const handleCreateUser = () => {
+    setFormRutError("");
+    setFormNameError("");
+    setFormEmailError("");
     setFormError("");
-    if (!formRut.trim() || !formName.trim() || !formEmail.trim()) {
-      setFormError("Todos los campos son obligatorios.");
+
+    if (!formRut.trim()) {
+      setFormRutError("El RUT es obligatorio.");
+      setFormError("El RUT es obligatorio.");
+      rutInputRef.current?.focus();
       return;
     }
     if (!isValidRut(formRut)) {
+      setFormRutError("RUT inválido. Formato esperado: 12.345.678-5");
       setFormError("El RUT ingresado no es válido. Formato esperado: 12.345.678-5");
+      rutInputRef.current?.focus();
       return;
     }
-    if (!formEmail.includes("@") || !formEmail.includes(".")) {
+    if (!formName.trim()) {
+      setFormNameError("El nombre completo es obligatorio.");
+      setFormError("El nombre completo es obligatorio.");
+      nameInputRef.current?.focus();
+      return;
+    }
+    if (!formEmail.trim() || !formEmail.includes("@") || !formEmail.includes(".")) {
+      setFormEmailError("Ingrese un correo corporativo válido.");
       setFormError("Ingrese un correo electrónico institucional válido.");
+      emailInputRef.current?.focus();
       return;
     }
 
@@ -121,8 +143,11 @@ export const AdministrationScreen: React.FC = () => {
     if (res.success) {
       setNewUserModalOpen(false);
       setFormRut("");
+      setFormRutError("");
       setFormName("");
+      setFormNameError("");
       setFormEmail("");
+      setFormEmailError("");
       setFormRole("technician");
       showFeedback("ok", `Usuario ${formName} creado exitosamente.`);
     } else {
@@ -503,6 +528,20 @@ export const AdministrationScreen: React.FC = () => {
                 ))}
               </View>
 
+              {(userSearch !== "" || userRoleFilter !== "todos") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Limpiar"
+                  icon="close-circle-outline"
+                  onPress={() => {
+                    setUserSearch("");
+                    setUserRoleFilter("todos");
+                  }}
+                  style={{ marginRight: 6 }}
+                />
+              )}
+
               {/* Botón Nuevo Usuario */}
               <Button
                 variant="primary"
@@ -634,24 +673,39 @@ export const AdministrationScreen: React.FC = () => {
               )}
 
               <Input
+                ref={rutInputRef}
                 label="RUT del Usuario (con guion y dígito verificador)"
                 placeholder="Ej: 15.678.912-3"
                 value={formRut}
-                onChangeText={setFormRut}
+                onChangeText={(text) => {
+                  setFormRut(text);
+                  if (formRutError) setFormRutError("");
+                }}
+                error={formRutError}
               />
 
               <Input
+                ref={nameInputRef}
                 label="Nombre Completo"
                 placeholder="Ej: Marcelo Gómez Paredes"
                 value={formName}
-                onChangeText={setFormName}
+                onChangeText={(text) => {
+                  setFormName(text);
+                  if (formNameError) setFormNameError("");
+                }}
+                error={formNameError}
               />
 
               <Input
+                ref={emailInputRef}
                 label="Correo Electrónico Corporativo"
                 placeholder="ejemplo@fyag.cl"
                 value={formEmail}
-                onChangeText={setFormEmail}
+                onChangeText={(text) => {
+                  setFormEmail(text);
+                  if (formEmailError) setFormEmailError("");
+                }}
+                error={formEmailError}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -858,6 +912,22 @@ export const AdministrationScreen: React.FC = () => {
                   ))}
                 </View>
               </View>
+
+              {(Boolean(auditSearch) || auditEntityFilter !== "todas" || auditDateFilter !== "todos") && (
+                <View style={{ justifyContent: "flex-end", paddingBottom: 2 }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Limpiar"
+                    icon="close-circle-outline"
+                    onPress={() => {
+                      setAuditSearch("");
+                      setAuditEntityFilter("todas");
+                      setAuditDateFilter("todos");
+                    }}
+                  />
+                </View>
+              )}
             </View>
           </Card>
 
@@ -1125,7 +1195,20 @@ export const AdministrationScreen: React.FC = () => {
               </View>
 
               {/* Botón de Exportación PDF / Excel */}
-              <View style={{ alignItems: "flex-end", justifyContent: "flex-end" }}>
+              <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "flex-end" }}>
+                {(reportDateRange !== "30dias" || reportMovementType !== "todos") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Limpiar"
+                    icon="close-circle-outline"
+                    onPress={() => {
+                      setReportDateRange("30dias");
+                      setReportMovementType("todos");
+                    }}
+                    style={{ marginRight: 8 }}
+                  />
+                )}
                 <ExportButton onExport={handleExportReport} title="Exportar Reporte" />
               </View>
             </View>

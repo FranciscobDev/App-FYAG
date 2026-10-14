@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
+  AccessibilityInfo,
+  Platform,
   ScrollView,
   StyleProp,
   StyleSheet,
@@ -32,6 +34,18 @@ export function Tabs<T = string>({
   scrollable = false,
   containerStyle,
 }: TabsProps<T>) {
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const content = (
     <View style={[styles.tabsRow, !scrollable && styles.tabsRowFlex]}>
       {tabs.map((tab) => {
@@ -45,6 +59,13 @@ export function Tabs<T = string>({
               styles.tabBtn,
               isActive && styles.tabBtnActive,
               !scrollable && styles.tabBtnFlex,
+              Platform.select({
+                web: {
+                  transition: reduceMotion ? "none" : `all ${theme.transitions.fast}ms ease`,
+                  cursor: "pointer",
+                } as any,
+                default: {},
+              }),
             ]}
             accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}

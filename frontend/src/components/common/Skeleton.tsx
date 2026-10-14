@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Animated,
   DimensionValue,
   StyleProp,
@@ -22,8 +23,24 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   style,
 }) => {
   const pulseAnim = useRef(new Animated.Value(0.3)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (mounted) setReduceMotion(enabled);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      pulseAnim.setValue(0.5);
+      return;
+    }
+
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
@@ -41,7 +58,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
     pulse.start();
 
     return () => pulse.stop();
-  }, [pulseAnim]);
+  }, [pulseAnim, reduceMotion]);
 
   return (
     <Animated.View

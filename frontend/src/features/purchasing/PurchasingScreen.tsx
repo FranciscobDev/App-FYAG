@@ -618,6 +618,15 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 </Text>
               </TouchableOpacity>
             ))}
+            {poFilterStatus !== "todas" && (
+              <TouchableOpacity
+                onPress={() => setPoFilterStatus("todas")}
+                style={[styles.statusChip, { borderColor: theme.colors.borderDark }]}
+              >
+                <Ionicons name="close-circle-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+                <Text style={styles.statusChipText}>Limpiar filtros</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
 
           {filteredOrders.length === 0 ? (
@@ -1213,6 +1222,16 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 placeholder="Buscar por RUT, Razón Social o Giro..."
               />
             </View>
+            {Boolean(thirdPartySearch) && (
+              <Button
+                title="Limpiar"
+                variant="ghost"
+                size="sm"
+                icon="close-circle-outline"
+                onPress={() => setThirdPartySearch("")}
+                style={{ alignSelf: "flex-end", marginBottom: 8, marginRight: 8 }}
+              />
+            )}
             {thirdPartyTab === "proveedores" && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 42 }}>
                 {[

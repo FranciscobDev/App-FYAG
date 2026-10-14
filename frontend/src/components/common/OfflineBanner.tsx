@@ -69,6 +69,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    minHeight: theme.touchTargets.minHeight,
     paddingVertical: 8,
     paddingHorizontal: theme.spacing.md,
     borderRadius: theme.radius.md,

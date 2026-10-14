@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
   Modal,
@@ -116,12 +116,16 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   // =========================================================================
   // 1. CATALOGO STATE
   // =========================================================================
+  const skuInputRef = useRef<TextInput>(null);
+  const nameInputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [newProductModal, setNewProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const [formSku, setFormSku] = useState("");
+  const [formSkuError, setFormSkuError] = useState("");
   const [formName, setFormName] = useState("");
+  const [formNameError, setFormNameError] = useState("");
   const [formCategory, setFormCategory] = useState("Electricidad");
   const [formUnit, setFormUnit] = useState<"un" | "kg" | "m" | "l">("un");
   const [formStock, setFormStock] = useState("0");
@@ -143,7 +147,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   const handleOpenNewProduct = () => {
     setEditingProduct(null);
     setFormSku("");
+    setFormSkuError("");
     setFormName("");
+    setFormNameError("");
     setFormCategory("Electricidad");
     setFormUnit("un");
     setFormStock("0");
@@ -161,7 +167,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   const handleOpenEditProduct = (prod: Product) => {
     setEditingProduct(prod);
     setFormSku(prod.sku);
+    setFormSkuError("");
     setFormName(prod.name);
+    setFormNameError("");
     setFormCategory(prod.category);
     setFormUnit((prod.unit as any) || "un");
     setFormStock(String(prod.stock));
@@ -177,8 +185,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   };
 
   const handleSaveProduct = () => {
-    if (!formSku.trim() || !formName.trim()) {
-      setFormError("SKU y Nombre son campos requeridos.");
+    setFormSkuError("");
+    setFormNameError("");
+    setFormError("");
+
+    if (!formSku.trim()) {
+      setFormSkuError("El código SKU es obligatorio.");
+      setFormError("El código SKU es obligatorio.");
+      skuInputRef.current?.focus();
+      return;
+    }
+    if (!formName.trim()) {
+      setFormNameError("El nombre del insumo es obligatorio.");
+      setFormError("El nombre del insumo es obligatorio.");
+      nameInputRef.current?.focus();
       return;
     }
 
@@ -938,6 +958,20 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
                   style={styles.cardexSearchInput}
                 />
               </View>
+              {(Boolean(kardexFilterSku) || kardexFilterType !== "todos" || kardexFilterProject !== "todos") && (
+                <Button
+                  title="Limpiar filtros"
+                  variant="ghost"
+                  size="sm"
+                  icon="close-circle-outline"
+                  onPress={() => {
+                    setKardexFilterSku("");
+                    setKardexFilterType("todos");
+                    setKardexFilterProject("todos");
+                  }}
+                  style={{ marginRight: 8 }}
+                />
+              )}
               <ExportButton onExport={handleExportCardex} title="Excel" size="sm" />
             </View>
 
@@ -1803,9 +1837,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
         <View style={styles.inputWithScannerRow}>
           <View style={{ flex: 1 }}>
             <Input
+              ref={skuInputRef}
               label="Código SKU Único"
               value={formSku}
-              onChangeText={setFormSku}
+              onChangeText={(text) => {
+                setFormSku(text);
+                if (formSkuError) setFormSkuError("");
+              }}
+              error={formSkuError}
               placeholder="Ej: ELE-CBL-0012"
               editable={!editingProduct}
             />
@@ -1828,9 +1867,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
         {/* 1. INFORMACIÓN BÁSICA */}
         <Text style={styles.formSectionHeading}>1. Información Básica</Text>
         <Input
+          ref={nameInputRef}
           label="Nombre del Insumo"
           value={formName}
-          onChangeText={setFormName}
+          onChangeText={(text) => {
+            setFormName(text);
+            if (formNameError) setFormNameError("");
+          }}
+          error={formNameError}
           placeholder="Ej: Cable THHN 12 AWG"
         />
         <Input

@@ -29,7 +29,7 @@ export interface InputProps extends TextInputProps {
  * - Foco visible de 2px con resalte y contraste AA.
  * - Altura táctil mínima de 44 px.
  */
-export const Input: React.FC<InputProps> = ({
+export const Input = React.forwardRef<TextInput, InputProps>(({
   label,
   error,
   helper,
@@ -40,7 +40,7 @@ export const Input: React.FC<InputProps> = ({
   inputStyle,
   editable,
   ...rest
-}) => {
+}, ref) => {
   const [isFocused, setIsFocused] = useState(false);
   const isEditable = disabled ? false : (editable !== undefined ? editable : true);
 
@@ -77,6 +77,7 @@ export const Input: React.FC<InputProps> = ({
           />
         )}
         <TextInput
+          ref={ref}
           placeholderTextColor={theme.colors.textMuted}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
@@ -101,7 +102,9 @@ export const Input: React.FC<InputProps> = ({
       ) : null}
     </View>
   );
-};
+});
+
+Input.displayName = "Input";
 
 const styles = StyleSheet.create({
   container: {

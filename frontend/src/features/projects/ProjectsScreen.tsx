@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -62,10 +62,13 @@ export const ProjectsScreen: React.FC = () => {
   const [searchProject, setSearchProject] = useState("");
 
   // Project form modal state
+  const projectNameInputRef = useRef<TextInput>(null);
   const [formModalVisible, setFormModalVisible] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [formName, setFormName] = useState("");
+  const [formNameError, setFormNameError] = useState("");
   const [formClient, setFormClient] = useState("");
+  const [formClientError, setFormClientError] = useState("");
   const [formKind, setFormKind] = useState<ProjectKind>("obra");
   const [formAddress, setFormAddress] = useState("");
   const [formStartDate, setFormStartDate] = useState("2026-10-01");
@@ -98,7 +101,9 @@ export const ProjectsScreen: React.FC = () => {
   const handleOpenNewProject = () => {
     setEditingProject(null);
     setFormName("");
+    setFormNameError("");
     setFormClient(clients[0]?.businessName || "Inmobiliaria Central SpA");
+    setFormClientError("");
     setFormKind("obra");
     setFormAddress("Av. Apoquindo 4500, Las Condes");
     setFormStartDate(new Date().toISOString().slice(0, 10));
@@ -118,7 +123,9 @@ export const ProjectsScreen: React.FC = () => {
     }
     setEditingProject(proj);
     setFormName(proj.name);
+    setFormNameError("");
     setFormClient(proj.client);
+    setFormClientError("");
     setFormKind(proj.kind);
     setFormAddress(proj.address);
     setFormStartDate(proj.startDate);
@@ -132,8 +139,20 @@ export const ProjectsScreen: React.FC = () => {
   };
 
   const handleSaveProject = () => {
-    if (!formName.trim() || !formClient.trim()) {
-      setFormError("Nombre del proyecto y Cliente son obligatorios.");
+    setFormNameError("");
+    setFormClientError("");
+    setFormError("");
+
+    if (!formName.trim()) {
+      setFormNameError("El nombre del proyecto es obligatorio.");
+      setFormError("El nombre del proyecto es obligatorio.");
+      projectNameInputRef.current?.focus();
+      return;
+    }
+
+    if (!formClient.trim()) {
+      setFormClientError("Debe seleccionar un cliente.");
+      setFormError("Debe seleccionar un cliente.");
       return;
     }
 
@@ -861,6 +880,18 @@ export const ProjectsScreen: React.FC = () => {
                 </Text>
               </TouchableOpacity>
             ))}
+            {(listStatusFilter !== "todos" || Boolean(searchProject)) && (
+              <TouchableOpacity
+                onPress={() => {
+                  setListStatusFilter("todos");
+                  setSearchProject("");
+                }}
+                style={[styles.filterChip, { borderColor: theme.colors.borderDark }]}
+              >
+                <Ionicons name="close-circle-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+                <Text style={styles.filterChipTxt}>Limpiar filtros</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
 
           {filteredProjects.length === 0 ? (
@@ -1002,19 +1033,30 @@ export const ProjectsScreen: React.FC = () => {
         {/* 1. INFORMACIÓN GENERAL */}
         <Text style={styles.formSectionHeading}>1. Información General del Proyecto</Text>
         <Input
+          ref={projectNameInputRef}
           label="Nombre del Proyecto"
           value={formName}
-          onChangeText={setFormName}
+          onChangeText={(text) => {
+            setFormName(text);
+            if (formNameError) setFormNameError("");
+          }}
+          error={formNameError}
           placeholder="Ej: Montaje Tableros Centro Logístico"
         />
 
         {/* Selector de Cliente */}
         <Text style={styles.fieldLabel}>Cliente:</Text>
+        {Boolean(formClientError) && (
+          <Text style={[styles.errorText, { marginBottom: 4 }]}>{formClientError}</Text>
+        )}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
           {clients.map((c) => (
             <TouchableOpacity
               key={c.id}
-              onPress={() => setFormClient(c.businessName)}
+              onPress={() => {
+                setFormClient(c.businessName);
+                if (formClientError) setFormClientError("");
+              }}
               style={[styles.clientChip, formClient === c.businessName && styles.clientChipActive]}
             >
               <Text style={[styles.clientChipTxt, formClient === c.businessName && styles.clientChipTxtActive]}>

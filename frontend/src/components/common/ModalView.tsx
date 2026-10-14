@@ -1,5 +1,7 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -29,6 +31,42 @@ export const ModalView: React.FC<ModalViewProps> = ({
   children,
   maxHeightPct = 85,
 }) => {
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const animValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => sub?.remove?.();
+  }, []);
+
+  useEffect(() => {
+    if (visible) {
+      if (reduceMotion) {
+        animValue.setValue(1);
+      } else {
+        animValue.setValue(0);
+        Animated.timing(animValue, {
+          toValue: 1,
+          duration: theme.transitions.normal, // 200 ms
+          useNativeDriver: true,
+        }).start();
+      }
+    } else {
+      animValue.setValue(0);
+    }
+  }, [visible, reduceMotion]);
+
+  const scale = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.96, 1],
+  });
+
+  const translateY = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [8, 0],
+  });
+
   return (
     <Modal
       visible={visible}
@@ -41,7 +79,16 @@ export const ModalView: React.FC<ModalViewProps> = ({
         style={styles.backdrop}
       >
         <Pressable style={styles.outsidePress} onPress={onClose} />
-        <View style={[styles.container, { maxHeight: `${maxHeightPct}%` }]}>
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              maxHeight: `${maxHeightPct}%`,
+              opacity: animValue,
+              transform: [{ scale }, { translateY }],
+            },
+          ]}
+        >
           <View style={styles.header}>
             <View style={styles.titleContainer}>
               <Text style={styles.title}>{title}</Text>
@@ -58,7 +105,7 @@ export const ModalView: React.FC<ModalViewProps> = ({
           >
             {children}
           </ScrollView>
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

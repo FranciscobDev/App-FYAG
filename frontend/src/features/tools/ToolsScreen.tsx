@@ -301,6 +301,18 @@ export const ToolsScreen: React.FC = () => {
             </TouchableOpacity>
           );
         })}
+        {(filterStatus !== "todos" || Boolean(searchQuery)) && (
+          <TouchableOpacity
+            onPress={() => {
+              setFilterStatus("todos");
+              setSearchQuery("");
+            }}
+            style={[styles.filterChip, { borderColor: theme.colors.borderDark }]}
+          >
+            <Ionicons name="close-circle-outline" size={14} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+            <Text style={styles.filterChipTxt}>Limpiar filtros</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* ========================================================================= */}

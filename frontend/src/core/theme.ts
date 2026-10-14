@@ -234,6 +234,13 @@ export const theme = {
     tabletHeight: 48,
     largeHeight: 52,
   },
+
+  // Microinteracciones y transiciones breves (Paso 7: 150 a 250 ms)
+  transitions: {
+    fast: 150,     // 150 ms para hover y micro-feedback
+    normal: 200,   // 200 ms para tabs, modales y drawers
+    slow: 250,     // 250 ms para transiciones de pantalla completa
+  },
 };
 
 export type Tone =

@@ -135,6 +135,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
     return () => clearTimeout(timer);
   }, []);
 
+  // Atajo de teclado global: Ctrl+K / Cmd+K para abrir buscador global en web
+  useEffect(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const handleGlobalKeyDown = (e: KeyboardEvent) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+          e.preventDefault();
+          setGlobalSearchOpen((prev) => !prev);
+        }
+      };
+      window.addEventListener("keydown", handleGlobalKeyDown);
+      return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    }
+  }, []);
+
   // Renderizar la pantalla correspondiente
   const renderContent = () => {
     switch (activeRoute) {
@@ -197,7 +211,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
               setGlobalSearch(t);
               if (t.trim().length > 1) setGlobalSearchOpen(true);
             }}
-            placeholder="Buscar global por SKU, RUT, OC, Proyecto..."
+            placeholder="Buscar global por SKU, RUT, OC, Proyecto... (Ctrl+K)"
             containerStyle={styles.globalSearchBox}
           />
         </View>

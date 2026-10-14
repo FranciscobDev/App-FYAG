@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Animated,
   StyleSheet,
   Text,
@@ -28,20 +29,29 @@ export const Toast: React.FC<ToastProps> = ({
   onDismiss,
   title,
 }) => {
+  const [reduceMotion, setReduceMotion] = useState(false);
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-20)).current;
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => sub?.remove?.();
+  }, []);
+
+  const animDuration = reduceMotion ? 0 : 200;
 
   useEffect(() => {
     if (visible) {
       Animated.parallel([
         Animated.timing(opacity, {
           toValue: 1,
-          duration: 250,
+          duration: animDuration,
           useNativeDriver: true,
         }),
         Animated.timing(translateY, {
           toValue: 0,
-          duration: 250,
+          duration: animDuration,
           useNativeDriver: true,
         }),
       ]).start();
@@ -55,7 +65,7 @@ export const Toast: React.FC<ToastProps> = ({
       Animated.parallel([
         Animated.timing(opacity, {
           toValue: 0,
-          duration: 200,
+          duration: animDuration,
           useNativeDriver: true,
         }),
         Animated.timing(translateY, {

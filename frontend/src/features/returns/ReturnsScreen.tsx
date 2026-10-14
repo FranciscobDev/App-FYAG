@@ -605,6 +605,11 @@ export const ReturnsScreen: React.FC = () => {
               placeholderTextColor={theme.colors.textLight}
               style={styles.searchInput}
             />
+            {Boolean(transitSearch) && (
+              <TouchableOpacity onPress={() => setTransitSearch("")} style={{ padding: 4 }}>
+                <Ionicons name="close-circle" size={16} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            )}
           </View>
 
           {filteredTransitReturns.length === 0 ? (
