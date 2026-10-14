@@ -18,6 +18,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   ExportButton,
   Input,
   ModalView,
@@ -828,8 +829,22 @@ export const ProjectsScreen: React.FC = () => {
             ))}
           </ScrollView>
 
-          {filteredProjects.map((proj) => {
-            const ratio = proj.budget > 0 ? proj.costReal / proj.budget : 0;
+          {filteredProjects.length === 0 ? (
+            <EmptyState
+              icon="business-outline"
+              title="No se encontraron proyectos"
+              description={
+                searchProject
+                  ? `No existen coincidencias para "${searchProject}".`
+                  : "No hay proyectos ni faenas registradas con este filtro."
+              }
+              actionTitle={currentRole === "admin" ? "+ Nuevo Proyecto" : undefined}
+              onAction={currentRole === "admin" ? handleOpenNewProject : undefined}
+              containerStyle={{ marginVertical: 24 }}
+            />
+          ) : (
+            filteredProjects.map((proj) => {
+              const ratio = proj.budget > 0 ? proj.costReal / proj.budget : 0;
             const pct = Math.round(ratio * 100);
 
             // Semáforo de costo:
@@ -909,7 +924,8 @@ export const ProjectsScreen: React.FC = () => {
                 </Card>
               </TouchableOpacity>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 
@@ -922,6 +938,8 @@ export const ProjectsScreen: React.FC = () => {
         title={editingProject ? `Editar Proyecto: ${editingProject.code}` : "Nuevo Proyecto / Obra"}
         subtitle="Nombre, cliente, fechas, presupuestos de materiales y HH, valor de venta"
       >
+        {/* 1. INFORMACIÓN GENERAL */}
+        <Text style={styles.formSectionHeading}>1. Información General del Proyecto</Text>
         <Input
           label="Nombre del Proyecto"
           value={formName}
@@ -972,6 +990,8 @@ export const ProjectsScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
+        {/* 2. PRESUPUESTOS Y PLAZOS */}
+        <Text style={styles.formSectionHeading}>2. Presupuestos, Plazos y Estado</Text>
         <View style={styles.formRowTwo}>
           <Input
             label="Fecha Inicio"
@@ -1786,5 +1806,14 @@ const styles = StyleSheet.create({
     color: theme.colors.warnDark,
     textAlign: "center",
     marginBottom: theme.spacing.md,
+  },
+  formSectionHeading: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: "600",
+    color: theme.colors.primaryDark,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

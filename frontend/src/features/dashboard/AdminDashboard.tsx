@@ -19,6 +19,7 @@ import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { Column, DataTable } from "@/components/common/DataTable";
+import { EmptyState } from "@/components/common/EmptyState";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { KpiCard } from "@/components/common/KpiCard";
 import { ModalView } from "@/components/common/ModalView";
@@ -348,11 +349,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
         </View>
 
         {pendingRequests.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="checkmark-circle-outline" size={36} color={theme.colors.ok} />
-            <Text style={styles.emptyTitle}>Al día</Text>
-            <Text style={styles.emptySub}>No hay solicitudes pendientes de aprobación.</Text>
-          </View>
+          <EmptyState
+            icon="checkmark-circle-outline"
+            title="¡Todo al día!"
+            description="No hay solicitudes pendientes de aprobación en este momento."
+            actionTitle="Ver Inventario"
+            onAction={() => onNavigate && onNavigate("inventario")}
+            containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
+          />
         ) : (
           <DataTable
             columns={requestColumns}

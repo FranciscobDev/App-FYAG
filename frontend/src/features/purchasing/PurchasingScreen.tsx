@@ -19,6 +19,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   ExportButton,
   Input,
   ModalView,
@@ -619,11 +620,21 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
             ))}
           </ScrollView>
 
-          {filteredOrders.map((order) => {
-            const isDraft = order.status === "borrador";
-            const isReceived = order.status === "recibida";
+          {filteredOrders.length === 0 ? (
+            <EmptyState
+              icon="cart-outline"
+              title="No se encontraron órdenes de compra"
+              description="No hay órdenes registradas bajo el estado seleccionado."
+              actionTitle={currentRole === "admin" ? "+ Nueva OC" : undefined}
+              onAction={currentRole === "admin" ? handleOpenNewOrder : undefined}
+              containerStyle={{ marginVertical: 24 }}
+            />
+          ) : (
+            filteredOrders.map((order) => {
+              const isDraft = order.status === "borrador";
+              const isReceived = order.status === "recibida";
 
-            return (
+              return (
               <Card key={order.id} variant="elevated" style={styles.orderCard}>
                 <View style={styles.orderTop}>
                   <View style={{ flex: 1 }}>
@@ -746,7 +757,8 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 </View>
               </Card>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 
@@ -1349,6 +1361,8 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
         title={editingPo ? `Editar Orden: ${editingPo.code}` : "Nueva Orden de Compra"}
         subtitle={editingPo && editingPo.status !== "borrador" ? "Solo lectura (ya aprobada)" : "Editable solo en estado Borrador"}
       >
+        {/* 1. PROVEEDOR Y PLAZOS */}
+        <Text style={styles.formSectionHeading}>1. Proveedor y Plazo de Entrega</Text>
         <Text style={styles.fieldLabel}>Proveedor:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
           {suppliers
@@ -1390,6 +1404,8 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
           placeholder="YYYY-MM-DD"
         />
 
+        {/* 2. ÍTEMS REQUERIDOS */}
+        <Text style={styles.formSectionHeading}>2. Ítems Requeridos en la Orden</Text>
         <Text style={styles.fieldLabel}>Ítems a ordenar:</Text>
         {poItems.map((item, idx) => {
           const prod = products.find((p) => p.sku === item.sku);
@@ -2527,5 +2543,14 @@ const styles = StyleSheet.create({
   pdfSignSub: {
     fontSize: 8,
     color: "#64748b",
+  },
+  formSectionHeading: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: "600",
+    color: theme.colors.primaryDark,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

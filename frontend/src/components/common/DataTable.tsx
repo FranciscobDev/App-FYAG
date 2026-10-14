@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "@/core/theme";
+import { EmptyState } from "./EmptyState";
 import { SearchInput } from "./SearchInput";
 
 export interface Column<T> {
@@ -33,6 +34,8 @@ export interface DataTableProps<T> {
   filterPredicate?: (item: T, query: string) => boolean;
   cardRender?: (item: T, index: number) => React.ReactNode;
   emptyText?: string;
+  emptyActionTitle?: string;
+  onEmptyAction?: () => void;
   containerStyle?: StyleProp<ViewStyle>;
 }
 
@@ -48,6 +51,8 @@ export function DataTable<T extends Record<string, any>>({
   filterPredicate,
   cardRender,
   emptyText = "No se encontraron registros",
+  emptyActionTitle,
+  onEmptyAction,
   containerStyle,
 }: DataTableProps<T>) {
   const { width } = useWindowDimensions();
@@ -123,10 +128,14 @@ export function DataTable<T extends Record<string, any>>({
       {isMobile ? (
         <View style={styles.cardList}>
           {paginatedData.length === 0 ? (
-            <View style={styles.emptyBox}>
-              <Ionicons name="file-tray-outline" size={32} color={theme.colors.textMuted} />
-              <Text style={styles.emptyText}>{emptyText}</Text>
-            </View>
+            <EmptyState
+              icon="file-tray-outline"
+              title={emptyText}
+              description={searchQuery ? `No hay resultados para "${searchQuery}".` : undefined}
+              actionTitle={emptyActionTitle}
+              onAction={onEmptyAction}
+              containerStyle={{ borderWidth: 0, backgroundColor: "transparent", paddingVertical: 24 }}
+            />
           ) : (
             paginatedData.map((item, idx) => {
               const id = keyExtractor(item, idx);
@@ -207,10 +216,14 @@ export function DataTable<T extends Record<string, any>>({
 
             {/* Filas */}
             {paginatedData.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Ionicons name="file-tray-outline" size={32} color={theme.colors.textMuted} />
-                <Text style={styles.emptyText}>{emptyText}</Text>
-              </View>
+              <EmptyState
+                icon="file-tray-outline"
+                title={emptyText}
+                description={searchQuery ? `No hay resultados para "${searchQuery}".` : undefined}
+                actionTitle={emptyActionTitle}
+                onAction={onEmptyAction}
+                containerStyle={{ borderWidth: 0, backgroundColor: "transparent", paddingVertical: 28 }}
+              />
             ) : (
               paginatedData.map((item, idx) => {
                 const id = keyExtractor(item, idx);

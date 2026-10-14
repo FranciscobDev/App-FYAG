@@ -13,6 +13,7 @@ import { theme } from "@/core/theme";
 import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { EmptyState } from "@/components/common/EmptyState";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { QrScannerModal } from "@/components/common/QrScannerModal";
 import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
@@ -155,7 +156,12 @@ export const WarehouseDashboard: React.FC<WarehouseDashboardProps> = ({ onNaviga
         </View>
 
         {criticalStock.length === 0 ? (
-          <Text style={styles.emptyNote}>Todo el stock se encuentra sobre el mínimo requerido.</Text>
+          <EmptyState
+            icon="shield-checkmark-outline"
+            title="Stock en niveles óptimos"
+            description="Todos los insumos se encuentran por sobre el umbral mínimo de seguridad."
+            containerStyle={{ borderWidth: 0, paddingVertical: 16 }}
+          />
         ) : (
           criticalStock.slice(0, 4).map((p) => (
             <View key={p.sku} style={styles.criticalItemRow}>
@@ -188,7 +194,12 @@ export const WarehouseDashboard: React.FC<WarehouseDashboardProps> = ({ onNaviga
         </View>
 
         {approvedForDispatch.length === 0 ? (
-          <Text style={styles.emptyNote}>No hay solicitudes aprobadas esperando entrega.</Text>
+          <EmptyState
+            icon="checkmark-done-circle-outline"
+            title="Sin despachos pendientes"
+            description="No hay solicitudes aprobadas esperando retiro en este momento."
+            containerStyle={{ borderWidth: 0, paddingVertical: 16 }}
+          />
         ) : (
           approvedForDispatch.map((req) => (
             <View key={req.id} style={styles.approvedCard}>

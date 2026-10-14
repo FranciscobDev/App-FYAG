@@ -15,6 +15,7 @@ import { theme } from "@/core/theme";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -483,8 +484,16 @@ export const ReturnsScreen: React.FC = () => {
             Monitoreo en vivo de materiales devueltos desde faena hacia bodega central.
           </Text>
 
-          {returnOrders.map((ret) => {
-            const isTransit = ret.status === "en_transito";
+          {returnOrders.length === 0 ? (
+            <EmptyState
+              icon="return-down-back-outline"
+              title="Sin devoluciones registradas"
+              description="No hay devoluciones de materiales registradas desde faenas hacia bodega."
+              containerStyle={{ marginVertical: 20 }}
+            />
+          ) : (
+            returnOrders.map((ret) => {
+              const isTransit = ret.status === "en_transito";
             return (
               <Card key={ret.id} variant="default" style={styles.historyCard}>
                 <View style={styles.historyTop}>
@@ -567,7 +576,8 @@ export const ReturnsScreen: React.FC = () => {
                 )}
               </Card>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 
@@ -597,8 +607,16 @@ export const ReturnsScreen: React.FC = () => {
             />
           </View>
 
-          {filteredTransitReturns.map((ret) => {
-            const isTransit = ret.status === "en_transito";
+          {filteredTransitReturns.length === 0 ? (
+            <EmptyState
+              icon="car-outline"
+              title="Sin devoluciones en tránsito"
+              description="Actualmente no hay retornos pendientes de ingreso físico en bodega."
+              containerStyle={{ marginVertical: 20 }}
+            />
+          ) : (
+            filteredTransitReturns.map((ret) => {
+              const isTransit = ret.status === "en_transito";
             return (
               <Card
                 key={ret.id}
@@ -667,7 +685,8 @@ export const ReturnsScreen: React.FC = () => {
                 )}
               </Card>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 
@@ -698,8 +717,25 @@ export const ReturnsScreen: React.FC = () => {
             )}
           </View>
 
-          {supplierReturns.map((sRet) => {
-            const isResolved = sRet.status === "resuelta";
+          {supplierReturns.length === 0 ? (
+            <EmptyState
+              icon="cube-outline"
+              title="Sin devoluciones a proveedores"
+              description="No se registran devoluciones activas a proveedores por garantías o fallas."
+              actionTitle={currentRole !== "technician" ? "+ Devolver a Proveedor" : undefined}
+              onAction={
+                currentRole !== "technician"
+                  ? () => {
+                      setSupRetError("");
+                      setNewSupplierReturnModal(true);
+                    }
+                  : undefined
+              }
+              containerStyle={{ marginVertical: 20 }}
+            />
+          ) : (
+            supplierReturns.map((sRet) => {
+              const isResolved = sRet.status === "resuelta";
             return (
               <Card key={sRet.id} variant="default" style={styles.supplierRetCard}>
                 <View style={styles.supRetTop}>
@@ -774,7 +810,8 @@ export const ReturnsScreen: React.FC = () => {
                 )}
               </Card>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 

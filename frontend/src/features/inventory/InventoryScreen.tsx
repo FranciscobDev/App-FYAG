@@ -20,6 +20,7 @@ import {
   Button,
   Card,
   ConfirmDialog,
+  EmptyState,
   ExportButton,
   Input,
   ModalView,
@@ -128,6 +129,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   const [formIsBulk, setFormIsBulk] = useState(false);
   const [formContainerCapacity, setFormContainerCapacity] = useState("100");
   const [formError, setFormError] = useState("");
+  const [showAdvancedProductOptions, setShowAdvancedProductOptions] = useState(false);
 
   const filteredProducts = products.filter((p) => {
     const q = searchQuery.toLowerCase().trim();
@@ -149,6 +151,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
     setFormIsBulk(false);
     setFormContainerCapacity("100");
     setFormError("");
+    setShowAdvancedProductOptions(false);
     setNewProductModal(true);
   };
 
@@ -166,6 +169,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
     setFormIsBulk(Boolean(prod.isBulk));
     setFormContainerCapacity(String(prod.containerCapacity || 100));
     setFormError("");
+    setShowAdvancedProductOptions(Boolean(prod.isBulk || prod.barcode || prod.defaultSupplier));
     setNewProductModal(true);
   };
 
@@ -784,9 +788,23 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
             )}
           </View>
 
-          {filteredProducts.map((p) => {
-            const isLowStock = p.stock <= p.minStock;
-            return (
+          {filteredProducts.length === 0 ? (
+            <EmptyState
+              icon="cube-outline"
+              title="No se encontraron insumos"
+              description={
+                searchQuery
+                  ? `No existen coincidencias para "${searchQuery}".`
+                  : "No hay insumos registrados en el catálogo de inventario."
+              }
+              actionTitle={currentRole === "admin" ? "+ Nuevo Insumo" : undefined}
+              onAction={currentRole === "admin" ? handleOpenNewProduct : undefined}
+              containerStyle={{ marginVertical: 20 }}
+            />
+          ) : (
+            filteredProducts.map((p) => {
+              const isLowStock = p.stock <= p.minStock;
+              return (
               <Card
                 key={p.sku}
                 variant={isLowStock ? "outlined" : "default"}
@@ -871,7 +889,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
                 </View>
               </Card>
             );
-          })}
+          })
+        )}
         </ScrollView>
       )}
 
@@ -941,10 +960,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
           </View>
 
           {filteredCardex.length === 0 ? (
-            <Card variant="outlined" style={{ padding: 24, alignItems: "center" }}>
-              <Ionicons name="document-text-outline" size={32} color={theme.colors.textMuted} />
-              <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>No hay movimientos para este filtro.</Text>
-            </Card>
+            <EmptyState
+              icon="swap-horizontal-outline"
+              title="Sin movimientos registrados"
+              description="No se registran movimientos de cardex para los filtros seleccionados."
+              containerStyle={{ marginVertical: 20 }}
+            />
           ) : (
             filteredCardex.map((item) => (
               <Card key={item.id} variant="outlined" style={styles.cardexCard}>
@@ -1379,10 +1400,14 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
 
           {/* Historial de Mermas */}
           {wasteRecords.length === 0 ? (
-            <Card variant="outlined" style={{ padding: 24, alignItems: "center" }}>
-              <Ionicons name="shield-checkmark-outline" size={32} color={theme.colors.ok} />
-              <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>No hay registros de merma.</Text>
-            </Card>
+            <EmptyState
+              icon="shield-checkmark-outline"
+              title="Sin mermas registradas"
+              description="No se han registrado bajas de inventario por daño o pérdida."
+              actionTitle="Registrar Merma"
+              onAction={handleOpenWasteModal}
+              containerStyle={{ marginVertical: 20 }}
+            />
           ) : (
             wasteRecords.map((w) => (
               <Card key={w.id} variant="outlined" style={styles.wasteCard}>
@@ -1710,6 +1735,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
           )}
         </View>
 
+        {/* 1. INFORMACIÓN BÁSICA */}
+        <Text style={styles.formSectionHeading}>1. Información Básica</Text>
         <Input
           label="Nombre del Insumo"
           value={formName}
@@ -1738,29 +1765,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
           ))}
         </View>
 
-        {/* Flag de producto a granel */}
-        <TouchableOpacity
-          onPress={() => setFormIsBulk(!formIsBulk)}
-          style={styles.bulkCheckRow}
-        >
-          <Ionicons
-            name={formIsBulk ? "checkbox" : "square-outline"}
-            size={20}
-            color={formIsBulk ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={styles.bulkCheckTxt}>Insumo a granel (admite 3 decimales y contenedor)</Text>
-        </TouchableOpacity>
-
-        {formIsBulk && (
-          <Input
-            label="Capacidad Nominal del Contenedor / Carrete"
-            value={formContainerCapacity}
-            onChangeText={setFormContainerCapacity}
-            keyboardType="numeric"
-            placeholder="100"
-          />
-        )}
-
+        {/* 2. CONTROL DE EXISTENCIAS */}
+        <Text style={styles.formSectionHeading}>2. Control de Existencias</Text>
         {!editingProduct && (
           <Input
             label="Stock Inicial Disponible"
@@ -1770,37 +1776,80 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
             placeholder="0"
           />
         )}
-
-        <View style={styles.formRowTwo}>
-          <Input
-            label="Stock Mínimo"
-            value={formMinStock}
-            onChangeText={setFormMinStock}
-            keyboardType="numeric"
-            containerStyle={{ flex: 1, marginRight: 8 }}
-          />
-          <Input
-            label="Cantidad Reposición"
-            value={formRestock}
-            onChangeText={setFormRestock}
-            keyboardType="numeric"
-            containerStyle={{ flex: 1 }}
-          />
-        </View>
-
         <Input
-          label="Proveedor Predeterminado"
-          value={formSupplier}
-          onChangeText={setFormSupplier}
-          placeholder="Ej: ElectroChile SpA"
+          label="Stock Mínimo de Alerta"
+          value={formMinStock}
+          onChangeText={setFormMinStock}
+          keyboardType="numeric"
+          placeholder="10"
         />
 
-        <Input
-          label="Código de Barras / QR (Opcional)"
-          value={formBarcode}
-          onChangeText={setFormBarcode}
-          placeholder="Ej: 7801234567890"
-        />
+        {/* 3. MÁS OPCIONES (PLEGABLE) */}
+        <TouchableOpacity
+          onPress={() => setShowAdvancedProductOptions(!showAdvancedProductOptions)}
+          style={styles.advancedOptionsToggle}
+          activeOpacity={0.7}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons
+              name={showAdvancedProductOptions ? "chevron-up" : "chevron-down"}
+              size={16}
+              color={theme.colors.primary}
+              style={{ marginRight: 6 }}
+            />
+            <Text style={styles.advancedOptionsToggleText}>
+              {showAdvancedProductOptions
+                ? "Ocultar opciones avanzadas"
+                : "Más opciones (Proveedor, Reposición, Granel, Código de barras)"}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {showAdvancedProductOptions && (
+          <View style={styles.advancedOptionsBox}>
+            <Input
+              label="Cantidad Sugerida de Reposición"
+              value={formRestock}
+              onChangeText={setFormRestock}
+              keyboardType="numeric"
+              placeholder="50"
+            />
+            <Input
+              label="Proveedor Predeterminado"
+              value={formSupplier}
+              onChangeText={setFormSupplier}
+              placeholder="Ej: ElectroChile SpA"
+            />
+            <Input
+              label="Código de Barras / QR (Opcional)"
+              value={formBarcode}
+              onChangeText={setFormBarcode}
+              placeholder="Ej: 7801234567890"
+            />
+
+            <TouchableOpacity
+              onPress={() => setFormIsBulk(!formIsBulk)}
+              style={styles.bulkCheckRow}
+            >
+              <Ionicons
+                name={formIsBulk ? "checkbox" : "square-outline"}
+                size={20}
+                color={formIsBulk ? theme.colors.primary : theme.colors.textMuted}
+              />
+              <Text style={styles.bulkCheckTxt}>Insumo a granel (admite 3 decimales y contenedor)</Text>
+            </TouchableOpacity>
+
+            {formIsBulk && (
+              <Input
+                label="Capacidad Nominal del Contenedor / Carrete"
+                value={formContainerCapacity}
+                onChangeText={setFormContainerCapacity}
+                keyboardType="numeric"
+                placeholder="100"
+              />
+            )}
+          </View>
+        )}
 
         {Boolean(formError) && <Text style={styles.errorText}>{formError}</Text>}
 
@@ -3420,5 +3469,36 @@ const styles = StyleSheet.create({
   kitItemFormSku: {
     fontSize: 10,
     color: theme.colors.textMuted,
+  },
+  formSectionHeading: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: "600",
+    color: theme.colors.primaryDark,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  advancedOptionsToggle: {
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.md,
+    marginVertical: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  advancedOptionsToggleText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+    color: theme.colors.primaryDark,
+  },
+  advancedOptionsBox: {
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+    marginBottom: theme.spacing.md,
   },
 });

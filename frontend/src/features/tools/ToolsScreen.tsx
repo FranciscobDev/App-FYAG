@@ -16,6 +16,7 @@ import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -305,8 +306,33 @@ export const ToolsScreen: React.FC = () => {
       {/* ========================================================================= */}
       {/* LISTA DE HERRAMIENTAS Y RESALTADO DE MANTENCIÓN VENCIDA                  */}
       {/* ========================================================================= */}
-      {filteredTools.map((t) => {
-        const daysLeft = getDaysUntilMaintenance(t.nextMaintenanceDate);
+      {filteredTools.length === 0 ? (
+        <EmptyState
+          icon="construct-outline"
+          title="No se encontraron herramientas"
+          description={
+            searchQuery
+              ? `No existen coincidencias para "${searchQuery}".`
+              : "No hay herramientas ni maquinarias registradas en este estado."
+          }
+          actionTitle={currentRole !== "technician" ? "+ Alta Herramienta" : undefined}
+          onAction={
+            currentRole !== "technician"
+              ? () => {
+                  setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
+                  setToolSerial("");
+                  setToolName("");
+                  setToolModel("");
+                  setToolError("");
+                  setNewToolModal(true);
+                }
+              : undefined
+          }
+          containerStyle={{ marginVertical: 20 }}
+        />
+      ) : (
+        filteredTools.map((t) => {
+          const daysLeft = getDaysUntilMaintenance(t.nextMaintenanceDate);
         const isRetired = t.status === "dada_de_baja";
         const isOverdue = !isRetired && daysLeft <= 0;
         const isNearDue = !isRetired && daysLeft > 0 && daysLeft <= 5;
@@ -483,7 +509,8 @@ export const ToolsScreen: React.FC = () => {
             </View>
           </Card>
         );
-      })}
+      })
+    )}
 
       {/* ========================================================================= */}
       {/* 1. MODAL: ALTA DE NUEVA HERRAMIENTA                                       */}
@@ -494,6 +521,8 @@ export const ToolsScreen: React.FC = () => {
         title="Alta de Herramienta / Maquinaria"
         subtitle="Registro de equipo patrimonial y control de mantención preventiva"
       >
+        {/* 1. IDENTIFICACIÓN DEL EQUIPO */}
+        <Text style={styles.formSectionHeading}>1. Identificación del Equipo</Text>
         <Input
           label="Código Interno Único"
           value={toolCode}
@@ -534,6 +563,8 @@ export const ToolsScreen: React.FC = () => {
           />
         </View>
 
+        {/* 2. CONTROL DE MANTENCIÓN */}
+        <Text style={styles.formSectionHeading}>2. Control de Mantención Preventiva</Text>
         <Input
           label="Frecuencia Mantención Preventiva (Días)"
           value={toolDaysFreq}
@@ -1453,5 +1484,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingVertical: 20,
     fontStyle: "italic",
+  },
+  formSectionHeading: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: "600",
+    color: theme.colors.primaryDark,
+    marginTop: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

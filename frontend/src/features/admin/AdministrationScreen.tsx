@@ -19,6 +19,7 @@ import { Role, SystemUser, AuditLogEntry, SystemParamItem, BackupLogItem, Cardex
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Input } from "@/components/common/Input";
 import { NumberInput } from "@/components/common/NumberInput";
 import { ModalView } from "@/components/common/ModalView";
@@ -524,9 +525,14 @@ export const AdministrationScreen: React.FC = () => {
             </View>
 
             {filteredUsers.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>No se encontraron usuarios con los filtros aplicados.</Text>
-              </View>
+              <EmptyState
+                icon="people-outline"
+                title="Sin usuarios coincidentes"
+                description="No se encontraron usuarios con los filtros de rol o búsqueda aplicados."
+                actionTitle="+ Nuevo Usuario"
+                onAction={() => setNewUserModalOpen(true)}
+                containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
+              />
             ) : (
               filteredUsers.map((u) => {
                 const isOnlyAdmin = !u.disabled && u.role === "admin" && activeAdminsCount <= 1;
@@ -867,9 +873,12 @@ export const AdministrationScreen: React.FC = () => {
             </View>
 
             {filteredAuditLogs.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>No existen eventos de auditoría para los filtros seleccionados.</Text>
-              </View>
+              <EmptyState
+                icon="shield-outline"
+                title="Sin registros de auditoría"
+                description="No existen eventos de auditoría inmutable para los filtros seleccionados."
+                containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
+              />
             ) : (
               filteredAuditLogs.map((log) => (
                 <View key={log.id} style={styles.auditRow}>
@@ -1137,9 +1146,12 @@ export const AdministrationScreen: React.FC = () => {
             </View>
 
             {filteredCardex.length === 0 ? (
-              <View style={styles.emptyBox}>
-                <Text style={styles.emptyText}>No hay movimientos registrados para el filtro seleccionado.</Text>
-              </View>
+              <EmptyState
+                icon="bar-chart-outline"
+                title="Sin movimientos registrados"
+                description="No hay movimientos en el cardex para el filtro y rango de fechas seleccionado."
+                containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
+              />
             ) : (
               filteredCardex.map((item) => (
                 <View key={item.id} style={styles.tableRow}>
