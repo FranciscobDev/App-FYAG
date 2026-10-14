@@ -14,6 +14,7 @@ import { theme } from "@/core/theme";
 import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { EmptyState } from "@/components/common/EmptyState";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { ProgressBar } from "@/components/common/ProgressBar";
 import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
@@ -105,11 +106,12 @@ export const TechnicianProjectsView: React.FC<TechnicianProjectsViewProps> = ({
 
       {/* 3. LISTADO DE TARJETAS DE PROYECTO */}
       {filteredProjects.length === 0 ? (
-        <Card variant="outlined" style={styles.emptyCard}>
-          <Ionicons name="folder-open-outline" size={44} color={theme.colors.textLight} />
-          <Text style={styles.emptyTitle}>Sin proyectos en este estado</Text>
-          <Text style={styles.emptySub}>No tienes obras activas que coincidan con el filtro seleccionado.</Text>
-        </Card>
+        <EmptyState
+          icon="folder-open-outline"
+          title="Sin proyectos en este estado"
+          description="No tienes obras o faenas activas asignadas que coincidan con el filtro."
+          containerStyle={{ marginVertical: 20 }}
+        />
       ) : (
         filteredProjects.map((proj) => {
           // Semáforo de fecha límite:

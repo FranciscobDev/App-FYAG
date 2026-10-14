@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -84,6 +85,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   } = useApp();
 
   const { currentRole, user } = useAuth();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 900;
 
   const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
 
@@ -369,6 +372,17 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
   );
 
   const activeDispatchReq = materialRequests.find((r) => r.id === selectedDispatchReqId);
+
+  const selectedDispatchTech = technicians.find((t) => t.rut === dispatchTechRut);
+  const dispatchItemsEntries = Object.entries(dispatchQuantities).filter(([_, qty]) => qty > 0);
+  const totalUnitsToDispatch = dispatchItemsEntries.reduce((sum, [_, qty]) => sum + qty, 0);
+  const pendingUnitsInReq = activeDispatchReq
+    ? activeDispatchReq.items.reduce(
+        (sum, it) => sum + Math.max(0, it.quantity - (it.deliveredQuantity || 0)),
+        0
+      )
+    : 0;
+  const isFullDispatch = totalUnitsToDispatch >= pendingUnitsInReq && totalUnitsToDispatch > 0;
 
   const handleSelectDispatchReq = (reqId: string) => {
     setSelectedDispatchReqId(reqId);
@@ -824,11 +838,25 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
                       <Badge label="Deshabilitado" tone="mute" size="sm" style={{ marginLeft: 6 }} />
                     )}
                   </View>
-                  {isLowStock ? (
-                    <Badge label="Stock Crítico (≤ Mín)" tone="danger" size="sm" />
-                  ) : (
-                    <Badge label="Stock Normal" tone="ok" size="sm" />
-                  )}
+                  <View style={styles.stockStatusIndicator}>
+                    <View
+                      style={[
+                        styles.stockStatusDot,
+                        { backgroundColor: isLowStock ? theme.colors.danger : theme.colors.ok },
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.stockStatusNum,
+                        { color: isLowStock ? theme.colors.danger : theme.colors.okDark },
+                      ]}
+                    >
+                      {p.stock} {p.unit}
+                    </Text>
+                    {isLowStock && (
+                      <Text style={styles.stockStatusMin}>(mín {p.minStock})</Text>
+                    )}
+                  </View>
                 </View>
 
                 <Text style={styles.productName}>{p.name}</Text>
@@ -1058,7 +1086,21 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
             />
           </View>
 
-          {filteredRequests.map((req) => (
+          {filteredRequests.length === 0 ? (
+            <EmptyState
+              icon="document-text-outline"
+              title="Sin solicitudes"
+              description={
+                reqTab === "todas"
+                  ? "No se registran solicitudes de materiales en el sistema."
+                  : `No hay solicitudes con estado "${reqTab}".`
+              }
+              actionTitle={currentRole !== "warehouse" ? "Nueva Solicitud" : undefined}
+              onAction={currentRole !== "warehouse" ? handleOpenNewRequest : undefined}
+              containerStyle={{ marginVertical: 32 }}
+            />
+          ) : (
+            filteredRequests.map((req) => (
             <Card key={req.id} variant="elevated" style={styles.requestItemCard}>
               <View style={styles.reqItemTop}>
                 <View>
@@ -1184,7 +1226,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
                 )}
               </View>
             </Card>
-          ))}
+          ))
+          )}
         </ScrollView>
       )}
 
@@ -1224,12 +1267,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
           {/* Selector de Solicitud Aprobada */}
           <Text style={styles.formSectionLabel}>Seleccionar Solicitud Aprobada a Despachar:</Text>
           {approvedRequests.length === 0 ? (
-            <Card variant="outlined" style={{ padding: 24, alignItems: "center", marginBottom: 16 }}>
-              <Ionicons name="checkmark-done-circle-outline" size={32} color={theme.colors.ok} />
-              <Text style={{ marginTop: 8, color: theme.colors.textMuted }}>
-                No hay solicitudes pendientes de despacho físico en bodega.
-              </Text>
-            </Card>
+            <EmptyState
+              icon="checkmark-done-circle-outline"
+              title="Sin solicitudes pendientes de despacho"
+              description="No hay solicitudes pendientes de despacho físico en bodega."
+              containerStyle={{ marginVertical: 20 }}
+            />
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
               {approvedRequests.map((r) => {
@@ -1256,123 +1299,170 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
             </ScrollView>
           )}
 
-          {/* Formulario de Despacho para la solicitud seleccionada */}
+          {/* Formulario y Resumen de Despacho para la solicitud seleccionada */}
           {activeDispatchReq && (
-            <Card variant="elevated" style={styles.dispatchFormCard}>
-              <View style={styles.dispatchFormHeader}>
-                <View>
-                  <Text style={styles.dispatchFormTitle}>
-                    Despacho de Solicitud: {activeDispatchReq.code}
-                  </Text>
-                  <Text style={styles.dispatchFormSubtitle}>
-                    Proyecto: {activeDispatchReq.projectName} ({activeDispatchReq.projectCode})
-                  </Text>
+            <View style={[styles.dispatchLayoutContainer, isDesktop && styles.dispatchLayoutDesktop]}>
+              <Card variant="elevated" style={[styles.dispatchFormCard, isDesktop && styles.dispatchFormCardDesktop]}>
+                <View style={styles.dispatchFormHeader}>
+                  <View>
+                    <Text style={styles.dispatchFormTitle}>
+                      Despacho de Solicitud: {activeDispatchReq.code}
+                    </Text>
+                    <Text style={styles.dispatchFormSubtitle}>
+                      Proyecto: {activeDispatchReq.projectName} ({activeDispatchReq.projectCode})
+                    </Text>
+                  </View>
+                  <Badge label="Aprobada" tone="ok" size="sm" />
                 </View>
-                <Badge label="Aprobada" tone="ok" size="sm" />
-              </View>
 
-              {/* Selector de Técnico que retira */}
-              <Text style={styles.formSectionLabel}>Técnico que retira en bodega:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {technicians.map((t) => (
-                  <TouchableOpacity
-                    key={t.rut}
-                    onPress={() => setDispatchTechRut(t.rut)}
-                    style={[
-                      styles.techSelectChip,
-                      dispatchTechRut === t.rut && styles.techSelectChipActive,
-                    ]}
-                  >
-                    <Text
+                {/* Selector de Técnico que retira */}
+                <Text style={styles.formSectionLabel}>1. Técnico que retira en bodega:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {technicians.map((t) => (
+                    <TouchableOpacity
+                      key={t.rut}
+                      onPress={() => setDispatchTechRut(t.rut)}
                       style={[
-                        styles.techSelectName,
-                        dispatchTechRut === t.rut && styles.techSelectNameActive,
+                        styles.techSelectChip,
+                        dispatchTechRut === t.rut && styles.techSelectChipActive,
                       ]}
                     >
-                      {t.name}
-                    </Text>
-                    <Text style={styles.techSelectRut}>RUT: {t.rut}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* Tabla de ítems a despachar */}
-              <Text style={styles.formSectionLabel}>Ítems y Cantidades a Entregar Ahora:</Text>
-              {activeDispatchReq.items.map((it) => {
-                const prod = products.find((p) => p.sku === it.sku);
-                const delivered = it.deliveredQuantity || 0;
-                const pending = Math.max(0, it.quantity - delivered);
-                const currentDispatch = dispatchQuantities[it.sku] || 0;
-                const isOverStock = prod ? currentDispatch > prod.stock : false;
-                const isOverPending = currentDispatch > pending;
-
-                return (
-                  <View key={it.sku} style={styles.dispatchItemRow}>
-                    <View style={{ flex: 1.5, marginRight: 8 }}>
-                      <Text style={styles.dispatchItemName}>{it.name}</Text>
-                      <Text style={styles.dispatchItemSku}>SKU: {it.sku}</Text>
-                      <Text style={styles.dispatchItemStock}>
-                        Stock disponible: {prod ? prod.stock : 0} {it.unit}
-                      </Text>
-
-                      {/* Si es a granel, mostrar barra de capacidad restante */}
-                      {prod?.isBulk && prod.containerCapacity && (
-                        <View style={{ marginTop: 6 }}>
-                          <ProgressBar
-                            value={Math.max(0, prod.stock - currentDispatch)}
-                            max={prod.containerCapacity}
-                            height={5}
-                            showPercentage
-                            label={`Contenedor restante: ${(Math.max(0, prod.stock - currentDispatch)).toFixed(3)} ${it.unit}`}
-                          />
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Columnas solicitada, entregada, pendiente */}
-                    <View style={styles.dispatchColStats}>
-                      <Text style={styles.statLine}>Sol: {it.quantity} {it.unit}</Text>
-                      <Text style={styles.statLine}>Entr: {delivered} {it.unit}</Text>
-                      <Text style={[styles.statLine, { color: theme.colors.primary, fontWeight: "bold" }]}>
-                        Pend: {pending} {it.unit}
-                      </Text>
-                    </View>
-
-                    {/* Input de cantidad a entregar ahora */}
-                    <View style={styles.dispatchInputBox}>
-                      <Text style={styles.dispatchInputLabel}>A entregar:</Text>
-                      <TextInput
-                        value={String(currentDispatch)}
-                        onChangeText={(val) => handleDispatchQtyChange(it.sku, val)}
-                        keyboardType="decimal-pad"
+                      <Text
                         style={[
-                          styles.dispatchQtyInput,
-                          (isOverStock || isOverPending) && { borderColor: theme.colors.danger },
+                          styles.techSelectName,
+                          dispatchTechRut === t.rut && styles.techSelectNameActive,
                         ]}
-                      />
-                      <Text style={styles.dispatchUnitLabel}>{it.unit}</Text>
+                      >
+                        {t.name}
+                      </Text>
+                      <Text style={styles.techSelectRut}>RUT: {t.rut}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                {/* Tabla de ítems a despachar */}
+                <Text style={styles.formSectionLabel}>2. Ítems y Cantidades a Entregar Ahora:</Text>
+                {activeDispatchReq.items.map((it) => {
+                  const prod = products.find((p) => p.sku === it.sku);
+                  const delivered = it.deliveredQuantity || 0;
+                  const pending = Math.max(0, it.quantity - delivered);
+                  const currentDispatch = dispatchQuantities[it.sku] || 0;
+                  const isOverStock = prod ? currentDispatch > prod.stock : false;
+                  const isOverPending = currentDispatch > pending;
+
+                  return (
+                    <View key={it.sku} style={styles.dispatchItemRow}>
+                      <View style={{ flex: 1.5, marginRight: 8 }}>
+                        <Text style={styles.dispatchItemName}>{it.name}</Text>
+                        <Text style={styles.dispatchItemSku}>SKU: {it.sku}</Text>
+                        <Text style={styles.dispatchItemStock}>
+                          Stock disponible: {prod ? prod.stock : 0} {it.unit}
+                        </Text>
+
+                        {/* Si es a granel, mostrar barra de capacidad restante */}
+                        {prod?.isBulk && prod.containerCapacity && (
+                          <View style={{ marginTop: 6 }}>
+                            <ProgressBar
+                              value={Math.max(0, prod.stock - currentDispatch)}
+                              max={prod.containerCapacity}
+                              height={5}
+                              showPercentage
+                              label={`Contenedor restante: ${(Math.max(0, prod.stock - currentDispatch)).toFixed(3)} ${it.unit}`}
+                            />
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Columnas solicitada, entregada, pendiente */}
+                      <View style={styles.dispatchColStats}>
+                        <Text style={styles.statLine}>Sol: {it.quantity} {it.unit}</Text>
+                        <Text style={styles.statLine}>Entr: {delivered} {it.unit}</Text>
+                        <Text style={[styles.statLine, { color: theme.colors.primary, fontWeight: "bold" }]}>
+                          Pend: {pending} {it.unit}
+                        </Text>
+                      </View>
+
+                      {/* Input de cantidad a entregar ahora */}
+                      <View style={styles.dispatchInputBox}>
+                        <Text style={styles.dispatchInputLabel}>A entregar:</Text>
+                        <TextInput
+                          value={String(currentDispatch)}
+                          onChangeText={(val) => handleDispatchQtyChange(it.sku, val)}
+                          keyboardType="decimal-pad"
+                          style={[
+                            styles.dispatchQtyInput,
+                            (isOverStock || isOverPending) && { borderColor: theme.colors.danger },
+                          ]}
+                        />
+                        <Text style={styles.dispatchUnitLabel}>{it.unit}</Text>
+                      </View>
                     </View>
+                  );
+                })}
+              </Card>
+
+              {/* Resumen lateral (en desktop) o inferior (en móvil) de Despacho */}
+              <Card variant="outlined" style={[styles.dispatchSummaryCard, isDesktop && styles.dispatchSummaryCardDesktop]}>
+                <View style={styles.summaryCardHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <Ionicons name="receipt-outline" size={18} color={theme.colors.primary} style={{ marginRight: 6 }} />
+                    <Text style={styles.summaryCardTitle}>Resumen de Egreso</Text>
                   </View>
-                );
-              })}
-
-              {Boolean(dispatchError) && (
-                <View style={styles.errorNoticeCard}>
-                  <Ionicons name="alert-circle" size={16} color={theme.colors.danger} />
-                  <Text style={styles.errorNoticeTxt}>{dispatchError}</Text>
+                  <Badge
+                    label={isFullDispatch ? "Despacho Total" : totalUnitsToDispatch > 0 ? "Despacho Parcial" : "Sin unidades"}
+                    tone={isFullDispatch ? "ok" : totalUnitsToDispatch > 0 ? "info" : "mute"}
+                    size="sm"
+                  />
                 </View>
-              )}
 
-              {/* Botón de confirmar despacho */}
-              <View style={styles.dispatchBtnRow}>
+                <View style={styles.summaryCardBody}>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Proyecto Destino:</Text>
+                    <Text style={styles.summaryVal}>{activeDispatchReq.projectName}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Solicitado por:</Text>
+                    <Text style={styles.summaryVal}>{activeDispatchReq.technicianName}</Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Retira en Bodega:</Text>
+                    <Text style={[styles.summaryVal, { fontWeight: "600", color: theme.colors.primary }]}>
+                      {selectedDispatchTech?.name || "Seleccionar técnico..."}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryDivider} />
+                  <View style={styles.summaryRow}>
+                    <Text style={styles.summaryLabel}>Ítems con entrega:</Text>
+                    <Text style={styles.summaryVal}>
+                      {dispatchItemsEntries.length} de {activeDispatchReq.items.length}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryRow}>
+                    <Text style={[styles.summaryLabel, { fontWeight: "bold", color: theme.colors.text }]}>Total a Despachar:</Text>
+                    <Text style={[styles.summaryVal, { fontWeight: "bold", fontSize: 16, color: theme.colors.primary }]}>
+                      {totalUnitsToDispatch} unidades
+                    </Text>
+                  </View>
+                </View>
+
+                {Boolean(dispatchError) && (
+                  <View style={styles.errorNoticeCard}>
+                    <Ionicons name="alert-circle" size={16} color={theme.colors.danger} />
+                    <Text style={styles.errorNoticeTxt}>{dispatchError}</Text>
+                  </View>
+                )}
+
                 <Button
                   title="Confirmar y Registrar Egreso"
                   variant="primary"
                   icon="checkmark-done-outline"
+                  size="md"
+                  disabled={totalUnitsToDispatch === 0 || !dispatchTechRut}
                   onPress={handleInitiateDispatch}
+                  style={{ marginTop: 14 }}
                 />
-              </View>
-            </Card>
+              </Card>
+            </View>
           )}
         </ScrollView>
       )}
@@ -2368,7 +2458,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
       <ConfirmDialog
         visible={confirmDispatchVisible}
         title="Confirmar Egreso Físico en Bodega"
-        message="Atención: El egreso es definitivo y no se puede editar una vez registrado. Se rebajará el stock físico y se generará movimiento permanente en Cardex. ¿Desea proceder?"
+        message={`¿Confirmar el despacho de ${totalUnitsToDispatch} unidades para el proyecto ${activeDispatchReq?.projectName || ""}? El egreso es definitivo y rebajará el stock físico en Cardex.`}
         confirmLabel="Confirmar Despacho"
         cancelLabel="Revisar"
         variant="warning"
@@ -2821,8 +2911,67 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     marginTop: 2,
   },
+  dispatchLayoutContainer: {
+    gap: theme.spacing.md,
+  },
+  dispatchLayoutDesktop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
   dispatchFormCard: {
     marginBottom: theme.spacing.md,
+  },
+  dispatchFormCardDesktop: {
+    flex: 1.6,
+    marginBottom: 0,
+  },
+  dispatchSummaryCard: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.border,
+  },
+  dispatchSummaryCardDesktop: {
+    flex: 1,
+    maxWidth: 380,
+  },
+  summaryCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  summaryCardTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
+  },
+  summaryCardBody: {
+    gap: 8,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  summaryLabel: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+  },
+  summaryVal: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.text,
+    maxWidth: "60%",
+    textAlign: "right",
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderLight,
+    marginVertical: 4,
   },
   dispatchFormHeader: {
     flexDirection: "row",
@@ -3500,5 +3649,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.borderLight,
     marginBottom: theme.spacing.md,
+  },
+  stockStatusIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  stockStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  stockStatusNum: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+  },
+  stockStatusMin: {
+    fontSize: 10,
+    color: theme.colors.danger,
+    marginLeft: 4,
+    fontWeight: "500",
   },
 });

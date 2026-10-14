@@ -103,7 +103,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
     }
 
     if (!forcedRole && (!email.trim() || !password.trim())) {
-      showToast("Por favor ingresa tu correo y contraseña", "danger");
+      showToast("Por favor, ingresa tu correo electrónico y contraseña para acceder al sistema.", "warn");
       return;
     }
 
@@ -130,9 +130,9 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
 
           if (nextAttempts >= 3) {
             setLockoutSeconds(900); // 15 minutos
-            showToast("3 intentos fallidos. Cuenta bloqueada por 15 minutos.", "danger");
+            showToast("Por seguridad de tu cuenta, el acceso se ha bloqueado temporalmente por 15 minutos tras 3 intentos.", "danger");
           } else {
-            showToast(`Contraseña incorrecta. Intento ${nextAttempts} de 3 antes del bloqueo.`, "warn");
+            showToast(`Las credenciales no coinciden. Te queda(n) ${3 - nextAttempts} intento(s) antes del bloqueo preventivo.`, "warn");
           }
           return;
         }
@@ -170,7 +170,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
   // Manejar Recuperar Contraseña
   const handleSendRecovery = () => {
     if (!recoveryEmail.trim()) {
-      showToast("Ingresa un correo electrónico para continuar", "warn");
+      showToast("Por favor, ingresa tu correo electrónico corporativo para continuar.", "warn");
       return;
     }
 
@@ -724,13 +724,13 @@ const styles = StyleSheet.create({
   },
   card: {
     width: "100%",
-    maxWidth: 480,
+    maxWidth: 440,
     padding: theme.spacing.xl,
     borderRadius: theme.radius.xl,
     backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    ...theme.shadows.lg,
+    ...theme.shadows.md,
   },
   cardTitle: {
     fontSize: theme.fontSize.lg,
