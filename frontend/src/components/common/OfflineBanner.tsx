@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.md,
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
-    borderWidth: 1.5,
+    borderWidth: theme.borders.thin,
   },
   bannerOnline: {
     backgroundColor: theme.colors.okLight,
@@ -96,11 +96,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: theme.fontSize.xs,
+    fontWeight: theme.fontWeight.semibold,
   },
   subtitle: {
-    fontSize: 10,
+    fontSize: theme.fontSize.caption,
     color: theme.colors.textMuted,
     marginTop: 1,
   },
@@ -110,9 +110,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.full,
   },
   badgeText: {
-    color: "#ffffff",
+    color: theme.colors.textInverse,
     fontSize: 9,
-    fontWeight: "800",
+    fontWeight: theme.fontWeight.semibold,
     letterSpacing: 0.5,
   },
 });

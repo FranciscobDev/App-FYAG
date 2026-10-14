@@ -35,7 +35,7 @@ export const ForbiddenState: React.FC<ForbiddenStateProps> = ({
       {onAction && (
         <Button
           title={actionTitle}
-          variant="outline"
+          variant="secondary"
           size="sm"
           icon="swap-horizontal-outline"
           onPress={onAction}
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.fontSize.base,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.warnDark,
     textAlign: "center",
   },

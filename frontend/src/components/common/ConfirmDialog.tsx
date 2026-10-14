@@ -71,7 +71,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <View style={styles.actionsRow}>
             <Button
               title={cancelLabel}
-              variant="outline"
+              variant="secondary"
               size="md"
               onPress={onCancel}
               disabled={loading}
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.fontSize.lg,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     textAlign: "center",
     marginBottom: 8,

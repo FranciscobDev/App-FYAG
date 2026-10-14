@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
     zIndex: 9999,
     flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1.5,
+    borderWidth: theme.borders.thin,
     borderRadius: theme.radius.lg,
     padding: theme.spacing.md,
     ...theme.shadows.md,
@@ -159,12 +159,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     marginBottom: 2,
   },
   message: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "500",
+    fontWeight: theme.fontWeight.medium,
     lineHeight: 18,
   },
   closeBtn: {

@@ -182,15 +182,17 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: theme.radius.full,
     marginRight: 6,
     marginBottom: 4,
+    minHeight: theme.touchTargets.minHeight, // Mínimo 44 px accesible
+    justifyContent: "center",
   },
   presetText: {
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textSecondary,
   },
   pickersRow: {

@@ -39,5 +39,7 @@ export * from "./Switch";
 export * from "./SyncStatusChip";
 export * from "./Tabs";
 export * from "./Toast";
+export * from "./Spinner";
+export * from "./Tooltip";
 export * from "./SessionTimeoutModal";
 export * from "./ScreenStateWrapper";

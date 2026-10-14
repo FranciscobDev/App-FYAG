@@ -143,15 +143,19 @@ const styles = StyleSheet.create({
   backBtn: {
     marginRight: 10,
     padding: 6,
+    minWidth: theme.touchTargets.minHeight, // Mínimo 44 px accesible
+    minHeight: theme.touchTargets.minHeight,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
   },
   titleCol: {
     flex: 1,
   },
   title: {
     fontSize: theme.fontSize.lg,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     lineHeight: 26,
   },

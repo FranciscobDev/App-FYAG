@@ -52,7 +52,7 @@ export const Checkbox: React.FC<CheckboxProps> = ({
           ]}
         >
           {checked && (
-            <Ionicons name="checkmark" size={16} color="#ffffff" />
+            <Ionicons name="checkmark" size={16} color={theme.colors.textInverse} />
           )}
         </View>
 
@@ -127,11 +127,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: theme.fontSize.base,
     color: theme.colors.text,
-    fontWeight: "500",
+    fontWeight: theme.fontWeight.medium,
   },
   labelChecked: {
     color: theme.colors.primaryDark,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
   },
   description: {
     fontSize: theme.fontSize.xs,

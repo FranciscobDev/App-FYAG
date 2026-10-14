@@ -302,15 +302,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: theme.colors.card,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.borderDark,
     borderRadius: theme.radius.md,
     minHeight: theme.touchTargets.minHeight, // Mínimo 44 px
     paddingHorizontal: theme.spacing.md,
   },
   triggerError: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff5f5",
+    backgroundColor: theme.colors.dangerLight,
   },
   triggerDisabled: {
     backgroundColor: theme.colors.surfaceAlt,

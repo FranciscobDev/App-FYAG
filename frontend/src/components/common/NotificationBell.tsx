@@ -298,6 +298,8 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
+    minWidth: theme.touchTargets.minHeight, // Mínimo 44 px accesible
+    minHeight: theme.touchTargets.minHeight,
   },
   badge: {
     position: "absolute",
@@ -312,9 +314,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   badgeText: {
-    color: "#ffffff",
+    color: theme.colors.textInverse,
     fontSize: 9,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
   },
   backdrop: {
     flex: 1,
@@ -348,7 +350,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: theme.fontSize.sm,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     marginLeft: 6,
   },
@@ -360,8 +362,8 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   counterText: {
-    fontSize: 10,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.primaryDark,
   },
   filterBar: {
@@ -381,6 +383,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    minHeight: theme.touchTargets.minHeight,
+    justifyContent: "center",
   },
   filterChipActive: {
     backgroundColor: theme.colors.primary,
@@ -388,12 +392,12 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textSecondary,
   },
   filterChipTextActive: {
-    color: "#ffffff",
-    fontWeight: "bold",
+    color: theme.colors.textInverse,
+    fontWeight: theme.fontWeight.semibold,
   },
   list: {
     maxHeight: 360,
@@ -416,7 +420,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   itemRowUnread: {
-    backgroundColor: "#f0fdfa",
+    backgroundColor: theme.colors.primaryLight,
   },
   unreadIndicatorBox: {
     width: 10,

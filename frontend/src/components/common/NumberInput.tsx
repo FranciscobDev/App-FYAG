@@ -201,20 +201,20 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: theme.colors.card,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.borderDark,
     borderRadius: theme.radius.md,
     minHeight: theme.touchTargets.minHeight, // Mínimo 44 px
     paddingLeft: theme.spacing.md,
   },
   inputFocused: {
     borderColor: theme.colors.primary,
-    backgroundColor: "#f0f9ff",
+    backgroundColor: theme.colors.primaryLight,
     ...theme.shadows.sm,
   },
   inputError: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff5f5",
+    backgroundColor: theme.colors.dangerLight,
   },
   inputDisabled: {
     backgroundColor: theme.colors.surfaceAlt,

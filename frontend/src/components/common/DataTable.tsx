@@ -329,7 +329,7 @@ const styles = StyleSheet.create({
   },
   tableHeaderText: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     color: theme.colors.textMuted,
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   tableRowAlt: {
-    backgroundColor: "#fafcff",
+    backgroundColor: theme.colors.surfaceAlt,
   },
   rowSelected: {
     backgroundColor: theme.colors.primaryLight,
@@ -419,8 +419,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   pageBtn: {
-    width: 36,
-    height: 36,
+    minWidth: theme.touchTargets.minHeight, // Mínimo 44 px accesible
+    minHeight: theme.touchTargets.minHeight,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.card,
     borderWidth: 1,
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   },
   pageIndicator: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
     marginHorizontal: 12,
   },

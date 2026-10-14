@@ -196,7 +196,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: theme.radius.full,
     marginRight: 8,
-    minHeight: 38,
+    minHeight: theme.touchTargets.minHeight, // Mínimo 44 px accesible
   },
   chipActive: {
     backgroundColor: theme.colors.primaryLight,
@@ -210,12 +210,12 @@ const styles = StyleSheet.create({
   },
   chipLabel: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textSecondary,
   },
   chipLabelActive: {
     color: theme.colors.primaryDark,
-    fontWeight: "700",
+    fontWeight: theme.fontWeight.semibold,
   },
   countBadge: {
     backgroundColor: theme.colors.border,
@@ -228,11 +228,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   countText: {
-    fontSize: 10,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.textMuted,
   },
   countTextActive: {
-    color: "#ffffff",
+    color: theme.colors.textInverse,
   },
 });

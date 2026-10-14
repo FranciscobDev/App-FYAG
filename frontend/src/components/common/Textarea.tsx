@@ -123,19 +123,19 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     backgroundColor: theme.colors.card,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
+    borderWidth: theme.borders.thin,
+    borderColor: theme.colors.borderDark,
     borderRadius: theme.radius.md,
     padding: theme.spacing.md,
   },
   inputFocused: {
     borderColor: theme.colors.primary,
-    backgroundColor: "#f0f9ff",
+    backgroundColor: theme.colors.primaryLight,
     ...theme.shadows.sm,
   },
   inputError: {
     borderColor: theme.colors.danger,
-    backgroundColor: "#fff5f5",
+    backgroundColor: theme.colors.dangerLight,
   },
   input: {
     fontSize: theme.fontSize.base,

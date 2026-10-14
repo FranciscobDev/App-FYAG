@@ -172,11 +172,11 @@ const styles = StyleSheet.create({
   optLabel: {
     fontSize: theme.fontSize.base,
     color: theme.colors.text,
-    fontWeight: "500",
+    fontWeight: theme.fontWeight.medium,
   },
   optLabelSelected: {
     color: theme.colors.primaryDark,
-    fontWeight: "600",
+    fontWeight: theme.fontWeight.semibold,
   },
   optDesc: {
     fontSize: theme.fontSize.xs,
@@ -190,6 +190,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.dangerDark,
     marginTop: 4,
-    fontWeight: "500",
+    fontWeight: theme.fontWeight.medium,
   },
 });

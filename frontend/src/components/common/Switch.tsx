@@ -60,7 +60,7 @@ export const Switch: React.FC<SwitchProps> = ({
           false: theme.colors.borderDark,
           true: theme.colors.primary,
         }}
-        thumbColor={value ? "#ffffff" : "#f8fafc"}
+        thumbColor={value ? theme.colors.textInverse : theme.colors.background}
         ios_backgroundColor={theme.colors.borderDark}
       />
     </TouchableOpacity>
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: theme.fontSize.base,
     color: theme.colors.text,
-    fontWeight: "500",
+    fontWeight: theme.fontWeight.medium,
   },
   description: {
     fontSize: theme.fontSize.xs,

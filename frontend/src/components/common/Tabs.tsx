@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: theme.colors.primaryDark,
-    fontWeight: "700",
+    fontWeight: theme.fontWeight.semibold,
   },
   badge: {
     paddingHorizontal: 6,
@@ -150,8 +150,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
   },
   badgeText: {
-    fontSize: 10,
-    fontWeight: "bold",
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.semibold,
   },
   badgeTextActive: {
     color: theme.colors.primaryDark,

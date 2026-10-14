@@ -35,7 +35,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
       {onRetry && (
         <Button
           title={retryTitle}
-          variant="outline"
+          variant="secondary"
           size="sm"
           icon="refresh-outline"
           onPress={onRetry}
