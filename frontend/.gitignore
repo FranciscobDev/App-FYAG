@@ -1,41 +1,74 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# =============================================================================
+# FYAG Frontend - .gitignore (Expo & React Native)
+# =============================================================================
 
-# dependencies
+# Dependencias
 node_modules/
+.pnp
+.pnp.js
 
-# Expo
+# Expo & Bundler
 .expo/
-dist/
 web-build/
-expo-env.d.ts
+dist/
+dist-ssr/
+build/
+out/
+.metro-health-check*
 
-# Native
+# Carpetas nativas generadas por prebuild
+/ios
+/android
 .kotlin/
 *.orig.*
+
+# Claves y certificados de firma
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
+*.pem
+*.cer
 
-# Metro
-.metro-health-check*
+# Binarios
+*.apk
+*.aab
+*.ipa
 
-# debug
+# Logs y depuración
+logs/
+*.log
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+pnpm-debug.*
 
-# macOS
-.DS_Store
-*.pem
-
-# local env files
+# Variables de entorno locales
+.env
 .env*.local
+*.env
+*.env.*
+!.env.example
 
-# typescript
+# Caches y compilación
+.cache/
+.eslintcache
+.stylelintcache
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# Archivos de respaldo locales
+*.bak
+*.backup
+*.tmp
+*~
+
+# Sistema Operativo y Editores
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
