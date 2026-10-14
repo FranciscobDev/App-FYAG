@@ -422,21 +422,45 @@ export const ProjectsScreen: React.FC = () => {
 
                 return (
                   <View style={styles.financialSummaryBlock}>
-                    <View style={styles.semaphoreBanner}>
-                      <Badge
-                        label={`Semáforo de Costo: ${pct}% • ${semText}`}
-                        tone={semTone}
-                        size="md"
-                      />
+                    <View style={styles.detailSemaphoreRow}>
+                      <Text style={styles.subTitle}>Ejecución y Margen Estimado</Text>
+                      <View style={styles.semaphoreIndicatorPill}>
+                        <View
+                          style={[
+                            styles.semaphoreDot,
+                            {
+                              backgroundColor:
+                                semTone === "ok"
+                                  ? theme.colors.ok
+                                  : semTone === "warn"
+                                  ? theme.colors.warn
+                                  : theme.colors.danger,
+                            },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.semaphorePctText,
+                            {
+                              color:
+                                semTone === "ok"
+                                  ? theme.colors.ok
+                                  : semTone === "warn"
+                                  ? theme.colors.warnDark
+                                  : theme.colors.danger,
+                            },
+                          ]}
+                        >
+                          {pct}% ejecutado
+                        </Text>
+                      </View>
                     </View>
 
                     <ProgressBar
                       value={selectedProject.costReal}
                       max={selectedProject.budget}
-                      height={8}
-                      showPercentage
+                      height={4}
                       semaforo
-                      label="Ejecución de Costo Real vs Presupuesto Total"
                     />
 
                     <View style={styles.metricsGrid}>
@@ -555,7 +579,12 @@ export const ProjectsScreen: React.FC = () => {
                   </View>
                 </>
               ) : (
-                <Text style={styles.emptyNote}>No hay egresos de material registrados para este proyecto.</Text>
+                <EmptyState
+                  icon="cube-outline"
+                  title="Sin egresos de material"
+                  description="No hay egresos de material registrados para este proyecto."
+                  containerStyle={{ marginVertical: 16 }}
+                />
               )}
             </Card>
           )}
@@ -594,7 +623,12 @@ export const ProjectsScreen: React.FC = () => {
                   </View>
                 </>
               ) : (
-                <Text style={styles.emptyNote}>No hay jornadas registradas para este proyecto.</Text>
+                <EmptyState
+                  icon="time-outline"
+                  title="Sin jornadas registradas"
+                  description="No hay jornadas laborales registradas para este proyecto."
+                  containerStyle={{ marginVertical: 16 }}
+                />
               )}
             </Card>
           )}
@@ -898,21 +932,48 @@ export const ProjectsScreen: React.FC = () => {
                     />
                   </View>
 
-                  {/* Semáforo de Costo */}
-                  <View style={styles.costSemaphoreBar}>
-                    <View style={styles.costInfoRow}>
-                      <Text style={styles.costLabel}>Costo Real vs Presupuesto:</Text>
-                      <Text style={[styles.costNumbers, semTone === "danger" && { color: theme.colors.danger }]}>
-                        {formatCLP(proj.costReal)} / {formatCLP(proj.budget)} ({pct}%) • {semText}
+                  {/* Semáforo de Costo como indicador pequeño */}
+                  <View style={styles.costSemaphoreRow}>
+                    <View style={styles.costSemaphoreLeft}>
+                      <Text style={styles.costLabel}>Costo:</Text>
+                      <Text style={styles.costValuesTxt}>
+                        {formatCLP(proj.costReal)}{" "}
+                        <Text style={{ color: theme.colors.textMuted, fontWeight: "normal" }}>
+                          / {formatCLP(proj.budget)}
+                        </Text>
                       </Text>
                     </View>
 
-                    <ProgressBar
-                      value={proj.costReal}
-                      max={proj.budget}
-                      height={6}
-                      semaforo
-                    />
+                    <View style={styles.semaphoreIndicatorPill}>
+                      <View
+                        style={[
+                          styles.semaphoreDot,
+                          {
+                            backgroundColor:
+                              semTone === "ok"
+                                ? theme.colors.ok
+                                : semTone === "warn"
+                                ? theme.colors.warn
+                                : theme.colors.danger,
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.semaphorePctText,
+                          {
+                            color:
+                              semTone === "ok"
+                                ? theme.colors.ok
+                                : semTone === "warn"
+                                ? theme.colors.warnDark
+                                : theme.colors.danger,
+                          },
+                        ]}
+                      >
+                        {pct}%
+                      </Text>
+                    </View>
                   </View>
 
                   <View style={styles.cardBottomRow}>
@@ -1268,22 +1329,54 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
   },
-  costSemaphoreBar: {
-    marginTop: theme.spacing.sm,
-  },
-  costInfoRow: {
+  costSemaphoreRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 4,
+    alignItems: "center",
+    marginTop: theme.spacing.sm,
+    paddingTop: theme.spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+  },
+  costSemaphoreLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
   costLabel: {
-    fontSize: 10,
+    fontSize: theme.fontSize.xs,
     color: theme.colors.textMuted,
   },
-  costNumbers: {
+  costValuesTxt: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "bold",
+    fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
+  },
+  semaphoreIndicatorPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  semaphoreDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  semaphorePctText: {
+    fontSize: 11,
+    fontWeight: theme.fontWeight.bold,
+  },
+  detailSemaphoreRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.sm,
   },
   cardBottomRow: {
     flexDirection: "row",
