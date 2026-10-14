@@ -10,9 +10,16 @@ const dateFmt = new Intl.DateTimeFormat("es-CL", {
   year: "numeric",
 });
 
-export const formatCLP = (value: number) => clp.format(value);
-export const formatNumber = (value: number) => num.format(value);
-export const formatDate = (value: Date | string) => dateFmt.format(new Date(value));
+export const formatCLP = (value: number) => clp.format(value || 0);
+export const formatNumber = (value: number) => num.format(value || 0);
+export const formatDate = (value: Date | string) => {
+  if (!value) return "-";
+  try {
+    return dateFmt.format(new Date(value));
+  } catch {
+    return String(value);
+  }
+};
 
 /** Calcula el dígito verificador (módulo 11) de un RUT chileno. */
 export function rutCheckDigit(body: number): string {
@@ -32,6 +39,7 @@ export function makeRut(body: number): string {
 }
 
 export function isValidRut(rut: string): boolean {
+  if (!rut) return false;
   const clean = rut.replace(/[.\s-]/g, "").toUpperCase();
   if (clean.length < 2) return false;
   const body = Number(clean.slice(0, -1));

@@ -226,9 +226,20 @@ export interface DashboardAlert {
   actionLabel?: string;
 }
 
+export interface ReturnOrderItem {
+  sku: string;
+  name: string;
+  quantityRetrieved: number; // Cantidad retirada
+  quantityUsed: number; // Cantidad usada en terreno
+  quantityReturned: number; // Sobrante devuelto (retirado - usado)
+  quantityReceivedReal?: number; // Cantidad física real verificada por bodeguero
+  unit: string;
+}
+
 export interface ReturnOrder {
   id: string;
   code: string;
+  projectId?: string;
   projectCode: string;
   projectName: string;
   technicianName: string;
@@ -237,6 +248,79 @@ export interface ReturnOrder {
   summary: string;
   date: string;
   status: "en_transito" | "recibida";
+  items?: ReturnOrderItem[];
+  discrepancyNote?: string;
+  receivedAt?: string;
+  receivedBy?: string;
+}
+
+export interface SupplierReturn {
+  id: string;
+  code: string; // DEV-PROV-2026-001
+  supplierId: string;
+  supplierName: string;
+  supplierRut: string;
+  productSku: string;
+  productName: string;
+  quantity: number;
+  unit: string;
+  reason: string; // Motivo de devolución
+  dispatchGuideNumber: string; // N° de guía de despacho
+  date: string;
+  status: "pendiente_resolucion" | "resuelta";
+  resolutionType?: "nota_credito" | "reemplazo_producto" | "reembolso";
+  resolutionNotes?: string;
+  resolvedAt?: string;
+}
+
+export type ToolStatus = "disponible" | "asignada" | "en_mantencion" | "dada_de_baja";
+
+export interface ToolLoanHistory {
+  id: string;
+  toolId: string;
+  technicianRut: string;
+  technicianName: string;
+  projectCode: string;
+  projectName: string;
+  loanDate: string;
+  returnDate?: string;
+  initialCondition: string;
+  returnCondition?: "bueno" | "danado"; // Bueno / Dañado
+  returnNotes?: string;
+}
+
+export interface ToolMaintenanceRecord {
+  id: string;
+  toolId: string;
+  date: string;
+  type: "preventiva" | "correctiva";
+  workshop: string;
+  cost: number;
+  description: string;
+  nextMaintenanceDate: string;
+  performedBy: string;
+}
+
+export interface Tool {
+  id: string;
+  code: string; // HER-001
+  serialNumber: string;
+  name: string;
+  category: string;
+  brand: string;
+  model: string;
+  status: ToolStatus;
+  currentTechnicianRut?: string;
+  currentTechnicianName?: string;
+  currentProjectCode?: string;
+  currentProjectName?: string;
+  currentLoanDate?: string;
+  purchaseDate: string;
+  maintenanceFrequencyDays: number;
+  lastMaintenanceDate?: string;
+  nextMaintenanceDate: string; // YYYY-MM-DD
+  loans?: ToolLoanHistory[];
+  maintenances?: ToolMaintenanceRecord[];
 }
 
 export interface PendingReceipt {
@@ -346,6 +430,137 @@ export interface User {
   email: string;
   initials: string;
   role: Role;
+}
+
+export interface ServiceSheetPhoto {
+  id: string;
+  name: string;
+  sizeMb: number; // Máximo 5 MB por foto
+  uri?: string;
+  timestamp: string;
+}
+
+export interface ServiceSheetChecklistItem {
+  id: string;
+  label: string;
+  completed: boolean;
+}
+
+export interface ServiceSheet {
+  id: string;
+  code: string; // HS-2026-001
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  date: string;
+  technicianRut: string;
+  technicianName: string;
+  checklist: ServiceSheetChecklistItem[];
+  photos: ServiceSheetPhoto[];
+  receptorName: string;
+  receptorRut?: string;
+  syncStatus: "pendiente" | "sincronizado";
+  hasVersionConflict?: boolean;
+  conflictDetails?: {
+    serverModifiedAt: string;
+    serverAuthor: string;
+    serverNotes: string;
+    localModifiedAt: string;
+    localNotes: string;
+  };
+  notes?: string;
+}
+
+export interface TechnicianProgressReport {
+  id: string;
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  date: string;
+  progressPct: number; // 0–100
+  comments: string;
+  materialsUsed: {
+    sku: string;
+    name: string;
+    quantity: number;
+    unit: string;
+  }[]; // Nota: no genera egreso en inventario
+  syncStatus: "pendiente" | "sincronizado";
+}
+
+export interface TechnicianWorkHour {
+  id: string;
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  date: string; // YYYY-MM-DD
+  hours: number; // En bloques de 0.5 (máx 24 por día)
+  description: string;
+  createdAt: string; // ISO string
+  syncStatus: "pendiente" | "sincronizado";
+}
+
+export interface SystemUser {
+  id: string;
+  rut: string;
+  name: string;
+  email: string;
+  role: Role;
+  disabled: boolean;
+  createdAt: string;
+  lastLogin?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  userRut: string;
+  userName: string;
+  userRole: Role;
+  entity: "Insumos" | "Proyectos" | "OrdenesCompra" | "Facturas" | "Herramientas" | "Usuarios" | "Parametros" | "Respaldos" | "Privacidad";
+  action: "creacion" | "modificacion" | "deshabilitacion" | "cierre" | "ajuste" | "anonimizacion";
+  fieldChanged: string;
+  oldValue: string | number;
+  newValue: string | number;
+  description: string;
+}
+
+export interface SystemParamItem {
+  id: string;
+  group: "seguridad" | "inventario" | "costos" | "alertas";
+  name: string;
+  description: string;
+  value: string | number;
+  defaultValue: string | number;
+  min?: number;
+  max?: number;
+  unit?: string;
+  type: "number" | "text" | "boolean";
+}
+
+export interface BackupLogItem {
+  id: string;
+  timestamp: string;
+  filename: string;
+  sizeMb: number;
+  status: "exito" | "fallo";
+  errorReason?: string;
+  type: "automatico" | "manual";
+  restorationTestedAt?: string;
+  restorationStatus?: "exito" | "pendiente" | "fallo";
+}
+
+export interface NotificationDetail {
+  id: string;
+  title: string;
+  message: string;
+  date: string;
+  type: "costo" | "stock" | "plazo" | "solicitud" | "sistema";
+  severity: "danger" | "warn" | "info" | "ok";
+  read: boolean;
+  relatedEntityType?: "proyecto" | "solicitud" | "insumo" | "orden_compra" | "herramienta";
+  relatedEntityId?: string;
+  relatedEntityLabel?: string;
 }
 
 

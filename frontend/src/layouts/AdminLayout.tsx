@@ -1,438 +1,778 @@
-import { useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  ChevronDown,
-  Clock,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  ShieldAlert,
-  User as UserIcon,
-  X,
-} from "lucide-react";
-import { NavLink, Outlet, useNavigate } from "react-router";
-import { ROLES } from "@/core/roles";
-import { useAuth } from "@/features/auth/AuthContext";
-import { useSessionTimeout } from "@/features/auth/SessionTimeoutProvider";
-import { NotificationBell, type AppNotification } from "@/components/shared/NotificationBell";
-import { useDismiss } from "@/hooks/useDismiss";
-import { useToast } from "@/components/overlay/Toast";
-import { ConfirmDialog } from "@/components/overlay/ConfirmDialog";
-import { PRODUCTS, PROJECTS, TECHNICIANS } from "@/data/mock";
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "@/context/AuthContext";
+import { ROLES, ROLE_ORDER } from "@/core/roles";
+import { theme } from "@/core/theme";
+import { Role } from "@/core/types";
 
-const INITIAL_NOTIFICATIONS: AppNotification[] = [
+// Componentes
+import { Badge } from "@/components/common/Badge";
+import { NotificationBell } from "@/components/common/NotificationBell";
+import { SearchInput } from "@/components/common/SearchInput";
+import { SessionTimeoutModal } from "@/components/common/SessionTimeoutModal";
+import { DesignSystemScreen } from "@/features/design-system/DesignSystemScreen";
+
+// Pantallas administradas
+import { AdminDashboard } from "@/features/dashboard/AdminDashboard";
+import { InventoryScreen } from "@/features/inventory/InventoryScreen";
+import { PurchasingScreen } from "@/features/purchasing/PurchasingScreen";
+import { ProjectsScreen } from "@/features/projects/ProjectsScreen";
+import { ToolsScreen } from "@/features/tools/ToolsScreen";
+import { ReturnsScreen } from "@/features/returns/ReturnsScreen";
+import { AdministrationScreen } from "@/features/admin/AdministrationScreen";
+
+export type AdminRoute =
+  | "dashboard"
+  | "inventario"
+  | "devoluciones"
+  | "compras"
+  | "facturas"
+  | "proyectos"
+  | "herramientas"
+  | "administracion";
+
+interface NavGroup {
+  title: string;
+  items: {
+    id: AdminRoute;
+    label: string;
+    icon: keyof typeof Ionicons.glyphMap;
+  }[];
+}
+
+const ADMIN_GROUPS: NavGroup[] = [
   {
-    id: "notif-1",
-    title: "Stock crítico: Gas R410A",
-    description: "Quedan 6 cilindros en Bodega Central (mínimo 8).",
-    time: "hace 12 min",
-    read: false,
+    title: "OPERACIÓN",
+    items: [
+      { id: "dashboard", label: "Dashboard General", icon: "grid-outline" },
+      { id: "inventario", label: "Inventario & Cardex", icon: "cube-outline" },
+      { id: "devoluciones", label: "Devoluciones Faena", icon: "return-down-back-outline" },
+    ],
   },
   {
-    id: "notif-2",
-    title: "Nueva solicitud de materiales",
-    description: "Alejandro Rojas solicita 12 disyuntores para OB-2026-014.",
-    time: "hace 45 min",
-    read: false,
+    title: "COMPRAS",
+    items: [
+      { id: "compras", label: "Órdenes de Compra", icon: "cart-outline" },
+      { id: "facturas", label: "Facturas Proveedor", icon: "receipt-outline" },
+    ],
   },
   {
-    id: "notif-3",
-    title: "Avance reportado: 62 %",
-    description: "Edificio Los Aromos finalizó cableado en piso 4.",
-    time: "hace 2 h",
-    read: true,
+    title: "PROYECTOS",
+    items: [
+      { id: "proyectos", label: "Proyectos y Obras", icon: "business-outline" },
+    ],
+  },
+  {
+    title: "ADMINISTRACIÓN",
+    items: [
+      { id: "herramientas", label: "Control Herramientas", icon: "construct-outline" },
+      { id: "administracion", label: "Sistema & Auditoría", icon: "settings-outline" },
+    ],
   },
 ];
 
-export function AdminLayout() {
-  const { user, signOut } = useAuth();
-  const { simulateTimeoutWarning } = useSessionTimeout();
-  const cfg = ROLES.admin;
-  const navigate = useNavigate();
-  const toast = useToast();
+export interface AdminLayoutProps {
+  onLogout?: () => void;
+}
 
-  const [collapsed, setCollapsed] = useState(false);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
+  const { user, currentRole, setRole } = useAuth();
+  const { width } = useWindowDimensions();
+
+  // En pantallas medianas o escritorio se inicia expandido, en pantallas angostas colapsado
+  const [collapsed, setCollapsed] = useState(width < 900);
+  const [activeRoute, setActiveRoute] = useState<AdminRoute>("dashboard");
+
+  // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [designModalOpen, setDesignModalOpen] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLDivElement>(null);
+  // Modal de Aviso por Expiración de Sesión (30 min de inactividad, solo web)
+  const [sessionTimeoutOpen, setSessionTimeoutOpen] = useState(false);
 
-  useDismiss(userMenuRef, userMenuOpen, () => setUserMenuOpen(false));
-  useDismiss(searchRef, searchOpen, () => setSearchOpen(false));
+  // Temporizador de inactividad (30 min = 1.800.000 ms) en web
+  useEffect(() => {
+    const INACTIVITY_MS = 30 * 60 * 1000;
+    let timer: ReturnType<typeof setTimeout>;
 
-  // Resultados de búsqueda global
-  const searchResults = searchQuery.trim()
-    ? {
-        products: PRODUCTS.filter(
-          (p) =>
-            p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.sku.toLowerCase().includes(searchQuery.toLowerCase()),
-        ).slice(0, 3),
-        projects: PROJECTS.filter(
-          (p) =>
-            p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.code.toLowerCase().includes(searchQuery.toLowerCase()),
-        ).slice(0, 3),
-        technicians: TECHNICIANS.filter((t) =>
-          t.name.toLowerCase().includes(searchQuery.toLowerCase()),
-        ).slice(0, 2),
-      }
-    : null;
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        setSessionTimeoutOpen(true);
+      }, INACTIVITY_MS);
+    };
 
-  const totalResultsCount =
-    (searchResults?.products.length ?? 0) +
-    (searchResults?.projects.length ?? 0) +
-    (searchResults?.technicians.length ?? 0);
+    resetTimer();
+
+    // Solo para navegador web: escuchar actividad del usuario
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart"];
+      events.forEach((evt) => {
+        window.addEventListener(evt, resetTimer, { passive: true });
+      });
+
+      return () => {
+        clearTimeout(timer);
+        events.forEach((evt) => {
+          window.removeEventListener(evt, resetTimer);
+        });
+      };
+    }
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Renderizar la pantalla correspondiente
+  const renderContent = () => {
+    switch (activeRoute) {
+      case "dashboard":
+        return <AdminDashboard onNavigate={(tab) => setActiveRoute(tab as AdminRoute)} />;
+      case "inventario":
+        return <InventoryScreen />;
+      case "compras":
+        return <PurchasingScreen initialTab="ordenes" />;
+      case "facturas":
+        return <PurchasingScreen initialTab="facturas" />;
+      case "proyectos":
+        return <ProjectsScreen />;
+      case "herramientas":
+        return <ToolsScreen />;
+      case "devoluciones":
+        return <ReturnsScreen />;
+      case "administracion":
+        return <AdministrationScreen />;
+      default:
+        return <AdminDashboard onNavigate={(tab) => setActiveRoute(tab as AdminRoute)} />;
+    }
+  };
 
   return (
-    <div className="flex min-h-screen bg-canvas">
-      {/* ─── SIDEBAR COLAPSABLE ─── */}
-      <aside
-        data-surface="dark"
-        className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-brand-900 text-white transition-all duration-300 lg:flex ${
-          collapsed ? "w-20" : "w-64"
-        }`}
-      >
-        {/* Encabezado del sidebar */}
-        <div className="flex h-16 items-center justify-between border-b border-white/10 px-4">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/15 font-bold shadow-xs">
-              FY
-            </div>
-            {!collapsed && (
-              <div className="min-w-0">
-                <p className="font-bold leading-none tracking-tight">FYAG</p>
-                <p className="text-xs text-white/60 truncate">Administración</p>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            aria-label={collapsed ? "Expandir barra lateral" : "Colapsar barra lateral"}
-            title={collapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
-            className="grid size-9 place-items-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
+    <View style={styles.container}>
+      {/* ========================================================================= */}
+      {/* 1. TOPBAR ESCRITORIO                                                      */}
+      {/* ========================================================================= */}
+      <View style={styles.topbar}>
+        {/* Lado Izquierdo: Toggle Sidebar + Logo */}
+        <View style={styles.topLeft}>
+          <TouchableOpacity
+            onPress={() => setCollapsed(!collapsed)}
+            style={styles.toggleBtn}
+            accessibilityLabel={collapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
+            accessibilityRole="button"
           >
-            {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
-        </div>
-
-        {/* Navegación por grupos */}
-        <nav
-          className="flex-1 overflow-y-auto px-3 py-4 space-y-6"
-          aria-label="Menú principal de administración"
-        >
-          {cfg.groups?.map((group) => (
-            <div key={group.name} className="space-y-1">
-              {!collapsed && (
-                <p className="px-3 pb-1 text-[0.6875rem] font-bold uppercase tracking-wider text-white/45">
-                  {group.name}
-                </p>
-              )}
-              {collapsed && <div className="my-2 border-t border-white/10" />}
-
-              {group.items.map(({ to, label, icon: Icon, badge }) => (
-                <NavLink
-                  key={to}
-                  to={`${cfg.basePath}/${to}`}
-                  end={to === ""}
-                  title={collapsed ? label : undefined}
-                  className={({ isActive }) =>
-                    `group flex items-center gap-3 rounded-xl py-2.5 text-sm font-medium transition ${
-                      collapsed ? "justify-center px-0" : "px-3"
-                    } ${
-                      isActive
-                        ? "bg-white text-brand-900 shadow-sm"
-                        : "text-white/80 hover:bg-white/10 hover:text-white"
-                    }`
-                  }
-                >
-                  <Icon size={19} className="shrink-0" aria-hidden="true" />
-                  {!collapsed && <span className="flex-1 truncate">{label}</span>}
-                  {!collapsed && badge !== undefined && (
-                    <span className="rounded-full bg-warn px-2 py-0.5 text-xs font-bold text-white leading-none">
-                      {badge}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        {/* Pie del sidebar con mini usuario */}
-        <div className="border-t border-white/10 p-3">
-          <div
-            className={`flex items-center gap-3 rounded-xl bg-white/5 p-2 ${
-              collapsed ? "justify-center" : ""
-            }`}
-          >
-            <div className="grid size-9 shrink-0 place-items-center rounded-full bg-brand-50 text-sm font-bold text-brand-900">
-              {user?.initials ?? "JM"}
-            </div>
-            {!collapsed && (
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold">{user?.name}</p>
-                <p className="truncate text-[0.6875rem] text-white/60">{user?.rut}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* ─── ÁREA PRINCIPAL ─── */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        {/* ─── TOPBAR ─── */}
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-ink-200 bg-white px-4 lg:px-8 shadow-xs">
-          {/* Buscador global */}
-          <div ref={searchRef} className="relative flex-1 max-w-md">
-            <div className="relative">
-              <Search
-                size={18}
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-500"
-                aria-hidden="true"
-              />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setSearchOpen(true);
-                }}
-                onFocus={() => setSearchOpen(true)}
-                placeholder="Buscar SKU, producto, obra o técnico… (Ctrl+K)"
-                className="field pl-9 pr-8 h-10 text-body-sm"
-                aria-label="Búsqueda global"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Limpiar búsqueda"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-500 hover:text-ink-900"
-                >
-                  <X size={15} />
-                </button>
-              )}
-            </div>
-
-            {/* Menú de resultados de búsqueda */}
-            {searchOpen && searchQuery.trim() && (
-              <div
-                role="region"
-                aria-label="Resultados de búsqueda global"
-                className="absolute left-0 right-0 top-full mt-1.5 rounded-2xl border border-ink-200 bg-white p-2 shadow-xl z-50 max-h-96 overflow-y-auto"
-              >
-                {totalResultsCount === 0 ? (
-                  <p className="p-4 text-center text-body-sm text-ink-500">
-                    No se encontraron coincidencias para "{searchQuery}"
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {searchResults?.products && searchResults.products.length > 0 && (
-                      <div>
-                        <p className="px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-ink-500">
-                          Productos en Inventario
-                        </p>
-                        {searchResults.products.map((p) => (
-                          <button
-                            key={p.sku}
-                            type="button"
-                            onClick={() => {
-                              navigate("/admin/inventario");
-                              setSearchOpen(false);
-                              toast({
-                                tone: "info",
-                                title: p.name,
-                                description: `SKU: ${p.sku} · Stock: ${p.stock} ${p.unit}`,
-                              });
-                            }}
-                            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-body-sm hover:bg-ink-100"
-                          >
-                            <span className="font-medium text-ink-900">{p.name}</span>
-                            <span className="font-mono text-xs text-ink-500">{p.sku}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {searchResults?.projects && searchResults.projects.length > 0 && (
-                      <div>
-                        <p className="px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-ink-500">
-                          Proyectos y Obras
-                        </p>
-                        {searchResults.projects.map((pr) => (
-                          <button
-                            key={pr.id}
-                            type="button"
-                            onClick={() => {
-                              navigate("/admin/proyectos");
-                              setSearchOpen(false);
-                            }}
-                            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-body-sm hover:bg-ink-100"
-                          >
-                            <span className="font-medium text-ink-900">{pr.name}</span>
-                            <span className="font-mono text-xs text-brand-600">{pr.code}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {searchResults?.technicians && searchResults.technicians.length > 0 && (
-                      <div>
-                        <p className="px-3 py-1 text-[0.6875rem] font-bold uppercase tracking-wider text-ink-500">
-                          Personal y Técnicos
-                        </p>
-                        {searchResults.technicians.map((t) => (
-                          <button
-                            key={t.rut}
-                            type="button"
-                            onClick={() => {
-                              navigate("/admin/tecnicos");
-                              setSearchOpen(false);
-                            }}
-                            className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-body-sm hover:bg-ink-100"
-                          >
-                            <span className="font-medium text-ink-900">{t.name}</span>
-                            <span className="text-xs text-ink-500">{t.specialty}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Acciones derechas: Notificaciones + Menú de usuario */}
-          <div className="flex items-center gap-3">
-            <NotificationBell
-              notifications={notifications}
-              onMarkAllRead={() =>
-                setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-              }
-              onSelect={(n) => {
-                toast({ tone: "info", title: n.title, description: n.description });
-              }}
+            <Ionicons
+              name={collapsed ? "menu-outline" : "chevron-back-outline"}
+              size={22}
+              color={theme.colors.text}
             />
+          </TouchableOpacity>
 
-            {/* Menú de usuario (Dropdown accesible) */}
-            <div ref={userMenuRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setUserMenuOpen(!userMenuOpen)}
-                aria-expanded={userMenuOpen}
-                aria-haspopup="menu"
-                aria-label="Abrir menú de usuario"
-                className="flex items-center gap-2.5 rounded-xl border border-ink-200 bg-white py-1.5 pl-2 pr-3 transition hover:bg-ink-100 focus-visible:ring-2 focus-visible:ring-brand-600"
+          <View style={styles.brandRow}>
+            <View style={styles.brandLogoBox}>
+              <Ionicons name="flash" size={16} color="#ffffff" />
+            </View>
+            <Text style={styles.brandName}>FYAG</Text>
+            <Badge label="ADMIN" tone="primary" size="sm" style={styles.roleBadge} />
+          </View>
+        </View>
+
+        {/* Centro: Buscador Global */}
+        <View style={styles.topCenter}>
+          <SearchInput
+            value={globalSearch}
+            onChangeText={(t) => {
+              setGlobalSearch(t);
+              if (t.trim().length > 1) setGlobalSearchOpen(true);
+            }}
+            placeholder="Buscar global por SKU, RUT, OC, Proyecto..."
+            containerStyle={styles.globalSearchBox}
+          />
+        </View>
+
+        {/* Lado Derecho: Acceso Catálogo, Notificaciones y Menú Usuario */}
+        <View style={styles.topRight}>
+          <TouchableOpacity
+            onPress={() => setDesignModalOpen(true)}
+            style={styles.designBtn}
+            accessibilityLabel="Ver Catálogo de Componentes"
+          >
+            <Ionicons name="color-palette-outline" size={16} color={theme.colors.primaryDark} />
+            <Text style={styles.designBtnText}>Componentes</Text>
+          </TouchableOpacity>
+
+          <NotificationBell
+            onNavigateToObject={(entityType) => {
+              if (entityType === "insumo" || entityType === "solicitud") {
+                setActiveRoute("inventario");
+              } else if (entityType === "proyecto") {
+                setActiveRoute("proyectos");
+              } else if (entityType === "orden_compra") {
+                setActiveRoute("compras");
+              } else if (entityType === "herramienta") {
+                setActiveRoute("herramientas");
+              } else {
+                setActiveRoute("administracion");
+              }
+            }}
+          />
+
+          {/* Menú de Usuario */}
+          <TouchableOpacity
+            onPress={() => setUserMenuOpen(true)}
+            style={styles.userMenuTrigger}
+            activeOpacity={0.8}
+            accessibilityLabel="Menú de usuario"
+          >
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{user.initials}</Text>
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+              <Text style={styles.userRoleText}>Administrador</Text>
+            </View>
+            <Ionicons name="chevron-down" size={16} color={theme.colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ========================================================================= */}
+      {/* 2. LAYOUT INFERIOR: SIDEBAR + ÁREA DE CONTENIDO                           */}
+      {/* ========================================================================= */}
+      <View style={styles.bodyWrapper}>
+        {/* SIDEBAR COLAPSABLE */}
+        <View
+          style={[
+            styles.sidebar,
+            collapsed ? styles.sidebarCollapsed : styles.sidebarExpanded,
+          ]}
+        >
+          <ScrollView
+            style={styles.sidebarScroll}
+            contentContainerStyle={styles.sidebarContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {ADMIN_GROUPS.map((group) => (
+              <View key={group.title} style={styles.navGroup}>
+                {!collapsed && (
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                )}
+
+                {group.items.map((item) => {
+                  const isActive = activeRoute === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      onPress={() => setActiveRoute(item.id)}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.navItem,
+                        collapsed && styles.navItemCollapsed,
+                        isActive && styles.navItemActive,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.label}
+                    >
+                      <Ionicons
+                        name={item.icon}
+                        size={20}
+                        color={isActive ? theme.colors.primary : theme.colors.textSecondary}
+                        style={styles.navIcon}
+                      />
+                      {!collapsed && (
+                        <Text
+                          style={[
+                            styles.navLabel,
+                            isActive && styles.navLabelActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.label}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Footer del Sidebar con info de sistema */}
+          {!collapsed && (
+            <View style={styles.sidebarFooter}>
+              <Text style={styles.footerVersion}>FYAG Sistema v2.0</Text>
+              <Text style={styles.footerStatus}>● Conectado a Servidor Central</Text>
+            </View>
+          )}
+        </View>
+
+        {/* CONTENIDO PRINCIPAL */}
+        <View style={styles.mainContent}>
+          {renderContent()}
+        </View>
+      </View>
+
+      {/* ========================================================================= */}
+      {/* 3. MODALES DE APOYO: USUARIO Y CATÁLOGO DE DISEÑO                         */}
+      {/* ========================================================================= */}
+      {/* Modal Menú de Usuario */}
+      <Modal
+        visible={userMenuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setUserMenuOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setUserMenuOpen(false)}>
+          <View style={styles.userMenuCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.userMenuHeader}>
+              <View style={styles.avatarLarge}>
+                <Text style={styles.avatarLargeText}>{user.initials}</Text>
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.userMenuName}>{user.name}</Text>
+                <Text style={styles.userMenuRut}>{user.rut}</Text>
+                <Badge label="Administrador General" tone="primary" size="sm" style={{ marginTop: 4 }} />
+              </View>
+            </View>
+
+            <View style={styles.userMenuDivider} />
+
+            <Text style={styles.userMenuSectionTitle}>Cambiar a otro rol:</Text>
+            {ROLE_ORDER.map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[
+                  styles.roleSwitchBtn,
+                  r === currentRole && styles.roleSwitchBtnCurrent,
+                ]}
+                onPress={() => {
+                  setRole(r);
+                  setUserMenuOpen(false);
+                }}
               >
-                <div className="grid size-8 place-items-center rounded-lg bg-brand-600 text-xs font-bold text-white">
-                  {user?.initials ?? "JM"}
-                </div>
-                <div className="hidden text-left sm:block">
-                  <p className="text-xs font-bold text-ink-900 leading-tight">
-                    {user?.name ?? "Javier Muñoz"}
-                  </p>
-                  <p className="text-[0.6875rem] text-ink-500">Administrador</p>
-                </div>
-                <ChevronDown size={14} className="text-ink-500" aria-hidden="true" />
-              </button>
-
-              {userMenuOpen && (
-                <div
-                  role="menu"
-                  aria-label="Opciones de usuario"
-                  className="absolute right-0 mt-2 w-64 rounded-2xl border border-ink-200 bg-white p-2 shadow-xl z-50 animate-pop"
+                <Ionicons
+                  name={r === "admin" ? "briefcase" : r === "warehouse" ? "cube" : "hammer"}
+                  size={18}
+                  color={r === currentRole ? theme.colors.primary : theme.colors.textMuted}
+                />
+                <Text
+                  style={[
+                    styles.roleSwitchText,
+                    r === currentRole && styles.roleSwitchTextCurrent,
+                  ]}
                 >
-                  <div className="border-b border-ink-100 px-3 py-2.5">
-                    <p className="text-sm font-bold text-ink-900">{user?.name}</p>
-                    <p className="font-mono text-xs text-ink-500">{user?.rut}</p>
-                    <span className="mt-1.5 inline-block rounded-md bg-brand-50 px-2 py-0.5 text-[0.6875rem] font-semibold text-brand-700">
-                      Rol: Administración General
-                    </span>
-                  </div>
+                  {ROLES[r].label}
+                </Text>
+                {r === currentRole && (
+                  <Ionicons name="checkmark" size={16} color={theme.colors.primary} />
+                )}
+              </TouchableOpacity>
+            ))}
 
-                  <div className="py-1">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        navigate("/admin/configuracion");
-                      }}
-                      className="flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-body-sm text-ink-700 hover:bg-ink-100"
-                    >
-                      <UserIcon size={16} className="text-ink-500" />
-                      <span>Preferencias de cuenta</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        navigate("/sistema-diseno");
-                      }}
-                      className="flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-body-sm text-ink-700 hover:bg-ink-100"
-                    >
-                      <ShieldAlert size={16} className="text-ink-500" />
-                      <span>Sistema de diseño</span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        simulateTimeoutWarning();
-                      }}
-                      className="flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-body-sm text-warn hover:bg-warn-soft/40"
-                    >
-                      <Clock size={16} />
-                      <span>Simular aviso inactividad (30 min)</span>
-                    </button>
-                  </div>
+            <View style={styles.userMenuDivider} />
 
-                  <div className="border-t border-ink-100 pt-1">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        setShowSignOutConfirm(true);
-                      }}
-                      className="flex min-h-10 w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-body-sm font-semibold text-danger hover:bg-danger-soft/40"
-                    >
-                      <LogOut size={16} />
-                      <span>Cerrar sesión</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
+            {/* Test Rápido Aviso Expiración 30 min (Requerimiento Paso 4) */}
+            <TouchableOpacity
+              onPress={() => {
+                setUserMenuOpen(false);
+                setSessionTimeoutOpen(true);
+              }}
+              style={styles.testSessionBtn}
+            >
+              <Ionicons name="time-outline" size={18} color={theme.colors.warnDark} />
+              <Text style={styles.testSessionText}>Aviso 30 min Inactividad (Test)</Text>
+            </TouchableOpacity>
 
-        {/* Contenido principal */}
-        <main className="min-w-0 flex-1 p-6 xl:p-8">
-          <Outlet />
-        </main>
-      </div>
+            {/* Cerrar Sesión */}
+            <TouchableOpacity
+              onPress={() => {
+                setUserMenuOpen(false);
+                if (onLogout) onLogout();
+              }}
+              style={styles.logoutBtn}
+            >
+              <Ionicons name="log-out-outline" size={18} color={theme.colors.danger} />
+              <Text style={styles.logoutText}>Cerrar Sesión / Salir</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
 
-      {/* ConfirmDialog de salida */}
-      <ConfirmDialog
-        open={showSignOutConfirm}
-        onClose={() => setShowSignOutConfirm(false)}
-        onConfirm={signOut}
-        tone="danger"
-        title="¿Deseas cerrar tu sesión?"
-        description="Se cerrará tu sesión de administrador y regresarás al selector de acceso."
-        confirmLabel="Cerrar sesión"
-        cancelLabel="Cancelar"
+      {/* Modal Pantalla Completa Sistema de Diseño */}
+      <Modal
+        visible={designModalOpen}
+        animationType="slide"
+        onRequestClose={() => setDesignModalOpen(false)}
+      >
+        <View style={styles.designModalWrapper}>
+          <View style={styles.designModalHeader}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons name="color-palette" size={20} color={theme.colors.primary} />
+              <Text style={styles.designModalTitle}>Catálogo de Componentes FYAG (Paso 1 & 2)</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setDesignModalOpen(false)}
+              style={styles.closeDesignBtn}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close" size={24} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+          <DesignSystemScreen />
+        </View>
+      </Modal>
+
+      {/* Modal de Aviso por Expiración de Sesión (30 min de inactividad, solo web) */}
+      <SessionTimeoutModal
+        visible={sessionTimeoutOpen}
+        timeoutSeconds={60}
+        onStayLoggedIn={() => setSessionTimeoutOpen(false)}
+        onLogout={() => {
+          setSessionTimeoutOpen(false);
+          if (onLogout) onLogout();
+        }}
       />
-    </div>
+    </View>
   );
-}
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  topbar: {
+    height: 64,
+    backgroundColor: theme.colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.lg,
+    zIndex: 10,
+    ...theme.shadows.sm,
+  },
+  topLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  toggleBtn: {
+    padding: 8,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    marginRight: 12,
+  },
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  brandLogoBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+  brandName: {
+    fontSize: theme.fontSize.base,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+    color: theme.colors.text,
+  },
+  roleBadge: {
+    marginLeft: 8,
+  },
+  topCenter: {
+    flex: 1,
+    maxWidth: 420,
+    marginHorizontal: 16,
+  },
+  globalSearchBox: {
+    marginBottom: 0,
+  },
+  topRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  designBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.primaryLight,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.radius.full,
+    marginRight: 12,
+  },
+  designBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.colors.primaryDark,
+    marginLeft: 4,
+  },
+  userMenuTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 14,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#ffffff",
+  },
+  userInfo: {
+    marginHorizontal: 8,
+  },
+  userName: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    maxWidth: 120,
+  },
+  userRoleText: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+  },
+  bodyWrapper: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  sidebar: {
+    backgroundColor: theme.colors.card,
+    borderRightWidth: 1,
+    borderRightColor: theme.colors.border,
+    justifyContent: "space-between",
+  },
+  sidebarExpanded: {
+    width: 240,
+  },
+  sidebarCollapsed: {
+    width: 68,
+  },
+  sidebarScroll: {
+    flex: 1,
+  },
+  sidebarContent: {
+    paddingVertical: 12,
+  },
+  navGroup: {
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  groupTitle: {
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 0.8,
+    color: theme.colors.textMuted,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+  },
+  navItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+    marginBottom: 2,
+    minHeight: 44, // Accesibilidad táctil
+  },
+  navItemCollapsed: {
+    justifyContent: "center",
+    paddingHorizontal: 0,
+  },
+  navItemActive: {
+    backgroundColor: theme.colors.primaryLight,
+  },
+  navIcon: {
+    marginRight: 10,
+  },
+  navLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+    color: theme.colors.textSecondary,
+    flex: 1,
+  },
+  navLabelActive: {
+    color: theme.colors.primaryDark,
+    fontWeight: "bold",
+  },
+  sidebarFooter: {
+    padding: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  footerVersion: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: theme.colors.textSecondary,
+  },
+  footerStatus: {
+    fontSize: 10,
+    color: theme.colors.okDark,
+    marginTop: 2,
+  },
+  mainContent: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
+    paddingTop: 68,
+    paddingRight: 20,
+  },
+  userMenuCard: {
+    width: 280,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    ...theme.shadows.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  userMenuHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  avatarLarge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarLargeText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#ffffff",
+  },
+  userMenuName: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  userMenuRut: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+  },
+  userMenuDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderLight,
+    marginVertical: 12,
+  },
+  userMenuSectionTitle: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: theme.colors.textMuted,
+    marginBottom: 8,
+  },
+  roleSwitchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: theme.radius.sm,
+    marginBottom: 4,
+  },
+  roleSwitchBtnCurrent: {
+    backgroundColor: theme.colors.primaryLight,
+  },
+  roleSwitchText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+    color: theme.colors.text,
+    marginLeft: 8,
+    flex: 1,
+  },
+  roleSwitchTextCurrent: {
+    color: theme.colors.primaryDark,
+    fontWeight: "bold",
+  },
+  testSessionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: theme.colors.warnLight,
+    borderWidth: 1,
+    borderColor: theme.colors.warnBorder,
+    borderRadius: theme.radius.sm,
+    marginBottom: 6,
+  },
+  testSessionText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "700",
+    color: theme.colors.warnDark,
+    marginLeft: 8,
+  },
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
+  logoutText: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.danger,
+    marginLeft: 8,
+  },
+  designModalWrapper: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  designModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingTop: 50,
+  },
+  designModalTitle: {
+    fontSize: theme.fontSize.base,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginLeft: 8,
+  },
+  closeDesignBtn: {
+    padding: 6,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+});
