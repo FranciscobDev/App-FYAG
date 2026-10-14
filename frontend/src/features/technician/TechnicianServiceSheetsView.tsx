@@ -15,6 +15,7 @@ import { theme } from "@/core/theme";
 import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
 import { ServiceSheet, ServiceSheetChecklistItem, ServiceSheetPhoto } from "@/core/types";
@@ -198,14 +199,14 @@ export const TechnicianServiceSheetsView: React.FC<TechnicianServiceSheetsViewPr
               variant="outline"
               size="sm"
               onPress={() => resolveServiceSheetConflict(s.id, "server")}
-              style={{ flex: 1, marginRight: 8, height: 40 }}
+              style={{ flex: 1, marginRight: 8, height: 44 }}
             />
             <Button
               title="Conservar Versión Local"
               variant="primary"
               size="sm"
               onPress={() => resolveServiceSheetConflict(s.id, "local")}
-              style={{ flex: 1, height: 40 }}
+              style={{ flex: 1, height: 44 }}
             />
           </View>
         </View>
@@ -214,7 +215,17 @@ export const TechnicianServiceSheetsView: React.FC<TechnicianServiceSheetsViewPr
       {/* 3. LISTADO DE HOJAS DE SERVICIO */}
       <Text style={styles.sectionHeading}>Registros Emitidos en Faena:</Text>
 
-      {serviceSheets.map((sheet) => {
+      {serviceSheets.length === 0 ? (
+        <EmptyState
+          icon="document-text-outline"
+          title="Sin hojas de servicio"
+          description="Aún no has emitido reportes técnicos u hojas de servicio en faena."
+          actionTitle="+ Nueva Hoja"
+          onAction={() => setNewSheetModal(true)}
+          containerStyle={{ marginVertical: 20 }}
+        />
+      ) : (
+        serviceSheets.map((sheet) => {
         const completedCount = sheet.checklist.filter((c) => c.completed).length;
         const totalCount = sheet.checklist.length;
         const totalMb = sheet.photos.reduce((acc, p) => acc + p.sizeMb, 0).toFixed(1);
@@ -266,7 +277,8 @@ export const TechnicianServiceSheetsView: React.FC<TechnicianServiceSheetsViewPr
             </View>
           </Card>
         );
-      })}
+      })
+      )}
 
       {/* 4. SECCIÓN DE ALERTAS Y NOTIFICACIONES DE FAENA */}
       <Text style={[styles.sectionHeading, { marginTop: theme.spacing.lg }]}>
