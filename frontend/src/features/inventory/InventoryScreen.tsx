@@ -55,9 +55,13 @@ export type InventoryTab =
 
 export interface InventoryScreenProps {
   initialTab?: InventoryTab;
+  hideTabBar?: boolean;
 }
 
-export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "catalogo" }) => {
+export const InventoryScreen: React.FC<InventoryScreenProps> = ({
+  initialTab = "catalogo",
+  hideTabBar = false,
+}) => {
   const {
     products,
     cardex,
@@ -710,11 +714,24 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
         onDismiss={() => setToastMessage(null)}
       />
 
-      {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+      {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
       <PageHeader
-        title="Inventario & Cardex"
-        subtitle="Control de existencias, kardex físico valorizado y egresos a faena"
-        breadcrumbs={["Inicio", "Operación", "Inventario & Cardex"]}
+        title={
+          currentRole === "warehouse"
+            ? activeTab === "egreso"
+              ? "Egreso y Despacho"
+              : activeTab === "conteo"
+              ? "Conteo Físico"
+              : activeTab === "mermas"
+              ? "Registro de Mermas"
+              : "Inventario de Bodega"
+            : "Inventario & Cardex"
+        }
+        subtitle={
+          currentRole === "warehouse"
+            ? undefined
+            : "Control de existencias, kardex físico valorizado y egresos a faena"
+        }
         rightAction={
           currentRole === "admin" ? (
             <Button
@@ -728,52 +745,66 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
         }
       />
 
-      {/* TOP NAVIGATION TABS (Scroll horizontal para tablet y móvil) */}
-      <View style={styles.tabBarContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
-          {[
-            { id: "catalogo", label: `Catálogo (${products.length})`, icon: "cube-outline" },
-            { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
-            {
-              id: "solicitudes",
-              label: `Solicitudes (${materialRequests.filter((r) => r.status === "pendiente").length})`,
-              icon: "clipboard-outline",
-            },
-            {
-              id: "egreso",
-              label: `Egreso (${approvedRequests.length})`,
-              icon: "log-out-outline",
-            },
-            { id: "mermas", label: `Mermas (${wasteRecords.length})`, icon: "trash-outline" },
-            {
-              id: "conteo",
-              label: `Conteo Físico (${physicalCounts.filter((c) => c.status === "pendiente_aprobacion").length})`,
-              icon: "checkbox-outline",
-            },
-            { id: "kits", label: `Kits (${kits.length})`, icon: "layers-outline" },
-          ].map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                onPress={() => setActiveTab(tab.id as InventoryTab)}
-                style={[styles.tabItem, isActive && styles.tabItemActive]}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-              >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={18}
-                  color={isActive ? theme.colors.primary : theme.colors.textMuted}
-                />
-                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
+      {/* TOP NAVIGATION TABS (Oculta en bodeguero egreso porque se accede por el menú principal) */}
+      {!hideTabBar && !(currentRole === "warehouse" && activeTab === "egreso") && (
+        <View style={styles.tabBarContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
+            {(currentRole === "warehouse"
+              ? [
+                  { id: "egreso", label: `Egreso (${approvedRequests.length})`, icon: "log-out-outline" },
+                  { id: "catalogo", label: `Inventario (${products.length})`, icon: "cube-outline" },
+                  {
+                    id: "conteo",
+                    label: `Conteo Físico (${physicalCounts.filter((c) => c.status === "pendiente_aprobacion").length})`,
+                    icon: "checkbox-outline",
+                  },
+                  { id: "mermas", label: `Mermas (${wasteRecords.length})`, icon: "trash-outline" },
+                ]
+              : [
+                  { id: "catalogo", label: `Catálogo (${products.length})`, icon: "cube-outline" },
+                  { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
+                  {
+                    id: "solicitudes",
+                    label: `Solicitudes (${materialRequests.filter((r) => r.status === "pendiente").length})`,
+                    icon: "clipboard-outline",
+                  },
+                  {
+                    id: "egreso",
+                    label: `Egreso (${approvedRequests.length})`,
+                    icon: "log-out-outline",
+                  },
+                  { id: "mermas", label: `Mermas (${wasteRecords.length})`, icon: "trash-outline" },
+                  {
+                    id: "conteo",
+                    label: `Conteo Físico (${physicalCounts.filter((c) => c.status === "pendiente_aprobacion").length})`,
+                    icon: "checkbox-outline",
+                  },
+                  { id: "kits", label: `Kits (${kits.length})`, icon: "layers-outline" },
+                ]
+            ).map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  onPress={() => setActiveTab(tab.id as InventoryTab)}
+                  style={[styles.tabItem, isActive && styles.tabItemActive]}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <Ionicons
+                    name={tab.icon as any}
+                    size={18}
+                    color={isActive ? theme.colors.primary : theme.colors.textMuted}
+                  />
+                  <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                    {tab.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* =====================================================================
           1. TAB CATALOGO
@@ -907,34 +938,42 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
                   </View>
                 )}
 
-                {/* Acciones: Editar y Deshabilitar (NUNCA eliminar) */}
-                <View style={styles.productActionsRow}>
-                  <View style={styles.pmpBox}>
-                    <Text style={styles.pmpLabel}>PMP Unitario:</Text>
-                    <Text style={styles.pmpVal}>{formatCLP(p.pmp || p.unitCost)}</Text>
-                  </View>
+                {/* Acciones: Editar y Deshabilitar y Costos (Exclusivo Admin) */}
+                {currentRole === "admin" ? (
+                  <View style={styles.productActionsRow}>
+                    <View style={styles.pmpBox}>
+                      <Text style={styles.pmpLabel}>PMP Unitario:</Text>
+                      <Text style={styles.pmpVal}>{formatCLP(p.pmp || p.unitCost)}</Text>
+                    </View>
 
-                  <View style={styles.btnRow}>
-                    <Button
-                      title="Editar"
-                      variant="outline"
-                      size="sm"
-                      icon="create-outline"
-                      onPress={() => handleOpenEditProduct(p)}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Button
-                      title={p.disabled ? "Habilitar" : "Deshabilitar"}
-                      variant={p.disabled ? "success" : "secondary"}
-                      size="sm"
-                      icon={p.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                      onPress={() => {
-                        toggleProductDisabled(p.sku);
-                        showToast(`Insumo ${p.sku} ${p.disabled ? "habilitado" : "deshabilitado"}.`);
-                      }}
-                    />
+                    <View style={styles.btnRow}>
+                      <Button
+                        title="Editar"
+                        variant="outline"
+                        size="sm"
+                        icon="create-outline"
+                        onPress={() => handleOpenEditProduct(p)}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Button
+                        title={p.disabled ? "Habilitar" : "Deshabilitar"}
+                        variant={p.disabled ? "success" : "secondary"}
+                        size="sm"
+                        icon={p.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                        onPress={() => {
+                          toggleProductDisabled(p.sku);
+                          showToast(`Insumo ${p.sku} ${p.disabled ? "habilitado" : "deshabilitado"}.`);
+                        }}
+                      />
+                    </View>
                   </View>
-                </View>
+                ) : (
+                  <View style={styles.productWarehouseRow}>
+                    <Text style={styles.warehouseLocationNote}>
+                      📍 Ubicación asignada: <Text style={{ fontWeight: "bold", color: theme.colors.text }}>{p.location}</Text>
+                    </Text>
+                  </View>
+                )}
               </Card>
             );
           })
@@ -1271,7 +1310,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
       {activeTab === "egreso" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
           <View style={styles.sectionHeaderBanner}>
-            <View>
+            <View style={styles.requestTopBarTextCol}>
               <Text style={styles.sectionHeaderTitle}>Módulo de Egreso y Despacho Físico</Text>
               <Text style={styles.sectionHeaderSubtitle}>
                 Despacho parcial o total validado contra stock disponible en bodega.
@@ -1338,7 +1377,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
             <View style={[styles.dispatchLayoutContainer, isDesktop && styles.dispatchLayoutDesktop]}>
               <Card variant="elevated" style={[styles.dispatchFormCard, isDesktop && styles.dispatchFormCardDesktop]}>
                 <View style={styles.dispatchFormHeader}>
-                  <View>
+                  <View style={{ flex: 1, marginRight: 8 }}>
                     <Text style={styles.dispatchFormTitle}>
                       Despacho de Solicitud: {activeDispatchReq.code}
                     </Text>
@@ -1507,7 +1546,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
       {activeTab === "mermas" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
           <View style={styles.requestTopBar}>
-            <View>
+            <View style={styles.requestTopBarTextCol}>
               <Text style={styles.sectionHeaderTitle}>Registro y Control de Mermas</Text>
               <Text style={styles.sectionHeaderSubtitle}>
                 Bajas de inventario por daño, caducidad o pérdida valorizadas a PMP.
@@ -1586,7 +1625,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
       {activeTab === "conteo" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
           <View style={styles.requestTopBar}>
-            <View>
+            <View style={styles.requestTopBarTextCol}>
               <Text style={styles.sectionHeaderTitle}>Auditoría y Conteo Físico de Bodega</Text>
               <Text style={styles.sectionHeaderSubtitle}>
                 Ajuste directo si discrepancia ≤ 5%; aprobación de Admin si &gt; 5%.
@@ -1724,7 +1763,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({ initialTab = "
       {activeTab === "kits" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
           <View style={styles.requestTopBar}>
-            <View>
+            <View style={styles.requestTopBarTextCol}>
               <Text style={styles.sectionHeaderTitle}>Kits y Agrupaciones Estándar</Text>
               <Text style={styles.sectionHeaderSubtitle}>
                 Monitoreo de disponibilidad en vivo según stock actual de cada componente.
@@ -2775,6 +2814,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: theme.spacing.md,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  requestTopBarTextCol: {
+    flex: 1,
+    minWidth: 180,
+    marginRight: 8,
   },
   reqTabsScroll: {
     flex: 1,
@@ -2896,6 +2942,8 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    flexWrap: "wrap",
+    gap: 10,
   },
   sectionHeaderTitle: {
     fontSize: theme.fontSize.md,
@@ -2910,10 +2958,12 @@ const styles = StyleSheet.create({
   scanActionBtn: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     backgroundColor: theme.colors.primary,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: theme.radius.md,
+    flexShrink: 0,
   },
   scanActionBtnTxt: {
     color: "#ffffff",
@@ -3719,5 +3769,15 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     marginLeft: 4,
     fontWeight: "500",
+  },
+  productWarehouseRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+  },
+  warehouseLocationNote: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textSecondary,
   },
 });

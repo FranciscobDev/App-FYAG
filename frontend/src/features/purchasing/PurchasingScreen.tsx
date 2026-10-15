@@ -25,6 +25,7 @@ import {
   ModalView,
   NumberInput,
   PageHeader,
+  QrScannerModal,
   StarRating,
   ScreenStateWrapper,
   Toast,
@@ -296,38 +297,95 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
     purchaseOrders.find((o) => o.status === "enviada" || o.status === "recibida_parcial")?.code || ""
   );
   const activeReceptionOrder = purchaseOrders.find((o) => o.code === selectedOcCode);
+  const [selectedInvoiceNumber, setSelectedInvoiceNumber] = useState<string>("");
   const [receptionChecklist, setReceptionChecklist] = useState<{
     sku: string;
     received: number;
     defective: number;
     missing: number;
+    scanned?: boolean;
   }[]>([]);
+
+  // Escáner QR / Barras con la cámara de la tablet
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanningTargetSku, setScanningTargetSku] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeReceptionOrder) {
       setReceptionChecklist(
-        activeReceptionOrder.items.map((it) => ({
-          sku: it.sku,
-          received: it.quantity,
-          defective: 0,
-          missing: 0,
-        }))
+        activeReceptionOrder.items.map((it) => {
+          const pending = Math.max(0, it.quantity - (it.receivedQuantity || 0));
+          return {
+            sku: it.sku,
+            received: pending,
+            defective: 0,
+            missing: 0,
+            scanned: false,
+          };
+        })
       );
+
+      // Vincular automáticamente la factura asociada si ya existe registrada
+      const linkedInv = purchaseInvoices.find((inv) => inv.orderCode === activeReceptionOrder.code);
+      if (linkedInv) {
+        setSelectedInvoiceNumber(linkedInv.number);
+      } else {
+        setSelectedInvoiceNumber("");
+      }
     }
   }, [selectedOcCode]);
 
-  // Alerta de discrepancia en recepción
+  const handleOpenScanner = (targetSku?: string) => {
+    setScanningTargetSku(targetSku || null);
+    setScannerOpen(true);
+  };
+
+  const handleScanCode = (scannedCode: string) => {
+    setScannerOpen(false);
+    const clean = scannedCode.trim();
+
+    // 1. Validar si el código existe en el catálogo maestro
+    const matchedProd = products.find((p) => p.sku === clean || p.barcode === clean);
+    if (!matchedProd) {
+      showToast(`El código "${clean}" no existe en el catálogo del sistema.`);
+      return;
+    }
+
+    if (!activeReceptionOrder) return;
+
+    // 2. Validar si el insumo pertenece a la OC activa
+    const poItem = activeReceptionOrder.items.find((it) => it.sku === matchedProd.sku);
+    if (!poItem) {
+      showToast(
+        `El insumo ${matchedProd.name} (${matchedProd.sku}) no pertenece a la OC ${activeReceptionOrder.code}.`
+      );
+      return;
+    }
+
+    // 3. Marcar como verificado y autocompletar la cantidad pendiente como conforme
+    const pending = Math.max(0, poItem.quantity - (poItem.receivedQuantity || 0));
+    setReceptionChecklist((prev) =>
+      prev.map((c) =>
+        c.sku === matchedProd.sku
+          ? { ...c, scanned: true, received: pending, defective: 0, missing: 0 }
+          : c
+      )
+    );
+    showToast(`✓ Insumo identificado y validado: ${matchedProd.name} (${matchedProd.sku})`);
+  };
+
+  // Alerta de discrepancia en recepción física vs esperada
   const hasReceptionDiscrepancy = receptionChecklist.some((item) => {
     const poItem = activeReceptionOrder?.items.find((i) => i.sku === item.sku);
-    const expected = poItem?.quantity || 0;
+    const pending = poItem ? Math.max(0, poItem.quantity - (poItem.receivedQuantity || 0)) : 0;
     const totalCounted = item.received + item.defective + item.missing;
-    return totalCounted !== expected || item.defective > 0 || item.missing > 0;
+    return totalCounted !== pending || item.defective > 0 || item.missing > 0;
   });
 
   const handleConfirmReception = () => {
     if (!selectedOcCode) return;
-    confirmOrderReception(selectedOcCode, receptionChecklist);
-    showToast(`Recepción confirmada para ${selectedOcCode}. Stock actualizado y cuarentena aplicada.`);
+    confirmOrderReception(selectedOcCode, receptionChecklist, selectedInvoiceNumber || undefined);
+    showToast(`Recepción confirmada para ${selectedOcCode}. Stock actualizado y PMP recalculado.`);
     setSelectedOcCode("");
   };
 
@@ -483,23 +541,24 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
         onDismiss={() => setToastMessage(null)}
       />
 
-      {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+      {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
       <PageHeader
-        title="Órdenes de Compra y Proveedores"
-        subtitle="Gestión de adquisiciones, recepción física en bodega y conciliación de facturas"
-        breadcrumbs={[
-          "Inicio",
-          "Compras",
-          activeTab === "ordenes"
-            ? "Órdenes de Compra"
-            : activeTab === "facturas"
-            ? "Facturas Proveedor"
-            : activeTab === "recepcion"
-            ? "Recepción Física"
-            : "Evaluación Proveedores",
-        ]}
+        title={
+          currentRole === "warehouse"
+            ? activeTab === "recepcion"
+              ? "Recepción Física de OC"
+              : activeTab === "facturas"
+              ? "Facturas de Compra"
+              : "Órdenes de Compra"
+            : "Órdenes de Compra y Proveedores"
+        }
+        subtitle={
+          currentRole === "warehouse"
+            ? undefined
+            : "Gestión de adquisiciones, recepción física en bodega y conciliación de facturas"
+        }
         rightAction={
-          currentRole !== "technician" ? (
+          currentRole !== "technician" && currentRole !== "warehouse" ? (
             <Button
               title="+ Nueva Orden"
               variant="primary"
@@ -514,16 +573,16 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
       {/* TABS DE NAVEGACIÓN SUPERIOR */}
       <View style={styles.tabBar}>
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === "ordenes" && styles.tabItemActive]}
-          onPress={() => setActiveTab("ordenes")}
+          style={[styles.tabItem, activeTab === "recepcion" && styles.tabItemActive]}
+          onPress={() => setActiveTab("recepcion")}
         >
           <Ionicons
-            name="cart-outline"
+            name="checkmark-circle-outline"
             size={18}
-            color={activeTab === "ordenes" ? theme.colors.primary : theme.colors.textMuted}
+            color={activeTab === "recepcion" ? theme.colors.primary : theme.colors.textMuted}
           />
-          <Text style={[styles.tabLabel, activeTab === "ordenes" && styles.tabLabelActive]}>
-            Órdenes ({purchaseOrders.length})
+          <Text style={[styles.tabLabel, activeTab === "recepcion" && styles.tabLabelActive]}>
+            Recepción OC
           </Text>
         </TouchableOpacity>
 
@@ -542,32 +601,34 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.tabItem, activeTab === "recepcion" && styles.tabItemActive]}
-          onPress={() => setActiveTab("recepcion")}
+          style={[styles.tabItem, activeTab === "ordenes" && styles.tabItemActive]}
+          onPress={() => setActiveTab("ordenes")}
         >
           <Ionicons
-            name="checkmark-circle-outline"
+            name="cart-outline"
             size={18}
-            color={activeTab === "recepcion" ? theme.colors.primary : theme.colors.textMuted}
+            color={activeTab === "ordenes" ? theme.colors.primary : theme.colors.textMuted}
           />
-          <Text style={[styles.tabLabel, activeTab === "recepcion" && styles.tabLabelActive]}>
-            Recepción OC
+          <Text style={[styles.tabLabel, activeTab === "ordenes" && styles.tabLabelActive]}>
+            Órdenes ({purchaseOrders.length})
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "terceros" && styles.tabItemActive]}
-          onPress={() => setActiveTab("terceros")}
-        >
-          <Ionicons
-            name="people-outline"
-            size={18}
-            color={activeTab === "terceros" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "terceros" && styles.tabLabelActive]}>
-            Terceros ({suppliers.length + clients.length})
-          </Text>
-        </TouchableOpacity>
+        {currentRole !== "warehouse" && (
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === "terceros" && styles.tabItemActive]}
+            onPress={() => setActiveTab("terceros")}
+          >
+            <Ionicons
+              name="people-outline"
+              size={18}
+              color={activeTab === "terceros" ? theme.colors.primary : theme.colors.textMuted}
+            />
+            <Text style={[styles.tabLabel, activeTab === "terceros" && styles.tabLabelActive]}>
+              Terceros ({suppliers.length + clients.length})
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* =====================================================================
@@ -1025,12 +1086,28 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
       {/* =====================================================================
           3. TAB RECEPCIÓN CHECKLIST Y CONTROL DE CALIDAD
           ===================================================================== */}
+      {/* =====================================================================
+          3. TAB RECEPCIÓN CHECKLIST Y CONTROL DE CALIDAD
+          ===================================================================== */}
       {activeTab === "recepcion" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <Text style={styles.sectionTitle}>Recepción Conforme y Control de Calidad</Text>
-          <Text style={styles.sectionSubtitle}>
-            Verifique la mercancía recibida contra la Orden de Compra. Los ítems defectuosos van directo a cuarentena.
-          </Text>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.sectionTitle}>Recepción de Mercancía en Bodega</Text>
+              <Text style={styles.sectionSubtitle}>
+                Control físico contra Orden de Compra. Conforme ingresa a stock disponible; defectuoso pasa a cuarentena.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleOpenScanner()}
+              style={styles.heroScannerBtn}
+              activeOpacity={0.85}
+              accessibilityLabel="Escanear insumo con cámara"
+            >
+              <Ionicons name="barcode-outline" size={20} color="#ffffff" style={{ marginRight: 6 }} />
+              <Text style={styles.heroScannerBtnTxt}>Escanear con Cámara</Text>
+            </TouchableOpacity>
+          </View>
 
           {/* Selector de OC pendientes */}
           <Text style={styles.fieldLabel}>Seleccionar Orden de Compra Pendiente:</Text>
@@ -1047,7 +1124,7 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                   ]}
                 >
                   <Text style={[styles.chipTxt, selectedOcCode === o.code && styles.chipTxtActive]}>
-                    {o.code} - {o.supplier}
+                    {o.code} • {o.supplier} ({o.status === "recibida_parcial" ? "Parcial" : "Enviada"})
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1055,96 +1132,244 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
 
           {activeReceptionOrder ? (
             <Card variant="elevated">
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                 <View>
                   <Text style={styles.ocTitle}>{activeReceptionOrder.code} • {activeReceptionOrder.supplier}</Text>
-                  <Text style={styles.orderDate}>RUT: {activeReceptionOrder.supplierRut || "76.xxx.xxx-x"}</Text>
+                  <Text style={styles.orderDate}>RUT: {activeReceptionOrder.supplierRut || "76.xxx.xxx-x"} • Fecha esperada: {activeReceptionOrder.expectedDate}</Text>
                 </View>
-                <Badge label={activeReceptionOrder.status.toUpperCase()} tone="info" size="sm" />
+                <Badge
+                  label={activeReceptionOrder.status === "recibida_parcial" ? "RECIBIDA PARCIAL" : "PENDIENTE RECEPCIÓN"}
+                  tone={activeReceptionOrder.status === "recibida_parcial" ? "warn" : "info"}
+                  size="sm"
+                />
               </View>
 
-              {/* Alerta de discrepancia si lo contado no coincide con lo pedido */}
+              {/* Selector de Factura de Compra Vinculada */}
+              <View style={styles.invoiceSelectContainer}>
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+                  <Ionicons name="receipt-outline" size={16} color={theme.colors.primaryDark} style={{ marginRight: 6 }} />
+                  <Text style={styles.invoiceSelectTitle}>Factura de Compra Asociada:</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {purchaseInvoices
+                    .filter((inv) => !inv.orderCode || inv.orderCode === activeReceptionOrder.code)
+                    .map((inv) => {
+                      const isLinked = selectedInvoiceNumber === inv.number;
+                      return (
+                        <TouchableOpacity
+                          key={inv.id}
+                          onPress={() => setSelectedInvoiceNumber(isLinked ? "" : inv.number)}
+                          style={[styles.invoiceChip, isLinked && styles.invoiceChipActive]}
+                        >
+                          <Text style={[styles.invoiceChipTxt, isLinked && styles.invoiceChipTxtActive]}>
+                            {isLinked ? "✓ " : ""}Factura N° {inv.number} ({formatCLP(inv.subtotalNet)} neto)
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                </ScrollView>
+                {selectedInvoiceNumber ? (
+                  <Text style={styles.invoiceLinkedNotice}>
+                    El Precio Medio Ponderado (PMP) se recalculará automáticamente con los costos netos de la Factura N° {selectedInvoiceNumber}.
+                  </Text>
+                ) : (
+                  <Text style={styles.invoiceHintNotice}>
+                    (Opcional) Si la factura ya fue ingresada, selecciónela para recalcular el PMP exacto tras descuentos en cascada.
+                  </Text>
+                )}
+              </View>
+
+              {/* Alerta de discrepancia si lo contado no coincide con lo pendiente de la OC */}
               {hasReceptionDiscrepancy && (
                 <View style={styles.discrepancyBanner}>
-                  <Ionicons name="warning" size={18} color={theme.colors.warnDark} style={{ marginRight: 6 }} />
-                  <Text style={styles.discrepancyBannerTxt}>
-                    Alerta: Se detectaron discrepancias entre lo físico verificado y lo solicitado/facturado en la OC.
-                  </Text>
+                  <Ionicons name="warning" size={20} color={theme.colors.warnDark} style={{ marginRight: 8 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.discrepancyBannerTitle}>Alerta: Discrepancia detectada</Text>
+                    <Text style={styles.discrepancyBannerTxt}>
+                      Las cantidades físicas ingresadas difieren de lo ordenado/facturado. Al confirmar, la recepción quedará registrada y se notificará automáticamente al Administrador.
+                    </Text>
+                  </View>
                 </View>
               )}
 
-              {/* Checklist interactivo por línea */}
+              {/* Checklist interactivo por línea con escáner, 3 columnas y granel */}
               {receptionChecklist.map((item, idx) => {
                 const poItem = activeReceptionOrder.items.find((i) => i.sku === item.sku);
-                const isDiscrepant = item.received + item.defective + item.missing !== (poItem?.quantity || 0);
+                const prod = products.find((p) => p.sku === item.sku);
+                const isBulk = Boolean(prod?.isBulk || ["kg", "m", "l"].includes(prod?.unit?.toLowerCase() || ""));
+
+                const qtyOrdered = poItem?.quantity || 0;
+                const qtyAlreadyReceived = poItem?.receivedQuantity || 0;
+                const pending = Math.max(0, qtyOrdered - qtyAlreadyReceived);
+                const isDiscrepant = item.received + item.defective + item.missing !== pending;
+
+                const containerCapacity = prod?.containerCapacity || 100;
+                const containerFreeSpace = Math.max(0, containerCapacity - (prod?.stock || 0));
+                const exceedsContainer = isBulk && item.received > containerFreeSpace;
+
+                const setFullConforme = () => {
+                  setReceptionChecklist((prev) =>
+                    prev.map((c, i) => (i === idx ? { ...c, received: pending, defective: 0, missing: 0 } : c))
+                  );
+                };
+
+                const setFullMissing = () => {
+                  setReceptionChecklist((prev) =>
+                    prev.map((c, i) => (i === idx ? { ...c, received: 0, defective: 0, missing: pending } : c))
+                  );
+                };
+
+                const setFullDefective = () => {
+                  setReceptionChecklist((prev) =>
+                    prev.map((c, i) => (i === idx ? { ...c, received: 0, defective: pending, missing: 0 } : c))
+                  );
+                };
 
                 return (
-                  <View key={item.sku} style={styles.checkItemCard}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={styles.checkItemName}>
-                        {poItem?.name} ({item.sku})
-                      </Text>
-                      {isDiscrepant && (
-                        <Badge label="Discrepancia" tone="danger" size="sm" />
-                      )}
-                    </View>
-                    <Text style={styles.poExpectedTxt}>
-                      Esperado en OC: {poItem?.quantity} {poItem?.unit}
-                    </Text>
+                  <View key={item.sku} style={[styles.checkItemCard, item.scanned && styles.checkItemCardScanned]}>
+                    {/* Header del ítem */}
+                    <View style={styles.checkItemTopRow}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <Text style={styles.checkItemName}>{poItem?.name || item.sku}</Text>
+                          <Badge label={item.sku} tone="info" size="sm" />
+                          {item.scanned && (
+                            <Badge label="✓ Escaneado" tone="ok" size="sm" />
+                          )}
+                          {isBulk && (
+                            <Badge label="A Granel" tone="info" size="sm" />
+                          )}
+                        </View>
+                      </View>
 
+                      {/* Botón de escaneo rápido por fila */}
+                      <TouchableOpacity
+                        onPress={() => handleOpenScanner(item.sku)}
+                        style={styles.rowScanBtn}
+                        accessibilityLabel={`Escanear SKU ${item.sku}`}
+                      >
+                        <Ionicons name="camera-outline" size={16} color={theme.colors.primaryDark} style={{ marginRight: 4 }} />
+                        <Text style={styles.rowScanBtnTxt}>Escanear</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Desglose de cantidades Pedida / Ya Recibida / Pendiente */}
+                    <View style={styles.qtyMetricRow}>
+                      <View style={styles.qtyMetricCol}>
+                        <Text style={styles.qtyMetricLbl}>Pedida en OC</Text>
+                        <Text style={styles.qtyMetricVal}>{qtyOrdered} {poItem?.unit}</Text>
+                      </View>
+                      <View style={styles.qtyMetricCol}>
+                        <Text style={styles.qtyMetricLbl}>Ya Recibida</Text>
+                        <Text style={styles.qtyMetricVal}>{qtyAlreadyReceived} {poItem?.unit}</Text>
+                      </View>
+                      <View style={[styles.qtyMetricCol, styles.qtyMetricColHighlight]}>
+                        <Text style={[styles.qtyMetricLbl, { color: theme.colors.primaryDark, fontWeight: "bold" }]}>
+                          Pendiente Hoy
+                        </Text>
+                        <Text style={[styles.qtyMetricVal, { color: theme.colors.primaryDark, fontWeight: "bold" }]}>
+                          {pending} {poItem?.unit}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Capacidad de contenedor si es granel */}
+                    {isBulk && (
+                      <View style={[styles.bulkInfoBox, exceedsContainer && styles.bulkInfoBoxWarn]}>
+                        <Ionicons
+                          name={exceedsContainer ? "warning-outline" : "cube-outline"}
+                          size={16}
+                          color={exceedsContainer ? theme.colors.warnDark : theme.colors.info}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={[styles.bulkInfoTxt, exceedsContainer && { color: theme.colors.warnDark }]}>
+                          Contenedor principal: Stock actual {prod?.stock || 0} {prod?.unit} • Capacidad máx: {containerCapacity} {prod?.unit} (Espacio libre: {containerFreeSpace.toFixed(3)} {prod?.unit})
+                          {exceedsContainer ? `\n⚠️ Advertencia: Cantidad conforme (${item.received}) superará la capacidad disponible del contenedor.` : ""}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Botones de acción rápida táctil */}
+                    <View style={styles.quickActionRow}>
+                      <TouchableOpacity onPress={setFullConforme} style={[styles.quickActionBtn, { backgroundColor: theme.colors.okLight }]}>
+                        <Ionicons name="checkmark" size={14} color={theme.colors.okDark} style={{ marginRight: 4 }} />
+                        <Text style={[styles.quickActionTxt, { color: theme.colors.okDark }]}>Todo Conforme</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity onPress={setFullDefective} style={[styles.quickActionBtn, { backgroundColor: theme.colors.dangerLight }]}>
+                        <Ionicons name="alert-circle-outline" size={14} color={theme.colors.danger} style={{ marginRight: 4 }} />
+                        <Text style={[styles.quickActionTxt, { color: theme.colors.danger }]}>Defectuoso</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity onPress={setFullMissing} style={[styles.quickActionBtn, { backgroundColor: theme.colors.warnLight }]}>
+                        <Ionicons name="close-circle-outline" size={14} color={theme.colors.warnDark} style={{ marginRight: 4 }} />
+                        <Text style={[styles.quickActionTxt, { color: theme.colors.warnDark }]}>Faltante</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* 3 Columnas de entrada: Conforme / Defectuoso / Faltante */}
                     <View style={styles.checkInputRow}>
                       <View style={styles.checkCol}>
-                        <Text style={[styles.checkLabel, { color: theme.colors.ok }]}>Conforme</Text>
+                        <Text style={[styles.checkLabel, { color: theme.colors.okDark }]}>✓ Conforme (A Stock)</Text>
                         <TextInput
                           value={String(item.received)}
                           onChangeText={(v) => {
-                            const val = Number(v) || 0;
+                            const val = isBulk ? (parseFloat(v) || 0) : (parseInt(v, 10) || 0);
                             setReceptionChecklist((prev) =>
                               prev.map((c, i) => (i === idx ? { ...c, received: val } : c))
                             );
                           }}
-                          keyboardType="numeric"
-                          style={[styles.checkInput, { borderColor: theme.colors.ok }]}
+                          keyboardType={isBulk ? "decimal-pad" : "numeric"}
+                          style={[styles.checkInput, { borderColor: theme.colors.ok, backgroundColor: theme.colors.okLight }]}
                         />
                       </View>
 
                       <View style={styles.checkCol}>
-                        <Text style={[styles.checkLabel, { color: theme.colors.danger }]}>Defectuoso</Text>
+                        <Text style={[styles.checkLabel, { color: theme.colors.danger }]}>✕ Defectuoso (Cuarentena)</Text>
                         <TextInput
                           value={String(item.defective)}
                           onChangeText={(v) => {
-                            const val = Number(v) || 0;
+                            const val = isBulk ? (parseFloat(v) || 0) : (parseInt(v, 10) || 0);
                             setReceptionChecklist((prev) =>
                               prev.map((c, i) => (i === idx ? { ...c, defective: val } : c))
                             );
                           }}
-                          keyboardType="numeric"
-                          style={[styles.checkInput, { borderColor: theme.colors.danger }]}
+                          keyboardType={isBulk ? "decimal-pad" : "numeric"}
+                          style={[styles.checkInput, { borderColor: theme.colors.danger, backgroundColor: theme.colors.dangerLight }]}
                         />
                       </View>
 
                       <View style={styles.checkCol}>
-                        <Text style={[styles.checkLabel, { color: theme.colors.warn }]}>Faltante</Text>
+                        <Text style={[styles.checkLabel, { color: theme.colors.warnDark }]}>! Faltante (Pendiente)</Text>
                         <TextInput
                           value={String(item.missing)}
                           onChangeText={(v) => {
-                            const val = Number(v) || 0;
+                            const val = isBulk ? (parseFloat(v) || 0) : (parseInt(v, 10) || 0);
                             setReceptionChecklist((prev) =>
                               prev.map((c, i) => (i === idx ? { ...c, missing: val } : c))
                             );
                           }}
-                          keyboardType="numeric"
-                          style={[styles.checkInput, { borderColor: theme.colors.warn }]}
+                          keyboardType={isBulk ? "decimal-pad" : "numeric"}
+                          style={[styles.checkInput, { borderColor: theme.colors.warn, backgroundColor: theme.colors.warnLight }]}
                         />
                       </View>
                     </View>
 
+                    {/* Alertas de línea si hay defectuosos o discrepancias */}
                     {item.defective > 0 && (
                       <Badge
-                        label={`A cuarentena: ${item.defective} ${poItem?.unit}`}
+                        label={`Se enviarán ${item.defective} ${poItem?.unit} a CUARENTENA`}
                         tone="danger"
                         size="sm"
                         style={{ marginTop: 6 }}
+                      />
+                    )}
+                    {isDiscrepant && (
+                      <Badge
+                        label={`Discrepancia: ${item.received + item.defective + item.missing} de ${pending} esperados`}
+                        tone="warn"
+                        size="sm"
+                        style={{ marginTop: 4 }}
                       />
                     )}
                   </View>
@@ -1156,8 +1381,15 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                 variant="success"
                 icon="checkmark-done-outline"
                 onPress={handleConfirmReception}
-                style={{ marginTop: 12 }}
+                style={{ marginTop: 14 }}
               />
+
+              <View style={styles.confirmExplanatoryFooter}>
+                <Ionicons name="information-circle-outline" size={16} color={theme.colors.textMuted} style={{ marginRight: 6 }} />
+                <Text style={styles.confirmExplanatoryTxt}>
+                  Al confirmar: Lo conforme se suma a stock disponible; lo defectuoso pasa a cuarentena; se recalcula el PMP con el costo neto de factura y la OC se anota en Cardex.
+                </Text>
+              </View>
             </Card>
           ) : (
             <EmptyState
@@ -1821,6 +2053,14 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
           />
         </View>
       </ModalView>
+
+      {/* Escáner de Cámara Tablet para Recepción */}
+      <QrScannerModal
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onScanResult={handleScanCode}
+        title={scanningTargetSku ? `Escanear Insumo SKU: ${scanningTargetSku}` : "Escanear Insumo de la OC"}
+      />
     </View>
     </ScreenStateWrapper>
   );
@@ -2603,5 +2843,168 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  heroScannerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+  },
+  heroScannerBtnTxt: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: theme.fontSize.xs,
+  },
+  invoiceSelectContainer: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.sm,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  invoiceSelectTitle: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.primaryDark,
+  },
+  invoiceChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginRight: 8,
+  },
+  invoiceChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  invoiceChipTxt: {
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+    fontWeight: "600",
+  },
+  invoiceChipTxtActive: {
+    color: "#ffffff",
+    fontWeight: "bold",
+  },
+  invoiceLinkedNotice: {
+    fontSize: 11,
+    color: theme.colors.okDark,
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  invoiceHintNotice: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 4,
+  },
+  discrepancyBannerTitle: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.warnDark,
+    marginBottom: 2,
+  },
+  checkItemCardScanned: {
+    borderColor: theme.colors.ok,
+    borderWidth: 1.5,
+    backgroundColor: "#f0fdf4",
+  },
+  checkItemTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 6,
+  },
+  rowScanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryLight,
+  },
+  rowScanBtnTxt: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: theme.colors.primaryDark,
+  },
+  qtyMetricRow: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.radius.sm,
+    padding: 6,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  qtyMetricCol: {
+    flex: 1,
+    alignItems: "center",
+  },
+  qtyMetricColHighlight: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.sm,
+    paddingVertical: 2,
+  },
+  qtyMetricLbl: {
+    fontSize: 9,
+    color: theme.colors.textMuted,
+    textTransform: "uppercase",
+  },
+  qtyMetricVal: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.colors.text,
+    marginTop: 1,
+  },
+  bulkInfoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.infoLight || "#eff6ff",
+    borderRadius: theme.radius.sm,
+    padding: 6,
+    marginVertical: 4,
+  },
+  bulkInfoBoxWarn: {
+    backgroundColor: theme.colors.warnLight,
+  },
+  bulkInfoTxt: {
+    fontSize: 10,
+    color: theme.colors.infoDark || "#1e40af",
+    flex: 1,
+  },
+  quickActionRow: {
+    flexDirection: "row",
+    gap: 6,
+    marginVertical: 6,
+  },
+  quickActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+  },
+  quickActionTxt: {
+    fontSize: 11,
+    fontWeight: "bold",
+  },
+  confirmExplanatoryFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  confirmExplanatoryTxt: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    flex: 1,
   },
 });

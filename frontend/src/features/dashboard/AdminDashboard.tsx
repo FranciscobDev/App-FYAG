@@ -676,6 +676,8 @@ const styles = StyleSheet.create({
   reqActionRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
+    flexWrap: "wrap",
+    gap: 8,
   },
   modalInstruction: {
     fontSize: theme.fontSize.sm,

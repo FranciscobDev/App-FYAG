@@ -195,9 +195,12 @@ export const ToolsScreen: React.FC = () => {
       {/* HEADER & BARRA DE ACCIÓN PRINCIPAL (PAGEHEADER)                           */}
       {/* ========================================================================= */}
       <PageHeader
-        title="Control de Herramientas y Maquinaria"
-        subtitle="Asignaciones a faena, control de mantenciones preventivas y calibración"
-        breadcrumbs={["Inicio", "Administración", "Control Herramientas"]}
+        title="Control de Herramientas"
+        subtitle={
+          currentRole === "warehouse"
+            ? undefined
+            : "Asignaciones a faena, control de mantenciones preventivas y calibración"
+        }
         rightAction={
           currentRole !== "technician" ? (
             <Button

@@ -124,7 +124,8 @@ interface AppContextType {
   createInvoice: (invoice: PurchaseInvoice) => { success: boolean; error?: string };
   confirmOrderReception: (
     ocCode: string,
-    checklist: { sku: string; received: number; defective: number; missing: number }[]
+    checklist: { sku: string; received: number; defective: number; missing: number }[],
+    invoiceNumber?: string
   ) => void;
 
   // Third Parties
@@ -762,21 +763,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const confirmOrderReception = (
     ocCode: string,
-    checklist: { sku: string; received: number; defective: number; missing: number }[]
+    checklist: { sku: string; received: number; defective: number; missing: number }[],
+    invoiceNumber?: string
   ) => {
-    let hasDefective = false;
-    let hasMissing = false;
+    const activePo = purchaseOrders.find((o) => o.code === ocCode);
+    const linkedInvoice = purchaseInvoices.find(
+      (inv) => (invoiceNumber && inv.number === invoiceNumber) || inv.orderCode === ocCode
+    );
+
+    const discrepancyDetails: string[] = [];
 
     checklist.forEach((item) => {
-      if (item.defective > 0) hasDefective = true;
-      if (item.missing > 0) hasMissing = true;
-
-      // Update product stock and quarantine
       const prod = products.find((p) => p.sku === item.sku);
+      const poItem = activePo?.items.find((i) => i.sku === item.sku);
+      const invItem = linkedInvoice?.items.find((i) => i.sku === item.sku);
+
+      const pendingBefore = poItem ? Math.max(0, poItem.quantity - (poItem.receivedQuantity || 0)) : 0;
+      if (item.defective > 0) {
+        discrepancyDetails.push(`${item.sku}: ${item.defective} defectuosos/dañados`);
+      }
+      if (item.received + item.defective < pendingBefore) {
+        discrepancyDetails.push(`${item.sku}: faltante de ${Number((pendingBefore - (item.received + item.defective)).toFixed(3))} ${poItem?.unit || "un"}`);
+      }
+
       if (prod) {
-        const newStock = prod.stock + item.received;
-        const newQuarantine = (prod.quarantine || 0) + item.defective;
-        updateProduct(item.sku, { stock: newStock, quarantine: newQuarantine });
+        const prevStock = prod.stock;
+        const prevPmp = prod.pmp || prod.unitCost || 0;
+        // Costo neto unitario proveniente de la factura (descuentos en cascada aplicados) o de la OC
+        const incomingUnitCost = invItem?.netUnitPrice ?? poItem?.unitPrice ?? prod.unitCost;
+
+        const newStock = Number((prevStock + item.received).toFixed(3));
+        const newQuarantine = Number(((prod.quarantine || 0) + item.defective).toFixed(3));
+
+        // Recálculo del PMP Ponderado con el costo neto de la factura
+        let newPmp = prevPmp;
+        if (item.received > 0) {
+          const totalPrevValue = prevStock * prevPmp;
+          const incomingValue = item.received * incomingUnitCost;
+          newPmp = newStock > 0 ? Math.round((totalPrevValue + incomingValue) / newStock) : prevPmp;
+        }
+
+        updateProduct(item.sku, {
+          stock: newStock,
+          quarantine: newQuarantine,
+          pmp: newPmp,
+        });
 
         // Add Cardex entry for received
         if (item.received > 0) {
@@ -787,26 +818,82 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             date: new Date().toISOString().slice(0, 10),
             type: "entrada_compra",
             typeLabel: "Entrada por compra",
-            reference: ocCode,
+            reference: linkedInvoice ? `${ocCode} / Fac: ${linkedInvoice.number}` : ocCode,
             qtyIn: item.received,
             qtyOut: 0,
             balance: newStock,
-            pmp: prod.pmp || prod.unitCost,
-            totalValue: newStock * (prod.pmp || prod.unitCost),
+            pmp: newPmp,
+            totalValue: Math.round(newStock * newPmp),
           };
           setCardex((prev) => [newCardex, ...prev]);
         }
       }
     });
 
-    // Update OC status
-    const newStatus = hasMissing ? "recibida_parcial" : "recibida";
+    // Update OC items with cumulative received quantities
+    let allCompleted = true;
     setPurchaseOrders((prev) =>
-      prev.map((o) => (o.code === ocCode ? { ...o, status: newStatus } : o))
+      prev.map((o) => {
+        if (o.code !== ocCode) return o;
+        const updatedItems = o.items.map((it) => {
+          const check = checklist.find((c) => c.sku === it.sku);
+          if (!check) return it;
+          const recTotal = Number(((it.receivedQuantity || 0) + check.received).toFixed(3));
+          const defTotal = Number(((it.defectiveQuantity || 0) + check.defective).toFixed(3));
+          const rem = Math.max(0, it.quantity - recTotal);
+          if (rem > 0) {
+            allCompleted = false;
+          }
+          return {
+            ...it,
+            receivedQuantity: recTotal,
+            defectiveQuantity: defTotal,
+            missingQuantity: rem,
+          };
+        });
+
+        const newStatus = allCompleted ? ("recibida" as const) : ("recibida_parcial" as const);
+        return {
+          ...o,
+          status: newStatus,
+          items: updatedItems,
+          invoiceNumber: invoiceNumber || linkedInvoice?.number || o.invoiceNumber,
+        };
+      })
     );
 
-    // Remove from pending receipts
-    setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
+    // Remove from pending receipts only if all items have arrived
+    if (allCompleted) {
+      setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
+    }
+
+    // Discrepancy notification & alert to Administrator
+    if (discrepancyDetails.length > 0) {
+      const alert: DashboardAlert = {
+        id: `alert_rec_${Date.now()}`,
+        title: `Discrepancia en Recepción ${ocCode}`,
+        description: `Recepción física difiere de lo ordenado/facturado: ${discrepancyDetails.join(", ")}.`,
+        type: "stock",
+        severity: "rojo",
+        time: "Ahora mismo",
+        actionLabel: "Ver OC",
+      };
+      setAlerts((prev) => [alert, ...prev]);
+
+      const notif: NotificationDetail = {
+        id: `notif_rec_${Date.now()}`,
+        title: `Discrepancia en Recepción ${ocCode}`,
+        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${discrepancyDetails.join(", ")}.`,
+        date: new Date().toISOString().slice(0, 10),
+        type: "stock",
+        severity: "warn",
+        read: false,
+        relatedEntityType: "orden_compra",
+        relatedEntityId: ocCode,
+        relatedEntityLabel: ocCode,
+      };
+      setNotificationsList((prev) => [notif, ...prev]);
+    }
   };
 
   // 4. THIRD PARTIES
@@ -1045,20 +1132,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setReturnOrders((prev) =>
       prev.map((r) => {
         if (r.id !== returnId) return r;
+        const returnDiscrepancies: string[] = [];
+
         const updatedItems = (r.items || []).map((item) => {
           const verified = verifiedItems.find((v) => v.sku === item.sku);
+          const realQty = verified ? verified.quantityReceivedReal : item.quantityReturned;
+          if (realQty !== item.quantityReturned) {
+            returnDiscrepancies.push(
+              `${item.sku}: declarado ${item.quantityReturned} ${item.unit}, verificado físico ${realQty} ${item.unit}`
+            );
+          }
           return {
             ...item,
-            quantityReceivedReal: verified ? verified.quantityReceivedReal : item.quantityReturned,
+            quantityReceivedReal: realQty,
           };
         });
 
         // Re-integrate verified quantities into inventory stock
+        let totalReturnedValue = 0;
         updatedItems.forEach((item) => {
           const qty = item.quantityReceivedReal ?? item.quantityReturned;
           const prod = products.find((p) => p.sku === item.sku);
           if (prod) {
-            updateProduct(item.sku, { stock: prod.stock + qty });
+            const itemPmp = prod.pmp || prod.unitCost || 0;
+            totalReturnedValue += qty * itemPmp;
+            updateProduct(item.sku, { stock: Number((prod.stock + qty).toFixed(3)) });
             // Add Cardex
             const newCardex: CardexEntry = {
               id: `kdx_ret_${Date.now()}_${item.sku}`,
@@ -1072,13 +1170,56 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               projectName: r.projectName,
               qtyIn: qty,
               qtyOut: 0,
-              balance: prod.stock + qty,
-              pmp: prod.pmp || prod.unitCost,
-              totalValue: (prod.stock + qty) * (prod.pmp || prod.unitCost),
+              balance: Number((prod.stock + qty).toFixed(3)),
+              pmp: itemPmp,
+              totalValue: Math.round((prod.stock + qty) * itemPmp),
             };
             setCardex((k) => [newCardex, ...k]);
           }
         });
+
+        // Ajustar costo real del proyecto (se descuenta el sobrante reingresado a bodega)
+        if (r.projectCode && totalReturnedValue > 0) {
+          setProjects((prevProj) =>
+            prevProj.map((p) =>
+              p.code === r.projectCode
+                ? {
+                    ...p,
+                    costReal: Math.max(0, p.costReal - totalReturnedValue),
+                    costRealMaterials: Math.max(0, (p.costRealMaterials || 0) - totalReturnedValue),
+                  }
+                : p
+            )
+          );
+        }
+
+        // Notificar al Administrador si hubo diferencia entre lo declarado por el técnico y lo recibido
+        if (returnDiscrepancies.length > 0) {
+          const alert: DashboardAlert = {
+            id: `alert_ret_${Date.now()}`,
+            title: `Discrepancia en Devolución de Obra: ${r.code}`,
+            description: `Técnico ${r.technicianName} entregó cantidades distintas a las declaradas: ${returnDiscrepancies.join("; ")}.`,
+            type: "stock",
+            severity: "amarillo",
+            time: "Ahora mismo",
+            actionLabel: "Ver Devolución",
+          };
+          setAlerts((prevA) => [alert, ...prevA]);
+
+          const notif: NotificationDetail = {
+            id: `notif_ret_${Date.now()}`,
+            title: `Diferencia en Devolución ${r.code}`,
+            message: `Bodeguero registró diferencia física en devolución de ${r.technicianName} (${r.projectName}): ${returnDiscrepancies.join("; ")}.`,
+            date: new Date().toISOString().slice(0, 10),
+            type: "stock",
+            severity: "warn",
+            read: false,
+            relatedEntityType: "proyecto",
+            relatedEntityId: r.projectCode,
+            relatedEntityLabel: r.code,
+          };
+          setNotificationsList((prevN) => [notif, ...prevN]);
+        }
 
         return {
           ...r,
@@ -1123,8 +1264,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Deduct from quarantine
     if (prod && (prod.quarantine || 0) >= quantity) {
-      updateProduct(sku, { quarantine: (prod.quarantine || 0) - quantity });
+      updateProduct(sku, { quarantine: Math.max(0, (prod.quarantine || 0) - quantity) });
+
+      // Cardex entry for trace of departure from quarantine
+      const newCardex: CardexEntry = {
+        id: `kdx_supret_${Date.now()}_${sku}`,
+        sku,
+        productName: prod.name,
+        date: new Date().toISOString().slice(0, 10),
+        type: "devolucion",
+        typeLabel: "Salida devolución proveedor (Cuarentena)",
+        reference: `Guía: ${dispatchGuideNumber}`,
+        qtyIn: 0,
+        qtyOut: quantity,
+        balance: prod.stock,
+        pmp: prod.pmp || prod.unitCost,
+        totalValue: Math.round(prod.stock * (prod.pmp || prod.unitCost)),
+      };
+      setCardex((k) => [newCardex, ...k]);
     }
+
+    // Alerta al Administrador para seguimiento hasta Nota de Crédito o reposición
+    const alert: DashboardAlert = {
+      id: `alert_supret_${Date.now()}`,
+      title: `Devolución a Proveedor: ${sup?.businessName || "Proveedor"}`,
+      description: `Se despacharon ${quantity} ${prod?.unit || "un"} de ${prod?.name || sku} por falla (Guía ${dispatchGuideNumber}). Dar seguimiento a reposición o Nota de Crédito.`,
+      type: "costo",
+      severity: "amarillo",
+      time: "Ahora mismo",
+      actionLabel: "Ver Devoluciones",
+    };
+    setAlerts((prevA) => [alert, ...prevA]);
+
+    const notif: NotificationDetail = {
+      id: `notif_supret_${Date.now()}`,
+      title: `Salida de Cuarentena a Proveedor`,
+      message: `Bodega despachó ${quantity} ${prod?.unit || "un"} a ${sup?.businessName || "proveedor"} con Guía N° ${dispatchGuideNumber}. Pendiente resolución contable.`,
+      date: new Date().toISOString().slice(0, 10),
+      type: "stock",
+      severity: "info",
+      read: false,
+      relatedEntityType: "orden_compra",
+      relatedEntityId: dispatchGuideNumber,
+      relatedEntityLabel: code,
+    };
+    setNotificationsList((prevN) => [notif, ...prevN]);
   };
 
   const resolveSupplierReturn = (

@@ -13,7 +13,7 @@ import { ROLES, ROLE_ORDER } from "@/core/roles";
 import { theme } from "@/core/theme";
 import { Badge } from "./Badge";
 import { NotificationBell } from "./NotificationBell";
-import { DesignSystemScreen } from "@/features/design-system/DesignSystemScreen";
+
 
 interface AppHeaderProps {
   title: string;
@@ -28,7 +28,6 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 }) => {
   const { currentRole, user, setRole } = useAuth();
   const [roleModalVisible, setRoleModalVisible] = useState(false);
-  const [designModalVisible, setDesignModalVisible] = useState(false);
   const roleConfig = ROLES[currentRole];
 
   return (
@@ -43,15 +42,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </View>
 
         <View style={styles.topActionsRow}>
-          <TouchableOpacity
-            onPress={() => setDesignModalVisible(true)}
-            style={styles.designSystemBtn}
-            activeOpacity={0.7}
-            accessibilityLabel="Ver Catálogo de Componentes y Sistema de Diseño"
-          >
-            <Ionicons name="color-palette-outline" size={16} color={theme.colors.primaryDark} />
-            <Text style={styles.designSystemBtnText}>Componentes</Text>
-          </TouchableOpacity>
+
 
           <TouchableOpacity
             onPress={() => setRoleModalVisible(true)}
@@ -167,29 +158,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         </Pressable>
       </Modal>
 
-      {/* Modal Pantalla Completa Sistema de Diseño (Paso 1) */}
-      <Modal
-        visible={designModalVisible}
-        animationType="slide"
-        onRequestClose={() => setDesignModalVisible(false)}
-      >
-        <View style={styles.designModalContainer}>
-          <View style={styles.designModalHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="color-palette" size={20} color={theme.colors.primary} />
-              <Text style={styles.designModalTitle}>Sistema de Diseño • FYAG Paso 1</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setDesignModalVisible(false)}
-              style={styles.closeDesignBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <DesignSystemScreen />
-        </View>
-      </Modal>
+
     </View>
   );
 };

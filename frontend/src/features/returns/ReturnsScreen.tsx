@@ -198,15 +198,24 @@ export const ReturnsScreen: React.FC = () => {
   const [resolveType, setResolveType] = useState<"nota_credito" | "reemplazo_producto" | "reembolso">("nota_credito");
   const [resolveNotes, setResolveNotes] = useState("");
 
+  const quarantineProducts = products.filter((p) => (p.quarantine || 0) > 0);
+
   const handleSaveSupplierReturn = () => {
-    if (!supRetSku || !supRetQty || !supRetReason.trim() || !supRetGuide.trim()) {
+    setSupRetError("");
+    const selectedProd = products.find((p) => p.sku === supRetSku);
+    const qtyNum = Number(supRetQty) || 0;
+    if (!supRetSku || qtyNum <= 0 || !supRetReason.trim() || !supRetGuide.trim()) {
       setSupRetError("Todos los campos y el N° de Guía de Despacho son requeridos.");
+      return;
+    }
+    if ((selectedProd?.quarantine || 0) < qtyNum) {
+      setSupRetError(`No puede devolver más cantidad de la que existe en cuarentena (${selectedProd?.quarantine || 0} ${selectedProd?.unit || "un"}).`);
       return;
     }
     createSupplierReturn(
       supRetSupplierId,
       supRetSku,
-      Number(supRetQty) || 1,
+      qtyNum,
       supRetReason.trim(),
       supRetGuide.trim()
     );
@@ -240,19 +249,14 @@ export const ReturnsScreen: React.FC = () => {
   return (
     <ScreenStateWrapper screenTitle="Devoluciones y Faena" skeletonType="cards">
     <View style={styles.container}>
-      {/* ENCABEZADO CON MIGAS DE PAN */}
+      {/* ENCABEZADO */}
       <PageHeader
         title="Devoluciones de Faena"
-        subtitle="Recepción física de sobrantes de técnicos, verificación en bodega y devoluciones a proveedores"
-        breadcrumbs={[
-          "Inicio",
-          "Operación",
-          activeTab === "tecnico"
-            ? "Devolución Técnico"
-            : activeTab === "bodega"
-            ? "Recepción en Bodega"
-            : "Devolución Proveedor",
-        ]}
+        subtitle={
+          currentRole === "warehouse"
+            ? undefined
+            : "Recepción física de sobrantes de técnicos, verificación en bodega y devoluciones a proveedores"
+        }
       />
 
       {/* ========================================================================= */}
@@ -938,20 +942,28 @@ export const ReturnsScreen: React.FC = () => {
 
         <Text style={styles.fieldLabel}>2. Insumo Defectuoso (en Cuarentena):</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
-          {products.map((p) => (
-            <TouchableOpacity
-              key={p.sku}
-              onPress={() => setSupRetSku(p.sku)}
-              style={[
-                styles.chipBtn,
-                supRetSku === p.sku && styles.chipBtnActive,
-              ]}
-            >
-              <Text style={[styles.chipTxt, supRetSku === p.sku && styles.chipTxtActive]}>
-                {p.name} ({p.quarantine || 0} en cuarentena)
+          {quarantineProducts.length === 0 ? (
+            <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
+              <Text style={{ fontSize: 12, color: theme.colors.textMuted }}>
+                No hay insumos registrados en cuarentena actualmente.
               </Text>
-            </TouchableOpacity>
-          ))}
+            </View>
+          ) : (
+            quarantineProducts.map((p) => (
+              <TouchableOpacity
+                key={p.sku}
+                onPress={() => setSupRetSku(p.sku)}
+                style={[
+                  styles.chipBtn,
+                  supRetSku === p.sku && styles.chipBtnActive,
+                ]}
+              >
+                <Text style={[styles.chipTxt, supRetSku === p.sku && styles.chipTxtActive]}>
+                  {p.name} ({p.quarantine} {p.unit} en cuarentena)
+                </Text>
+              </TouchableOpacity>
+            ))
+          )}
         </ScrollView>
 
         <Input

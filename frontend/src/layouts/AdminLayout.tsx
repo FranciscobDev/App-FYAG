@@ -21,7 +21,7 @@ import { Badge } from "@/components/common/Badge";
 import { NotificationBell } from "@/components/common/NotificationBell";
 import { SearchInput } from "@/components/common/SearchInput";
 import { SessionTimeoutModal } from "@/components/common/SessionTimeoutModal";
-import { DesignSystemScreen } from "@/features/design-system/DesignSystemScreen";
+
 
 // Pantallas administradas
 import { AdminDashboard } from "@/features/dashboard/AdminDashboard";
@@ -90,13 +90,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
   const { user, currentRole, setRole } = useAuth();
   const { width } = useWindowDimensions();
 
-  // En pantallas medianas o escritorio se inicia expandido, en pantallas angostas colapsado
-  const [collapsed, setCollapsed] = useState(width < 900);
+  // Menú Drawer lateral desplegable desde las 3 líneas
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState<AdminRoute>("dashboard");
 
   // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [designModalOpen, setDesignModalOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
 
@@ -176,20 +175,20 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
   return (
     <View style={styles.container}>
       {/* ========================================================================= */}
-      {/* 1. TOPBAR ESCRITORIO                                                      */}
+      {/* 1. TOPBAR RESPONSIVA                                                      */}
       {/* ========================================================================= */}
-      <View style={styles.topbar}>
-        {/* Lado Izquierdo: Toggle Sidebar + Logo */}
+      <View style={[styles.topbar, width < 600 && styles.topbarCompact]}>
+        {/* Lado Izquierdo: Botón Menú + Logo */}
         <View style={styles.topLeft}>
           <TouchableOpacity
-            onPress={() => setCollapsed(!collapsed)}
+            onPress={() => setDrawerOpen(true)}
             style={styles.toggleBtn}
-            accessibilityLabel={collapsed ? "Expandir menú lateral" : "Colapsar menú lateral"}
+            accessibilityLabel="Abrir menú de navegación"
             accessibilityRole="button"
           >
             <Ionicons
-              name={collapsed ? "menu-outline" : "chevron-back-outline"}
-              size={22}
+              name="menu-outline"
+              size={24}
               color={theme.colors.text}
             />
           </TouchableOpacity>
@@ -199,34 +198,40 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
               <Ionicons name="flash" size={16} color={theme.colors.textInverse} />
             </View>
             <Text style={styles.brandName}>FYAG</Text>
-            <Badge label="ADMIN" tone="primary" size="sm" style={styles.roleBadge} />
+            {width >= 480 && (
+              <Badge label="ADMIN" tone="primary" size="sm" style={styles.roleBadge} />
+            )}
           </View>
         </View>
 
-        {/* Centro: Buscador Global */}
-        <View style={styles.topCenter}>
-          <SearchInput
-            value={globalSearch}
-            onChangeText={(t) => {
-              setGlobalSearch(t);
-              if (t.trim().length > 1) setGlobalSearchOpen(true);
-            }}
-            placeholder="Buscar global por SKU, RUT, OC, Proyecto... (Ctrl+K)"
-            containerStyle={styles.globalSearchBox}
-          />
-        </View>
+        {/* Centro: Buscador Global (visible en pantallas medianas y grandes, o botón en pantallas chicas) */}
+        {width >= 700 ? (
+          <View style={styles.topCenter}>
+            <SearchInput
+              value={globalSearch}
+              onChangeText={(t) => {
+                setGlobalSearch(t);
+                if (t.trim().length > 1) setGlobalSearchOpen(true);
+              }}
+              placeholder="Buscar SKU, RUT, OC, Proyecto... (Ctrl+K)"
+              containerStyle={styles.globalSearchBox}
+            />
+          </View>
+        ) : (
+          <View style={styles.topCenterCompact}>
+            <TouchableOpacity
+              onPress={() => setGlobalSearchOpen(true)}
+              style={styles.compactSearchBtn}
+              accessibilityLabel="Buscar global"
+              accessibilityRole="button"
+            >
+              <Ionicons name="search-outline" size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* Lado Derecho: Acceso Catálogo, Notificaciones y Menú Usuario */}
+        {/* Lado Derecho: Notificaciones */}
         <View style={styles.topRight}>
-          <TouchableOpacity
-            onPress={() => setDesignModalOpen(true)}
-            style={styles.designBtn}
-            accessibilityLabel="Ver Catálogo de Componentes"
-          >
-            <Ionicons name="color-palette-outline" size={16} color={theme.colors.primaryDark} />
-            <Text style={styles.designBtnText}>Componentes</Text>
-          </TouchableOpacity>
-
           <NotificationBell
             onNavigateToObject={(entityType) => {
               if (entityType === "insumo" || entityType === "solicitud") {
@@ -242,70 +247,85 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
               }
             }}
           />
-
-          {/* Menú de Usuario */}
-          <TouchableOpacity
-            onPress={() => setUserMenuOpen(true)}
-            style={styles.userMenuTrigger}
-            activeOpacity={0.8}
-            accessibilityLabel="Menú de usuario"
-          >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user.initials}</Text>
-            </View>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
-              <Text style={styles.userRoleText}>Administrador</Text>
-            </View>
-            <Ionicons name="chevron-down" size={16} color={theme.colors.textMuted} />
-          </TouchableOpacity>
         </View>
       </View>
 
       {/* ========================================================================= */}
-      {/* 2. LAYOUT INFERIOR: SIDEBAR + ÁREA DE CONTENIDO                           */}
+      {/* 2. LAYOUT: CONTENIDO A PANTALLA COMPLETA (SIN MENÚ LATERAL FIJO)          */}
       {/* ========================================================================= */}
       <View style={styles.bodyWrapper}>
-        {/* SIDEBAR COLAPSABLE */}
-        <View
-          style={[
-            styles.sidebar,
-            collapsed ? styles.sidebarCollapsed : styles.sidebarExpanded,
-          ]}
-        >
-          <ScrollView
-            style={styles.sidebarScroll}
-            contentContainerStyle={styles.sidebarContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {ADMIN_GROUPS.map((group) => (
-              <View key={group.title} style={styles.navGroup}>
-                {!collapsed && (
-                  <Text style={styles.groupTitle}>{group.title}</Text>
-                )}
+        <View style={styles.mainContent}>
+          <View style={styles.contentContainer}>
+            {renderContent()}
+          </View>
+        </View>
+      </View>
 
-                {group.items.map((item) => {
-                  const isActive = activeRoute === item.id;
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      onPress={() => setActiveRoute(item.id)}
-                      activeOpacity={0.7}
-                      style={[
-                        styles.navItem,
-                        collapsed && styles.navItemCollapsed,
-                        isActive && styles.navItemActive,
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.label}
-                    >
-                      <Ionicons
-                        name={item.icon}
-                        size={20}
-                        color={isActive ? theme.colors.primary : theme.colors.textSecondary}
-                        style={styles.navIcon}
-                      />
-                      {!collapsed && (
+      {/* ========================================================================= */}
+      {/* 2.1 MENÚ DRAWER (ABRE CON EL BOTÓN DE 3 LÍNEAS)                           */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={drawerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDrawerOpen(false)}
+      >
+        <View style={styles.drawerOverlay}>
+          <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
+
+          <View style={styles.drawerContent} onStartShouldSetResponder={() => true}>
+            {/* Header del Drawer */}
+            <View style={styles.drawerHeader}>
+              <View style={styles.brandRow}>
+                <View style={styles.brandLogoBox}>
+                  <Ionicons name="flash" size={16} color={theme.colors.textInverse} />
+                </View>
+                <Text style={styles.brandName}>FYAG</Text>
+                <Badge label="ADMIN" tone="primary" size="sm" style={styles.roleBadge} />
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setDrawerOpen(false)}
+                style={styles.drawerCloseBtn}
+                accessibilityLabel="Cerrar menú"
+                accessibilityRole="button"
+              >
+                <Ionicons name="close-outline" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Lista de navegación */}
+            <ScrollView
+              style={styles.drawerScroll}
+              contentContainerStyle={styles.drawerScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {ADMIN_GROUPS.map((group) => (
+                <View key={group.title} style={styles.navGroup}>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                  {group.items.map((item) => {
+                    const isActive = activeRoute === item.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        onPress={() => {
+                          setActiveRoute(item.id);
+                          setDrawerOpen(false);
+                        }}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.navItem,
+                          isActive && styles.navItemActive,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={item.label}
+                      >
+                        <Ionicons
+                          name={item.icon}
+                          size={20}
+                          color={isActive ? theme.colors.primary : theme.colors.textSecondary}
+                          style={styles.navIcon}
+                        />
                         <Text
                           style={[
                             styles.navLabel,
@@ -315,30 +335,36 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
                         >
                           {item.label}
                         </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ))}
-          </ScrollView>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
+            </ScrollView>
 
-          {/* Footer del Sidebar con info de sistema */}
-          {!collapsed && (
-            <View style={styles.sidebarFooter}>
-              <Text style={styles.footerVersion}>FYAG Sistema v2.0</Text>
-              <Text style={styles.footerStatus}>● Conectado a Servidor Central</Text>
+            {/* SECCIÓN FIJA ABAJO A LA IZQUIERDA: LOGIN / PERFIL DE USUARIO */}
+            <View style={styles.drawerUserFooter}>
+              <TouchableOpacity
+                onPress={() => {
+                  setUserMenuOpen(true);
+                }}
+                style={styles.drawerUserTrigger}
+                activeOpacity={0.8}
+                accessibilityLabel="Menú de usuario y sesión"
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{user.initials}</Text>
+                </View>
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+                  <Text style={styles.userRoleText}>Administrador</Text>
+                </View>
+                <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.textMuted} style={{ marginLeft: "auto" }} />
+              </TouchableOpacity>
             </View>
-          )}
-        </View>
-
-        {/* CONTENIDO PRINCIPAL CENTRADO (MÁXIMO 1280 PX) */}
-        <View style={styles.mainContent}>
-          <View style={styles.contentContainer}>
-            {renderContent()}
           </View>
         </View>
-      </View>
+      </Modal>
 
       {/* ========================================================================= */}
       {/* 3. MODALES DE APOYO: USUARIO Y CATÁLOGO DE DISEÑO                         */}
@@ -426,29 +452,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
         </Pressable>
       </Modal>
 
-      {/* Modal Pantalla Completa Sistema de Diseño */}
-      <Modal
-        visible={designModalOpen}
-        animationType="slide"
-        onRequestClose={() => setDesignModalOpen(false)}
-      >
-        <View style={styles.designModalWrapper}>
-          <View style={styles.designModalHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="color-palette" size={20} color={theme.colors.primary} />
-              <Text style={styles.designModalTitle}>Catálogo de Componentes FYAG (Paso 1 & 2)</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setDesignModalOpen(false)}
-              style={styles.closeDesignBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <DesignSystemScreen />
-        </View>
-      </Modal>
+
 
       {/* Modal de Aviso por Expiración de Sesión (30 min de inactividad, solo web) */}
       <SessionTimeoutModal
@@ -481,6 +485,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
     ...theme.shadows.sm,
   },
+  topbarCompact: {
+    paddingHorizontal: theme.spacing.md,
+  },
   topLeft: {
     flexDirection: "row",
     alignItems: "center",
@@ -489,7 +496,7 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surfaceAlt,
-    marginRight: 12,
+    marginRight: 10,
   },
   brandRow: {
     flexDirection: "row",
@@ -518,6 +525,18 @@ const styles = StyleSheet.create({
     maxWidth: 420,
     marginHorizontal: 16,
   },
+  topCenterCompact: {
+    flex: 1,
+    alignItems: "flex-end",
+    marginRight: 8,
+  },
+  compactSearchBtn: {
+    padding: 8,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   globalSearchBox: {
     marginBottom: 0,
   },
@@ -541,6 +560,21 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: theme.colors.primaryDark,
     marginLeft: 4,
+  },
+  floatingUserTrigger: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.md,
+    zIndex: 90,
   },
   userMenuTrigger: {
     flexDirection: "row",
@@ -579,24 +613,60 @@ const styles = StyleSheet.create({
   },
   bodyWrapper: {
     flex: 1,
+    width: "100%",
+  },
+  mainContent: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    width: "100%",
+    alignItems: "center",
+  },
+  contentContainer: {
+    width: "100%",
+    maxWidth: 1280,
+    flex: 1,
+    alignSelf: "center",
+  },
+  drawerOverlay: {
+    flex: 1,
     flexDirection: "row",
   },
-  sidebar: {
+  drawerBackdrop: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+  },
+  drawerContent: {
+    width: 290,
+    maxWidth: "85%",
+    height: "100%",
     backgroundColor: theme.colors.card,
     borderRightWidth: 1,
     borderRightColor: theme.colors.border,
     justifyContent: "space-between",
+    ...theme.shadows.lg,
+    zIndex: 10,
   },
-  sidebarExpanded: {
-    width: 240,
+  drawerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
   },
-  sidebarCollapsed: {
-    width: 68,
+  drawerCloseBtn: {
+    padding: 4,
+    borderRadius: theme.radius.sm,
   },
-  sidebarScroll: {
+  drawerScroll: {
     flex: 1,
   },
-  sidebarContent: {
+  drawerScrollContent: {
     paddingVertical: 12,
   },
   navGroup: {
@@ -618,11 +688,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: theme.radius.md,
     marginBottom: 2,
-    minHeight: 44, // Accesibilidad táctil
-  },
-  navItemCollapsed: {
-    justifyContent: "center",
-    paddingHorizontal: 0,
+    minHeight: 44,
   },
   navItemActive: {
     backgroundColor: theme.colors.primaryLight,
@@ -642,39 +708,30 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryDark,
     fontWeight: theme.fontWeight.semibold,
   },
-  sidebarFooter: {
-    padding: theme.spacing.md,
+  drawerUserFooter: {
+    padding: 12,
     borderTopWidth: 1,
     borderTopColor: theme.colors.borderLight,
     backgroundColor: theme.colors.surfaceAlt,
   },
-  footerVersion: {
-    fontSize: theme.fontSize.caption,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.textSecondary,
-  },
-  footerStatus: {
-    fontSize: 10,
-    color: theme.colors.okDark,
-    marginTop: 2,
-  },
-  mainContent: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
+  drawerUserTrigger: {
+    flexDirection: "row",
     alignItems: "center",
-  },
-  contentContainer: {
-    width: "100%",
-    maxWidth: 1280,
-    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
   },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",
-    justifyContent: "flex-start",
-    alignItems: "flex-end",
-    paddingTop: 68,
-    paddingRight: 20,
+    justifyContent: "flex-end",
+    alignItems: "flex-start",
+    paddingBottom: 76,
+    paddingLeft: 16,
   },
   userMenuCard: {
     width: 280,

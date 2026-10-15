@@ -4,6 +4,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
   ViewStyle,
 } from "react-native";
@@ -27,49 +28,19 @@ export interface PageHeaderProps {
 export const PageHeader: React.FC<PageHeaderProps> = ({
   title,
   subtitle,
-  breadcrumbs,
+  breadcrumbs: _breadcrumbs,
   onBack,
   rightAction,
   containerStyle,
 }) => {
+  const { width } = useWindowDimensions();
+  const isCompact = width < 540;
+
   return (
-    <View style={[styles.container, containerStyle]}>
-      {/* Migas de pan (Breadcrumbs) */}
-      {breadcrumbs && breadcrumbs.length > 0 && (
-        <View style={styles.breadcrumbRow}>
-          {breadcrumbs.map((crumb, idx) => {
-            const isLast = idx === breadcrumbs.length - 1;
-            const label = typeof crumb === "string" ? crumb : crumb.label;
-            const onPress = typeof crumb === "string" ? undefined : crumb.onPress;
-
-            return (
-              <View key={idx} style={styles.crumbItem}>
-                {idx > 0 && (
-                  <Ionicons
-                    name="chevron-forward"
-                    size={12}
-                    color={theme.colors.textMuted}
-                    style={styles.crumbSeparator}
-                  />
-                )}
-                {onPress && !isLast ? (
-                  <TouchableOpacity onPress={onPress}>
-                    <Text style={styles.crumbLink}>{label}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={[styles.crumbText, isLast && styles.crumbLast]}>
-                    {label}
-                  </Text>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-
+    <View style={[styles.container, isCompact && styles.containerCompact, containerStyle]}>
       {/* Fila Principal de Título y Acciones */}
-      <View style={styles.mainRow}>
-        <View style={styles.leftCol}>
+      <View style={[styles.mainRow, isCompact && styles.mainRowCompact]}>
+        <View style={[styles.leftCol, isCompact && styles.leftColCompact]}>
           {onBack && (
             <TouchableOpacity
               onPress={onBack}
@@ -83,12 +54,16 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
           )}
 
           <View style={styles.titleCol}>
-            <Text style={styles.title}>{title}</Text>
-            {subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+            <Text style={[styles.title, isCompact && styles.titleCompact]}>{title}</Text>
+            {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
           </View>
         </View>
 
-        {rightAction && <View style={styles.rightActionCol}>{rightAction}</View>}
+        {rightAction && (
+          <View style={[styles.rightActionCol, isCompact && styles.rightActionColCompact]}>
+            {rightAction}
+          </View>
+        )}
       </View>
     </View>
   );
@@ -97,54 +72,42 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: theme.colors.card,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
   },
-  breadcrumbRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    marginBottom: 6,
-  },
-  crumbItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  crumbSeparator: {
-    marginHorizontal: 5,
-  },
-  crumbText: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.textMuted,
-  },
-  crumbLink: {
-    fontSize: theme.fontSize.xs,
-    color: theme.colors.primaryDark,
-    fontWeight: "600",
-  },
-  crumbLast: {
-    color: theme.colors.text,
-    fontWeight: "600",
+  containerCompact: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 8,
+    marginBottom: theme.spacing.xs,
   },
   mainRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
+  mainRowCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
   leftCol: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    marginRight: 12,
+    marginRight: 8,
+  },
+  leftColCompact: {
+    marginRight: 6,
   },
   backBtn: {
-    marginRight: 10,
+    marginRight: 8,
     padding: 6,
-    minWidth: theme.touchTargets.minHeight, // Mínimo 44 px accesible
-    minHeight: theme.touchTargets.minHeight,
+    minWidth: 36,
+    minHeight: 36,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surfaceAlt,
     alignItems: "center",
@@ -154,10 +117,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: theme.fontSize.lg,
+    fontSize: theme.fontSize.md,
     fontWeight: theme.fontWeight.semibold,
     color: theme.colors.text,
-    lineHeight: 26,
+    lineHeight: 22,
+  },
+  titleCompact: {
+    fontSize: theme.fontSize.base,
+    lineHeight: 20,
   },
   subtitle: {
     fontSize: theme.fontSize.xs,
@@ -167,5 +134,8 @@ const styles = StyleSheet.create({
   rightActionCol: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  rightActionColCompact: {
+    alignSelf: "center",
   },
 });

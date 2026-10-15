@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,7 +20,7 @@ import { Badge } from "@/components/common/Badge";
 import { NotificationBell } from "@/components/common/NotificationBell";
 import { QrScannerModal } from "@/components/common/QrScannerModal";
 import { Toast, ToastType } from "@/components/common/Toast";
-import { DesignSystemScreen } from "@/features/design-system/DesignSystemScreen";
+
 
 // Pantallas de Bodega
 import { WarehouseDashboard } from "@/features/dashboard/WarehouseDashboard";
@@ -33,6 +34,7 @@ export type BodegaRoute =
   | "egreso"
   | "recepcion"
   | "conteo"
+  | "mermas"
   | "inventario"
   | "herramientas"
   | "devoluciones";
@@ -50,7 +52,8 @@ const BODEGA_ITEMS: BodegaNavItem[] = [
   { id: "egreso", label: "Egreso", icon: "arrow-up-circle", highlight: true },
   { id: "recepcion", label: "Recepción", icon: "arrow-down-circle", highlight: true },
   { id: "conteo", label: "Conteo", icon: "clipboard", highlight: true },
-  { id: "inventario", label: "Cardex", icon: "list-outline" },
+  { id: "mermas", label: "Mermas", icon: "trash-outline" },
+  { id: "inventario", label: "Inventario", icon: "cube-outline" },
   { id: "herramientas", label: "Herram.", icon: "construct-outline" },
   { id: "devoluciones", label: "Devoluc.", icon: "return-down-back-outline" },
 ];
@@ -62,14 +65,16 @@ export interface BodegaLayoutProps {
 export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
   const { user, currentRole, setRole } = useAuth();
   const { products } = useApp();
+  const { width } = useWindowDimensions();
 
   const [activeRoute, setActiveRoute] = useState<BodegaRoute>("home");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannedCode, setScannedCode] = useState<string | null>(null);
 
   // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [designModalOpen, setDesignModalOpen] = useState(false);
+
 
   // Toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -98,11 +103,13 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
       case "home":
         return <WarehouseDashboard onNavigate={(tab) => setActiveRoute(tab as BodegaRoute)} />;
       case "egreso":
-        return <InventoryScreen initialTab="egreso" />;
+        return <InventoryScreen key="egreso" initialTab="egreso" hideTabBar={true} />;
       case "conteo":
-        return <InventoryScreen initialTab="conteo" />;
+        return <InventoryScreen key="conteo" initialTab="conteo" />;
+      case "mermas":
+        return <InventoryScreen key="mermas" initialTab="mermas" />;
       case "inventario":
-        return <InventoryScreen initialTab="catalogo" />;
+        return <InventoryScreen key="inventario" initialTab="catalogo" />;
       case "recepcion":
         return <PurchasingScreen initialTab="recepcion" />;
       case "herramientas":
@@ -117,116 +124,45 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
   return (
     <View style={styles.container}>
       {/* ========================================================================= */}
-      {/* 1. TOPBAR TABLET                                                          */}
+      {/* 1. TOPBAR RESPONSIVA                                                      */}
       {/* ========================================================================= */}
-      <View style={styles.topbar}>
+      <View style={[styles.topbar, width < 560 && styles.topbarCompact]}>
         <View style={styles.topLeft}>
+          <TouchableOpacity
+            onPress={() => setDrawerOpen(true)}
+            style={styles.toggleBtn}
+            accessibilityLabel="Abrir menú de navegación"
+            accessibilityRole="button"
+          >
+            <Ionicons name="menu-outline" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+
           <View style={styles.brandIconCircle}>
             <Ionicons name="cube" size={20} color={theme.colors.textInverse} />
           </View>
           <View>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Text style={styles.brandTitle}>FYAG BODEGA</Text>
-              <Badge label="TABLET" tone="warn" size="sm" style={{ marginLeft: 6 }} />
+              {width >= 480 && (
+                <Badge label="TABLET" tone="warn" size="sm" style={{ marginLeft: 6 }} />
+              )}
             </View>
-            <Text style={styles.warehouseSubtitle}>Bodega Central Santiago • Terminal R-1</Text>
+            {width >= 600 && (
+              <Text style={styles.warehouseSubtitle}>Bodega Central Santiago • Terminal R-1</Text>
+            )}
           </View>
         </View>
 
-        {/* Acciones Rápidas Superior */}
+        {/* Acciones Rápidas Superior: Campana en la esquina */}
         <View style={styles.topRight}>
-          <TouchableOpacity
-            onPress={() => setDesignModalOpen(true)}
-            style={styles.designBtn}
-            accessibilityLabel="Ver Catálogo de Componentes"
-          >
-            <Ionicons name="color-palette-outline" size={16} color={theme.colors.warnDark} />
-            <Text style={styles.designBtnText}>Componentes</Text>
-          </TouchableOpacity>
-
           <NotificationBell />
-
-          <TouchableOpacity
-            onPress={() => setUserMenuOpen(true)}
-            style={styles.userBadgeBtn}
-            activeOpacity={0.8}
-          >
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user.initials}</Text>
-            </View>
-            <View style={{ marginHorizontal: 6 }}>
-              <Text style={styles.userName}>{user.name.split(" ")[0]}</Text>
-              <Text style={styles.userRole}>Bodeguero</Text>
-            </View>
-            <Ionicons name="chevron-down" size={14} color={theme.colors.textMuted} />
-          </TouchableOpacity>
         </View>
       </View>
 
       {/* ========================================================================= */}
-      {/* 2. CUERPO: SIDEBAR COMPACTO TABLET + ÁREA PRINCIPAL                       */}
+      {/* 2. CUERPO: ÁREA PRINCIPAL A PANTALLA COMPLETA                             */}
       {/* ========================================================================= */}
       <View style={styles.bodyWrapper}>
-        {/* SIDEBAR COMPACTO CON ICONOS GRANDES (TOUCH TARGETS ≥ 50 PX) */}
-        <View style={styles.sidebar}>
-          <ScrollView
-            contentContainerStyle={styles.sidebarContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {BODEGA_ITEMS.map((item) => {
-              const isActive = activeRoute === item.id;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  onPress={() => setActiveRoute(item.id)}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.navItem,
-                    item.highlight && styles.navItemHighlight,
-                    isActive && styles.navItemActive,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.label}
-                >
-                  <Ionicons
-                    name={item.icon}
-                    size={26}
-                    color={
-                      isActive
-                        ? theme.colors.warnDark
-                        : item.highlight
-                        ? theme.colors.primaryDark
-                        : theme.colors.textSecondary
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.navLabel,
-                      isActive && styles.navLabelActive,
-                      item.highlight && styles.navLabelHighlight,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Botón Escáner dentro del Sidebar para acceso directo */}
-          <View style={styles.sidebarScanBox}>
-            <TouchableOpacity
-              onPress={() => setScannerOpen(true)}
-              style={styles.sidebarScanBtn}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="barcode-outline" size={24} color={theme.colors.textInverse} />
-              <Text style={styles.sidebarScanText}>Scan</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
         {/* ÁREA DE CONTENIDO */}
         <View style={styles.mainContent}>
           {/* Banner de código escaneado si existe */}
@@ -249,7 +185,117 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
       </View>
 
       {/* ========================================================================= */}
-      {/* 3. BOTÓN FLOTANTE (FAB) DE ESCÁNER QR/BARRAS SIEMPRE VISIBLE              */}
+      {/* 2.1 MENÚ DRAWER (ABRE CON EL BOTÓN DE 3 LÍNEAS)                           */}
+      {/* ========================================================================= */}
+      <Modal
+        visible={drawerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDrawerOpen(false)}
+      >
+        <View style={styles.drawerOverlay}>
+          <Pressable style={styles.drawerBackdrop} onPress={() => setDrawerOpen(false)} />
+
+          <View style={styles.drawerContent} onStartShouldSetResponder={() => true}>
+            {/* Header del Drawer */}
+            <View style={styles.drawerHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={styles.brandIconCircle}>
+                  <Ionicons name="cube" size={20} color={theme.colors.textInverse} />
+                </View>
+                <View style={{ marginLeft: 8 }}>
+                  <Text style={styles.brandTitle}>FYAG BODEGA</Text>
+                  <Badge label="TABLET" tone="warn" size="sm" style={{ alignSelf: "flex-start", marginTop: 2 }} />
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setDrawerOpen(false)}
+                style={styles.drawerCloseBtn}
+                accessibilityLabel="Cerrar menú"
+                accessibilityRole="button"
+              >
+                <Ionicons name="close-outline" size={24} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Lista de navegación */}
+            <ScrollView
+              style={styles.drawerScroll}
+              contentContainerStyle={styles.drawerScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {BODEGA_ITEMS.map((item) => {
+                const isActive = activeRoute === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    onPress={() => {
+                      setActiveRoute(item.id);
+                      setDrawerOpen(false);
+                    }}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.navItem,
+                      item.highlight && styles.navItemHighlight,
+                      isActive && styles.navItemActive,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.label}
+                  >
+                    <Ionicons
+                      name={item.icon}
+                      size={22}
+                      color={
+                        isActive
+                          ? theme.colors.warnDark
+                          : item.highlight
+                          ? theme.colors.primaryDark
+                          : theme.colors.textSecondary
+                      }
+                      style={{ marginRight: 10 }}
+                    />
+                    <Text
+                      style={[
+                        styles.navLabel,
+                        isActive && styles.navLabelActive,
+                        item.highlight && styles.navLabelHighlight,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* SECCIÓN FIJA ABAJO A LA IZQUIERDA: LOGIN / PERFIL DE USUARIO */}
+            <View style={styles.drawerUserFooter}>
+              <TouchableOpacity
+                onPress={() => {
+                  setUserMenuOpen(true);
+                }}
+                style={styles.drawerUserTrigger}
+                activeOpacity={0.8}
+                accessibilityLabel="Menú de usuario y sesión"
+              >
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{user.initials}</Text>
+                </View>
+                <View style={styles.userInfo}>
+                  <Text style={styles.userName} numberOfLines={1}>{user.name}</Text>
+                  <Text style={styles.userRole}>Bodeguero</Text>
+                </View>
+                <Ionicons name="ellipsis-vertical" size={18} color={theme.colors.textMuted} style={{ marginLeft: "auto" }} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ========================================================================= */}
+      {/* 3. BOTÓN FLOTANTE: ESCÁNER QR/BARRAS                                      */}
       {/* ========================================================================= */}
       <TouchableOpacity
         onPress={() => setScannerOpen(true)}
@@ -258,8 +304,8 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
         accessibilityLabel="Escanear código QR o código de barras de material"
         accessibilityRole="button"
       >
-        <Ionicons name="barcode-outline" size={28} color={theme.colors.textInverse} />
-        <Text style={styles.floatingFabText}>Escanear QR / Barras</Text>
+        <Ionicons name="barcode-outline" size={24} color={theme.colors.textInverse} />
+        <Text style={styles.floatingFabText}>Escanear</Text>
       </TouchableOpacity>
 
       {/* ========================================================================= */}
@@ -341,29 +387,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
         </Pressable>
       </Modal>
 
-      {/* Modal Pantalla Completa Sistema de Diseño */}
-      <Modal
-        visible={designModalOpen}
-        animationType="slide"
-        onRequestClose={() => setDesignModalOpen(false)}
-      >
-        <View style={styles.designModalWrapper}>
-          <View style={styles.designModalHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="color-palette" size={20} color={theme.colors.warnDark} />
-              <Text style={styles.designModalTitle}>Catálogo de Componentes FYAG</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setDesignModalOpen(false)}
-              style={styles.closeDesignBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <DesignSystemScreen />
-        </View>
-      </Modal>
+
 
       {/* TOAST FLOTANTE */}
       <Toast
@@ -393,9 +417,18 @@ const styles = StyleSheet.create({
     zIndex: 10,
     ...theme.shadows.sm,
   },
+  topbarCompact: {
+    paddingHorizontal: theme.spacing.md,
+  },
   topLeft: {
     flexDirection: "row",
     alignItems: "center",
+  },
+  toggleBtn: {
+    padding: 8,
+    marginRight: 10,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
   },
   brandIconCircle: {
     width: 34,
@@ -469,82 +502,20 @@ const styles = StyleSheet.create({
   },
   bodyWrapper: {
     flex: 1,
-    flexDirection: "row",
-  },
-  sidebar: {
-    width: 88,
-    backgroundColor: theme.colors.card,
-    borderRightWidth: 1,
-    borderRightColor: theme.colors.border,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  sidebarContent: {
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  navItem: {
-    width: 72,
-    minHeight: 56, // Touch target táctil amplio para tablet
-    borderRadius: theme.radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 6,
-    paddingVertical: 6,
-  },
-  navItemHighlight: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  navItemActive: {
-    backgroundColor: theme.colors.warnLight,
-    borderWidth: 1.5,
-    borderColor: theme.colors.warn,
-  },
-  navLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
-    marginTop: 3,
-    textAlign: "center",
-  },
-  navLabelActive: {
-    color: theme.colors.warnDark,
-    fontWeight: "bold",
-  },
-  navLabelHighlight: {
-    fontWeight: "bold",
-  },
-  sidebarScanBox: {
-    paddingBottom: 16,
-    alignItems: "center",
-  },
-  sidebarScanBtn: {
-    width: 60,
-    height: 52,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    ...theme.shadows.sm,
-  },
-  sidebarScanText: {
-    fontSize: 10,
-    fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.textInverse,
-    marginTop: 2,
+    width: "100%",
   },
   mainContent: {
     flex: 1,
     backgroundColor: theme.colors.background,
     position: "relative",
+    width: "100%",
     alignItems: "center",
   },
   contentContainer: {
     width: "100%",
     maxWidth: 1280,
     flex: 1,
+    alignSelf: "center",
   },
   scannedNotice: {
     flexDirection: "row",
@@ -568,12 +539,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 30,
-    minHeight: 56, // Botón grande táctil para tablet
-    ...theme.shadows.lg,
-    zIndex: 99,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.full,
+    minHeight: 48,
+    ...theme.shadows.md,
+    zIndex: 90,
   },
   floatingFabText: {
     color: theme.colors.textInverse,
@@ -581,13 +552,108 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.sm,
     marginLeft: 8,
   },
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: "row",
+  },
+  drawerBackdrop: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+  },
+  drawerContent: {
+    width: 290,
+    maxWidth: "85%",
+    height: "100%",
+    backgroundColor: theme.colors.card,
+    borderRightWidth: 1,
+    borderRightColor: theme.colors.border,
+    justifyContent: "space-between",
+    ...theme.shadows.lg,
+    zIndex: 10,
+  },
+  drawerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.borderLight,
+  },
+  drawerCloseBtn: {
+    padding: 4,
+    borderRadius: theme.radius.sm,
+  },
+  drawerScroll: {
+    flex: 1,
+  },
+  drawerScrollContent: {
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  navItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.md,
+    marginBottom: 4,
+    minHeight: 44,
+  },
+  navItemHighlight: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  navItemActive: {
+    backgroundColor: theme.colors.warnLight,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.warn,
+  },
+  navLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "600",
+    color: theme.colors.textSecondary,
+    flex: 1,
+  },
+  navLabelActive: {
+    color: theme.colors.warnDark,
+    fontWeight: "bold",
+  },
+  navLabelHighlight: {
+    fontWeight: "bold",
+  },
+  drawerUserFooter: {
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.borderLight,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  drawerUserTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    ...theme.shadows.sm,
+  },
+  userInfo: {
+    marginHorizontal: 8,
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.45)",
-    justifyContent: "flex-start",
-    alignItems: "flex-end",
-    paddingTop: 68,
-    paddingRight: 20,
+    justifyContent: "flex-end",
+    alignItems: "flex-start",
+    paddingBottom: 76,
+    paddingLeft: 16,
   },
   userMenuCard: {
     width: 280,

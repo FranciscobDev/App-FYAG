@@ -19,7 +19,7 @@ import { Badge } from "@/components/common/Badge";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { SyncStatusChip } from "@/components/common/SyncStatusChip";
 import { Toast, ToastType } from "@/components/common/Toast";
-import { DesignSystemScreen } from "@/features/design-system/DesignSystemScreen";
+
 
 // Pantallas del Técnico
 import { TechnicianProjectsView } from "@/features/technician/TechnicianProjectsView";
@@ -46,7 +46,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
 
   // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [designModalOpen, setDesignModalOpen] = useState(false);
+
 
   // Toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -138,13 +138,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
             }}
           />
 
-          <TouchableOpacity
-            onPress={() => setDesignModalOpen(true)}
-            style={styles.designBtn}
-            accessibilityLabel="Catálogo de Componentes"
-          >
-            <Ionicons name="color-palette-outline" size={16} color={theme.colors.okDark} />
-          </TouchableOpacity>
+
 
           <TouchableOpacity
             onPress={() => setUserMenuOpen(true)}
@@ -368,29 +362,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
         </Pressable>
       </Modal>
 
-      {/* Modal Pantalla Completa Sistema de Diseño */}
-      <Modal
-        visible={designModalOpen}
-        animationType="slide"
-        onRequestClose={() => setDesignModalOpen(false)}
-      >
-        <View style={styles.designModalWrapper}>
-          <View style={styles.designModalHeader}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="color-palette" size={20} color={theme.colors.okDark} />
-              <Text style={styles.designModalTitle}>Catálogo de Componentes FYAG</Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setDesignModalOpen(false)}
-              style={styles.closeDesignBtn}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-          </View>
-          <DesignSystemScreen />
-        </View>
-      </Modal>
+
 
       {/* TOAST FLOTANTE */}
       <Toast

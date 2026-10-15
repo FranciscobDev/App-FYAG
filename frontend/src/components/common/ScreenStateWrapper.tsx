@@ -46,7 +46,7 @@ export const ScreenStateWrapper: React.FC<ScreenStateWrapperProps> = ({
   emptyProps,
   errorProps,
   forbiddenProps,
-  showSimulatorBar = true,
+  showSimulatorBar = false,
   children,
 }) => {
   const [internalMode, setInternalMode] = useState<ScreenStateMode>(defaultMode);
@@ -222,8 +222,8 @@ export const ScreenStateWrapper: React.FC<ScreenStateWrapperProps> = ({
           >
             <View style={styles.simulatorToggleLeft}>
               <Ionicons name="options" size={16} color={theme.colors.primaryDark} />
-              <Text style={styles.simulatorToggleTitle}>
-                {screenTitle ? `${screenTitle} — ` : ""}Simulador de Estados (Paso 12)
+              <Text style={styles.simulatorToggleTitle} numberOfLines={1} ellipsizeMode="tail">
+                {screenTitle ? `${screenTitle} — ` : ""}Simulador de Estados
               </Text>
               <View
                 style={[
@@ -366,12 +366,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    flexWrap: "wrap",
+    flex: 1,
+    marginRight: 8,
   },
   simulatorToggleTitle: {
     fontSize: 12,
     fontWeight: "bold",
     color: theme.colors.textSecondary,
+    flexShrink: 1,
   },
   modePill: {
     paddingHorizontal: 8,
