@@ -13,6 +13,7 @@ import { theme } from "@/core/theme";
 import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { EmptyState } from "@/components/common/EmptyState";
 import { ProgressBar } from "@/components/common/ProgressBar";
 
 interface TechnicianMaterialsViewProps {
@@ -239,53 +240,64 @@ export const TechnicianMaterialsView: React.FC<TechnicianMaterialsViewProps> = (
       {/* 4. LISTADO DETALLADO DE INSUMOS POR PROYECTO */}
       <Text style={styles.listHeading}>Detalle de Insumos (Asignado vs Retirado):</Text>
 
-      {assignedItems.map((item) => (
-        <Card key={item.sku} variant="default" style={styles.itemCard}>
-          <View style={styles.itemTopRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemSku}>SKU: {item.sku} • Unidad: {item.unit}</Text>
-            </View>
-            <Badge
-              label={item.quantityPending === 0 ? "Completado" : `Faltan ${item.quantityPending} ${item.unit}`}
-              tone={item.quantityPending === 0 ? "ok" : "warn"}
-              size="sm"
-            />
-          </View>
-
-          {/* Fila de 3 columnas para cada insumo */}
-          <View style={styles.itemMetricsRow}>
-            <View style={styles.itemCol}>
-              <Text style={styles.itemColVal}>{item.quantityAssigned} {item.unit}</Text>
-              <Text style={styles.itemColLbl}>1. Asignado</Text>
-            </View>
-
-            <View style={styles.itemCol}>
-              <Text style={[styles.itemColVal, { color: theme.colors.okDark }]}>
-                {item.quantityRetrieved} {item.unit}
-              </Text>
-              <Text style={styles.itemColLbl}>2. Retirado</Text>
+      {assignedItems.length === 0 ? (
+        <EmptyState
+          icon="cube-outline"
+          title="Sin insumos asignados"
+          description="Este proyecto no registra insumos asignados ni pendientes en faena."
+          actionTitle="Solicitar Insumos"
+          onAction={() => onNavigateTab && onNavigateTab("registrar")}
+          containerStyle={{ marginVertical: 16 }}
+        />
+      ) : (
+        assignedItems.map((item) => (
+          <Card key={item.sku} variant="default" style={styles.itemCard}>
+            <View style={styles.itemTopRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                <Text style={styles.itemSku}>SKU: {item.sku} • Unidad: {item.unit}</Text>
+              </View>
+              <Badge
+                label={item.quantityPending === 0 ? "Completado" : `Faltan ${item.quantityPending} ${item.unit}`}
+                tone={item.quantityPending === 0 ? "ok" : "warn"}
+                size="sm"
+              />
             </View>
 
-            <View style={styles.itemCol}>
-              <Text style={[styles.itemColVal, item.quantityPending > 0 ? { color: theme.colors.warnDark } : {}]}>
-                {item.quantityPending} {item.unit}
-              </Text>
-              <Text style={styles.itemColLbl}>3. Pendiente</Text>
-            </View>
-          </View>
+            {/* Fila de 3 columnas para cada insumo */}
+            <View style={styles.itemMetricsRow}>
+              <View style={styles.itemCol}>
+                <Text style={styles.itemColVal}>{item.quantityAssigned} {item.unit}</Text>
+                <Text style={styles.itemColLbl}>1. Asignado</Text>
+              </View>
 
-          {/* Barra individual de cumplimiento */}
-          <View style={{ marginTop: 8 }}>
-            <ProgressBar
-              value={item.quantityRetrieved}
-              max={item.quantityAssigned}
-              height={5}
-              color={item.quantityPending === 0 ? theme.colors.ok : theme.colors.primary}
-            />
-          </View>
-        </Card>
-      ))}
+              <View style={styles.itemCol}>
+                <Text style={[styles.itemColVal, { color: theme.colors.okDark }]}>
+                  {item.quantityRetrieved} {item.unit}
+                </Text>
+                <Text style={styles.itemColLbl}>2. Retirado</Text>
+              </View>
+
+              <View style={styles.itemCol}>
+                <Text style={[styles.itemColVal, item.quantityPending > 0 ? { color: theme.colors.warnDark } : {}]}>
+                  {item.quantityPending} {item.unit}
+                </Text>
+                <Text style={styles.itemColLbl}>3. Pendiente</Text>
+              </View>
+            </View>
+
+            {/* Barra individual de cumplimiento */}
+            <View style={{ marginTop: 8 }}>
+              <ProgressBar
+                value={item.quantityRetrieved}
+                max={item.quantityAssigned}
+                height={5}
+                color={item.quantityPending === 0 ? theme.colors.ok : theme.colors.primary}
+              />
+            </View>
+          </Card>
+        ))
+      )}
 
       {/* 5. BOTONES DE ACCIÓN RÁPIDA (PEDIR / DEVOLVER) */}
       <View style={styles.bottomActions}>

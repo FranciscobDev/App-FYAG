@@ -17,6 +17,7 @@ import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
 import { OfflineBanner } from "@/components/common/OfflineBanner";
 import { ProgressBar } from "@/components/common/ProgressBar";
+import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
 
 interface TechnicianDashboardProps {
   onNavigate?: (tab: string) => void;
@@ -34,7 +35,8 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ onNavi
   const now = new Date().getTime();
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScreenStateWrapper screenTitle="Dashboard Técnico" skeletonType="cards">
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* 0. OFFLINE / ONLINE STATUS BANNER */}
       <View style={{ marginBottom: theme.spacing.sm, marginHorizontal: -theme.spacing.md }}>
         <OfflineBanner />
@@ -203,6 +205,7 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ onNavi
         })
       )}
     </ScrollView>
+    </ScreenStateWrapper>
   );
 };
 

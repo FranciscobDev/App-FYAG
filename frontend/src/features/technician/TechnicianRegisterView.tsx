@@ -15,6 +15,7 @@ import { theme } from "@/core/theme";
 import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
+import { EmptyState } from "@/components/common/EmptyState";
 import { Input } from "@/components/common/Input";
 import { ModalView } from "@/components/common/ModalView";
 import { ProgressBar } from "@/components/common/ProgressBar";
@@ -249,7 +250,14 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
             })}
           </ScrollView>
 
-          {currentProject && (
+          {activeProjects.length === 0 ? (
+            <EmptyState
+              icon="folder-open-outline"
+              title="Sin proyectos activos"
+              description="No tienes proyectos asignados actualmente para registrar avance de obra."
+              containerStyle={{ marginVertical: 32 }}
+            />
+          ) : currentProject ? (
             <Card variant="elevated">
               <View style={styles.advanceHeaderRow}>
                 <View>
@@ -363,7 +371,7 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
                 style={{ marginTop: 16, height: 48 }}
               />
             </Card>
-          )}
+          ) : null}
 
           {/* Historial de Avances Anteriores */}
           <Text style={styles.historyHeading}>Reportes de Avance Anteriores:</Text>
@@ -406,7 +414,15 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
             })}
           </ScrollView>
 
-          <Card variant="elevated">
+          {activeProjects.length === 0 ? (
+            <EmptyState
+              icon="time-outline"
+              title="Sin proyectos activos"
+              description="No tienes proyectos asignados actualmente para imputar horas hombre."
+              containerStyle={{ marginVertical: 32 }}
+            />
+          ) : (
+            <Card variant="elevated">
             <Text style={styles.cardHeading}>Ingreso de Horas Hombre (HH)</Text>
             <Text style={styles.cardSub}>
               Bloques de 0,5 horas (máximo 24 h por día). Editable dentro de 48 horas.
@@ -475,6 +491,7 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
               style={{ marginTop: 12, height: 48 }}
             />
           </Card>
+          )}
 
           {/* LISTADO DE HORAS REGISTRADAS (REGLA 48 HORAS EDITABLE) */}
           <Text style={styles.historyHeading}>Mis Jornadas Registradas:</Text>
