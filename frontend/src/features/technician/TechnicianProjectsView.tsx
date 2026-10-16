@@ -22,7 +22,7 @@ import { Project } from "@/core/types";
 
 interface TechnicianProjectsViewProps {
   onSelectProject?: (project: Project) => void;
-  onNavigateTab?: (tab: string, project?: Project) => void;
+  onNavigateTab?: (tab: string, project?: Project, subTab?: "avance" | "horas" | "sobrante") => void;
   isOffline?: boolean;
 }
 
@@ -31,7 +31,7 @@ export const TechnicianProjectsView: React.FC<TechnicianProjectsViewProps> = ({
   onNavigateTab,
   isOffline = false,
 }) => {
-  const { projects } = useApp();
+  const { projects, activeWorkSession, startWorkSession } = useApp();
   const { user } = useAuth();
 
   const [statusFilter, setStatusFilter] = useState<string>("todos");
@@ -75,7 +75,7 @@ export const TechnicianProjectsView: React.FC<TechnicianProjectsViewProps> = ({
           </View>
         ) : (
           <View style={styles.onlineChip}>
-            <Ionicons name="cloud-done" size={14} color={theme.colors.ok} />
+            <Ionicons name="cloud-done" size={14} color="#22c55e" />
             <Text style={styles.onlineChipTxt}>En Línea</Text>
           </View>
         )}
@@ -225,12 +225,36 @@ export const TechnicianProjectsView: React.FC<TechnicianProjectsViewProps> = ({
                 </View>
 
                 <View style={styles.actionsGroup}>
+                  {activeWorkSession?.projectId === proj.id ? (
+                    <Button
+                      title="En Faena (HH)"
+                      variant="primary"
+                      size="sm"
+                      icon="timer"
+                      onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "horas")}
+                      style={{ marginRight: 6, height: 42 }}
+                    />
+                  ) : (
+                    <Button
+                      title="Iniciar Faena"
+                      variant="outline"
+                      size="sm"
+                      icon="play-outline"
+                      onPress={() => {
+                        if (!activeWorkSession) {
+                          startWorkSession(proj.id);
+                        }
+                        onNavigateTab && onNavigateTab("registrar", proj, "horas");
+                      }}
+                      style={{ marginRight: 6, height: 42 }}
+                    />
+                  )}
                   <Button
                     title="Avance"
                     variant="outline"
                     size="sm"
                     icon="trending-up-outline"
-                    onPress={() => onNavigateTab && onNavigateTab("registrar", proj)}
+                    onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "avance")}
                     style={{ marginRight: 6, height: 42 }}
                   />
                   <Button
@@ -296,17 +320,17 @@ const styles = StyleSheet.create({
   onlineChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.okLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: "#1c1917", // Dark Titanium chip
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: theme.radius.full,
     borderWidth: 1,
-    borderColor: theme.colors.okBorder,
+    borderColor: "#44403c",
   },
   onlineChipTxt: {
     fontSize: 10,
     fontWeight: "bold",
-    color: theme.colors.okDark,
+    color: "#e7e5e4",
     marginLeft: 4,
   },
   filterScroll: {
@@ -317,23 +341,23 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: theme.radius.full,
     backgroundColor: theme.colors.card,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: theme.colors.borderDark,
     marginRight: 8,
     minHeight: 38,
     justifyContent: "center",
   },
   filterChipActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primaryDark,
+    backgroundColor: "#1c1917", // Dark Titanium Active Filter
+    borderColor: theme.colors.primary,
   },
   filterChipTxt: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.text,
+    color: theme.colors.textSecondary,
     fontWeight: "600",
   },
   filterChipTxtActive: {
-    color: "#ffffff",
+    color: "#f59e0b", // Amber glowing text
     fontWeight: "bold",
   },
   emptyCard: {
@@ -432,7 +456,7 @@ const styles = StyleSheet.create({
   },
   offlineSyncTxt: {
     fontSize: 10,
-    color: theme.colors.okDark,
+    color: theme.colors.textMuted,
   },
   cardFooter: {
     flexDirection: "row",

@@ -69,10 +69,10 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
         return (
           <TechnicianProjectsView
             isOffline={isOffline}
-            onNavigateTab={(tab, proj) => {
+            onNavigateTab={(tab, proj, subTab) => {
               if (proj) setSelectedProjectForTab(proj);
               if (tab === "registrar") {
-                setRegisterInitialSubTab("avance");
+                setRegisterInitialSubTab(subTab || "horas");
                 setActiveTab("registrar");
               } else if (tab === "insumos") {
                 setActiveTab("insumos");
@@ -126,6 +126,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
         {/* SyncStatusChip y Selector de Usuario */}
         <View style={styles.topRight}>
           <SyncStatusChip
+            variant="dark"
             status={isOffline || pendingSyncCount > 0 ? "pendiente" : "sincronizado"}
             pendingCount={pendingSyncCount}
             onPress={() => {
@@ -192,7 +193,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
           <Ionicons
             name={activeTab === "proyectos" ? "hammer" : "hammer-outline"}
             size={22}
-            color={activeTab === "proyectos" ? theme.colors.okDark : theme.colors.textMuted}
+            color={activeTab === "proyectos" ? "#f59e0b" : "#78716c"}
           />
           <Text
             style={[
@@ -218,7 +219,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
           <Ionicons
             name={activeTab === "insumos" ? "cube" : "cube-outline"}
             size={22}
-            color={activeTab === "insumos" ? theme.colors.okDark : theme.colors.textMuted}
+            color={activeTab === "insumos" ? "#f59e0b" : "#78716c"}
           />
           <Text
             style={[
@@ -244,7 +245,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
           <Ionicons
             name={activeTab === "registrar" ? "add-circle" : "add-circle-outline"}
             size={24}
-            color={activeTab === "registrar" ? theme.colors.okDark : theme.colors.textMuted}
+            color={activeTab === "registrar" ? "#f59e0b" : "#78716c"}
           />
           <Text
             style={[
@@ -271,7 +272,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
             <Ionicons
               name={activeTab === "alertas" ? "notifications" : "notifications-outline"}
               size={22}
-              color={activeTab === "alertas" ? theme.colors.okDark : theme.colors.textMuted}
+              color={activeTab === "alertas" ? "#f59e0b" : "#78716c"}
             />
             {activeAlertsCount > 0 && (
               <View style={styles.alertBadgeDot}>
@@ -302,13 +303,13 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
         <Pressable style={styles.modalBackdrop} onPress={() => setUserMenuOpen(false)}>
           <View style={styles.userMenuCard} onStartShouldSetResponder={() => true}>
             <View style={styles.userMenuHeader}>
-              <View style={[styles.avatarLarge, { backgroundColor: theme.colors.okDark }]}>
-                <Text style={styles.avatarLargeText}>{user.initials}</Text>
+              <View style={[styles.avatarLarge, { backgroundColor: "#1c1917", borderWidth: 2, borderColor: theme.colors.primary }]}>
+                <Text style={[styles.avatarLargeText, { color: "#f59e0b" }]}>{user.initials}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={styles.userMenuName}>{user.name}</Text>
                 <Text style={styles.userMenuRut}>{user.rut}</Text>
-                <Badge label="Técnico Especialista" tone="ok" size="sm" style={{ marginTop: 4 }} />
+                <Badge label="Técnico Especialista" tone="warn" size="sm" style={{ marginTop: 4 }} />
               </View>
             </View>
 
@@ -330,7 +331,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
                 <Ionicons
                   name={r === "admin" ? "briefcase" : r === "warehouse" ? "cube" : "hammer"}
                   size={18}
-                  color={r === currentRole ? theme.colors.okDark : theme.colors.textMuted}
+                  color={r === currentRole ? theme.colors.primaryDark : theme.colors.textMuted}
                 />
                 <Text
                   style={[
@@ -341,7 +342,7 @@ export const TecnicoLayout: React.FC<TecnicoLayoutProps> = ({ onLogout }) => {
                   {ROLES[r].label}
                 </Text>
                 {r === currentRole && (
-                  <Ionicons name="checkmark" size={16} color={theme.colors.okDark} />
+                  <Ionicons name="checkmark" size={16} color={theme.colors.primaryDark} />
                 )}
               </TouchableOpacity>
             ))}
@@ -382,14 +383,14 @@ const styles = StyleSheet.create({
   },
   topbar: {
     height: 60,
-    backgroundColor: theme.colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    backgroundColor: "#1c1917", // Dark Titanium Technical Bar
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#292524",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: theme.spacing.md,
-    ...theme.shadows.sm,
+    ...theme.shadows.md,
   },
   topLeft: {
     flexDirection: "row",
@@ -399,7 +400,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: theme.colors.okDark,
+    backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
@@ -407,11 +408,12 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: theme.fontSize.sm,
     fontWeight: "bold",
-    color: theme.colors.text,
+    color: "#ffffff",
+    letterSpacing: 0.5,
   },
   userName: {
     fontSize: 10,
-    color: theme.colors.textMuted,
+    color: "#a8a29e",
   },
   topRight: {
     flexDirection: "row",
@@ -420,22 +422,24 @@ const styles = StyleSheet.create({
   designBtn: {
     padding: 6,
     borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.okLight,
+    backgroundColor: theme.colors.primaryLight,
     marginHorizontal: 8,
   },
   avatarBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: theme.colors.okDark,
+    backgroundColor: "#292524",
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 4,
+    marginLeft: 6,
   },
   avatarText: {
     fontSize: theme.fontSize.caption,
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.textInverse,
+    color: "#f59e0b",
   },
   mainContent: {
     flex: 1,
@@ -449,9 +453,9 @@ const styles = StyleSheet.create({
   },
   bottomNav: {
     flexDirection: "row",
-    backgroundColor: theme.colors.card,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
+    backgroundColor: "#1c1917", // Dark Titanium
+    borderTopWidth: 1.5,
+    borderTopColor: "#292524",
     paddingBottom: 6,
     paddingTop: 4,
     height: 60,
@@ -465,19 +469,19 @@ const styles = StyleSheet.create({
   },
   navTabActive: {
     borderTopWidth: 2,
-    borderTopColor: theme.colors.okDark,
+    borderTopColor: "#f59e0b",
     marginTop: -4,
     paddingTop: 2,
   },
   navTabLabel: {
     fontSize: 10,
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.textMuted,
+    color: "#78716c",
     marginTop: 2,
   },
   navTabLabelActive: {
-    color: theme.colors.okDark,
-    fontWeight: theme.fontWeight.semibold,
+    color: "#f59e0b",
+    fontWeight: "bold",
   },
   alertBadgeDot: {
     position: "absolute",
@@ -600,7 +604,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   roleSwitchBtnCurrent: {
-    backgroundColor: theme.colors.okLight,
+    backgroundColor: theme.colors.primaryLight,
   },
   roleSwitchText: {
     fontSize: theme.fontSize.xs,
@@ -610,7 +614,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   roleSwitchTextCurrent: {
-    color: theme.colors.okDark,
+    color: theme.colors.primaryDark,
     fontWeight: "bold",
   },
   logoutBtn: {

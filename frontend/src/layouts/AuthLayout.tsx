@@ -329,14 +329,14 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
                   </TouchableOpacity>
 
                   <TouchableOpacity
-                    style={[styles.shortcutChip, { borderColor: theme.colors.okBorder, backgroundColor: theme.colors.okLight }]}
+                    style={[styles.shortcutChip, { borderColor: theme.colors.primary, backgroundColor: "#1c1917" }]}
                     onPress={() => {
                       setEmail("tecnico@fyag.cl");
                       handleLogin("technician");
                     }}
                   >
-                    <Ionicons name="phone-portrait-outline" size={14} color={theme.colors.okDark} />
-                    <Text style={[styles.shortcutText, { color: theme.colors.okDark }]}>/tecnico</Text>
+                    <Ionicons name="phone-portrait-outline" size={14} color="#f59e0b" />
+                    <Text style={[styles.shortcutText, { color: "#f59e0b" }]}>/tecnico</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -730,6 +730,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.card,
     borderWidth: 1,
     borderColor: theme.colors.border,
+    borderTopWidth: 4,
+    borderTopColor: theme.colors.primary,
     ...theme.shadows.md,
   },
   cardTitle: {

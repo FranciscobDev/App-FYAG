@@ -33,30 +33,25 @@ export type BodegaRoute =
   | "home"
   | "egreso"
   | "recepcion"
+  | "devoluciones"
+  | "inventario"
   | "conteo"
   | "mermas"
-  | "inventario"
-  | "herramientas"
-  | "devoluciones";
+  | "herramientas";
 
-interface BodegaNavItem {
+export interface BodegaNavItem {
   id: BodegaRoute;
   label: string;
+  description: string;
   icon: keyof typeof Ionicons.glyphMap;
-  badge?: number;
-  highlight?: boolean;
+  badge?: string;
+  badgeTone?: "primary" | "ok" | "warn" | "danger" | "info" | "mute";
 }
 
-const BODEGA_ITEMS: BodegaNavItem[] = [
-  { id: "home", label: "Inicio", icon: "cube" },
-  { id: "egreso", label: "Egreso", icon: "arrow-up-circle", highlight: true },
-  { id: "recepcion", label: "Recepción", icon: "arrow-down-circle", highlight: true },
-  { id: "conteo", label: "Conteo", icon: "clipboard", highlight: true },
-  { id: "mermas", label: "Mermas", icon: "trash-outline" },
-  { id: "inventario", label: "Inventario", icon: "cube-outline" },
-  { id: "herramientas", label: "Herram.", icon: "construct-outline" },
-  { id: "devoluciones", label: "Devoluc.", icon: "return-down-back-outline" },
-];
+export interface BodegaNavGroup {
+  title: string;
+  items: BodegaNavItem[];
+}
 
 export interface BodegaLayoutProps {
   onLogout?: () => void;
@@ -64,7 +59,7 @@ export interface BodegaLayoutProps {
 
 export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
   const { user, currentRole, setRole } = useAuth();
-  const { products } = useApp();
+  const { products, materialRequests, pendingReceipts, returnOrders } = useApp();
   const { width } = useWindowDimensions();
 
   const [activeRoute, setActiveRoute] = useState<BodegaRoute>("home");
@@ -72,9 +67,85 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannedCode, setScannedCode] = useState<string | null>(null);
 
+  // Contadores dinámicos para badges de bodega
+  const pendingEgressCount = materialRequests.filter((r) => r.status === "aprobada").length;
+  const pendingReceiptsCount = pendingReceipts.filter((p) => p.status === "por_confirmar").length;
+  const pendingReturnsCount = returnOrders.filter((r) => r.status === "en_transito").length;
+
+  const bodegaGroups: BodegaNavGroup[] = [
+    {
+      title: "OPERACIÓN Y MOVIMIENTOS",
+      items: [
+        {
+          id: "home",
+          label: "Panel Principal",
+          description: "Resumen de pendientes del día, accesos rápidos y alertas",
+          icon: "grid-outline",
+        },
+        {
+          id: "egreso",
+          label: "Egreso y Despacho",
+          description: "Entrega física de materiales a técnicos con guía de salida",
+          icon: "arrow-up-circle-outline",
+          badge: pendingEgressCount > 0 ? String(pendingEgressCount) : undefined,
+          badgeTone: "primary",
+        },
+        {
+          id: "recepcion",
+          label: "Recepción de Compras",
+          description: "Verificar bultos, guías de proveedor y dar conformidad a OC",
+          icon: "arrow-down-circle-outline",
+          badge: pendingReceiptsCount > 0 ? String(pendingReceiptsCount) : undefined,
+          badgeTone: "warn",
+        },
+        {
+          id: "devoluciones",
+          label: "Devoluciones de Faena",
+          description: "Recibir sobrantes de obra, verificar cantidades y reingresar",
+          icon: "return-down-back-outline",
+          badge: pendingReturnsCount > 0 ? String(pendingReturnsCount) : undefined,
+          badgeTone: "info",
+        },
+      ],
+    },
+    {
+      title: "CONTROL DE EXISTENCIAS",
+      items: [
+        {
+          id: "inventario",
+          label: "Inventario de Bodega",
+          description: "Consultar stock disponible, pasillo, estante y PMP",
+          icon: "cube-outline",
+        },
+        {
+          id: "conteo",
+          label: "Conteo Físico Cíclico",
+          description: "Escanear insumos, cuadrar stock físico y reportar diferencias",
+          icon: "checkbox-outline",
+        },
+        {
+          id: "mermas",
+          label: "Registro de Mermas",
+          description: "Reportar insumos dañados, caducados o pérdidas para baja",
+          icon: "trash-outline",
+        },
+      ],
+    },
+    {
+      title: "EQUIPOS Y HERRAMIENTAS",
+      items: [
+        {
+          id: "herramientas",
+          label: "Préstamo de Herramientas",
+          description: "Asignar herramientas a técnicos y verificar estado al retorno",
+          icon: "construct-outline",
+        },
+      ],
+    },
+  ];
+
   // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-
 
   // Toast
   const [toastVisible, setToastVisible] = useState(false);
@@ -105,11 +176,11 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
       case "egreso":
         return <InventoryScreen key="egreso" initialTab="egreso" hideTabBar={true} />;
       case "conteo":
-        return <InventoryScreen key="conteo" initialTab="conteo" />;
+        return <InventoryScreen key="conteo" initialTab="conteo" hideTabBar={true} />;
       case "mermas":
-        return <InventoryScreen key="mermas" initialTab="mermas" />;
+        return <InventoryScreen key="mermas" initialTab="mermas" hideTabBar={true} />;
       case "inventario":
-        return <InventoryScreen key="inventario" initialTab="catalogo" />;
+        return <InventoryScreen key="inventario" initialTab="catalogo" hideTabBar={true} />;
       case "recepcion":
         return <PurchasingScreen initialTab="recepcion" />;
       case "herramientas":
@@ -219,55 +290,73 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Lista de navegación */}
+            {/* Lista de navegación con Título y Descripción de cada categoría */}
             <ScrollView
               style={styles.drawerScroll}
               contentContainerStyle={styles.drawerScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              {BODEGA_ITEMS.map((item) => {
-                const isActive = activeRoute === item.id;
-                return (
-                  <TouchableOpacity
-                    key={item.id}
-                    onPress={() => {
-                      setActiveRoute(item.id);
-                      setDrawerOpen(false);
-                    }}
-                    activeOpacity={0.7}
-                    style={[
-                      styles.navItem,
-                      item.highlight && styles.navItemHighlight,
-                      isActive && styles.navItemActive,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={item.label}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={22}
-                      color={
-                        isActive
-                          ? theme.colors.warnDark
-                          : item.highlight
-                          ? theme.colors.primaryDark
-                          : theme.colors.textSecondary
-                      }
-                      style={{ marginRight: 10 }}
-                    />
-                    <Text
-                      style={[
-                        styles.navLabel,
-                        isActive && styles.navLabelActive,
-                        item.highlight && styles.navLabelHighlight,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {bodegaGroups.map((group) => (
+                <View key={group.title} style={styles.navGroup}>
+                  <Text style={styles.groupTitle}>{group.title}</Text>
+                  {group.items.map((item) => {
+                    const isActive = activeRoute === item.id;
+                    return (
+                      <TouchableOpacity
+                        key={item.id}
+                        onPress={() => {
+                          setActiveRoute(item.id);
+                          setDrawerOpen(false);
+                        }}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.navItem,
+                          isActive && styles.navItemActive,
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${item.label}: ${item.description}`}
+                      >
+                        <View style={[styles.navIconBox, isActive && styles.navIconBoxActive]}>
+                          <Ionicons
+                            name={item.icon}
+                            size={18}
+                            color={isActive ? theme.colors.warnDark : theme.colors.textSecondary}
+                          />
+                        </View>
+                        <View style={styles.navTextCol}>
+                          <View style={styles.navLabelRow}>
+                            <Text
+                              style={[
+                                styles.navLabel,
+                                isActive && styles.navLabelActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.label}
+                            </Text>
+                            {Boolean(item.badge) && (
+                              <Badge
+                                label={item.badge!}
+                                tone={item.badgeTone || "warn"}
+                                size="sm"
+                              />
+                            )}
+                          </View>
+                          <Text
+                            style={[
+                              styles.navDescription,
+                              isActive && styles.navDescriptionActive,
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {item.description}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ))}
             </ScrollView>
 
             {/* SECCIÓN FIJA ABAJO A LA IZQUIERDA: LOGIN / PERFIL DE USUARIO */}
@@ -407,15 +496,15 @@ const styles = StyleSheet.create({
   },
   topbar: {
     height: 64,
-    backgroundColor: theme.colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    backgroundColor: "#1c1917", // Dark Titanium Bar
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#292524",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: theme.spacing.lg,
     zIndex: 10,
-    ...theme.shadows.sm,
+    ...theme.shadows.md,
   },
   topbarCompact: {
     paddingHorizontal: theme.spacing.md,
@@ -428,13 +517,13 @@ const styles = StyleSheet.create({
     padding: 8,
     marginRight: 10,
     borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceAlt,
+    backgroundColor: "#292524",
   },
   brandIconCircle: {
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: theme.colors.warnDark,
+    backgroundColor: theme.colors.primary,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
@@ -442,11 +531,11 @@ const styles = StyleSheet.create({
   brandTitle: {
     fontSize: theme.fontSize.base,
     fontWeight: "bold",
-    color: theme.colors.text,
+    color: "#ffffff",
   },
   warehouseSubtitle: {
     fontSize: 11,
-    color: theme.colors.textMuted,
+    color: "#a8a29e",
   },
   topRight: {
     flexDirection: "row",
@@ -520,16 +609,16 @@ const styles = StyleSheet.create({
   scannedNotice: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.colors.okLight,
+    backgroundColor: theme.colors.primaryLight,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.okBorder,
+    borderBottomColor: theme.colors.primaryBorder,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: 8,
     width: "100%",
   },
   scannedNoticeText: {
     fontSize: theme.fontSize.xs,
-    color: theme.colors.okDark,
+    color: theme.colors.primaryDark,
     marginLeft: 6,
   },
   floatingScanFab: {
@@ -565,8 +654,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.45)",
   },
   drawerContent: {
-    width: 290,
-    maxWidth: "85%",
+    width: 325,
+    maxWidth: "88%",
     height: "100%",
     backgroundColor: theme.colors.card,
     borderRightWidth: 1,
@@ -585,7 +674,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.borderLight,
   },
   drawerCloseBtn: {
-    padding: 4,
+    padding: 6,
     borderRadius: theme.radius.sm,
   },
   drawerScroll: {
@@ -593,39 +682,75 @@ const styles = StyleSheet.create({
   },
   drawerScrollContent: {
     paddingVertical: 12,
+  },
+  navGroup: {
+    marginBottom: 16,
     paddingHorizontal: 8,
+  },
+  groupTitle: {
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 0.8,
+    color: theme.colors.textMuted,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   navItem: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    alignItems: "flex-start",
+    paddingVertical: 9,
+    paddingHorizontal: 10,
     borderRadius: theme.radius.md,
     marginBottom: 4,
-    minHeight: 44,
-  },
-  navItemHighlight: {
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    backgroundColor: "transparent",
+    minHeight: 48,
   },
   navItemActive: {
-    backgroundColor: theme.colors.warnLight,
+    backgroundColor: "#fffbeb",
     borderLeftWidth: 3,
-    borderLeftColor: theme.colors.warn,
+    borderLeftColor: theme.colors.warnDark,
+  },
+  navIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+    marginTop: 2,
+  },
+  navIconBoxActive: {
+    backgroundColor: "#fde68a",
+  },
+  navTextCol: {
+    flex: 1,
+  },
+  navLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
   },
   navLabel: {
     fontSize: theme.fontSize.xs,
-    fontWeight: "600",
-    color: theme.colors.textSecondary,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.text,
     flex: 1,
   },
   navLabelActive: {
     color: theme.colors.warnDark,
     fontWeight: "bold",
   },
-  navLabelHighlight: {
-    fontWeight: "bold",
+  navDescription: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  navDescriptionActive: {
+    color: theme.colors.textSecondary,
   },
   drawerUserFooter: {
     padding: 12,

@@ -80,7 +80,7 @@ export const WarehouseDashboard: React.FC<WarehouseDashboardProps> = ({ onNaviga
       <View style={styles.quickActionsGrid}>
         <TouchableOpacity
           style={[styles.quickActionBtn, { backgroundColor: "#e0f2fe" }]}
-          onPress={() => onNavigate && onNavigate("inventario")}
+          onPress={() => onNavigate && onNavigate("egreso")}
           activeOpacity={0.8}
         >
           <View style={styles.quickActionTopRow}>

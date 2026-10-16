@@ -9,6 +9,7 @@ import {
   PendingReceipt,
   Product,
   Project,
+  ProjectLaborEntry,
   PurchaseInvoice,
   PurchaseOrder,
   PurchaseOrderItem,
@@ -31,6 +32,8 @@ import {
   ToolMaintenanceRecord,
   WasteRecord,
   PhysicalCount,
+  ActiveWorkSession,
+  Role,
 } from "@/core/types";
 import {
   AUDIT_LOG_ENTRIES,
@@ -176,10 +179,23 @@ interface AppContextType {
   serviceSheets: ServiceSheet[];
   technicianHours: TechnicianWorkHour[];
   technicianProgressReports: TechnicianProgressReport[];
+  activeWorkSession: ActiveWorkSession | null;
+  startWorkSession: (projectId: string) => { success: boolean; error?: string };
+  stopWorkSession: (description?: string) => { success: boolean; hours?: number; error?: string };
+  cancelWorkSession: () => void;
   createServiceSheet: (sheet: Omit<ServiceSheet, "id">) => { success: boolean; error?: string };
   resolveServiceSheetConflict: (sheetId: string, choice: "local" | "server") => void;
   createTechnicianWorkHour: (entry: Omit<TechnicianWorkHour, "id" | "createdAt" | "syncStatus">) => { success: boolean; error?: string };
-  updateTechnicianWorkHour: (id: string, hours: number, description: string) => { success: boolean; error?: string };
+  updateTechnicianWorkHour: (id: string, hours: number, description: string, userRole?: Role) => { success: boolean; error?: string };
+  logAdminManualHours: (data: {
+    technicianRut: string;
+    technicianName: string;
+    projectId: string;
+    date: string;
+    hours: number;
+    description: string;
+    reason?: string;
+  }) => { success: boolean; error?: string };
   createTechnicianProgressReport: (report: Omit<TechnicianProgressReport, "id" | "syncStatus">) => { success: boolean };
 
   // Administration module
@@ -221,6 +237,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [physicalCounts, setPhysicalCounts] = useState<PhysicalCount[]>(PHYSICAL_COUNTS);
   const [serviceSheets, setServiceSheets] = useState<ServiceSheet[]>(SERVICE_SHEETS);
   const [technicianHours, setTechnicianHours] = useState<TechnicianWorkHour[]>(TECHNICIAN_WORK_HOURS);
+  const [activeWorkSession, setActiveWorkSession] = useState<ActiveWorkSession | null>(null);
   const [technicianProgressReports, setTechnicianProgressReports] = useState<TechnicianProgressReport[]>(TECHNICIAN_PROGRESS_REPORTS);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>(SYSTEM_USERS);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(AUDIT_LOG_ENTRIES);
@@ -1409,18 +1426,72 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true };
   };
 
-  const updateTechnicianWorkHour = (id: string, hours: number, description: string) => {
+  const startWorkSession = (projectId: string) => {
+    const proj = projects.find((p) => p.id === projectId);
+    if (!proj) {
+      return { success: false, error: "Proyecto no encontrado." };
+    }
+    const session: ActiveWorkSession = {
+      projectId: proj.id,
+      projectCode: proj.code,
+      projectName: proj.name,
+      startTime: new Date().toISOString(),
+      hourlyRate: proj.hourlyRate || 18500,
+    };
+    setActiveWorkSession(session);
+    return { success: true };
+  };
+
+  const stopWorkSession = (description?: string) => {
+    if (!activeWorkSession) {
+      return { success: false, error: "No hay una jornada de trabajo activa." };
+    }
+    const startTimeMs = new Date(activeWorkSession.startTime).getTime();
+    const elapsedHours = (Date.now() - startTimeMs) / (1000 * 60 * 60);
+    // Redondeo automático a bloques de 0,5 h (mínimo 0.5, máximo 24)
+    const roundedHours = Math.max(0.5, Math.min(24.0, Math.round(elapsedHours * 2) / 2));
+
+    const res = createTechnicianWorkHour({
+      projectId: activeWorkSession.projectId,
+      projectCode: activeWorkSession.projectCode,
+      projectName: activeWorkSession.projectName,
+      date: new Date().toISOString().slice(0, 10),
+      hours: roundedHours,
+      description: description?.trim() || "Jornada registrada automáticamente al finalizar trabajo en faena.",
+    });
+
+    if (res.success) {
+      setActiveWorkSession(null);
+      return { success: true, hours: roundedHours };
+    }
+    return res;
+  };
+
+  const cancelWorkSession = () => {
+    setActiveWorkSession(null);
+  };
+
+  const updateTechnicianWorkHour = (
+    id: string,
+    hours: number,
+    description: string,
+    userRole: Role = "technician"
+  ) => {
     const existing = technicianHours.find((h) => h.id === id);
     if (!existing) {
       return { success: false, error: "Registro de horas no encontrado." };
     }
 
-    // Check 48 hours limit
+    // Check 48 hours limit: technician only up to 48h, admin can always edit
     const createdTime = new Date(existing.createdAt).getTime();
     const nowTime = Date.now();
     const diffHours = (nowTime - createdTime) / (1000 * 60 * 60);
-    if (diffHours > 48) {
-      return { success: false, error: "Este registro supera las 48 horas de antigüedad y está cerrado para edición según normativa contable." };
+    if (diffHours > 48 && userRole === "technician") {
+      return {
+        success: false,
+        error:
+          "Este registro supera las 48 horas de antigüedad. Según normativa, solo un Administrador puede editarlo.",
+      };
     }
 
     if (hours <= 0 || hours > 24) {
@@ -1430,9 +1501,140 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: "Las horas deben registrarse en bloques de 0,5 h." };
     }
 
+    const hourDiff = hours - existing.hours;
+    const proj = projects.find((p) => p.id === existing.projectId);
+    const hourlyRate = proj?.hourlyRate || 18500;
+
     setTechnicianHours((prev) =>
       prev.map((h) => (h.id === id ? { ...h, hours, description } : h))
     );
+
+    // Sincronizar imputación en el proyecto (alimenta H27 y H28)
+    if (proj && hourDiff !== 0) {
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id === existing.projectId
+            ? {
+                ...p,
+                hoursReal: Math.max(0, (p.hoursReal || 0) + hourDiff),
+                costRealHours: Math.max(0, (p.costRealHours || 0) + hourDiff * hourlyRate),
+                costReal: Math.max(0, p.costReal + hourDiff * hourlyRate),
+              }
+            : p
+        )
+      );
+    }
+
+    return { success: true };
+  };
+
+  const logAdminManualHours = (data: {
+    technicianRut: string;
+    technicianName: string;
+    projectId: string;
+    date: string;
+    hours: number;
+    description: string;
+    reason?: string;
+  }) => {
+    if (data.hours <= 0 || data.hours > 24) {
+      return { success: false, error: "Las horas deben ser mayores a 0 y máximo 24 horas por día." };
+    }
+    if ((data.hours * 10) % 5 !== 0) {
+      return { success: false, error: "Las horas deben registrarse en bloques de 0,5 h." };
+    }
+    if (!data.date) {
+      return { success: false, error: "Debe ingresar una fecha válida (YYYY-MM-DD)." };
+    }
+
+    const proj = projects.find((p) => p.id === data.projectId);
+    if (!proj) {
+      return { success: false, error: "Proyecto no encontrado." };
+    }
+
+    // Comprobar tope diario de 24h para ese técnico en esa fecha
+    const existingDayHours = technicianHours
+      .filter(
+        (h) =>
+          (h.technicianRut === data.technicianRut || (!h.technicianRut && USERS.technician.rut === data.technicianRut)) &&
+          h.date === data.date
+      )
+      .reduce((sum, h) => sum + h.hours, 0);
+
+    if (existingDayHours + data.hours > 24) {
+      return {
+        success: false,
+        error: `El técnico ${data.technicianName} ya registra ${existingDayHours} HH el ${data.date}. El total diario no puede exceder las 24 h.`,
+      };
+    }
+
+    const hourlyRate = proj.hourlyRate || 18500;
+    const totalCost = data.hours * hourlyRate;
+
+    const newH: TechnicianWorkHour = {
+      id: `twh_${Date.now()}`,
+      projectId: proj.id,
+      projectCode: proj.code,
+      projectName: proj.name,
+      date: data.date,
+      hours: data.hours,
+      description: data.description?.trim() || "Carga manual extraordinaria por Administración.",
+      createdAt: new Date().toISOString(),
+      syncStatus: "sincronizado",
+      technicianRut: data.technicianRut,
+      technicianName: data.technicianName,
+      registeredBy: "admin_manual",
+      reason: data.reason || "Carga manual extraordinaria en terreno",
+    };
+
+    setTechnicianHours((prev) => [newH, ...prev]);
+
+    // Imputar al proyecto (H27 y H28)
+    const newLaborEntry: ProjectLaborEntry = {
+      id: `hh_${Date.now()}`,
+      date: data.date,
+      technicianRut: data.technicianRut,
+      technicianName: data.technicianName,
+      hours: data.hours,
+      hourlyCost: hourlyRate,
+      totalCost: totalCost,
+      description: data.reason
+        ? `[Carga Admin: ${data.reason}] ${data.description}`
+        : data.description,
+      registeredBy: "admin_manual",
+      reason: data.reason,
+    };
+
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === data.projectId
+          ? {
+              ...p,
+              hoursReal: (p.hoursReal || 0) + data.hours,
+              costRealHours: (p.costRealHours || 0) + totalCost,
+              costReal: p.costReal + totalCost,
+              laborEntries: [newLaborEntry, ...(p.laborEntries || [])],
+            }
+          : p
+      )
+    );
+
+    // Registro de auditoría
+    const auditEntry: AuditLogEntry = {
+      id: `aud_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userRut: "12.456.789-5",
+      userName: "Javier Muñoz Contreras",
+      userRole: "admin",
+      action: "creacion",
+      entity: "Proyectos",
+      fieldChanged: "Carga Manual Admin",
+      oldValue: "-",
+      newValue: `${data.hours} HH - ${data.technicianName} en ${proj.code}`,
+      description: `Carga manual de ${data.hours} HH para el técnico ${data.technicianName} en ${proj.code}. Motivo: ${data.reason || "Carga administrativa extraordinaria"}.`,
+    };
+    setAuditLogs((prev) => [auditEntry, ...prev]);
+
     return { success: true };
   };
 
@@ -1716,6 +1918,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         serviceSheets,
         technicianHours,
         technicianProgressReports,
+        activeWorkSession,
+        startWorkSession,
+        stopWorkSession,
+        cancelWorkSession,
         systemUsers,
         auditLogs,
         systemParameters,
@@ -1761,6 +1967,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         resolveServiceSheetConflict,
         createTechnicianWorkHour,
         updateTechnicianWorkHour,
+        logAdminManualHours,
         createTechnicianProgressReport,
         createSystemUser,
         toggleSystemUserDisabled,

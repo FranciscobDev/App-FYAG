@@ -40,6 +40,7 @@ export const ProjectsScreen: React.FC = () => {
     updateProject,
     assignTechniciansToProject,
     closeProject,
+    logAdminManualHours,
   } = useApp();
   const { currentRole, user } = useAuth();
 
@@ -83,6 +84,44 @@ export const ProjectsScreen: React.FC = () => {
   const [closeModalVisible, setCloseModalVisible] = useState(false);
   const [closeProjectTarget, setCloseProjectTarget] = useState<Project | null>(null);
   const [closeBlocks, setCloseBlocks] = useState<string[]>([]);
+
+  // Admin manual hours modal state
+  const [adminManualModalOpen, setAdminManualModalOpen] = useState(false);
+  const [adminManualTechRut, setAdminManualTechRut] = useState(technicians[0]?.rut || "");
+  const [adminManualDate, setAdminManualDate] = useState(new Date().toISOString().slice(0, 10));
+  const [adminManualHours, setAdminManualHours] = useState(8.0);
+  const [adminManualReason, setAdminManualReason] = useState("Falla de Batería en Faena");
+  const [adminManualDesc, setAdminManualDesc] = useState("");
+  const [adminManualError, setAdminManualError] = useState("");
+
+  const handleConfirmAdminManualHours = () => {
+    if (!selectedProject) return;
+    const tech = technicians.find((t) => t.rut === adminManualTechRut) || technicians[0];
+    if (!tech) {
+      setAdminManualError("Seleccione un técnico.");
+      return;
+    }
+    const res = logAdminManualHours({
+      technicianRut: tech.rut,
+      technicianName: tech.name,
+      projectId: selectedProject.id,
+      date: adminManualDate,
+      hours: adminManualHours,
+      description: adminManualDesc.trim() || `Carga manual extraordinaria por Administración (${adminManualReason}).`,
+      reason: adminManualReason,
+    });
+    if (!res.success) {
+      setAdminManualError(res.error || "Error al imputar horas.");
+    } else {
+      setAdminManualModalOpen(false);
+      setAdminManualDesc("");
+      showToast(`✓ ${adminManualHours} HH imputadas a ${tech.name} en ${selectedProject.code}.`);
+      const updatedProj = projects.find((p) => p.id === selectedProject.id);
+      if (updatedProj) {
+        setSelectedProject({ ...updatedProj });
+      }
+    }
+  };
 
   // Filtering projects list
   const filteredProjects = projects.filter((proj) => {
@@ -611,17 +650,40 @@ export const ProjectsScreen: React.FC = () => {
           {/* ---------------- 4. PESTAÑA HORAS HOMBRE ---------------- */}
           {detailTab === "horas" && (
             <Card variant="default">
-              <Text style={styles.subTitle}>Horas Hombre (HH) Trabajadas en Terreno</Text>
-              <Text style={styles.subDesc}>
-                Jornadas laborales ejecutadas por el equipo técnico en faena:
-              </Text>
+              <View style={styles.hhTabHeaderRow}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.subTitle}>Horas Hombre (HH) Trabajadas en Terreno</Text>
+                  <Text style={styles.subDesc}>
+                    Jornadas laborales ejecutadas por el equipo técnico en faena:
+                  </Text>
+                </View>
+                {selectedProject.status !== "cerrado" && (
+                  <Button
+                    title="+ Carga Manual (Admin)"
+                    size="sm"
+                    variant="primary"
+                    icon="time-outline"
+                    onPress={() => {
+                      setAdminManualError("");
+                      setAdminManualHours(8.0);
+                      setAdminManualDate(new Date().toISOString().slice(0, 10));
+                      setAdminManualModalOpen(true);
+                    }}
+                  />
+                )}
+              </View>
 
               {selectedProject.laborEntries && selectedProject.laborEntries.length > 0 ? (
                 <>
                   {selectedProject.laborEntries.map((hh) => (
                     <View key={hh.id} style={styles.laborRow}>
                       <View style={{ flex: 1, marginRight: 8 }}>
-                        <Text style={styles.laborTech}>{hh.technicianName}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                          <Text style={styles.laborTech}>{hh.technicianName}</Text>
+                          {hh.registeredBy === "admin_manual" && (
+                            <Badge label="CARGA MANUAL ADMIN" tone="warn" size="sm" />
+                          )}
+                        </View>
                         <Text style={styles.laborDesc}>{hh.description}</Text>
                         <Text style={styles.laborDate}>Fecha: {hh.date} • Costo HH: {formatCLP(hh.hourlyCost)}</Text>
                       </View>
@@ -1246,6 +1308,210 @@ export const ProjectsScreen: React.FC = () => {
             </View>
           </View>
         )}
+      </ModalView>
+
+      {/* =====================================================================
+          5. MODAL DE CARGA MANUAL DE HORAS POR ADMINISTRADOR (H27 / H28)
+          ===================================================================== */}
+      <ModalView
+        visible={adminManualModalOpen}
+        onClose={() => setAdminManualModalOpen(false)}
+        title="Carga Manual de Horas (Admin)"
+        subtitle={`Imputación contable directa para ${selectedProject?.code || "Proyecto"}`}
+      >
+        <Text style={styles.formSectionHeading}>1. Seleccionar Técnico</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+          {technicians.map((t) => {
+            const isSelected = adminManualTechRut === t.rut;
+            return (
+              <TouchableOpacity
+                key={t.rut}
+                onPress={() => setAdminManualTechRut(t.rut)}
+                style={[
+                  styles.adminTechChip,
+                  isSelected && styles.adminTechChipActive,
+                ]}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.adminTechAvatar, isSelected && styles.adminTechAvatarActive]}>
+                  <Ionicons
+                    name="person"
+                    size={16}
+                    color={isSelected ? "#ffffff" : theme.colors.primary}
+                  />
+                </View>
+                <View>
+                  <Text style={[styles.adminTechName, isSelected && styles.adminTechNameActive]}>
+                    {t.name}
+                  </Text>
+                  <Text style={styles.adminTechRut}>{t.rut} • {t.specialty || "Técnico"}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={styles.formSectionHeading}>2. Fecha de la Jornada Laboral</Text>
+        <View style={styles.quickDateRow}>
+          {[
+            { label: "Hoy", val: new Date().toISOString().slice(0, 10) },
+            {
+              label: "Ayer",
+              val: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+            },
+            {
+              label: "Anteayer",
+              val: new Date(Date.now() - 172800000).toISOString().slice(0, 10),
+            },
+          ].map((d) => (
+            <TouchableOpacity
+              key={d.label}
+              onPress={() => setAdminManualDate(d.val)}
+              style={[
+                styles.quickDateBtn,
+                adminManualDate === d.val && styles.quickDateBtnActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.quickDateTxt,
+                  adminManualDate === d.val && styles.quickDateTxtActive,
+                ]}
+              >
+                {d.label} ({d.val.slice(5)})
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Input
+          label="Fecha de Ejecución (YYYY-MM-DD)"
+          value={adminManualDate}
+          onChangeText={setAdminManualDate}
+          placeholder="2026-10-16"
+          containerStyle={{ marginBottom: 12 }}
+        />
+
+        <Text style={styles.formSectionHeading}>3. Cantidad de Horas (Bloques de 0,5 h - Máx 24h)</Text>
+        <View style={styles.hoursStepperRow}>
+          <TouchableOpacity
+            onPress={() => setAdminManualHours((prev) => Math.max(0.5, Number((prev - 0.5).toFixed(1))))}
+            style={styles.stepperBtn}
+            accessibilityLabel="Restar 0.5 horas"
+          >
+            <Ionicons name="remove" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
+
+          <View style={styles.stepperValBox}>
+            <Text style={styles.stepperValNum}>{adminManualHours.toFixed(1)}</Text>
+            <Text style={styles.stepperValUnit}>HH</Text>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => setAdminManualHours((prev) => Math.min(24.0, Number((prev + 0.5).toFixed(1))))}
+            style={styles.stepperBtn}
+            accessibilityLabel="Sumar 0.5 horas"
+          >
+            <Ionicons name="add" size={22} color={theme.colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.quickHoursRow}>
+          {[4.0, 8.0, 9.0, 10.0].map((h) => (
+            <TouchableOpacity
+              key={h}
+              onPress={() => setAdminManualHours(h)}
+              style={[
+                styles.quickHourChip,
+                adminManualHours === h && styles.quickHourChipActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.quickHourChipTxt,
+                  adminManualHours === h && styles.quickHourChipTxtActive,
+                ]}
+              >
+                {h.toFixed(1)} h
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.formSectionHeading}>4. Causa del No Registro Automático</Text>
+        <View style={styles.reasonWrap}>
+          {[
+            "Falla de Batería en Faena",
+            "Zona Rural Sin Cobertura",
+            "Olvido de Marcaje de Inicio",
+            "Corte Eléctrico en Terreno",
+            "Jornada Extraordinaria / Urgencia",
+          ].map((r) => {
+            const isSel = adminManualReason === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                onPress={() => setAdminManualReason(r)}
+                style={[styles.reasonChip, isSel && styles.reasonChipActive]}
+              >
+                <Text style={[styles.reasonChipTxt, isSel && styles.reasonChipTxtActive]}>
+                  {r}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Input
+          label="Detalles o Justificación Adicional"
+          value={adminManualDesc}
+          onChangeText={setAdminManualDesc}
+          placeholder="Ej: Faena de empalme subterráneo sin acceso a red móvil durante toda la jornada."
+          multiline
+          numberOfLines={2}
+          containerStyle={{ marginTop: 10, marginBottom: 14 }}
+        />
+
+        {/* Live Cost Impact Box */}
+        {selectedProject && (
+          <View style={styles.costPreviewBox}>
+            <View style={styles.costPreviewRow}>
+              <Text style={styles.costPreviewLabel}>Tasa Horaria Proyecto:</Text>
+              <Text style={styles.costPreviewVal}>{formatCLP(selectedProject.hourlyRate || 18500)} / HH</Text>
+            </View>
+            <View style={styles.costPreviewRow}>
+              <Text style={styles.costPreviewLabel}>Costo Total a Imputar (H27):</Text>
+              <Text style={styles.costPreviewTotal}>
+                {formatCLP(adminManualHours * (selectedProject.hourlyRate || 18500))}
+              </Text>
+            </View>
+            <Text style={styles.costPreviewNote}>
+              * Se recalcula inmediatamente el balance H28 y se genera registro de auditoría administrativa.
+            </Text>
+          </View>
+        )}
+
+        {Boolean(adminManualError) && (
+          <View style={styles.errorBannerBox}>
+            <Ionicons name="alert-circle" size={18} color={theme.colors.danger} />
+            <Text style={styles.errorBannerTxt}>{adminManualError}</Text>
+          </View>
+        )}
+
+        <View style={styles.modalButtonsRow}>
+          <Button
+            title="Cancelar"
+            variant="ghost"
+            onPress={() => setAdminManualModalOpen(false)}
+            style={{ marginRight: 8 }}
+          />
+          <Button
+            title="Confirmar e Imputar HH"
+            variant="primary"
+            icon="checkmark-circle"
+            onPress={handleConfirmAdminManualHours}
+          />
+        </View>
       </ModalView>
     </View>
     </ScreenStateWrapper>
@@ -1950,5 +2216,220 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  hhTabHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: theme.spacing.md,
+  },
+  adminTechChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  adminTechChipActive: {
+    backgroundColor: "#eff6ff",
+    borderColor: theme.colors.primary,
+  },
+  adminTechAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#dbeafe",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 8,
+  },
+  adminTechAvatarActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  adminTechName: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  adminTechNameActive: {
+    color: theme.colors.primaryDark,
+  },
+  adminTechRut: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+  },
+  quickDateRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  quickDateBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: "center",
+  },
+  quickDateBtnActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  quickDateTxt: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: theme.colors.textMuted,
+  },
+  quickDateTxtActive: {
+    color: "#ffffff",
+  },
+  hoursStepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    marginVertical: 10,
+  },
+  stepperBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.borderDark,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  stepperValBox: {
+    minWidth: 110,
+    height: 52,
+    backgroundColor: "#ffffff",
+    borderRadius: theme.radius.md,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+  },
+  stepperValNum: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: theme.colors.primaryDark,
+  },
+  stepperValUnit: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: theme.colors.textMuted,
+  },
+  quickHoursRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  quickHourChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  quickHourChipActive: {
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primary,
+  },
+  quickHourChipTxt: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: theme.colors.textMuted,
+  },
+  quickHourChipTxtActive: {
+    color: theme.colors.primary,
+    fontWeight: "bold",
+  },
+  reasonWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 4,
+  },
+  reasonChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  reasonChipActive: {
+    backgroundColor: "#fef3c7",
+    borderColor: theme.colors.warn,
+  },
+  reasonChipTxt: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+  },
+  reasonChipTxtActive: {
+    color: theme.colors.warnDark,
+    fontWeight: "bold",
+  },
+  costPreviewBox: {
+    backgroundColor: "#f0fdf4",
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    borderRadius: theme.radius.md,
+    padding: 12,
+    marginBottom: 12,
+  },
+  costPreviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  costPreviewLabel: {
+    fontSize: 12,
+    color: "#166534",
+  },
+  costPreviewVal: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#166534",
+  },
+  costPreviewTotal: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#15803d",
+  },
+  costPreviewNote: {
+    fontSize: 10,
+    color: "#166534",
+    fontStyle: "italic",
+    marginTop: 4,
+  },
+  errorBannerBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderRadius: theme.radius.sm,
+    padding: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  errorBannerTxt: {
+    flex: 1,
+    fontSize: 12,
+    color: theme.colors.danger,
+    fontWeight: "600",
   },
 });

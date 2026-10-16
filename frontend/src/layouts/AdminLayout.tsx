@@ -23,6 +23,8 @@ import { SearchInput } from "@/components/common/SearchInput";
 import { SessionTimeoutModal } from "@/components/common/SessionTimeoutModal";
 
 
+import { useApp } from "@/context/AppContext";
+
 // Pantallas administradas
 import { AdminDashboard } from "@/features/dashboard/AdminDashboard";
 import { InventoryScreen } from "@/features/inventory/InventoryScreen";
@@ -31,56 +33,36 @@ import { ProjectsScreen } from "@/features/projects/ProjectsScreen";
 import { ToolsScreen } from "@/features/tools/ToolsScreen";
 import { ReturnsScreen } from "@/features/returns/ReturnsScreen";
 import { AdministrationScreen } from "@/features/admin/AdministrationScreen";
+import { AdminManualHoursScreen } from "@/features/admin/AdminManualHoursScreen";
 
 export type AdminRoute =
   | "dashboard"
   | "inventario"
+  | "solicitudes"
+  | "mermas"
+  | "conteo"
+  | "kits"
   | "devoluciones"
   | "compras"
   | "facturas"
   | "proyectos"
+  | "horas_tecnicos"
   | "herramientas"
   | "administracion";
 
-interface NavGroup {
-  title: string;
-  items: {
-    id: AdminRoute;
-    label: string;
-    icon: keyof typeof Ionicons.glyphMap;
-  }[];
+export interface NavItem {
+  id: AdminRoute;
+  label: string;
+  description: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  badge?: string;
+  badgeTone?: "primary" | "ok" | "warn" | "danger" | "info" | "mute";
 }
 
-const ADMIN_GROUPS: NavGroup[] = [
-  {
-    title: "OPERACIÓN",
-    items: [
-      { id: "dashboard", label: "Dashboard General", icon: "grid-outline" },
-      { id: "inventario", label: "Inventario & Cardex", icon: "cube-outline" },
-      { id: "devoluciones", label: "Devoluciones Faena", icon: "return-down-back-outline" },
-    ],
-  },
-  {
-    title: "COMPRAS",
-    items: [
-      { id: "compras", label: "Órdenes de Compra", icon: "cart-outline" },
-      { id: "facturas", label: "Facturas Proveedor", icon: "receipt-outline" },
-    ],
-  },
-  {
-    title: "PROYECTOS",
-    items: [
-      { id: "proyectos", label: "Proyectos y Obras", icon: "business-outline" },
-    ],
-  },
-  {
-    title: "ADMINISTRACIÓN",
-    items: [
-      { id: "herramientas", label: "Control Herramientas", icon: "construct-outline" },
-      { id: "administracion", label: "Sistema & Auditoría", icon: "settings-outline" },
-    ],
-  },
-];
+export interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
 
 export interface AdminLayoutProps {
   onLogout?: () => void;
@@ -88,11 +70,126 @@ export interface AdminLayoutProps {
 
 export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
   const { user, currentRole, setRole } = useAuth();
+  const { materialRequests, physicalCounts } = useApp();
   const { width } = useWindowDimensions();
 
   // Menú Drawer lateral desplegable desde las 3 líneas
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeRoute, setActiveRoute] = useState<AdminRoute>("dashboard");
+
+  // Contadores dinámicos para badges de gestión
+  const pendingRequestsCount = materialRequests.filter((r) => r.status === "pendiente").length;
+  const pendingCountsCount = physicalCounts.filter((c) => c.status === "pendiente_aprobacion").length;
+
+  const adminGroups: NavGroup[] = [
+    {
+      title: "RESUMEN Y MONITOREO",
+      items: [
+        {
+          id: "dashboard",
+          label: "Dashboard General",
+          description: "Métricas ejecutivas, alertas de faena, compras y KPIs",
+          icon: "grid-outline",
+        },
+      ],
+    },
+    {
+      title: "INVENTARIO Y BODEGA",
+      items: [
+        {
+          id: "inventario",
+          label: "Inventario & Cardex",
+          description: "Control de existencias, PMP valorizado y trazabilidad",
+          icon: "cube-outline",
+        },
+        {
+          id: "solicitudes",
+          label: "Aprobación de Solicitudes",
+          description: "Aprobar, rechazar o ajustar pedidos de materiales en faena",
+          icon: "clipboard-outline",
+          badge: pendingRequestsCount > 0 ? String(pendingRequestsCount) : undefined,
+          badgeTone: "warn",
+        },
+        {
+          id: "mermas",
+          label: "Control de Mermas",
+          description: "Autorizar bajas por daño, pérdida o caducidad en Cardex",
+          icon: "trash-outline",
+        },
+        {
+          id: "conteo",
+          label: "Auditoría de Conteos Físicos",
+          description: "Validar y aprobar cuadres de stock reportados por bodega",
+          icon: "checkbox-outline",
+          badge: pendingCountsCount > 0 ? String(pendingCountsCount) : undefined,
+          badgeTone: "info",
+        },
+        {
+          id: "kits",
+          label: "Kits de Materiales",
+          description: "Configurar paquetes estándar de insumos para obras",
+          icon: "layers-outline",
+        },
+        {
+          id: "devoluciones",
+          label: "Devoluciones de Faena",
+          description: "Supervisar sobrantes retornados y su reintegro físico a bodega",
+          icon: "return-down-back-outline",
+        },
+      ],
+    },
+    {
+      title: "COMPRAS Y PROVEEDORES",
+      items: [
+        {
+          id: "compras",
+          label: "Órdenes de Compra",
+          description: "Emisión, aprobación a proveedores y control de recepción",
+          icon: "cart-outline",
+        },
+        {
+          id: "facturas",
+          label: "Facturas de Proveedor",
+          description: "Validación contable con hasta 3 descuentos sucesivos",
+          icon: "receipt-outline",
+        },
+      ],
+    },
+    {
+      title: "PROYECTOS Y MANO DE OBRA",
+      items: [
+        {
+          id: "proyectos",
+          label: "Proyectos y Obras",
+          description: "Presupuestos, costos reales H27/H28 y liquidación final",
+          icon: "business-outline",
+        },
+        {
+          id: "horas_tecnicos",
+          label: "Carga Horas Técnicos",
+          description: "Imputar HH en bloques de 0,5 h con motivo justificado",
+          icon: "time-outline",
+        },
+      ],
+    },
+    {
+      title: "ACTIVOS Y GOBERNANZA",
+      items: [
+        {
+          id: "herramientas",
+          label: "Control de Herramientas",
+          description: "Préstamos a técnicos, estados y mantenciones preventivas",
+          icon: "construct-outline",
+        },
+        {
+          id: "administracion",
+          label: "Sistema y Auditoría",
+          description: "Usuarios, roles, parámetros del sistema y logs de auditoría",
+          icon: "settings-outline",
+        },
+      ],
+    },
+  ];
 
   // Modales
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -154,13 +251,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
       case "dashboard":
         return <AdminDashboard onNavigate={(tab) => setActiveRoute(tab as AdminRoute)} />;
       case "inventario":
-        return <InventoryScreen />;
+        return <InventoryScreen key="inventario" initialTab="catalogo" />;
+      case "solicitudes":
+        return <InventoryScreen key="solicitudes" initialTab="solicitudes" hideTabBar={true} />;
+      case "mermas":
+        return <InventoryScreen key="mermas" initialTab="mermas" hideTabBar={true} />;
+      case "conteo":
+        return <InventoryScreen key="conteo" initialTab="conteo" hideTabBar={true} />;
+      case "kits":
+        return <InventoryScreen key="kits" initialTab="kits" hideTabBar={true} />;
       case "compras":
         return <PurchasingScreen initialTab="ordenes" />;
       case "facturas":
         return <PurchasingScreen initialTab="facturas" />;
       case "proyectos":
         return <ProjectsScreen />;
+      case "horas_tecnicos":
+        return <AdminManualHoursScreen />;
       case "herramientas":
         return <ToolsScreen />;
       case "devoluciones":
@@ -234,8 +341,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
         <View style={styles.topRight}>
           <NotificationBell
             onNavigateToObject={(entityType) => {
-              if (entityType === "insumo" || entityType === "solicitud") {
+              if (entityType === "insumo") {
                 setActiveRoute("inventario");
+              } else if (entityType === "solicitud") {
+                setActiveRoute("solicitudes");
               } else if (entityType === "proyecto") {
                 setActiveRoute("proyectos");
               } else if (entityType === "orden_compra") {
@@ -294,13 +403,13 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Lista de navegación */}
+            {/* Lista de navegación con Título y Descripción de cada categoría */}
             <ScrollView
               style={styles.drawerScroll}
               contentContainerStyle={styles.drawerScrollContent}
               showsVerticalScrollIndicator={false}
             >
-              {ADMIN_GROUPS.map((group) => (
+              {adminGroups.map((group) => (
                 <View key={group.title} style={styles.navGroup}>
                   <Text style={styles.groupTitle}>{group.title}</Text>
                   {group.items.map((item) => {
@@ -318,23 +427,44 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
                           isActive && styles.navItemActive,
                         ]}
                         accessibilityRole="button"
-                        accessibilityLabel={item.label}
+                        accessibilityLabel={`${item.label}: ${item.description}`}
                       >
-                        <Ionicons
-                          name={item.icon}
-                          size={20}
-                          color={isActive ? theme.colors.primary : theme.colors.textSecondary}
-                          style={styles.navIcon}
-                        />
-                        <Text
-                          style={[
-                            styles.navLabel,
-                            isActive && styles.navLabelActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {item.label}
-                        </Text>
+                        <View style={[styles.navIconBox, isActive && styles.navIconBoxActive]}>
+                          <Ionicons
+                            name={item.icon}
+                            size={18}
+                            color={isActive ? theme.colors.primaryDark : theme.colors.textSecondary}
+                          />
+                        </View>
+                        <View style={styles.navTextCol}>
+                          <View style={styles.navLabelRow}>
+                            <Text
+                              style={[
+                                styles.navLabel,
+                                isActive && styles.navLabelActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.label}
+                            </Text>
+                            {Boolean(item.badge) && (
+                              <Badge
+                                label={item.badge!}
+                                tone={item.badgeTone || "warn"}
+                                size="sm"
+                              />
+                            )}
+                          </View>
+                          <Text
+                            style={[
+                              styles.navDescription,
+                              isActive && styles.navDescriptionActive,
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {item.description}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
                     );
                   })}
@@ -475,15 +605,15 @@ const styles = StyleSheet.create({
   },
   topbar: {
     height: 64,
-    backgroundColor: theme.colors.card,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    backgroundColor: "#1c1917", // Dark Titanium Bar
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#292524",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: theme.spacing.lg,
     zIndex: 10,
-    ...theme.shadows.sm,
+    ...theme.shadows.md,
   },
   topbarCompact: {
     paddingHorizontal: theme.spacing.md,
@@ -495,7 +625,7 @@ const styles = StyleSheet.create({
   toggleBtn: {
     padding: 8,
     borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceAlt,
+    backgroundColor: "#292524",
     marginRight: 10,
   },
   brandRow: {
@@ -515,7 +645,7 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.base,
     fontWeight: "bold",
     letterSpacing: 0.5,
-    color: theme.colors.text,
+    color: "#ffffff",
   },
   roleBadge: {
     marginLeft: 8,
@@ -640,8 +770,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.45)",
   },
   drawerContent: {
-    width: 290,
-    maxWidth: "85%",
+    width: 325,
+    maxWidth: "88%",
     height: "100%",
     backgroundColor: theme.colors.card,
     borderRightWidth: 1,
@@ -660,7 +790,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.borderLight,
   },
   drawerCloseBtn: {
-    padding: 4,
+    padding: 6,
     borderRadius: theme.radius.sm,
   },
   drawerScroll: {
@@ -680,33 +810,63 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     paddingHorizontal: 12,
     marginBottom: 6,
+    textTransform: "uppercase",
   },
   navItem: {
     flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    alignItems: "flex-start",
+    paddingVertical: 9,
+    paddingHorizontal: 10,
     borderRadius: theme.radius.md,
-    marginBottom: 2,
-    minHeight: 44,
+    marginBottom: 4,
+    backgroundColor: "transparent",
+    minHeight: 48,
   },
   navItemActive: {
-    backgroundColor: theme.colors.primaryLight,
+    backgroundColor: "#fff7ed",
     borderLeftWidth: 3,
     borderLeftColor: theme.colors.primary,
   },
-  navIcon: {
+  navIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.surfaceAlt,
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
+    marginTop: 2,
+  },
+  navIconBoxActive: {
+    backgroundColor: "#fed7aa",
+  },
+  navTextCol: {
+    flex: 1,
+  },
+  navLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
   },
   navLabel: {
     fontSize: theme.fontSize.xs,
     fontWeight: theme.fontWeight.semibold,
-    color: theme.colors.textSecondary,
+    color: theme.colors.text,
     flex: 1,
   },
   navLabelActive: {
     color: theme.colors.primaryDark,
-    fontWeight: theme.fontWeight.semibold,
+    fontWeight: "bold",
+  },
+  navDescription: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  navDescriptionActive: {
+    color: theme.colors.textSecondary,
   },
   drawerUserFooter: {
     padding: 12,

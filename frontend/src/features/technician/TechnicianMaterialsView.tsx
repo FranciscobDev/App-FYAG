@@ -208,9 +208,9 @@ export const TechnicianMaterialsView: React.FC<TechnicianMaterialsViewProps> = (
               <Text style={styles.metricLbl}>Total Asignado</Text>
             </View>
 
-            <View style={[styles.metricBox, { backgroundColor: theme.colors.okLight }]}>
-              <Text style={[styles.metricVal, { color: theme.colors.okDark }]}>{totalRetrieved}</Text>
-              <Text style={[styles.metricLbl, { color: theme.colors.okDark }]}>Ya Retirado</Text>
+            <View style={[styles.metricBox, { backgroundColor: theme.colors.primaryLight }]}>
+              <Text style={[styles.metricVal, { color: theme.colors.primaryDark }]}>{totalRetrieved}</Text>
+              <Text style={[styles.metricLbl, { color: theme.colors.primaryDark }]}>Ya Retirado</Text>
             </View>
 
             <View style={[styles.metricBox, { backgroundColor: theme.colors.warnLight }]}>
@@ -272,7 +272,7 @@ export const TechnicianMaterialsView: React.FC<TechnicianMaterialsViewProps> = (
               </View>
 
               <View style={styles.itemCol}>
-                <Text style={[styles.itemColVal, { color: theme.colors.okDark }]}>
+                <Text style={[styles.itemColVal, { color: theme.colors.primaryDark }]}>
                   {item.quantityRetrieved} {item.unit}
                 </Text>
                 <Text style={styles.itemColLbl}>2. Retirado</Text>
@@ -410,6 +410,8 @@ const styles = StyleSheet.create({
   },
   summaryCard: {
     marginBottom: theme.spacing.md,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.primary,
   },
   summaryHeader: {
     flexDirection: "row",
@@ -472,7 +474,7 @@ const styles = StyleSheet.create({
   supplyPct: {
     fontSize: 11,
     fontWeight: "bold",
-    color: theme.colors.okDark,
+    color: theme.colors.primaryDark,
   },
   listHeading: {
     fontSize: theme.fontSize.xs,

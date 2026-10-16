@@ -95,10 +95,12 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
 
   useEffect(() => {
-    if (initialTab) {
+    if (currentRole === "admin" && activeTab !== "catalogo" && activeTab !== "cardex") {
+      setActiveTab("catalogo");
+    } else if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab]);
+  }, [initialTab, currentRole]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -717,25 +719,39 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
       <PageHeader
         title={
-          currentRole === "warehouse"
-            ? activeTab === "egreso"
-              ? "Egreso y Despacho"
-              : activeTab === "conteo"
-              ? "Conteo Físico"
-              : activeTab === "mermas"
-              ? "Registro de Mermas"
-              : "Inventario de Bodega"
+          activeTab === "solicitudes"
+            ? "Aprobación de Solicitudes"
+            : activeTab === "mermas"
+            ? "Control de Mermas"
+            : activeTab === "conteo"
+            ? "Auditoría de Conteos Físicos"
+            : activeTab === "kits"
+            ? "Kits de Materiales"
+            : activeTab === "egreso"
+            ? "Egreso y Despacho"
+            : currentRole === "warehouse"
+            ? "Inventario de Bodega"
             : "Inventario & Cardex"
         }
         subtitle={
-          currentRole === "warehouse"
+          activeTab === "solicitudes"
+            ? "Revisión, aprobación o rechazo de solicitudes de materiales de terreno"
+            : activeTab === "mermas"
+            ? "Autorización de bajas y registro contable de insumos dañados o vencidos"
+            : activeTab === "conteo"
+            ? "Validación y aprobación de cuadres de stock reportados por bodega"
+            : activeTab === "kits"
+            ? "Configuración de paquetes estándar de insumos para obras y faenas"
+            : activeTab === "egreso"
+            ? "Despacho físico y entrega de materiales a faena"
+            : currentRole === "warehouse"
             ? undefined
-            : "Control de existencias, kardex físico valorizado y egresos a faena"
+            : "Control de existencias y kardex físico valorizado"
         }
         rightAction={
-          currentRole === "admin" ? (
+          currentRole === "admin" && (activeTab === "catalogo" || activeTab === "cardex") ? (
             <Button
-              title="+ Nuevo Insumo"
+              title="Nuevo Insumo"
               variant="primary"
               size="sm"
               icon="add-outline"
@@ -761,25 +777,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   { id: "mermas", label: `Mermas (${wasteRecords.length})`, icon: "trash-outline" },
                 ]
               : [
-                  { id: "catalogo", label: `Catálogo (${products.length})`, icon: "cube-outline" },
+                  { id: "catalogo", label: `Inventario (${products.length})`, icon: "cube-outline" },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
-                  {
-                    id: "solicitudes",
-                    label: `Solicitudes (${materialRequests.filter((r) => r.status === "pendiente").length})`,
-                    icon: "clipboard-outline",
-                  },
-                  {
-                    id: "egreso",
-                    label: `Egreso (${approvedRequests.length})`,
-                    icon: "log-out-outline",
-                  },
-                  { id: "mermas", label: `Mermas (${wasteRecords.length})`, icon: "trash-outline" },
-                  {
-                    id: "conteo",
-                    label: `Conteo Físico (${physicalCounts.filter((c) => c.status === "pendiente_aprobacion").length})`,
-                    icon: "checkbox-outline",
-                  },
-                  { id: "kits", label: `Kits (${kits.length})`, icon: "layers-outline" },
                 ]
             ).map((tab) => {
               const isActive = activeTab === tab.id;
@@ -794,7 +793,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                   <Ionicons
                     name={tab.icon as any}
                     size={18}
-                    color={isActive ? theme.colors.primary : theme.colors.textMuted}
+                    color={isActive ? "#f59e0b" : "#a8a29e"}
                   />
                   <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
                     {tab.label}
@@ -860,9 +859,9 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
               description={
                 searchQuery
                   ? `No existen coincidencias para "${searchQuery}".`
-                  : "No hay insumos registrados en el catálogo de inventario."
+                  : "No hay insumos registrados en el inventario."
               }
-              actionTitle={currentRole === "admin" ? "+ Nuevo Insumo" : undefined}
+              actionTitle={currentRole === "admin" ? "Nuevo Insumo" : undefined}
               onAction={currentRole === "admin" ? handleOpenNewProduct : undefined}
               containerStyle={{ marginVertical: 20 }}
             />
@@ -1870,7 +1869,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
       <ModalView
         visible={newProductModal}
         onClose={() => setNewProductModal(false)}
-        title={editingProduct ? "Editar Insumo" : "Nuevo Insumo (Catálogo)"}
+        title={editingProduct ? "Editar Insumo" : "Nuevo Insumo (Inventario)"}
         subtitle="Formulario con SKU único, unidad, mínimos y reposición"
       >
         <View style={styles.inputWithScannerRow}>
@@ -2593,9 +2592,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   tabBarContainer: {
-    backgroundColor: theme.colors.card,
+    backgroundColor: "#1c1917", // Dark Titanium Technical Chassis
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
+    borderBottomColor: "#292524",
   },
   tabScrollContent: {
     paddingHorizontal: theme.spacing.sm,
@@ -2603,22 +2602,23 @@ const styles = StyleSheet.create({
   tabItem: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.spacing.md,
+    paddingVertical: 12,
     paddingHorizontal: theme.spacing.md,
     borderBottomWidth: 3,
     borderBottomColor: "transparent",
+    minHeight: 46,
   },
   tabItemActive: {
-    borderBottomColor: theme.colors.primary,
+    borderBottomColor: "#f59e0b",
   },
   tabLabel: {
     fontSize: theme.fontSize.xs,
     fontWeight: "600",
-    color: theme.colors.textMuted,
+    color: "#a8a29e",
     marginLeft: 6,
   },
   tabLabelActive: {
-    color: theme.colors.primary,
+    color: "#f59e0b",
     fontWeight: "bold",
   },
   tabContent: {

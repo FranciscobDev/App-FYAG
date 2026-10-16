@@ -15,6 +15,7 @@ export interface SyncStatusChipProps {
   pendingCount?: number;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  variant?: "light" | "dark";
 }
 
 export const SyncStatusChip: React.FC<SyncStatusChipProps> = ({
@@ -22,19 +23,30 @@ export const SyncStatusChip: React.FC<SyncStatusChipProps> = ({
   pendingCount,
   onPress,
   style,
+  variant = "light",
 }) => {
   const isPending = status === "pendiente";
+  const isDark = variant === "dark";
 
-  const bg = isPending ? theme.colors.warnLight : theme.colors.okLight;
-  const border = isPending ? theme.colors.warnBorder : theme.colors.okBorder;
-  const textCol = isPending ? theme.colors.warnDark : theme.colors.okDark;
+  let bg = isPending ? theme.colors.primaryLight : theme.colors.surfaceAlt;
+  let border = isPending ? theme.colors.primaryBorder : theme.colors.borderDark;
+  let textCol = isPending ? theme.colors.primaryDark : theme.colors.text;
+  let iconCol = isPending ? theme.colors.primaryDark : theme.colors.ok;
+
+  if (isDark) {
+    bg = isPending ? "rgba(217, 119, 6, 0.25)" : "#292524";
+    border = isPending ? "#d97706" : "#44403c";
+    textCol = isPending ? "#f59e0b" : "#e7e5e4";
+    iconCol = isPending ? "#f59e0b" : "#22c55e";
+  }
+
   const iconName: keyof typeof Ionicons.glyphMap = isPending
     ? "cloud-upload-outline"
     : "cloud-done";
 
   const label = isPending
     ? pendingCount && pendingCount > 0
-      ? `${pendingCount} pendiente(s)`
+      ? `${pendingCount} pend.`
       : "Pendiente"
     : "Sincronizado";
 
@@ -49,7 +61,7 @@ export const SyncStatusChip: React.FC<SyncStatusChipProps> = ({
         style,
       ]}
     >
-      <Ionicons name={iconName} size={14} color={textCol} style={styles.icon} />
+      <Ionicons name={iconName} size={13} color={iconCol} style={styles.icon} />
       <Text style={[styles.text, { color: textCol }]}>{label}</Text>
     </View>
   );

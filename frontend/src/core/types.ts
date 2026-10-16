@@ -25,6 +25,8 @@ export interface ProjectLaborEntry {
   hourlyCost: number;
   totalCost: number;
   description: string;
+  registeredBy?: "technician_auto" | "admin_manual";
+  reason?: string;
 }
 
 export interface ProjectWasteEntry {
@@ -498,6 +500,18 @@ export interface TechnicianWorkHour {
   description: string;
   createdAt: string; // ISO string
   syncStatus: "pendiente" | "sincronizado";
+  technicianRut?: string;
+  technicianName?: string;
+  registeredBy?: "technician_auto" | "admin_manual";
+  reason?: string;
+}
+
+export interface ActiveWorkSession {
+  projectId: string;
+  projectCode: string;
+  projectName: string;
+  startTime: string; // ISO string
+  hourlyRate: number;
 }
 
 export interface SystemUser {

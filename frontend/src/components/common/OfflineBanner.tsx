@@ -33,20 +33,20 @@ export const OfflineBanner: React.FC<OfflineBannerProps> = ({ onToggle }) => {
         <Ionicons
           name={isOffline ? "cloud-offline" : "cloud-done"}
           size={18}
-          color={isOffline ? theme.colors.warnDark : theme.colors.okDark}
+          color={isOffline ? theme.colors.primaryDark : theme.colors.ok}
         />
         <View style={styles.textCol}>
           <Text
             style={[
               styles.title,
-              { color: isOffline ? theme.colors.warnDark : theme.colors.okDark },
+              { color: isOffline ? theme.colors.primaryDark : theme.colors.text },
             ]}
           >
             {isOffline ? "Modo Sin Conexión (Offline Faena)" : "En Línea (Sincronizado)"}
           </Text>
           <Text style={styles.subtitle}>
             {isOffline
-              ? "Tus solicitudes y devoluciones se guardan en el dispositivo y se enviarán al recuperar señal."
+              ? "Tus solicitudes y jornadas se guardan localmente y se enviarán al recuperar señal."
               : "Conexión activa con el servidor central FYAG. Toca para simular modo offline."}
           </Text>
         </View>
@@ -55,10 +55,12 @@ export const OfflineBanner: React.FC<OfflineBannerProps> = ({ onToggle }) => {
       <View
         style={[
           styles.badgeIndicator,
-          { backgroundColor: isOffline ? theme.colors.warn : theme.colors.ok },
+          { backgroundColor: isOffline ? theme.colors.primary : theme.colors.transit },
         ]}
       >
-        <Text style={styles.badgeText}>{isOffline ? "OFFLINE" : "ONLINE"}</Text>
+        <Text style={[styles.badgeText, !isOffline && { color: "#f59e0b" }]}>
+          {isOffline ? "OFFLINE" : "ONLINE"}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -79,12 +81,12 @@ const styles = StyleSheet.create({
     borderWidth: theme.borders.thin,
   },
   bannerOnline: {
-    backgroundColor: theme.colors.okLight,
-    borderColor: theme.colors.okBorder,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderColor: theme.colors.border,
   },
   bannerOffline: {
-    backgroundColor: theme.colors.warnLight,
-    borderColor: theme.colors.warnBorder,
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primaryBorder,
   },
   leftCol: {
     flexDirection: "row",
