@@ -128,3 +128,11 @@ $RECYCLE.BIN/
 .LSOverride
 Icon?
 ._*
+
+# 13. Asistentes IA y configuraciones locales de agentes
+.agents/
+**/.agents/
+AGENTS.md
+agents.md
+**/AGENTS.md
+**/agents.md
