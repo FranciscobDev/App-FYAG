@@ -183,7 +183,7 @@ export const DesignSystemScreen: React.FC = () => {
             { label: "Paso 2 Componentes" },
           ]}
           rightAction={
-            <NotificationBell />
+            <NotificationBell variant="light" />
           }
         />
 

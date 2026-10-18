@@ -5,6 +5,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +13,7 @@ import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate } from "@/core/format";
 import { theme } from "@/core/theme";
+import { Badge } from "@/components/common/Badge";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { EstadoBadge } from "@/components/common/EstadoBadge";
@@ -42,6 +44,8 @@ export const ReturnsScreen: React.FC = () => {
     resolveSupplierReturn,
   } = useApp();
   const { currentRole, user } = useAuth();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 900;
 
   // Tab activo según rol inicial
   const [activeTab, setActiveTab] = useState<"tecnico" | "bodega" | "proveedores">(
@@ -246,64 +250,204 @@ export const ReturnsScreen: React.FC = () => {
   const inTransitCount = returnOrders.filter((r) => r.status === "en_transito").length;
   const supplierPendingCount = supplierReturns.filter((s) => s.status === "pendiente_resolucion").length;
 
+  // Pestañas ordenadas paso a paso para el flujo de trabajo:
+  const tabs =
+    currentRole === "technician"
+      ? [
+          {
+            id: "tecnico" as const,
+            step: "1",
+            title: "Declarar Sobrante",
+            icon: "create-outline",
+            badge: undefined,
+            badgeTone: "neutral",
+          },
+          {
+            id: "bodega" as const,
+            step: "2",
+            title: "Seguimiento en Tránsito",
+            icon: "car-outline",
+            badge: inTransitCount > 0 ? String(inTransitCount) : undefined,
+            badgeTone: inTransitCount > 0 ? "warn" : "neutral",
+          },
+        ]
+      : [
+          {
+            id: "bodega" as const,
+            step: "1",
+            title: "1. Recepción de Obra",
+            icon: "cube-outline",
+            badge: inTransitCount > 0 ? `${inTransitCount} en camino` : undefined,
+            badgeTone: inTransitCount > 0 ? "warn" : "neutral",
+          },
+          {
+            id: "proveedores" as const,
+            step: "2",
+            title: "2. A Proveedores",
+            icon: "alert-circle-outline",
+            badge: supplierPendingCount > 0 ? `${supplierPendingCount} pend.` : undefined,
+            badgeTone: supplierPendingCount > 0 ? "danger" : "neutral",
+          },
+          {
+            id: "tecnico" as const,
+            step: "3",
+            title: "3. Declarar Sobrante",
+            icon: "calculator-outline",
+            badge: undefined,
+            badgeTone: "neutral",
+          },
+        ];
+
   return (
-    <ScreenStateWrapper screenTitle="Devoluciones y Faena" skeletonType="cards">
+    <ScreenStateWrapper screenTitle="Devoluciones de Stock" skeletonType="cards">
     <View style={styles.container}>
       {/* ENCABEZADO */}
       <PageHeader
-        title="Devoluciones de Faena"
+        title="Devoluciones de Stock"
         subtitle={
           currentRole === "warehouse"
-            ? undefined
+            ? "Flujo paso a paso de control: recepción física de faena y despacho de garantías a proveedores"
             : "Recepción física de sobrantes de técnicos, verificación en bodega y devoluciones a proveedores"
         }
       />
 
-      {/* ========================================================================= */}
-      {/* BARRA DE PESTAÑAS                                                         */}
-      {/* ========================================================================= */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "tecnico" && styles.tabItemActive]}
-          onPress={() => setActiveTab("tecnico")}
-        >
-          <Ionicons
-            name="arrow-undo-outline"
-            size={18}
-            color={activeTab === "tecnico" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "tecnico" && styles.tabLabelActive]}>
-            Devolución Sobrante
-          </Text>
-        </TouchableOpacity>
+      {/* GUÍA DE FLUJO PASO A PASO (TABLET / DESKTOP / MOBILE) */}
+      {currentRole !== "technician" && (
+        <View style={styles.workflowGuideWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.workflowGuideScroll}
+          >
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "bodega" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("bodega")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "bodega" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "bodega" && styles.stepNumberTxtActive]}>
+                  Paso 1
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "bodega" && styles.workflowCardTitleActive]}>
+                  Recepción de Obra
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Contar físico y cuadrar en Cardex
+                </Text>
+              </View>
+              {inTransitCount > 0 ? (
+                <Badge label={`${inTransitCount} en camino`} tone="warn" size="sm" />
+              ) : (
+                <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.ok} />
+              )}
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "bodega" && styles.tabItemActive]}
-          onPress={() => setActiveTab("bodega")}
-        >
-          <Ionicons
-            name="cube-outline"
-            size={18}
-            color={activeTab === "bodega" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "bodega" && styles.tabLabelActive]}>
-            En Tránsito ({inTransitCount})
-          </Text>
-        </TouchableOpacity>
+            <View style={styles.workflowSeparator}>
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.textMuted} />
+            </View>
 
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "proveedores" && styles.tabItemActive]}
-          onPress={() => setActiveTab("proveedores")}
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "proveedores" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("proveedores")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "proveedores" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "proveedores" && styles.stepNumberTxtActive]}>
+                  Paso 2
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "proveedores" && styles.workflowCardTitleActive]}>
+                  Salida a Proveedores
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Egreso de defectuosos con GD
+                </Text>
+              </View>
+              {supplierPendingCount > 0 ? (
+                <Badge label={`${supplierPendingCount} pend.`} tone="danger" size="sm" />
+              ) : (
+                <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.ok} />
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.workflowSeparator}>
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.textMuted} />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "tecnico" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("tecnico")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "tecnico" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "tecnico" && styles.stepNumberTxtActive]}>
+                  Paso 3
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "tecnico" && styles.workflowCardTitleActive]}>
+                  Declarar Sobrante
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Fórmula Retirado − Usado
+                </Text>
+              </View>
+              <Ionicons name="calculator-outline" size={18} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BARRA DE PESTAÑAS HORIZONTAL RESPONSIVA                                    */}
+      {/* ========================================================================= */}
+      <View style={styles.tabBarWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabBarScroll}
         >
-          <Ionicons
-            name="alert-circle-outline"
-            size={18}
-            color={activeTab === "proveedores" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "proveedores" && styles.tabLabelActive]}>
-            A Proveedores ({supplierPendingCount} pend.)
-          </Text>
-        </TouchableOpacity>
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabItem, isActive && styles.tabItemActive]}
+                onPress={() => setActiveTab(tab.id)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={tab.icon as any}
+                  size={18}
+                  color={isActive ? theme.colors.primary : theme.colors.textMuted}
+                />
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                  {tab.title}
+                </Text>
+                {Boolean(tab.badge) && (
+                  <Badge
+                    label={tab.badge!}
+                    tone={tab.badgeTone as any}
+                    size="sm"
+                    style={{ marginLeft: 6 }}
+                  />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* ========================================================================= */}
@@ -314,6 +458,10 @@ export const ReturnsScreen: React.FC = () => {
           <Card variant="elevated">
             <View style={styles.cardHeaderRow}>
               <View>
+                <View style={styles.techBadgeRow}>
+                  <Badge label="Paso 3: Registro de Terreno" tone="primary" size="sm" />
+                  <Text style={styles.techBadgeHint}>Declaración de Sobrante</Text>
+                </View>
                 <Text style={styles.sectionTitle}>Formulario de Devolución de Sobrante</Text>
                 <Text style={styles.sectionSubtitle}>
                   Fórmula estricta: Sobrante Máximo = Retirado − Usado en Terreno
@@ -473,10 +621,12 @@ export const ReturnsScreen: React.FC = () => {
             <Button
               title="Registrar Devolución (En tránsito)"
               variant="primary"
+              size="md"
               icon="car-outline"
               disabled={hasFormErrors}
               onPress={handleSaveTechnicianReturn}
-              style={{ marginTop: 12, height: 48 }}
+              style={{ marginTop: 14, minHeight: 48 }}
+              fullWidth={width < 768}
             />
           </Card>
 
@@ -590,14 +740,27 @@ export const ReturnsScreen: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === "bodega" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.sectionHeadingRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Devoluciones en Tránsito desde Obra</Text>
-              <Text style={styles.sectionSubtitle}>
-                Verifique la carga física real al llegar a bodega y confirme el reingreso al inventario.
-              </Text>
+          {/* HERO CARD INFORMATIVO: PASO 1 RECEPCIÓN DE OBRA */}
+          <Card style={styles.receptionHeroCard}>
+            <View style={styles.receptionHeroContent}>
+              <View style={styles.receptionHeroLeft}>
+                <View style={styles.receptionBadgeRow}>
+                  <Badge label="Paso 1: Control de Entrada" tone="primary" size="sm" />
+                  <Text style={styles.receptionBadgeHint}>Reingreso al Inventario Central</Text>
+                </View>
+                <Text style={styles.receptionHeroTitle}>
+                  Recepción y Cuadratura Física de Sobrantes de Faena
+                </Text>
+                <Text style={styles.receptionHeroDesc}>
+                  Verifica físicamente los bultos al llegar el móvil a bodega. Si la cantidad coincide con lo declarado por el técnico, reingresa inmediatamente a stock disponible en Cardex. Si hay diferencia, se genera la alerta de discrepancia.
+                </Text>
+              </View>
+              <View style={styles.receptionStatsBadge}>
+                <Text style={styles.receptionStatsNumber}>{inTransitCount}</Text>
+                <Text style={styles.receptionStatsLabel}>En Tránsito</Text>
+              </View>
             </View>
-          </View>
+          </Card>
 
           {/* Buscador de Devoluciones */}
           <View style={styles.searchRow}>
@@ -704,34 +867,44 @@ export const ReturnsScreen: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === "proveedores" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.topActionsRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.sectionTitle}>Devoluciones a Proveedores (Defectuosos)</Text>
-              <Text style={styles.sectionSubtitle}>
-                Egresos de productos con falla desde cuarentena con N° de Guía de Despacho.
-              </Text>
-            </View>
-
-            {currentRole !== "technician" && (
-              <Button
-                title="+ Devolver a Proveedor"
-                variant="danger"
-                size="sm"
-                icon="add-outline"
-                onPress={() => {
-                  setSupRetError("");
-                  setNewSupplierReturnModal(true);
-                }}
-              />
-            )}
-          </View>
+          {/* HERO CARD INTUITIVO: PASO 2 SALIDA A PROVEEDORES */}
+          {currentRole !== "technician" && (
+            <Card style={styles.createSupReturnHeroCard}>
+              <View style={styles.createSupReturnHeroContent}>
+                <View style={styles.createSupReturnHeroLeft}>
+                  <View style={styles.supReturnBadgeRow}>
+                    <Badge label="Garantías y Cuarentena" tone="danger" size="sm" />
+                    <Text style={styles.supReturnBadgeHint}>Salida de Insumos Defectuosos</Text>
+                  </View>
+                  <Text style={styles.createSupReturnHeroTitle}>
+                    Despachar Insumos Defectuosos a Proveedor
+                  </Text>
+                  <Text style={styles.createSupReturnHeroDesc}>
+                    Genera la salida de insumos con falla desde cuarentena con N° de Guía de Despacho obligatorio. Podrás gestionar su resolución posterior (Nota de Crédito, reemplazo o reembolso).
+                  </Text>
+                </View>
+                <Button
+                  title="Devolver a Proveedor"
+                  variant="danger"
+                  size="md"
+                  icon="add-circle-outline"
+                  onPress={() => {
+                    setSupRetError("");
+                    setNewSupplierReturnModal(true);
+                  }}
+                  style={styles.btnCreateSupReturnLarge}
+                  fullWidth={width < 768}
+                />
+              </View>
+            </Card>
+          )}
 
           {supplierReturns.length === 0 ? (
             <EmptyState
               icon="cube-outline"
               title="Sin devoluciones a proveedores"
               description="No se registran devoluciones activas a proveedores por garantías o fallas."
-              actionTitle={currentRole !== "technician" ? "+ Devolver a Proveedor" : undefined}
+              actionTitle={currentRole !== "technician" ? "Devolver a Proveedor" : undefined}
               onAction={
                 currentRole !== "technician"
                   ? () => {
@@ -1106,19 +1279,85 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
-  tabBar: {
+  workflowGuideWrapper: {
+    backgroundColor: theme.colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingVertical: 8,
+  },
+  workflowGuideScroll: {
     flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+    gap: 8,
+  },
+  workflowStepCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    gap: 8,
+    minWidth: 190,
+  },
+  workflowStepCardActive: {
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primary,
+  },
+  stepNumberBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.borderDark,
+  },
+  stepNumberBadgeActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  stepNumberTxt: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: "#ffffff",
+  },
+  stepNumberTxtActive: {
+    color: "#ffffff",
+  },
+  workflowCardTitle: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.textSecondary,
+  },
+  workflowCardTitleActive: {
+    color: theme.colors.primaryDark,
+  },
+  workflowCardDesc: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginTop: 1,
+  },
+  workflowSeparator: {
+    paddingHorizontal: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  tabBarWrapper: {
     backgroundColor: theme.colors.card,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  tabBarScroll: {
+    flexDirection: "row",
+    paddingHorizontal: theme.spacing.sm,
+  },
   tabItem: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 12,
-    borderBottomWidth: 2,
+    paddingHorizontal: 16,
+    borderBottomWidth: 2.5,
     borderBottomColor: "transparent",
   },
   tabItemActive: {
@@ -1131,8 +1370,140 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   tabLabelActive: {
-    color: theme.colors.primary,
+    color: theme.colors.primaryDark,
     fontWeight: "bold",
+  },
+  receptionHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  receptionHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+  },
+  receptionHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  receptionBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  receptionBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+  },
+  receptionHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  receptionHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  receptionStatsBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 90,
+  },
+  receptionStatsNumber: {
+    fontSize: theme.fontSize.xl,
+    fontWeight: "bold",
+    color: theme.colors.primaryDark,
+  },
+  receptionStatsLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: theme.colors.textMuted,
+    textTransform: "uppercase",
+  },
+  createSupReturnHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f87171",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createSupReturnHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+  },
+  createSupReturnHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  supReturnBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  supReturnBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: theme.colors.dangerDark,
+  },
+  createSupReturnHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  createSupReturnHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateSupReturnLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
+  },
+  techBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    gap: 6,
+  },
+  techBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
   },
   tabContent: {
     flex: 1,

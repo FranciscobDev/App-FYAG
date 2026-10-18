@@ -64,7 +64,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           </TouchableOpacity>
 
           <View style={{ marginLeft: 8 }}>
-            <NotificationBell />
+            <NotificationBell variant="light" />
           </View>
         </View>
       </View>

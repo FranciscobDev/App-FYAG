@@ -117,6 +117,15 @@ export const ToolsScreen: React.FC = () => {
   });
 
   // Guardar nueva herramienta
+  const handleOpenNewToolModal = () => {
+    setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
+    setToolSerial("");
+    setToolName("");
+    setToolModel("");
+    setToolError("");
+    setNewToolModal(true);
+  };
+
   const handleSaveNewTool = () => {
     if (!toolCode.trim() || !toolName.trim() || !toolSerial.trim()) {
       setToolError("Código, Nombre y N° de Serie son obligatorios.");
@@ -190,41 +199,24 @@ export const ToolsScreen: React.FC = () => {
 
   return (
     <ScreenStateWrapper screenTitle="Control de Herramientas" skeletonType="table">
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* ========================================================================= */}
-      {/* HEADER & BARRA DE ACCIÓN PRINCIPAL (PAGEHEADER)                           */}
-      {/* ========================================================================= */}
-      <PageHeader
-        title="Control de Herramientas"
-        subtitle={
-          currentRole === "warehouse"
-            ? undefined
-            : "Asignaciones a faena, control de mantenciones preventivas y calibración"
-        }
-        rightAction={
-          currentRole !== "technician" ? (
-            <Button
-              title="+ Alta Herramienta"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={() => {
-                setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
-                setToolSerial("");
-                setToolName("");
-                setToolModel("");
-                setToolError("");
-                setNewToolModal(true);
-              }}
-            />
-          ) : undefined
-        }
-      />
+      <View style={styles.container}>
+        {/* ========================================================================= */}
+        {/* HEADER LIMPIO Y RESPONSIVO (ANCHO COMPLETO EDGE-TO-EDGE)                   */}
+        {/* ========================================================================= */}
+        <PageHeader
+          title="Control de Herramientas"
+          subtitle={
+            currentRole === "warehouse"
+              ? undefined
+              : "Asignaciones a faena, control de mantenciones preventivas y calibración"
+          }
+        />
 
-      {/* ========================================================================= */}
-      {/* KPIS DE RESUMEN                                                           */}
-      {/* ========================================================================= */}
-      <View style={styles.kpisRow}>
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.content}>
+          {/* ========================================================================= */}
+          {/* KPIS DE RESUMEN                                                           */}
+          {/* ========================================================================= */}
+          <View style={styles.kpisRow}>
         <View style={styles.kpiCard}>
           <Text style={styles.kpiVal}>{totalCount}</Text>
           <Text style={styles.kpiLbl}>Total Equipos</Text>
@@ -252,6 +244,34 @@ export const ToolsScreen: React.FC = () => {
           </View>
         )}
       </View>
+
+      {/* ========================================================================= */}
+      {/* BOTÓN PROMINENTE PARA REGISTRAR NUEVA HERRAMIENTA O EQUIPO                */}
+      {/* ========================================================================= */}
+      {currentRole !== "technician" && (
+        <Card style={styles.createToolHeroCard}>
+          <View style={styles.createToolHeroContent}>
+            <View style={styles.createToolHeroLeft}>
+              <View style={styles.toolBadgeRow}>
+                <Badge label="Gestión de Activos" tone="primary" size="sm" />
+                <Text style={styles.toolBadgeHint}>Control de Equipos y Maquinarias</Text>
+              </View>
+              <Text style={styles.createToolHeroTitle}>Registrar Nueva Herramienta o Equipo</Text>
+              <Text style={styles.createToolHeroDesc}>
+                Ingresa maquinaria o herramientas con código interno, serie, marca y periodicidad de mantención para faena.
+              </Text>
+            </View>
+            <Button
+              title="+ Registrar Nueva Herramienta"
+              variant="primary"
+              size="md"
+              icon="add-circle-outline"
+              onPress={handleOpenNewToolModal}
+              style={styles.btnCreateToolLarge}
+            />
+          </View>
+        </Card>
+      )}
 
       {/* ========================================================================= */}
       {/* BUSCADOR Y FILTROS POR ESTADO                                             */}
@@ -330,19 +350,8 @@ export const ToolsScreen: React.FC = () => {
               ? `No existen coincidencias para "${searchQuery}".`
               : "No hay herramientas ni maquinarias registradas en este estado."
           }
-          actionTitle={currentRole !== "technician" ? "+ Alta Herramienta" : undefined}
-          onAction={
-            currentRole !== "technician"
-              ? () => {
-                  setToolCode(`HER-${String(tools.length + 1).padStart(3, "0")}`);
-                  setToolSerial("");
-                  setToolName("");
-                  setToolModel("");
-                  setToolError("");
-                  setNewToolModal(true);
-                }
-              : undefined
-          }
+          actionTitle={currentRole !== "technician" ? "+ Registrar Nueva Herramienta" : undefined}
+          onAction={currentRole !== "technician" ? handleOpenNewToolModal : undefined}
           containerStyle={{ marginVertical: 20 }}
         />
       ) : (
@@ -1026,7 +1035,8 @@ export const ToolsScreen: React.FC = () => {
           />
         </View>
       </ModalView>
-    </ScrollView>
+      </ScrollView>
+      </View>
     </ScreenStateWrapper>
   );
 };
@@ -1036,9 +1046,64 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  scrollContainer: {
+    flex: 1,
+  },
   content: {
     padding: theme.spacing.md,
     paddingBottom: 40,
+  },
+  createToolHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createToolHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  createToolHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  toolBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  toolBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+    marginLeft: 8,
+  },
+  createToolHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  createToolHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateToolLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
+    alignSelf: "flex-start",
   },
   topBar: {
     flexDirection: "row",

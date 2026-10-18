@@ -56,11 +56,26 @@ export type InventoryTab =
 export interface InventoryScreenProps {
   initialTab?: InventoryTab;
   hideTabBar?: boolean;
+  title?: string;
+  subtitle?: string;
 }
+
+export const PRODUCT_UNITS = [
+  { id: "un", code: "UN", name: "Unidad", desc: "Piezas, dispositivos, equipos y accesorios individuales" },
+  { id: "kg", code: "KG", name: "Kilogramo", desc: "Peso / masa para granel, soldaduras, perfiles pesados" },
+  { id: "m", code: "M", name: "Metro", desc: "Longitud lineal para cables, mangueras y tuberías" },
+  { id: "l", code: "L", name: "Litro", desc: "Volumen para líquidos, pinturas, solventes y aceites" },
+  { id: "caja", code: "CAJA", name: "Caja", desc: "Envases cerrados de pernos, tornillos y fijaciones" },
+  { id: "rollo", code: "ROLLO", name: "Rollo", desc: "Carretes y bobinas de cable UTP, THHN o alambre" },
+  { id: "tira", code: "TIRA", name: "Tira", desc: "Barras rígidas de 3 m / 6 m (cobre, PVC, conduit)" },
+  { id: "cilindro", code: "CIL", name: "Cilindro", desc: "Balones de gas refrigerante R410A o nitrógeno" },
+];
 
 export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   initialTab = "catalogo",
   hideTabBar = false,
+  title: propTitle,
+  subtitle: propSubtitle,
 }) => {
   const {
     products,
@@ -95,12 +110,58 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [activeTab, setActiveTab] = useState<InventoryTab>(initialTab);
 
   useEffect(() => {
-    if (currentRole === "admin" && activeTab !== "catalogo" && activeTab !== "cardex") {
-      setActiveTab("catalogo");
-    } else if (initialTab) {
+    if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab, currentRole]);
+  }, [initialTab]);
+
+  const getHeaderTitle = () => {
+    if (propTitle && hideTabBar) return propTitle;
+    switch (activeTab) {
+      case "solicitudes":
+        return "Aprobación de Solicitudes";
+      case "mermas":
+        return currentRole === "warehouse" ? "Registro de Mermas" : "Control de Mermas";
+      case "conteo":
+        return currentRole === "warehouse" ? "Conteo Físico Cíclico" : "Auditoría de Conteos Físicos";
+      case "kits":
+        return "Kits de Materiales";
+      case "egreso":
+        return "Egreso y Despacho";
+      case "cardex":
+        return "Cardex de Movimientos";
+      case "catalogo":
+      default:
+        return currentRole === "warehouse" ? "Inventario de Bodega" : "Inventario & Cardex";
+    }
+  };
+
+  const getHeaderSubtitle = () => {
+    if (propSubtitle && hideTabBar) return propSubtitle;
+    switch (activeTab) {
+      case "solicitudes":
+        return "Aprobar, rechazar o ajustar pedidos de materiales en faena";
+      case "mermas":
+        return currentRole === "warehouse"
+          ? "Reportar insumos dañados, caducados o pérdidas para baja"
+          : "Autorizar bajas por daño, pérdida o caducidad en Cardex";
+      case "conteo":
+        return currentRole === "warehouse"
+          ? "Escanear insumos, cuadrar stock físico y reportar diferencias"
+          : "Validar y aprobar cuadres de stock reportados por bodega";
+      case "kits":
+        return "Configuración de paquetes estándar de insumos para obras y faenas";
+      case "egreso":
+        return "Entrega física de materiales a técnicos con guía de salida";
+      case "cardex":
+        return "Trazabilidad de entradas, salidas a faena, mermas y ajustes valorizados";
+      case "catalogo":
+      default:
+        return currentRole === "warehouse"
+          ? "Consulta de stock disponible, pasillo, estante y PMP"
+          : "Control de existencias y kardex físico valorizado";
+    }
+  };
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -133,7 +194,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
   const [formName, setFormName] = useState("");
   const [formNameError, setFormNameError] = useState("");
   const [formCategory, setFormCategory] = useState("Electricidad");
-  const [formUnit, setFormUnit] = useState<"un" | "kg" | "m" | "l">("un");
+  const [formUnit, setFormUnit] = useState<string>("un");
   const [formStock, setFormStock] = useState("0");
   const [formMinStock, setFormMinStock] = useState("10");
   const [formRestock, setFormRestock] = useState("50");
@@ -718,47 +779,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
 
       {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
       <PageHeader
-        title={
-          activeTab === "solicitudes"
-            ? "Aprobación de Solicitudes"
-            : activeTab === "mermas"
-            ? "Control de Mermas"
-            : activeTab === "conteo"
-            ? "Auditoría de Conteos Físicos"
-            : activeTab === "kits"
-            ? "Kits de Materiales"
-            : activeTab === "egreso"
-            ? "Egreso y Despacho"
-            : currentRole === "warehouse"
-            ? "Inventario de Bodega"
-            : "Inventario & Cardex"
-        }
-        subtitle={
-          activeTab === "solicitudes"
-            ? "Revisión, aprobación o rechazo de solicitudes de materiales de terreno"
-            : activeTab === "mermas"
-            ? "Autorización de bajas y registro contable de insumos dañados o vencidos"
-            : activeTab === "conteo"
-            ? "Validación y aprobación de cuadres de stock reportados por bodega"
-            : activeTab === "kits"
-            ? "Configuración de paquetes estándar de insumos para obras y faenas"
-            : activeTab === "egreso"
-            ? "Despacho físico y entrega de materiales a faena"
-            : currentRole === "warehouse"
-            ? undefined
-            : "Control de existencias y kardex físico valorizado"
-        }
-        rightAction={
-          currentRole === "admin" && (activeTab === "catalogo" || activeTab === "cardex") ? (
-            <Button
-              title="Nuevo Insumo"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={handleOpenNewProduct}
-            />
-          ) : undefined
-        }
+        title={getHeaderTitle()}
+        subtitle={getHeaderSubtitle()}
       />
 
       {/* TOP NAVIGATION TABS (Oculta en bodeguero egreso porque se accede por el menú principal) */}
@@ -1308,17 +1330,10 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           ===================================================================== */}
       {activeTab === "egreso" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.sectionHeaderBanner}>
-            <View style={styles.requestTopBarTextCol}>
-              <Text style={styles.sectionHeaderTitle}>Módulo de Egreso y Despacho Físico</Text>
-              <Text style={styles.sectionHeaderSubtitle}>
-                Despacho parcial o total validado contra stock disponible en bodega.
-              </Text>
-            </View>
+          <View style={styles.tabActionBarRight}>
             <TouchableOpacity
               onPress={() =>
                 openScanner("Escanear SKU para Despacho", (scannedCode) => {
-                  // Autocompletar o resaltar insumo escaneado
                   const matchedProd = products.find(
                     (p) => p.sku === scannedCode || p.barcode === scannedCode
                   );
@@ -1330,6 +1345,8 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
                 })
               }
               style={styles.scanActionBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Escanear SKU"
             >
               <Ionicons name="qr-code-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
               <Text style={styles.scanActionBtnTxt}>Escanear SKU</Text>
@@ -1544,21 +1561,30 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           ===================================================================== */}
       {activeTab === "mermas" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.requestTopBar}>
-            <View style={styles.requestTopBarTextCol}>
-              <Text style={styles.sectionHeaderTitle}>Registro y Control de Mermas</Text>
-              <Text style={styles.sectionHeaderSubtitle}>
-                Bajas de inventario por daño, caducidad o pérdida valorizadas a PMP.
-              </Text>
+          {/* HERO CARD INTUITIVO PARA DECLARAR MERMA */}
+          <Card style={styles.createWasteHeroCard}>
+            <View style={styles.createWasteHeroContent}>
+              <View style={styles.createWasteHeroLeft}>
+                <View style={styles.wasteBadgeRow}>
+                  <Badge label="Control de Mermas y Bajas" tone="danger" size="sm" />
+                  <Text style={styles.wasteBadgeHint}>Baja de Stock Valorizada por PMP</Text>
+                </View>
+                <Text style={styles.createWasteHeroTitle}>Declarar Merma o Pérdida de Insumo</Text>
+                <Text style={styles.createWasteHeroDesc}>
+                  Registra artículos dañados, caducados o pérdidas operacionales. Descuenta automáticamente el stock de bodega y asienta el impacto contable según el PMP vigente con justificación obligatoria.
+                </Text>
+              </View>
+              <Button
+                title="+ Registrar Nueva Merma"
+                variant="danger"
+                size="md"
+                icon="alert-circle-outline"
+                onPress={handleOpenWasteModal}
+                style={styles.btnCreateWasteLarge}
+                fullWidth={width < 768}
+              />
             </View>
-            <Button
-              title="Registrar Merma"
-              variant="danger"
-              size="sm"
-              icon="alert-circle-outline"
-              onPress={handleOpenWasteModal}
-            />
-          </View>
+          </Card>
 
           {/* Historial de Mermas */}
           {wasteRecords.length === 0 ? (
@@ -1623,21 +1649,30 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           ===================================================================== */}
       {activeTab === "conteo" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.requestTopBar}>
-            <View style={styles.requestTopBarTextCol}>
-              <Text style={styles.sectionHeaderTitle}>Auditoría y Conteo Físico de Bodega</Text>
-              <Text style={styles.sectionHeaderSubtitle}>
-                Ajuste directo si discrepancia ≤ 5%; aprobación de Admin si &gt; 5%.
-              </Text>
+          {/* HERO CARD INTUITIVO PARA INICIAR CONTEO FÍSICO */}
+          <Card style={styles.createCountHeroCard}>
+            <View style={styles.createCountHeroContent}>
+              <View style={styles.createCountHeroLeft}>
+                <View style={styles.countBadgeRow}>
+                  <Badge label="Auditoría de Bodega" tone="primary" size="sm" />
+                  <Text style={styles.countBadgeHint}>Control de Existencias Físicas vs Sistema</Text>
+                </View>
+                <Text style={styles.createCountHeroTitle}>Iniciar Nuevo Conteo Físico de Stock</Text>
+                <Text style={styles.createCountHeroDesc}>
+                  Audita existencias reales en estantería ingresando la cantidad contada. Si la discrepancia supera el umbral del 5%, requerirá aprobación del Administrador y bloqueará despachos preventivamente.
+                </Text>
+              </View>
+              <Button
+                title="+ Iniciar Nuevo Conteo Físico"
+                variant="primary"
+                size="md"
+                icon="calculator-outline"
+                onPress={handleOpenCountModal}
+                style={styles.btnCreateCountLarge}
+                fullWidth={width < 768}
+              />
             </View>
-            <Button
-              title="Nuevo Conteo"
-              variant="primary"
-              size="sm"
-              icon="calculator-outline"
-              onPress={handleOpenCountModal}
-            />
-          </View>
+          </Card>
 
           {/* Banner de insumos actualmente bloqueados */}
           {products.some((p) => physicalCounts.some((c) => c.sku === p.sku && c.status === "pendiente_aprobacion")) && (
@@ -1761,13 +1796,7 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
           ===================================================================== */}
       {activeTab === "kits" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.requestTopBar}>
-            <View style={styles.requestTopBarTextCol}>
-              <Text style={styles.sectionHeaderTitle}>Kits y Agrupaciones Estándar</Text>
-              <Text style={styles.sectionHeaderSubtitle}>
-                Monitoreo de disponibilidad en vivo según stock actual de cada componente.
-              </Text>
-            </View>
+          <View style={styles.tabActionBarRight}>
             <Button
               title="Nuevo Kit"
               variant="primary"
@@ -1923,19 +1952,54 @@ export const InventoryScreen: React.FC<InventoryScreenProps> = ({
         />
 
         <Text style={styles.formSectionLabel}>Unidad de Medida:</Text>
-        <View style={styles.unitButtonsRow}>
-          {(["un", "kg", "m", "l"] as const).map((u) => (
-            <TouchableOpacity
-              key={u}
-              onPress={() => setFormUnit(u)}
-              style={[styles.unitBtn, formUnit === u && styles.unitBtnActive]}
-            >
-              <Text style={[styles.unitBtnTxt, formUnit === u && styles.unitBtnTxtActive]}>
-                {u.toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <Text style={styles.formSectionSubLabel}>
+          Especifica la magnitud física o presentación para el control de existencias, kardex y compras:
+        </Text>
+
+        <View style={styles.unitGrid}>
+          {PRODUCT_UNITS.map((u) => {
+            const isSelected = formUnit === u.id;
+            return (
+              <TouchableOpacity
+                key={u.id}
+                onPress={() => setFormUnit(u.id)}
+                style={[styles.unitCard, isSelected && styles.unitCardActive]}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${u.name} (${u.code}): ${u.desc}`}
+              >
+                <View style={styles.unitCardHeader}>
+                  <View style={[styles.unitCodeBadge, isSelected && styles.unitCodeBadgeActive]}>
+                    <Text style={[styles.unitCodeBadgeText, isSelected && styles.unitCodeBadgeTextActive]}>
+                      {u.code}
+                    </Text>
+                  </View>
+                  <Text style={[styles.unitCardTitle, isSelected && styles.unitCardTitleActive]}>
+                    {u.name}
+                  </Text>
+                  {isSelected && (
+                    <Ionicons name="checkmark-circle" size={16} color={theme.colors.primary} style={{ marginLeft: "auto" }} />
+                  )}
+                </View>
+                <Text style={[styles.unitCardDesc, isSelected && styles.unitCardDescActive]}>
+                  {u.desc}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {(() => {
+          const selectedUnitObj = PRODUCT_UNITS.find((u) => u.id === formUnit) || PRODUCT_UNITS[0];
+          return (
+            <View style={styles.unitActiveSummary}>
+              <Ionicons name="information-circle-outline" size={16} color={theme.colors.primary} style={{ marginRight: 6 }} />
+              <Text style={styles.unitActiveSummaryText}>
+                Unidad activa: <Text style={{ fontWeight: "bold", color: theme.colors.primaryDark }}>{selectedUnitObj.name} ({selectedUnitObj.code})</Text> — {selectedUnitObj.desc}
+              </Text>
+            </View>
+          );
+        })()}
 
         {/* 2. CONTROL DE EXISTENCIAS */}
         <Text style={styles.formSectionHeading}>2. Control de Existencias</Text>
@@ -2809,6 +2873,12 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     color: theme.colors.text,
   },
+  tabActionBarRight: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
   requestTopBar: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -3184,6 +3254,58 @@ const styles = StyleSheet.create({
   dispatchBtnRow: {
     marginTop: theme.spacing.md,
   },
+  createWasteHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f87171",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createWasteHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+  },
+  createWasteHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  wasteBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  wasteBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: theme.colors.dangerDark,
+  },
+  createWasteHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  createWasteHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateWasteLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
+  },
   wasteCard: {
     marginBottom: theme.spacing.sm,
   },
@@ -3320,6 +3442,58 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.caption,
     color: theme.colors.dangerDark,
     marginTop: 1,
+  },
+  createCountHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createCountHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+  },
+  createCountHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  countBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  countBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+  },
+  createCountHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  createCountHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateCountLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
   },
   pendingCountCard: {
     marginBottom: theme.spacing.md,
@@ -3492,6 +3666,88 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginLeft: 8,
     marginBottom: theme.spacing.sm,
+  },
+  formSectionSubLabel: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    marginBottom: 8,
+    marginTop: -2,
+  },
+  unitGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+  },
+  unitCard: {
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 140,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.md,
+    padding: 10,
+  },
+  unitCardActive: {
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primary,
+  },
+  unitCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  unitCodeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    backgroundColor: theme.colors.borderDark,
+    marginRight: 6,
+  },
+  unitCodeBadgeActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  unitCodeBadgeText: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: theme.colors.textSecondary,
+  },
+  unitCodeBadgeTextActive: {
+    color: "#ffffff",
+  },
+  unitCardTitle: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "700",
+    color: theme.colors.text,
+  },
+  unitCardTitleActive: {
+    color: theme.colors.primaryDark,
+  },
+  unitCardDesc: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    lineHeight: 14,
+  },
+  unitCardDescActive: {
+    color: theme.colors.primaryDeep,
+  },
+  unitActiveSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: theme.spacing.md,
+  },
+  unitActiveSummaryText: {
+    fontSize: 11,
+    color: theme.colors.textSecondary,
+    flex: 1,
+    lineHeight: 15,
   },
   unitButtonsRow: {
     flexDirection: "row",

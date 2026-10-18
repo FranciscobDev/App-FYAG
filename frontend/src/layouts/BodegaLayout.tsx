@@ -100,8 +100,8 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
         },
         {
           id: "devoluciones",
-          label: "Devoluciones de Faena",
-          description: "Recibir sobrantes de obra, verificar cantidades y reingresar",
+          label: "Devoluciones de Stock",
+          description: "Recepción de sobrantes de obra y salida de defectuosos a proveedores",
           icon: "return-down-back-outline",
           badge: pendingReturnsCount > 0 ? String(pendingReturnsCount) : undefined,
           badgeTone: "info",
@@ -174,13 +174,45 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
       case "home":
         return <WarehouseDashboard onNavigate={(tab) => setActiveRoute(tab as BodegaRoute)} />;
       case "egreso":
-        return <InventoryScreen key="egreso" initialTab="egreso" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="egreso"
+            initialTab="egreso"
+            hideTabBar={true}
+            title="Egreso y Despacho"
+            subtitle="Entrega física de materiales a técnicos con guía de salida"
+          />
+        );
       case "conteo":
-        return <InventoryScreen key="conteo" initialTab="conteo" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="conteo"
+            initialTab="conteo"
+            hideTabBar={true}
+            title="Conteo Físico Cíclico"
+            subtitle="Escanear insumos, cuadrar stock físico y reportar diferencias"
+          />
+        );
       case "mermas":
-        return <InventoryScreen key="mermas" initialTab="mermas" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="mermas"
+            initialTab="mermas"
+            hideTabBar={true}
+            title="Registro de Mermas"
+            subtitle="Reportar insumos dañados, caducados o pérdidas para baja"
+          />
+        );
       case "inventario":
-        return <InventoryScreen key="inventario" initialTab="catalogo" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="inventario"
+            initialTab="catalogo"
+            hideTabBar={true}
+            title="Inventario de Bodega"
+            subtitle="Consultar stock disponible, pasillo, estante y PMP"
+          />
+        );
       case "recepcion":
         return <PurchasingScreen initialTab="recepcion" />;
       case "herramientas":
@@ -204,8 +236,9 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
             style={styles.toggleBtn}
             accessibilityLabel="Abrir menú de navegación"
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
-            <Ionicons name="menu-outline" size={24} color={theme.colors.text} />
+            <Ionicons name="menu-outline" size={24} color="#ffffff" />
           </TouchableOpacity>
 
           <View style={styles.brandIconCircle}>
@@ -226,7 +259,7 @@ export const BodegaLayout: React.FC<BodegaLayoutProps> = ({ onLogout }) => {
 
         {/* Acciones Rápidas Superior: Campana en la esquina */}
         <View style={styles.topRight}>
-          <NotificationBell />
+          <NotificationBell variant="dark" />
         </View>
       </View>
 
@@ -514,10 +547,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   toggleBtn: {
-    padding: 8,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
-    borderRadius: theme.radius.sm,
-    backgroundColor: "#292524",
   },
   brandIconCircle: {
     width: 34,

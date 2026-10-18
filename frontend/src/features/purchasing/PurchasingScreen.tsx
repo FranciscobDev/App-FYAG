@@ -7,6 +7,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -64,6 +65,8 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
     toggleClientDisabled,
   } = useApp();
   const { currentRole } = useAuth();
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 900;
 
   const [activeTab, setActiveTab] = useState<PurchasingTab>(initialTab);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -107,9 +110,9 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
     return order.status === poFilterStatus;
   });
 
-  const handleOpenNewOrder = () => {
+  const handleOpenNewOrder = (defaultSupplierId?: string) => {
     setEditingPo(null);
-    setSelectedSupplierId(suppliers[0]?.id || "");
+    setSelectedSupplierId(defaultSupplierId || suppliers[0]?.id || "");
     const firstProd = products[0];
     setPoItems([
       { sku: firstProd?.sku || "", quantity: 10, unitPrice: firstProd?.unitCost || 1000 },
@@ -528,6 +531,10 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
     );
   });
 
+  const pendingReceiptOrders = purchaseOrders.filter(
+    (o) => o.status === "enviada" || o.status === "recibida_parcial"
+  );
+
   // =========================================================================
   // RENDER PRINCIPAL
   // =========================================================================
@@ -541,121 +548,241 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
         onDismiss={() => setToastMessage(null)}
       />
 
-      {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
+      {/* ENCABEZADO PRINCIPAL (Limpio y descriptivo según tab activa) */}
       <PageHeader
         title={
           currentRole === "warehouse"
             ? activeTab === "recepcion"
-              ? "Recepción Física de OC"
+              ? "Recepción en Bodega"
               : activeTab === "facturas"
               ? "Facturas de Compra"
               : "Órdenes de Compra"
-            : "Órdenes de Compra y Proveedores"
+            : activeTab === "terceros"
+            ? "Directorio de Proveedores"
+            : activeTab === "ordenes"
+            ? "Órdenes de Compra"
+            : activeTab === "recepcion"
+            ? "Recepción en Bodega"
+            : "Facturas de Proveedor"
         }
         subtitle={
           currentRole === "warehouse"
-            ? undefined
-            : "Gestión de adquisiciones, recepción física en bodega y conciliación de facturas"
-        }
-        rightAction={
-          currentRole !== "technician" && currentRole !== "warehouse" ? (
-            <Button
-              title="+ Nueva Orden"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={handleOpenNewOrder}
-            />
-          ) : undefined
+            ? activeTab === "recepcion"
+              ? "Paso 1: Control físico y calidad contra OC. Conforme a stock; defectuoso a cuarentena"
+              : activeTab === "facturas"
+              ? "Paso 2: Registro de facturas con hasta 3 descuentos sucesivos y recalculo de PMP"
+              : "Paso 3: Seguimiento de órdenes de compra emitidas y estado de cumplimiento"
+            : activeTab === "terceros"
+            ? "Paso 1: Consulta y alta de proveedores homologados, contactos y cuentas bancarias"
+            : activeTab === "ordenes"
+            ? "Paso 2: Emisión, seguimiento y control del ciclo de vida de órdenes de compra"
+            : activeTab === "recepcion"
+            ? "Paso 3: Verificación física y control de conformidad de mercadería en bodega o faena"
+            : "Paso 4: Ingreso de facturas con hasta 3 descuentos sucesivos y conciliación con OC"
         }
       />
 
-      {/* TABS DE NAVEGACIÓN SUPERIOR */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "recepcion" && styles.tabItemActive]}
-          onPress={() => setActiveTab("recepcion")}
-        >
-          <Ionicons
-            name="checkmark-circle-outline"
-            size={18}
-            color={activeTab === "recepcion" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "recepcion" && styles.tabLabelActive]}>
-            Recepción OC
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "facturas" && styles.tabItemActive]}
-          onPress={() => setActiveTab("facturas")}
-        >
-          <Ionicons
-            name="receipt-outline"
-            size={18}
-            color={activeTab === "facturas" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "facturas" && styles.tabLabelActive]}>
-            Facturas ({purchaseInvoices.length})
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, activeTab === "ordenes" && styles.tabItemActive]}
-          onPress={() => setActiveTab("ordenes")}
-        >
-          <Ionicons
-            name="cart-outline"
-            size={18}
-            color={activeTab === "ordenes" ? theme.colors.primary : theme.colors.textMuted}
-          />
-          <Text style={[styles.tabLabel, activeTab === "ordenes" && styles.tabLabelActive]}>
-            Órdenes ({purchaseOrders.length})
-          </Text>
-        </TouchableOpacity>
-
-        {currentRole !== "warehouse" && (
-          <TouchableOpacity
-            style={[styles.tabItem, activeTab === "terceros" && styles.tabItemActive]}
-            onPress={() => setActiveTab("terceros")}
+      {/* GUÍA DE FLUJO PASO A PASO PARA EL BODEGUERO */}
+      {currentRole === "warehouse" && (
+        <View style={styles.workflowGuideWrapper}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.workflowGuideScroll}
           >
-            <Ionicons
-              name="people-outline"
-              size={18}
-              color={activeTab === "terceros" ? theme.colors.primary : theme.colors.textMuted}
-            />
-            <Text style={[styles.tabLabel, activeTab === "terceros" && styles.tabLabelActive]}>
-              Terceros ({suppliers.length + clients.length})
-            </Text>
-          </TouchableOpacity>
-        )}
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "recepcion" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("recepcion")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "recepcion" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "recepcion" && styles.stepNumberTxtActive]}>
+                  Paso 1
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "recepcion" && styles.workflowCardTitleActive]}>
+                  Recepción de Mercancía
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Control físico y calidad contra OC
+                </Text>
+              </View>
+              {pendingReceiptOrders.length > 0 ? (
+                <Badge label={`${pendingReceiptOrders.length} pend.`} tone="warn" size="sm" />
+              ) : (
+                <Ionicons name="checkmark-circle-outline" size={18} color={theme.colors.ok} />
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.workflowSeparator}>
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.textMuted} />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "facturas" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("facturas")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "facturas" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "facturas" && styles.stepNumberTxtActive]}>
+                  Paso 2
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "facturas" && styles.workflowCardTitleActive]}>
+                  Facturas de Compra
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Costos netos y descuentos en cascada
+                </Text>
+              </View>
+              <Badge label={`${purchaseInvoices.length}`} tone="primary" size="sm" />
+            </TouchableOpacity>
+
+            <View style={styles.workflowSeparator}>
+              <Ionicons name="arrow-forward" size={16} color={theme.colors.textMuted} />
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.workflowStepCard,
+                activeTab === "ordenes" && styles.workflowStepCardActive,
+              ]}
+              onPress={() => setActiveTab("ordenes")}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.stepNumberBadge, activeTab === "ordenes" && styles.stepNumberBadgeActive]}>
+                <Text style={[styles.stepNumberTxt, activeTab === "ordenes" && styles.stepNumberTxtActive]}>
+                  Paso 3
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.workflowCardTitle, activeTab === "ordenes" && styles.workflowCardTitleActive]}>
+                  Órdenes de Compra
+                </Text>
+                <Text style={styles.workflowCardDesc}>
+                  Seguimiento de OC y proveedores
+                </Text>
+              </View>
+              <Ionicons name="cart-outline" size={18} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* TABS DE NAVEGACIÓN SUPERIOR (ORDEN PASO A PASO DEL PROCESO DE COMPRAS) */}
+      <View style={styles.tabBarContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabScrollContent}
+        >
+          {(currentRole === "warehouse"
+            ? [
+                {
+                  id: "recepcion" as PurchasingTab,
+                  label: `1. Recepción en Bodega (${pendingReceiptOrders.length} pend.)`,
+                  icon: "checkmark-circle-outline",
+                },
+                {
+                  id: "facturas" as PurchasingTab,
+                  label: `2. Facturas (${purchaseInvoices.length})`,
+                  icon: "receipt-outline",
+                },
+                {
+                  id: "ordenes" as PurchasingTab,
+                  label: `3. Órdenes (${purchaseOrders.length})`,
+                  icon: "cart-outline",
+                },
+              ]
+            : [
+                {
+                  id: "terceros" as PurchasingTab,
+                  label: `1. Proveedores (${suppliers.length})`,
+                  icon: "people-outline",
+                },
+                {
+                  id: "ordenes" as PurchasingTab,
+                  label: `2. Órdenes de Compra (${purchaseOrders.length})`,
+                  icon: "cart-outline",
+                },
+                {
+                  id: "recepcion" as PurchasingTab,
+                  label: "3. Recepción en Bodega",
+                  icon: "checkmark-circle-outline",
+                },
+                {
+                  id: "facturas" as PurchasingTab,
+                  label: `4. Facturas (${purchaseInvoices.length})`,
+                  icon: "receipt-outline",
+                },
+              ]
+          ).map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabItem, isActive && styles.tabItemActive]}
+                onPress={() => setActiveTab(tab.id)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+              >
+                <Ionicons
+                  name={tab.icon as any}
+                  size={18}
+                  color={isActive ? theme.colors.primary : theme.colors.textMuted}
+                />
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+                  {tab.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* =====================================================================
-          1. TAB ÓRDENES DE COMPRA (OC)
+          2. TAB ÓRDENES DE COMPRA (OC)
           ===================================================================== */}
       {activeTab === "ordenes" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={styles.topActionsRow}>
-            <View>
-              <Text style={styles.subHeading}>Gestión de Órdenes de Compra</Text>
-              <Text style={styles.sectionSubtitle}>
-                Flujo: Borrador → Enviada → Recibida parcial → Recibida → Cerrada.
-              </Text>
-            </View>
-            {currentRole === "admin" && (
-              <Button
-                title="Nueva OC"
-                variant="primary"
-                size="sm"
-                icon="add-outline"
-                onPress={handleOpenNewOrder}
-              />
-            )}
-          </View>
+          {/* BANNER PROMINENTE PARA CREAR NUEVA ORDEN DE COMPRA */}
+          {currentRole === "admin" && (
+            <Card style={styles.createOrderHeroCard}>
+              <View style={styles.createOrderHeroContent}>
+                <View style={styles.createOrderHeroLeft}>
+                  <View style={styles.stepPillRow}>
+                    <Badge label="Paso 2 de Compras" tone="warn" size="sm" />
+                    <Text style={styles.stepPillHint}>Flujo de Adquisición</Text>
+                  </View>
+                  <Text style={styles.createOrderHeroTitle}>Emitir Orden de Compra</Text>
+                  <Text style={styles.createOrderHeroDesc}>
+                    Crea una orden formal para solicitar materiales e insumos al proveedor seleccionado con precios y fecha acordada.
+                  </Text>
+                </View>
+                <Button
+                  title="+ Crear Nueva Orden de Compra"
+                  variant="primary"
+                  size="md"
+                  icon="add-circle-outline"
+                  onPress={() => handleOpenNewOrder()}
+                  style={styles.btnCreateOrderLarge}
+                />
+              </View>
+            </Card>
+          )}
 
           {/* Filtros de estado para Órdenes */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusFilterScroll}>
+          <View style={styles.statusFilterContainer}>
+            <Text style={styles.statusFilterLabel}>Filtrar por estado del pedido:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statusFilterScroll}>
             {[
               { id: "todas", label: "Todas" },
               { id: "borrador", label: "Borrador" },
@@ -689,13 +816,14 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
               </TouchableOpacity>
             )}
           </ScrollView>
+        </View>
 
-          {filteredOrders.length === 0 ? (
+        {filteredOrders.length === 0 ? (
             <EmptyState
               icon="cart-outline"
               title="No se encontraron órdenes de compra"
               description="No hay órdenes registradas bajo el estado seleccionado."
-              actionTitle={currentRole === "admin" ? "+ Nueva OC" : undefined}
+              actionTitle={currentRole === "admin" ? "+ Crear Nueva Orden de Compra" : undefined}
               onAction={currentRole === "admin" ? handleOpenNewOrder : undefined}
               containerStyle={{ marginVertical: 24 }}
             />
@@ -1091,44 +1219,73 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
           ===================================================================== */}
       {activeTab === "recepcion" && (
         <ScrollView style={styles.tabContent} contentContainerStyle={styles.scrollBody}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <Text style={styles.sectionTitle}>Recepción de Mercancía en Bodega</Text>
-              <Text style={styles.sectionSubtitle}>
-                Control físico contra Orden de Compra. Conforme ingresa a stock disponible; defectuoso pasa a cuarentena.
-              </Text>
+          {/* HERO CARD INTUITIVO: RECEPCIÓN Y CONTROL FÍSICO */}
+          <Card style={styles.createReceptionHeroCard}>
+            <View style={styles.createReceptionHeroContent}>
+              <View style={styles.createReceptionHeroLeft}>
+                <View style={styles.receptionBadgeRow}>
+                  <Badge label="Paso 1: Control de Ingreso" tone="primary" size="sm" />
+                  <Text style={styles.receptionBadgeHint}>Verificación física contra Orden de Compra</Text>
+                </View>
+                <Text style={styles.createReceptionHeroTitle}>
+                  Recepción y Control de Calidad en Bodega
+                </Text>
+                <Text style={styles.createReceptionHeroDesc}>
+                  Realiza el conteo físico de los bultos contra la Orden de Compra. Conforme ingresa de inmediato a stock disponible en Cardex; defectuoso pasa a cuarentena para devolución al proveedor; y faltante queda pendiente de entrega.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleOpenScanner()}
+                style={styles.heroScannerBtnLarge}
+                activeOpacity={0.85}
+                accessibilityLabel="Escanear insumo o bulto con cámara"
+              >
+                <Ionicons name="barcode-outline" size={22} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.heroScannerBtnLargeTxt}>Escanear con Cámara</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              onPress={() => handleOpenScanner()}
-              style={styles.heroScannerBtn}
-              activeOpacity={0.85}
-              accessibilityLabel="Escanear insumo con cámara"
-            >
-              <Ionicons name="barcode-outline" size={20} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.heroScannerBtnTxt}>Escanear con Cámara</Text>
-            </TouchableOpacity>
-          </View>
+          </Card>
 
-          {/* Selector de OC pendientes */}
-          <Text style={styles.fieldLabel}>Seleccionar Orden de Compra Pendiente:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            {purchaseOrders
-              .filter((o) => o.status === "enviada" || o.status === "recibida_parcial")
-              .map((o) => (
-                <TouchableOpacity
-                  key={o.code}
-                  onPress={() => setSelectedOcCode(o.code)}
-                  style={[
-                    styles.chipBtn,
-                    selectedOcCode === o.code && styles.chipBtnActive,
-                  ]}
-                >
-                  <Text style={[styles.chipTxt, selectedOcCode === o.code && styles.chipTxtActive]}>
-                    {o.code} • {o.supplier} ({o.status === "recibida_parcial" ? "Parcial" : "Enviada"})
-                  </Text>
-                </TouchableOpacity>
-              ))}
-          </ScrollView>
+          {/* Selector de OC pendientes con diseño ergonómico */}
+          <View style={styles.ocSelectSection}>
+            <View style={styles.ocSelectHeader}>
+              <Ionicons name="receipt-outline" size={16} color={theme.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={styles.ocSelectLabel}>Seleccionar Orden de Compra Pendiente:</Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              {purchaseOrders
+                .filter((o) => o.status === "enviada" || o.status === "recibida_parcial")
+                .map((o) => {
+                  const isSelected = selectedOcCode === o.code;
+                  const isPartial = o.status === "recibida_parcial";
+                  return (
+                    <TouchableOpacity
+                      key={o.code}
+                      onPress={() => setSelectedOcCode(o.code)}
+                      style={[
+                        styles.ocSelectChip,
+                        isSelected && styles.ocSelectChipActive,
+                      ]}
+                      activeOpacity={0.8}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={[styles.ocSelectCode, isSelected && styles.ocSelectCodeActive]}>
+                          {o.code}
+                        </Text>
+                        <Badge
+                          label={isPartial ? "Parcial" : "Enviada"}
+                          tone={isPartial ? "warn" : "info"}
+                          size="sm"
+                        />
+                      </View>
+                      <Text style={[styles.ocSelectSupplier, isSelected && styles.ocSelectSupplierActive]}>
+                        {o.supplier}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+            </ScrollView>
+          </View>
 
           {activeReceptionOrder ? (
             <Card variant="elevated">
@@ -1379,9 +1536,11 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
               <Button
                 title="Confirmar Ingreso a Bodega"
                 variant="success"
+                size="md"
                 icon="checkmark-done-outline"
                 onPress={handleConfirmReception}
-                style={{ marginTop: 14 }}
+                style={{ marginTop: 14, minHeight: 48 }}
+                fullWidth={width < 768}
               />
 
               <View style={styles.confirmExplanatoryFooter}>
@@ -1551,8 +1710,21 @@ export const PurchasingScreen: React.FC<PurchasingScreenProps> = ({ initialTab =
                   </View>
                 )}
 
-                {/* Acción: Deshabilitar en vez de eliminar */}
+                {/* Acción: Deshabilitar o Crear OC */}
                 <View style={styles.partyActions}>
+                  {!s.disabled && currentRole === "admin" && (
+                    <Button
+                      title="Crear OC"
+                      variant="primary"
+                      size="sm"
+                      icon="cart-outline"
+                      onPress={() => {
+                        handleOpenNewOrder(s.id);
+                        setActiveTab("ordenes");
+                      }}
+                      style={{ marginRight: 8 }}
+                    />
+                  )}
                   <Button
                     title={s.disabled ? "Habilitar Proveedor" : "Deshabilitar"}
                     variant={s.disabled ? "success" : "secondary"}
@@ -2071,20 +2243,200 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+  workflowGuideWrapper: {
+    backgroundColor: theme.colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingVertical: 8,
+  },
+  workflowGuideScroll: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+    gap: 8,
+  },
+  workflowStepCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    gap: 8,
+    minWidth: 190,
+  },
+  workflowStepCardActive: {
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primary,
+  },
+  stepNumberBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.colors.borderDark,
+  },
+  stepNumberBadgeActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  stepNumberTxt: {
+    fontSize: 10,
+    fontWeight: "bold",
+    color: "#ffffff",
+  },
+  stepNumberTxtActive: {
+    color: "#ffffff",
+  },
+  workflowCardTitle: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.textSecondary,
+  },
+  workflowCardTitleActive: {
+    color: theme.colors.primaryDark,
+  },
+  workflowCardDesc: {
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    marginTop: 1,
+  },
+  workflowSeparator: {
+    paddingHorizontal: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  createReceptionHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createReceptionHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 14,
+  },
+  createReceptionHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  receptionBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  receptionBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+  },
+  createReceptionHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  createReceptionHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  heroScannerBtnLarge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: theme.radius.md,
+    minHeight: 48,
+  },
+  heroScannerBtnLargeTxt: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: theme.fontSize.sm,
+  },
+  ocSelectSection: {
+    marginBottom: theme.spacing.md,
+  },
+  ocSelectHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  ocSelectLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  ocSelectChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1.5,
+    borderColor: theme.colors.border,
+    marginRight: 8,
+    minWidth: 160,
+  },
+  ocSelectChipActive: {
+    backgroundColor: theme.colors.primaryLight,
+    borderColor: theme.colors.primary,
+  },
+  ocSelectCode: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.text,
+  },
+  ocSelectCodeActive: {
+    color: theme.colors.primaryDark,
+  },
+  ocSelectSupplier: {
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  ocSelectSupplierActive: {
+    color: theme.colors.primaryDark,
+    fontWeight: "500",
+  },
   tabBar: {
     flexDirection: "row",
     backgroundColor: theme.colors.card,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
+  tabBarContainer: {
+    backgroundColor: theme.colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  tabScrollContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.xs,
+  },
   tabItem: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
     borderBottomWidth: 3,
     borderBottomColor: "transparent",
+    minHeight: 48,
   },
   tabItemActive: {
     borderBottomColor: theme.colors.primary,
@@ -2093,18 +2445,79 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSize.xs,
     fontWeight: "600",
     color: theme.colors.textMuted,
-    marginLeft: 4,
+    marginLeft: 6,
   },
   tabLabelActive: {
     color: theme.colors.primary,
     fontWeight: "bold",
+  },
+  createOrderHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createOrderHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  createOrderHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  stepPillRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  stepPillHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+    marginLeft: 8,
+  },
+  createOrderHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  createOrderHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateOrderLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
+    alignSelf: "flex-start",
+  },
+  statusFilterContainer: {
+    marginBottom: theme.spacing.md,
+  },
+  statusFilterLabel: {
+    fontSize: theme.fontSize.xs,
+    fontWeight: "bold",
+    color: theme.colors.textMuted,
+    marginBottom: 6,
   },
   tabContent: {
     flex: 1,
   },
   scrollBody: {
     padding: theme.spacing.md,
-    paddingBottom: 48,
+    paddingBottom: 90,
   },
   topActionsRow: {
     flexDirection: "row",

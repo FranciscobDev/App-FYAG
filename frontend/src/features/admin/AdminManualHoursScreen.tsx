@@ -183,11 +183,14 @@ export const AdminManualHoursScreen: React.FC = () => {
 
   return (
     <ScreenStateWrapper>
-      <ScrollView style={styles.container} contentContainerStyle={styles.scrollBody}>
+      <View style={styles.container}>
+        {/* Encabezado limpio y responsivo (ancho completo edge-to-edge) */}
         <PageHeader
           title="Carga Manual de Horas (Admin)"
           subtitle="Imputación extraordinaria de horas hombre para técnicos cuando no se haya registrado automáticamente en faena."
         />
+
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollBody}>
 
         {/* 1. SELECCIÓN DE TÉCNICO */}
         <Card variant="elevated" style={styles.sectionCard}>
@@ -629,7 +632,8 @@ export const AdminManualHoursScreen: React.FC = () => {
             />
           </View>
         </ModalView>
-      </ScrollView>
+        </ScrollView>
+      </View>
     </ScreenStateWrapper>
   );
 };
@@ -638,6 +642,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  scrollContainer: {
+    flex: 1,
   },
   scrollBody: {
     padding: theme.spacing.md,

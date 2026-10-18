@@ -34,6 +34,7 @@ import { ToolsScreen } from "@/features/tools/ToolsScreen";
 import { ReturnsScreen } from "@/features/returns/ReturnsScreen";
 import { AdministrationScreen } from "@/features/admin/AdministrationScreen";
 import { AdminManualHoursScreen } from "@/features/admin/AdminManualHoursScreen";
+import { ReportsScreen } from "@/features/reports/ReportsScreen";
 
 export type AdminRoute =
   | "dashboard"
@@ -43,11 +44,13 @@ export type AdminRoute =
   | "conteo"
   | "kits"
   | "devoluciones"
+  | "proveedores"
   | "compras"
   | "facturas"
   | "proyectos"
   | "horas_tecnicos"
   | "herramientas"
+  | "informes"
   | "administracion";
 
 export interface NavItem {
@@ -132,8 +135,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
         },
         {
           id: "devoluciones",
-          label: "Devoluciones de Faena",
-          description: "Supervisar sobrantes retornados y su reintegro físico a bodega",
+          label: "Devoluciones de Stock",
+          description: "Supervisar retornos de obra, conciliación física y garantías con proveedores",
           icon: "return-down-back-outline",
         },
       ],
@@ -141,6 +144,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
     {
       title: "COMPRAS Y PROVEEDORES",
       items: [
+        {
+          id: "proveedores",
+          label: "Directorio de Proveedores",
+          description: "Consulta y alta de proveedores, contactos y datos bancarios",
+          icon: "people-outline",
+        },
         {
           id: "compras",
           label: "Órdenes de Compra",
@@ -180,6 +189,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
           label: "Control de Herramientas",
           description: "Préstamos a técnicos, estados y mantenciones preventivas",
           icon: "construct-outline",
+        },
+        {
+          id: "informes",
+          label: "Informes",
+          description: "Reporte de movimientos, inventario, proyectos, compras y mermas",
+          icon: "stats-chart-outline",
         },
         {
           id: "administracion",
@@ -251,15 +266,56 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
       case "dashboard":
         return <AdminDashboard onNavigate={(tab) => setActiveRoute(tab as AdminRoute)} />;
       case "inventario":
-        return <InventoryScreen key="inventario" initialTab="catalogo" />;
+        return (
+          <InventoryScreen
+            key="inventario"
+            initialTab="catalogo"
+            title="Inventario & Cardex"
+            subtitle="Control de existencias, PMP valorizado y trazabilidad"
+          />
+        );
       case "solicitudes":
-        return <InventoryScreen key="solicitudes" initialTab="solicitudes" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="solicitudes"
+            initialTab="solicitudes"
+            hideTabBar={true}
+            title="Aprobación de Solicitudes"
+            subtitle="Aprobar, rechazar o ajustar pedidos de materiales en faena"
+          />
+        );
       case "mermas":
-        return <InventoryScreen key="mermas" initialTab="mermas" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="mermas"
+            initialTab="mermas"
+            hideTabBar={true}
+            title="Control de Mermas"
+            subtitle="Autorizar bajas por daño, pérdida o caducidad en Cardex"
+          />
+        );
       case "conteo":
-        return <InventoryScreen key="conteo" initialTab="conteo" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="conteo"
+            initialTab="conteo"
+            hideTabBar={true}
+            title="Auditoría de Conteos Físicos"
+            subtitle="Validar y aprobar cuadres de stock reportados por bodega"
+          />
+        );
       case "kits":
-        return <InventoryScreen key="kits" initialTab="kits" hideTabBar={true} />;
+        return (
+          <InventoryScreen
+            key="kits"
+            initialTab="kits"
+            hideTabBar={true}
+            title="Kits de Materiales"
+            subtitle="Configurar paquetes estándar de insumos para obras"
+          />
+        );
+      case "proveedores":
+        return <PurchasingScreen initialTab="terceros" />;
       case "compras":
         return <PurchasingScreen initialTab="ordenes" />;
       case "facturas":
@@ -270,6 +326,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
         return <AdminManualHoursScreen />;
       case "herramientas":
         return <ToolsScreen />;
+      case "informes":
+        return <ReportsScreen />;
       case "devoluciones":
         return <ReturnsScreen />;
       case "administracion":
@@ -292,11 +350,12 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
             style={styles.toggleBtn}
             accessibilityLabel="Abrir menú de navegación"
             accessibilityRole="button"
+            activeOpacity={0.7}
           >
             <Ionicons
               name="menu-outline"
               size={24}
-              color={theme.colors.text}
+              color="#ffffff"
             />
           </TouchableOpacity>
 
@@ -331,8 +390,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
               style={styles.compactSearchBtn}
               accessibilityLabel="Buscar global"
               accessibilityRole="button"
+              activeOpacity={0.7}
             >
-              <Ionicons name="search-outline" size={20} color={theme.colors.textSecondary} />
+              <Ionicons name="search-outline" size={20} color="#ffffff" />
             </TouchableOpacity>
           </View>
         )}
@@ -340,6 +400,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ onLogout }) => {
         {/* Lado Derecho: Notificaciones */}
         <View style={styles.topRight}>
           <NotificationBell
+            variant="dark"
             onNavigateToObject={(entityType) => {
               if (entityType === "insumo") {
                 setActiveRoute("inventario");
@@ -623,9 +684,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   toggleBtn: {
-    padding: 8,
-    borderRadius: theme.radius.sm,
-    backgroundColor: "#292524",
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
   },
   brandRow: {
@@ -661,9 +727,12 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   compactSearchBtn: {
-    padding: 8,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceAlt,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
   },

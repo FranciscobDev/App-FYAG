@@ -33,6 +33,8 @@ export interface NotificationBellProps {
   onMarkAllRead?: () => void;
   onNavigateToObject?: (entityType: string, entityId: string) => void;
   style?: StyleProp<ViewStyle>;
+  iconColor?: string;
+  variant?: "dark" | "light";
 }
 
 type FilterType = "todas" | "stock" | "costo" | "plazo" | "solicitud" | "sistema";
@@ -42,9 +44,13 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
   onMarkAllRead: propOnMarkAllRead,
   onNavigateToObject,
   style,
+  iconColor,
+  variant = "dark",
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedType, setSelectedType] = useState<FilterType>("todas");
+  const isDark = variant === "dark";
+  const resolvedColor = iconColor || (isDark ? "#ffffff" : theme.colors.text);
 
   // Consume from AppContext if available
   let appContext: ReturnType<typeof useApp> | null = null;
@@ -126,15 +132,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
     <>
       <TouchableOpacity
         onPress={() => setModalOpen(true)}
-        style={[styles.bellBtn, style]}
+        style={[
+          styles.bellBtn,
+          isDark ? styles.bellBtnDark : styles.bellBtnLight,
+          style,
+        ]}
         activeOpacity={0.7}
         accessibilityLabel={`Notificaciones, ${unreadCount} no leídas`}
         accessibilityRole="button"
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
-        <Ionicons name="notifications-outline" size={22} color={theme.colors.text} />
+        <Ionicons name="notifications-outline" size={22} color={resolvedColor} />
         {unreadCount > 0 && (
-          <View style={styles.badge}>
+          <View style={[styles.badge, isDark && styles.badgeDark]}>
             <Text style={styles.badgeText}>
               {unreadCount > 9 ? "9+" : unreadCount}
             </Text>
@@ -294,29 +304,45 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({
 
 const styles = StyleSheet.create({
   bellBtn: {
-    padding: 6,
+    width: 42,
+    height: 42,
+    borderRadius: 10,
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
-    minWidth: theme.touchTargets.minHeight, // Mínimo 44 px accesible
-    minHeight: theme.touchTargets.minHeight,
+  },
+  bellBtnDark: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  bellBtnLight: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   badge: {
     position: "absolute",
-    top: 2,
-    right: 2,
+    top: -3,
+    right: -3,
     backgroundColor: theme.colors.danger,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 3,
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: "#ffffff",
+    zIndex: 10,
+  },
+  badgeDark: {
+    borderColor: "#1c1917",
   },
   badgeText: {
-    color: theme.colors.textInverse,
+    color: "#ffffff",
     fontSize: 9,
-    fontWeight: theme.fontWeight.semibold,
+    fontWeight: "700",
   },
   backdrop: {
     flex: 1,

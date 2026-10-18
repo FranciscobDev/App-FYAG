@@ -337,8 +337,8 @@ export const ProjectsScreen: React.FC = () => {
           1. VISTA DE DETALLE CON PESTAÑAS (SI HAY PROYECTO SELECCIONADO)
           ===================================================================== */}
       {selectedProject ? (
-        <ScrollView style={styles.detailContainer} contentContainerStyle={styles.detailScroll}>
-          {/* Encabezado con Migas de Pan y Botón Volver */}
+        <View style={styles.viewWrapper}>
+          {/* Encabezado con Migas de Pan y Botón Volver (Ancho completo edge-to-edge) */}
           <PageHeader
             title={`${selectedProject.code} - ${selectedProject.name}`}
             subtitle={`Cliente: ${selectedProject.client} • Dirección: ${selectedProject.address}`}
@@ -350,8 +350,9 @@ export const ProjectsScreen: React.FC = () => {
             onBack={() => setSelectedProject(null)}
           />
 
-          {/* Encabezado del Proyecto */}
-          <Card variant="elevated" style={styles.detailHeaderCard}>
+          <ScrollView style={styles.detailContainer} contentContainerStyle={styles.detailScroll}>
+            {/* Encabezado del Proyecto */}
+            <Card variant="elevated" style={styles.detailHeaderCard}>
             <View style={styles.detailTopRow}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -884,31 +885,49 @@ export const ProjectsScreen: React.FC = () => {
               )}
             </Card>
           )}
-        </ScrollView>
+          </ScrollView>
+        </View>
       ) : (
         /* =====================================================================
             2. VISTA DE LISTADO GENERAL DE PROYECTOS
             ===================================================================== */
-        <ScrollView style={styles.listContainer} contentContainerStyle={styles.scrollBody}>
+        <View style={styles.viewWrapper}>
+          {/* Encabezado Principal Limpio (Ancho completo edge-to-edge sin recuadro blanco) */}
           <PageHeader
             title="Control de Obras y Proyectos"
             subtitle="Monitoreo presupuestario en tiempo real con semáforo de costo y margen"
             breadcrumbs={["Inicio", "Proyectos", "Proyectos y Obras"]}
-            rightAction={
-              currentRole === "admin" ? (
-                <Button
-                  title="+ Nuevo Proyecto"
-                  variant="primary"
-                  size="sm"
-                  icon="add-outline"
-                  onPress={handleOpenNewProject}
-                />
-              ) : undefined
-            }
           />
 
-          {/* Buscador de Proyecto */}
-          <View style={styles.searchBoxWrapper}>
+          <ScrollView style={styles.listContainer} contentContainerStyle={styles.scrollBody}>
+            {/* BANNER PROMINENTE PARA CREAR NUEVO PROYECTO */}
+            {currentRole === "admin" && (
+              <Card style={styles.createProjectHeroCard}>
+                <View style={styles.createProjectHeroContent}>
+                  <View style={styles.createProjectHeroLeft}>
+                    <View style={styles.heroBadgeRow}>
+                      <Badge label="Gestión de Obras" tone="primary" size="sm" />
+                      <Text style={styles.heroBadgeHint}>Monitoreo H27 y H28</Text>
+                    </View>
+                    <Text style={styles.createProjectHeroTitle}>Registrar Nueva Obra o Proyecto</Text>
+                    <Text style={styles.createProjectHeroDesc}>
+                      Crea una obra o contrato de mantención para imputar HH, compras de insumos y controlar el margen en tiempo real.
+                    </Text>
+                  </View>
+                  <Button
+                    title="+ Crear Nuevo Proyecto"
+                    variant="primary"
+                    size="md"
+                    icon="add-circle-outline"
+                    onPress={handleOpenNewProject}
+                    style={styles.btnCreateProjectLarge}
+                  />
+                </View>
+              </Card>
+            )}
+
+            {/* Buscador de Proyecto */}
+            <View style={styles.searchBoxWrapper}>
             <Ionicons name="search-outline" size={18} color={theme.colors.textMuted} style={{ marginRight: 6 }} />
             <TextInput
               value={searchProject}
@@ -965,7 +984,7 @@ export const ProjectsScreen: React.FC = () => {
                   ? `No existen coincidencias para "${searchProject}".`
                   : "No hay proyectos ni faenas registradas con este filtro."
               }
-              actionTitle={currentRole === "admin" ? "+ Nuevo Proyecto" : undefined}
+              actionTitle={currentRole === "admin" ? "+ Crear Nuevo Proyecto" : undefined}
               onAction={currentRole === "admin" ? handleOpenNewProject : undefined}
               containerStyle={{ marginVertical: 24 }}
             />
@@ -1080,7 +1099,8 @@ export const ProjectsScreen: React.FC = () => {
             );
           })
         )}
-        </ScrollView>
+          </ScrollView>
+        </View>
       )}
 
       {/* =====================================================================
@@ -1522,6 +1542,61 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  viewWrapper: {
+    flex: 1,
+  },
+  createProjectHeroCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1.5,
+    borderColor: "#f59e0b",
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  createProjectHeroContent: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
+  },
+  createProjectHeroLeft: {
+    flex: 1,
+    minWidth: 260,
+  },
+  heroBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  heroBadgeHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#b45309",
+    marginLeft: 8,
+  },
+  createProjectHeroTitle: {
+    fontSize: theme.fontSize.md,
+    fontWeight: "bold",
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  createProjectHeroDesc: {
+    fontSize: theme.fontSize.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  btnCreateProjectLarge: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    borderRadius: theme.radius.md,
+    alignSelf: "flex-start",
   },
   toastCard: {
     position: "absolute",

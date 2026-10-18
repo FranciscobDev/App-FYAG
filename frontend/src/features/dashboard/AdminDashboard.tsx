@@ -202,24 +202,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
         message: "Solo usuarios con rol Administrador tienen autorización para consultar métricas financieras y aprobar solicitudes.",
       }}
     >
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {/* ENCABEZADO CON MIGAS DE PAN Y ACCIÓN PRINCIPAL */}
+      <View style={styles.container}>
+        {/* ENCABEZADO EJECUTIVO INTEGRADO EN FONDO OSCURO */}
         <PageHeader
           title="Dashboard General"
           subtitle="Monitoreo ejecutivo de bodega, compras y estados de obra en tiempo real"
-          breadcrumbs={["Inicio", "Operación", "Dashboard General"]}
-          rightAction={
-            <Button
-              title="Ver Inventario"
-              variant="secondary"
-              icon="cube-outline"
-              size="sm"
-              onPress={() => onNavigate && onNavigate("inventario")}
-            />
-          }
         />
 
-        {/* 1. KPI CARDS */}
+        <ScrollView style={styles.scrollArea} contentContainerStyle={styles.content}>
+          {/* 1. KPI CARDS */}
         <View style={styles.kpiGrid}>
         <KpiCard
           label="Solicitudes Pendientes"
@@ -471,7 +462,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
         type={toastType}
         onDismiss={() => setToastVisible(false)}
       />
-    </ScrollView>
+        </ScrollView>
+      </View>
     </ScreenStateWrapper>
   );
 };
@@ -480,6 +472,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  scrollArea: {
+    flex: 1,
   },
   content: {
     padding: theme.spacing.md,

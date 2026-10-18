@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
   Alert,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useApp } from "@/context/AppContext";
@@ -32,6 +33,11 @@ import { ScreenStateWrapper } from "@/components/common/ScreenStateWrapper";
 type AdminTab = "usuarios" | "auditoria" | "parametros" | "reportes" | "privacidad" | "respaldos";
 
 export const AdministrationScreen: React.FC = () => {
+  const { width } = useWindowDimensions();
+  const isMobile = width < 768;
+  const [userViewMode, setUserViewMode] = useState<"auto" | "cards" | "table">("auto");
+  const effectiveViewMode = userViewMode === "auto" ? (isMobile ? "cards" : "table") : userViewMode;
+
   const {
     systemUsers,
     auditLogs,
@@ -367,13 +373,15 @@ export const AdministrationScreen: React.FC = () => {
 
   return (
     <ScreenStateWrapper screenTitle="Administración y Auditoría" skeletonType="table">
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Encabezado de página con migas de pan */}
-      <PageHeader
-        title="Administración y Control de Sistema"
-        subtitle="Gestión de usuarios, auditoría inmutable, parámetros operativos, reportes y respaldos"
-        breadcrumbs={["Inicio", "Administración", "Panel de Control"]}
-      />
+      <View style={styles.container}>
+        {/* Encabezado limpio y responsivo (ancho completo edge-to-edge) */}
+        <PageHeader
+          title="Administración y Control de Sistema"
+          subtitle="Gestión de usuarios, auditoría inmutable, parámetros operativos, reportes y respaldos"
+          breadcrumbs={["Inicio", "Administración", "Panel de Control"]}
+        />
+
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
 
       {/* Banner de Feedback Global */}
       {feedback && (
@@ -552,15 +560,45 @@ export const AdministrationScreen: React.FC = () => {
             </View>
           </Card>
 
-          {/* Tabla de Usuarios */}
+          {/* Tabla de Usuarios Responsiva */}
           <Card style={styles.cardBox}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { flex: 2 }]}>Usuario & Contacto</Text>
-              <Text style={[styles.thCell, { flex: 1.2 }]}>RUT</Text>
-              <Text style={[styles.thCell, { flex: 1.2 }]}>Rol Asignado</Text>
-              <Text style={[styles.thCell, { flex: 1 }]}>Estado</Text>
-              <Text style={[styles.thCell, { flex: 1.2 }]}>Último Acceso</Text>
-              <Text style={[styles.thCell, { flex: 1.4, textAlign: "right" }]}>Acción de Acceso</Text>
+            <View style={styles.tableCardHeaderBar}>
+              <Text style={styles.tableCardTitle}>
+                Usuarios Registrados ({filteredUsers.length})
+              </Text>
+              <View style={styles.viewModeToggleRow}>
+                <TouchableOpacity
+                  style={[styles.viewModeBtn, effectiveViewMode === "cards" && styles.viewModeBtnActive]}
+                  onPress={() => setUserViewMode("cards")}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="grid-outline"
+                    size={13}
+                    color={effectiveViewMode === "cards" ? "#ffffff" : theme.colors.textSecondary}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.viewModeBtnText, effectiveViewMode === "cards" && styles.viewModeBtnTextActive]}>
+                    Tarjetas
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.viewModeBtn, effectiveViewMode === "table" && styles.viewModeBtnActive]}
+                  onPress={() => setUserViewMode("table")}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="list-outline"
+                    size={13}
+                    color={effectiveViewMode === "table" ? "#ffffff" : theme.colors.textSecondary}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text style={[styles.viewModeBtnText, effectiveViewMode === "table" && styles.viewModeBtnTextActive]}>
+                    Tabla
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {filteredUsers.length === 0 ? (
@@ -572,85 +610,195 @@ export const AdministrationScreen: React.FC = () => {
                 onAction={() => setNewUserModalOpen(true)}
                 containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
               />
-            ) : (
-              filteredUsers.map((u) => {
-                const isOnlyAdmin = !u.disabled && u.role === "admin" && activeAdminsCount <= 1;
+            ) : effectiveViewMode === "cards" ? (
+              /* VISTA RESPONSIVA MÓVIL: TARJETAS ERGONÓMICAS */
+              <View style={styles.mobileCardsContainer}>
+                {filteredUsers.map((u) => {
+                  const isOnlyAdmin = !u.disabled && u.role === "admin" && activeAdminsCount <= 1;
 
-                return (
-                  <View key={u.id} style={[styles.tableRow, u.disabled && styles.tableRowDisabled]}>
-                    <View style={{ flex: 2 }}>
-                      <Text style={styles.userNameText}>{u.name}</Text>
-                      <Text style={styles.userEmailText}>{u.email}</Text>
-                    </View>
+                  return (
+                    <View key={u.id} style={[styles.mobileUserCard, u.disabled && styles.mobileUserCardDisabled]}>
+                      {/* Cabecera de la tarjeta: Nombre, email, rut y badges */}
+                      <View style={styles.mobileUserCardHeader}>
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={styles.mobileUserName}>{u.name}</Text>
+                          <Text style={styles.mobileUserEmail}>{u.email}</Text>
+                          <View style={styles.mobileRutBadge}>
+                            <Ionicons name="card-outline" size={12} color={theme.colors.textSecondary} style={{ marginRight: 4 }} />
+                            <Text style={styles.mobileRutText}>{u.rut}</Text>
+                          </View>
+                        </View>
 
-                    <Text style={[styles.tdCell, { flex: 1.2, fontWeight: "600" }]}>{u.rut}</Text>
+                        <View style={styles.mobileBadgesCol}>
+                          <View
+                            style={[
+                              styles.roleBadge,
+                              u.role === "admin" && styles.roleBadgeAdmin,
+                              u.role === "warehouse" && styles.roleBadgeWarehouse,
+                              u.role === "technician" && styles.roleBadgeTechnician,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleBadgeText,
+                                u.role === "admin" && styles.roleBadgeTextAdmin,
+                                u.role === "warehouse" && styles.roleBadgeTextWarehouse,
+                                u.role === "technician" && styles.roleBadgeTextTechnician,
+                              ]}
+                            >
+                              {u.role === "admin"
+                                ? "Administrador"
+                                : u.role === "warehouse"
+                                ? "Bodeguero"
+                                : "Técnico"}
+                            </Text>
+                          </View>
 
-                    <View style={{ flex: 1.2 }}>
-                      <View
-                        style={[
-                          styles.roleBadge,
-                          u.role === "admin" && styles.roleBadgeAdmin,
-                          u.role === "warehouse" && styles.roleBadgeWarehouse,
-                          u.role === "technician" && styles.roleBadgeTechnician,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.roleBadgeText,
-                            u.role === "admin" && styles.roleBadgeTextAdmin,
-                            u.role === "warehouse" && styles.roleBadgeTextWarehouse,
-                            u.role === "technician" && styles.roleBadgeTextTechnician,
-                          ]}
-                        >
-                          {u.role === "admin"
-                            ? "Administrador"
-                            : u.role === "warehouse"
-                            ? "Bodeguero"
-                            : "Técnico"}
-                        </Text>
+                          <View style={{ marginTop: 6, alignSelf: "flex-end" }}>
+                            <EstadoBadge
+                              status={u.disabled ? "rechazada" : "aprobada"}
+                              label={u.disabled ? "Deshabilitado" : "Activo"}
+                            />
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Separador sutil */}
+                      <View style={styles.mobileUserCardDivider} />
+
+                      {/* Pie de la tarjeta: Último acceso y botón de acción */}
+                      <View style={styles.mobileUserCardFooter}>
+                        <View style={styles.mobileLoginInfo}>
+                          <Text style={styles.mobileLoginLabel}>ÚLTIMO ACCESO</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
+                            <Ionicons name="time-outline" size={13} color={theme.colors.textMuted} style={{ marginRight: 4 }} />
+                            <Text style={styles.mobileLoginValue}>{u.lastLogin || "Nunca"}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.mobileActionBox}>
+                          {isOnlyAdmin ? (
+                            <TouchableOpacity
+                              style={styles.lockedBtn}
+                              onPress={() =>
+                                showFeedback(
+                                  "error",
+                                  "Operación bloqueada: No se puede deshabilitar al último Administrador activo del sistema."
+                                )
+                              }
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
+                              <Text style={styles.lockedBtnText}>Bloqueado (Último Admin)</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <Button
+                              variant={u.disabled ? "secondary" : "danger"}
+                              size="sm"
+                              title={u.disabled ? "Habilitar" : "Deshabilitar"}
+                              icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                              onPress={() => handleToggleUser(u)}
+                            />
+                          )}
+                        </View>
                       </View>
                     </View>
-
-                    <View style={{ flex: 1 }}>
-                      <EstadoBadge
-                        status={u.disabled ? "rechazada" : "aprobada"}
-                        label={u.disabled ? "Deshabilitado" : "Activo"}
-                      />
-                    </View>
-
-                    <Text style={[styles.tdCell, { flex: 1.2, color: theme.colors.textMuted }]}>
-                      {u.lastLogin || "Nunca"}
-                    </Text>
-
-                    {/* Botón de deshabilitar con confirmación y bloqueo estricto */}
-                    <View style={{ flex: 1.4, alignItems: "flex-end" }}>
-                      {isOnlyAdmin ? (
-                        <TouchableOpacity
-                          style={styles.lockedBtn}
-                          onPress={() =>
-                            showFeedback(
-                              "error",
-                              "Operación bloqueada: No se puede deshabilitar al último Administrador activo del sistema."
-                            )
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
-                          <Text style={styles.lockedBtnText}>Bloqueado (Último Admin)</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <Button
-                          variant={u.disabled ? "secondary" : "danger"}
-                          size="sm"
-                          title={u.disabled ? "Habilitar" : "Deshabilitar"}
-                          icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                          onPress={() => handleToggleUser(u)}
-                        />
-                      )}
-                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              /* VISTA ESCRITORIO / TABLA CON SCROLL HORIZONTAL Y ANCHOS FIJOS */
+              <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 840 }}>
+                <View style={{ minWidth: 840, flex: 1 }}>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.thCell, { width: 220 }]}>Usuario & Contacto</Text>
+                    <Text style={[styles.thCell, { width: 120 }]}>RUT</Text>
+                    <Text style={[styles.thCell, { width: 130 }]}>Rol Asignado</Text>
+                    <Text style={[styles.thCell, { width: 110 }]}>Estado</Text>
+                    <Text style={[styles.thCell, { width: 120 }]}>Último Acceso</Text>
+                    <Text style={[styles.thCell, { width: 140, textAlign: "right" }]}>Acción de Acceso</Text>
                   </View>
-                );
-              })
+
+                  {filteredUsers.map((u) => {
+                    const isOnlyAdmin = !u.disabled && u.role === "admin" && activeAdminsCount <= 1;
+
+                    return (
+                      <View key={u.id} style={[styles.tableRow, u.disabled && styles.tableRowDisabled]}>
+                        <View style={{ width: 220, paddingRight: 8 }}>
+                          <Text style={styles.userNameText}>{u.name}</Text>
+                          <Text style={styles.userEmailText}>{u.email}</Text>
+                        </View>
+
+                        <Text style={[styles.tdCell, { width: 120, fontWeight: "600" }]}>{u.rut}</Text>
+
+                        <View style={{ width: 130 }}>
+                          <View
+                            style={[
+                              styles.roleBadge,
+                              u.role === "admin" && styles.roleBadgeAdmin,
+                              u.role === "warehouse" && styles.roleBadgeWarehouse,
+                              u.role === "technician" && styles.roleBadgeTechnician,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.roleBadgeText,
+                                u.role === "admin" && styles.roleBadgeTextAdmin,
+                                u.role === "warehouse" && styles.roleBadgeTextWarehouse,
+                                u.role === "technician" && styles.roleBadgeTextTechnician,
+                              ]}
+                            >
+                              {u.role === "admin"
+                                ? "Administrador"
+                                : u.role === "warehouse"
+                                ? "Bodeguero"
+                                : "Técnico"}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={{ width: 110 }}>
+                          <EstadoBadge
+                            status={u.disabled ? "rechazada" : "aprobada"}
+                            label={u.disabled ? "Deshabilitado" : "Activo"}
+                          />
+                        </View>
+
+                        <Text style={[styles.tdCell, { width: 120, color: theme.colors.textMuted }]}>
+                          {u.lastLogin || "Nunca"}
+                        </Text>
+
+                        {/* Botón de deshabilitar con confirmación y bloqueo estricto */}
+                        <View style={{ width: 140, alignItems: "flex-end" }}>
+                          {isOnlyAdmin ? (
+                            <TouchableOpacity
+                              style={styles.lockedBtn}
+                              onPress={() =>
+                                showFeedback(
+                                  "error",
+                                  "Operación bloqueada: No se puede deshabilitar al último Administrador activo del sistema."
+                                )
+                              }
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
+                              <Text style={styles.lockedBtnText}>Bloqueado (Último Admin)</Text>
+                            </TouchableOpacity>
+                          ) : (
+                            <Button
+                              variant={u.disabled ? "secondary" : "danger"}
+                              size="sm"
+                              title={u.disabled ? "Habilitar" : "Deshabilitar"}
+                              icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                              onPress={() => handleToggleUser(u)}
+                            />
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
             )}
           </Card>
 
@@ -933,15 +1081,6 @@ export const AdministrationScreen: React.FC = () => {
 
           {/* Tabla de Auditoría Inmutable (Sin botones de editar o borrar) */}
           <Card style={styles.cardBox}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { flex: 1.2 }]}>Fecha / Hora</Text>
-              <Text style={[styles.thCell, { flex: 1.5 }]}>Usuario Responsable</Text>
-              <Text style={[styles.thCell, { flex: 1 }]}>Entidad</Text>
-              <Text style={[styles.thCell, { flex: 1 }]}>Acción</Text>
-              <Text style={[styles.thCell, { flex: 2.2 }]}>Modificación (DiffViewer)</Text>
-              <Text style={[styles.thCell, { flex: 2.1 }]}>Descripción del Suceso</Text>
-            </View>
-
             {filteredAuditLogs.length === 0 ? (
               <EmptyState
                 icon="shield-outline"
@@ -950,62 +1089,75 @@ export const AdministrationScreen: React.FC = () => {
                 containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
               />
             ) : (
-              filteredAuditLogs.map((log) => (
-                <View key={log.id} style={styles.auditRow}>
-                  <Text style={[styles.tdCell, { flex: 1.2, fontSize: 11, color: theme.colors.textMuted }]}>
-                    {log.timestamp}
-                  </Text>
-
-                  <View style={{ flex: 1.5 }}>
-                    <Text style={styles.auditUserName}>{log.userName}</Text>
-                    <Text style={styles.auditUserRut}>{log.userRut}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 960 }}>
+                <View style={{ minWidth: 960, flex: 1 }}>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.thCell, { width: 140 }]}>Fecha / Hora</Text>
+                    <Text style={[styles.thCell, { width: 180 }]}>Usuario Responsable</Text>
+                    <Text style={[styles.thCell, { width: 110 }]}>Entidad</Text>
+                    <Text style={[styles.thCell, { width: 120 }]}>Acción</Text>
+                    <Text style={[styles.thCell, { width: 220 }]}>Modificación (DiffViewer)</Text>
+                    <Text style={[styles.thCell, { width: 190 }]}>Descripción del Suceso</Text>
                   </View>
 
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.entityTag}>
-                      <Text style={styles.entityTagText}>{log.entity}</Text>
-                    </View>
-                  </View>
+                  {filteredAuditLogs.map((log) => (
+                    <View key={log.id} style={styles.auditRow}>
+                      <Text style={[styles.tdCell, { width: 140, fontSize: 11, color: theme.colors.textMuted }]}>
+                        {log.timestamp}
+                      </Text>
 
-                  <View style={{ flex: 1 }}>
-                    <View
-                      style={[
-                        styles.actionBadge,
-                        log.action === "creacion" && styles.actionBadgeCreate,
-                        log.action === "modificacion" && styles.actionBadgeModify,
-                        log.action === "deshabilitacion" && styles.actionBadgeDelete,
-                        log.action === "anonimizacion" && styles.actionBadgeAnon,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.actionBadgeText,
-                          log.action === "creacion" && styles.actionBadgeTextCreate,
-                          log.action === "modificacion" && styles.actionBadgeTextModify,
-                          log.action === "deshabilitacion" && styles.actionBadgeTextDelete,
-                          log.action === "anonimizacion" && styles.actionBadgeTextAnon,
-                        ]}
-                      >
-                        {log.action.toUpperCase()}
+                      <View style={{ width: 180, paddingRight: 8 }}>
+                        <Text style={styles.auditUserName}>{log.userName}</Text>
+                        <Text style={styles.auditUserRut}>{log.userRut}</Text>
+                      </View>
+
+                      <View style={{ width: 110 }}>
+                        <View style={styles.entityTag}>
+                          <Text style={styles.entityTagText}>{log.entity}</Text>
+                        </View>
+                      </View>
+
+                      <View style={{ width: 120 }}>
+                        <View
+                          style={[
+                            styles.actionBadge,
+                            log.action === "creacion" && styles.actionBadgeCreate,
+                            log.action === "modificacion" && styles.actionBadgeModify,
+                            log.action === "deshabilitacion" && styles.actionBadgeDelete,
+                            log.action === "anonimizacion" && styles.actionBadgeAnon,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.actionBadgeText,
+                              log.action === "creacion" && styles.actionBadgeTextCreate,
+                              log.action === "modificacion" && styles.actionBadgeTextModify,
+                              log.action === "deshabilitacion" && styles.actionBadgeTextDelete,
+                              log.action === "anonimizacion" && styles.actionBadgeTextAnon,
+                            ]}
+                          >
+                            {log.action.toUpperCase()}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* DiffViewer para comparar valor anterior vs nuevo */}
+                      <View style={{ width: 220, paddingRight: 8 }}>
+                        <DiffViewer
+                          label={log.fieldChanged}
+                          oldValue={log.oldValue}
+                          newValue={log.newValue}
+                          showDelta={typeof log.oldValue === "number" && typeof log.newValue === "number"}
+                        />
+                      </View>
+
+                      <Text style={[styles.tdCell, { width: 190, fontSize: 11, color: theme.colors.textSecondary }]}>
+                        {log.description}
                       </Text>
                     </View>
-                  </View>
-
-                  {/* DiffViewer para comparar valor anterior vs nuevo */}
-                  <View style={{ flex: 2.2, paddingRight: 8 }}>
-                    <DiffViewer
-                      label={log.fieldChanged}
-                      oldValue={log.oldValue}
-                      newValue={log.newValue}
-                      showDelta={typeof log.oldValue === "number" && typeof log.newValue === "number"}
-                    />
-                  </View>
-
-                  <Text style={[styles.tdCell, { flex: 2.1, fontSize: 11, color: theme.colors.textSecondary }]}>
-                    {log.description}
-                  </Text>
+                  ))}
                 </View>
-              ))
+              </ScrollView>
             )}
           </Card>
         </View>
@@ -1216,18 +1368,6 @@ export const AdministrationScreen: React.FC = () => {
 
           {/* Tabla de Movimientos de Inventario */}
           <Card style={styles.cardBox}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { flex: 1 }]}>Fecha</Text>
-              <Text style={[styles.thCell, { flex: 1.2 }]}>Tipo Movimiento</Text>
-              <Text style={[styles.thCell, { flex: 2 }]}>Insumo (SKU & Nombre)</Text>
-              <Text style={[styles.thCell, { flex: 1.4 }]}>Referencia / Obra</Text>
-              <Text style={[styles.thCell, { flex: 0.8, textAlign: "right" }]}>Entrada</Text>
-              <Text style={[styles.thCell, { flex: 0.8, textAlign: "right" }]}>Salida</Text>
-              <Text style={[styles.thCell, { flex: 0.8, textAlign: "right" }]}>Saldo</Text>
-              <Text style={[styles.thCell, { flex: 1.2, textAlign: "right" }]}>PMP ($)</Text>
-              <Text style={[styles.thCell, { flex: 1.4, textAlign: "right" }]}>Total ($ CLP)</Text>
-            </View>
-
             {filteredCardex.length === 0 ? (
               <EmptyState
                 icon="bar-chart-outline"
@@ -1236,95 +1376,111 @@ export const AdministrationScreen: React.FC = () => {
                 containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
               />
             ) : (
-              filteredCardex.map((item) => (
-                <View key={item.id} style={styles.tableRow}>
-                  <Text style={[styles.tdCell, { flex: 1, fontSize: 11 }]}>{item.date}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 1040 }}>
+                <View style={{ minWidth: 1040, flex: 1 }}>
+                  <View style={styles.tableHeaderRow}>
+                    <Text style={[styles.thCell, { width: 90 }]}>Fecha</Text>
+                    <Text style={[styles.thCell, { width: 130 }]}>Tipo Movimiento</Text>
+                    <Text style={[styles.thCell, { width: 220 }]}>Insumo (SKU & Nombre)</Text>
+                    <Text style={[styles.thCell, { width: 150 }]}>Referencia / Obra</Text>
+                    <Text style={[styles.thCell, { width: 80, textAlign: "right" }]}>Entrada</Text>
+                    <Text style={[styles.thCell, { width: 80, textAlign: "right" }]}>Salida</Text>
+                    <Text style={[styles.thCell, { width: 80, textAlign: "right" }]}>Saldo</Text>
+                    <Text style={[styles.thCell, { width: 100, textAlign: "right" }]}>PMP ($)</Text>
+                    <Text style={[styles.thCell, { width: 110, textAlign: "right" }]}>Total ($ CLP)</Text>
+                  </View>
 
-                  <View style={{ flex: 1.2 }}>
-                    <View
-                      style={[
-                        styles.movementBadge,
-                        item.type === "entrada_compra" && styles.movEntry,
-                        item.type === "salida_obra" && styles.movExit,
-                        item.type === "devolucion" && styles.movReturn,
-                        item.type === "merma" && styles.movWaste,
-                        item.type === "ajuste_conteo" && styles.movAdjust,
-                      ]}
-                    >
+                  {filteredCardex.map((item) => (
+                    <View key={item.id} style={styles.tableRow}>
+                      <Text style={[styles.tdCell, { width: 90, fontSize: 11 }]}>{item.date}</Text>
+
+                      <View style={{ width: 130 }}>
+                        <View
+                          style={[
+                            styles.movementBadge,
+                            item.type === "entrada_compra" && styles.movEntry,
+                            item.type === "salida_obra" && styles.movExit,
+                            item.type === "devolucion" && styles.movReturn,
+                            item.type === "merma" && styles.movWaste,
+                            item.type === "ajuste_conteo" && styles.movAdjust,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.movementBadgeText,
+                              item.type === "entrada_compra" && styles.movEntryText,
+                              item.type === "salida_obra" && styles.movExitText,
+                              item.type === "devolucion" && styles.movReturnText,
+                              item.type === "merma" && styles.movWasteText,
+                              item.type === "ajuste_conteo" && styles.movAdjustText,
+                            ]}
+                          >
+                            {item.typeLabel}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={{ width: 220 }}>
+                        <Text style={styles.reportSkuText}>{item.sku}</Text>
+                        <Text style={styles.reportProdName}>{item.productName}</Text>
+                      </View>
+
+                      <Text style={[styles.tdCell, { width: 150, fontSize: 11 }]}>
+                        {item.projectName ? `${item.projectCode || ""} (${item.projectName})` : item.reference}
+                      </Text>
+
                       <Text
                         style={[
-                          styles.movementBadgeText,
-                          item.type === "entrada_compra" && styles.movEntryText,
-                          item.type === "salida_obra" && styles.movExitText,
-                          item.type === "devolucion" && styles.movReturnText,
-                          item.type === "merma" && styles.movWasteText,
-                          item.type === "ajuste_conteo" && styles.movAdjustText,
+                          styles.tdCell,
+                          { width: 80, textAlign: "right", color: item.qtyIn > 0 ? theme.colors.okDark : theme.colors.textMuted },
                         ]}
                       >
-                        {item.typeLabel}
+                        {item.qtyIn > 0 ? `+${item.qtyIn}` : "-"}
+                      </Text>
+
+                      <Text
+                        style={[
+                          styles.tdCell,
+                          { width: 80, textAlign: "right", color: item.qtyOut > 0 ? theme.colors.dangerDark : theme.colors.textMuted },
+                        ]}
+                      >
+                        {item.qtyOut > 0 ? `-${item.qtyOut}` : "-"}
+                      </Text>
+
+                      <Text style={[styles.tdCell, { width: 80, textAlign: "right", fontWeight: "600" }]}>
+                        {item.balance}
+                      </Text>
+
+                      <Text style={[styles.tdCell, { width: 100, textAlign: "right", color: theme.colors.textSecondary }]}>
+                        {formatCLP(item.pmp)}
+                      </Text>
+
+                      <Text style={[styles.tdCell, { width: 110, textAlign: "right", fontWeight: "bold" }]}>
+                        {formatCLP(item.totalValue)}
                       </Text>
                     </View>
+                  ))}
+
+                  {/* FILA DE TOTALES ACUMULADOS */}
+                  <View style={styles.totalsRow}>
+                    <View style={{ width: 590 }}>
+                      <Text style={styles.totalsLabel}>TOTALES ACUMULADOS ({reportTotals.count} movimientos listados):</Text>
+                    </View>
+                    <Text style={[styles.totalsCell, { width: 80, textAlign: "right", color: theme.colors.okDark }]}>
+                      +{reportTotals.totalIn} un
+                    </Text>
+                    <Text style={[styles.totalsCell, { width: 80, textAlign: "right", color: theme.colors.dangerDark }]}>
+                      -{reportTotals.totalOut} un
+                    </Text>
+                    <Text style={[styles.totalsCell, { width: 80, textAlign: "right" }]}>-</Text>
+                    <Text style={[styles.totalsCell, { width: 100, textAlign: "right" }]}>-</Text>
+                    <Text style={[styles.totalsCellBold, { width: 110, textAlign: "right" }]}>
+                      {formatCLP(reportTotals.totalNetValue)}
+                    </Text>
                   </View>
-
-                  <View style={{ flex: 2 }}>
-                    <Text style={styles.reportSkuText}>{item.sku}</Text>
-                    <Text style={styles.reportProdName}>{item.productName}</Text>
-                  </View>
-
-                  <Text style={[styles.tdCell, { flex: 1.4, fontSize: 11 }]}>
-                    {item.projectName ? `${item.projectCode || ""} (${item.projectName})` : item.reference}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.tdCell,
-                      { flex: 0.8, textAlign: "right", color: item.qtyIn > 0 ? theme.colors.okDark : theme.colors.textMuted },
-                    ]}
-                  >
-                    {item.qtyIn > 0 ? `+${item.qtyIn}` : "-"}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.tdCell,
-                      { flex: 0.8, textAlign: "right", color: item.qtyOut > 0 ? theme.colors.dangerDark : theme.colors.textMuted },
-                    ]}
-                  >
-                    {item.qtyOut > 0 ? `-${item.qtyOut}` : "-"}
-                  </Text>
-
-                  <Text style={[styles.tdCell, { flex: 0.8, textAlign: "right", fontWeight: "600" }]}>
-                    {item.balance}
-                  </Text>
-
-                  <Text style={[styles.tdCell, { flex: 1.2, textAlign: "right", color: theme.colors.textSecondary }]}>
-                    {formatCLP(item.pmp)}
-                  </Text>
-
-                  <Text style={[styles.tdCell, { flex: 1.4, textAlign: "right", fontWeight: "bold" }]}>
-                    {formatCLP(item.totalValue)}
-                  </Text>
                 </View>
-              ))
+              </ScrollView>
             )}
-
-            {/* FILA DE TOTALES ACUMULADOS */}
-            <View style={styles.totalsRow}>
-              <View style={{ flex: 4.2 }}>
-                <Text style={styles.totalsLabel}>TOTALES ACUMULADOS ({reportTotals.count} movimientos listados):</Text>
-              </View>
-              <Text style={[styles.totalsCell, { flex: 0.8, textAlign: "right", color: theme.colors.okDark }]}>
-                +{reportTotals.totalIn} un
-              </Text>
-              <Text style={[styles.totalsCell, { flex: 0.8, textAlign: "right", color: theme.colors.dangerDark }]}>
-                -{reportTotals.totalOut} un
-              </Text>
-              <Text style={[styles.totalsCell, { flex: 0.8, textAlign: "right" }]}>-</Text>
-              <Text style={[styles.totalsCell, { flex: 1.2, textAlign: "right" }]}>-</Text>
-              <Text style={[styles.totalsCellBold, { flex: 1.4, textAlign: "right" }]}>
-                {formatCLP(reportTotals.totalNetValue)}
-              </Text>
-            </View>
           </Card>
         </View>
       )}
@@ -1351,7 +1507,7 @@ export const AdministrationScreen: React.FC = () => {
 
           <View style={styles.privacyGrid}>
             {/* Tarjeta 1: Portabilidad de Datos (Exportar JSON / CSV) */}
-            <Card style={[styles.cardBox, { flex: 1 }]}>
+            <Card style={[styles.cardBox, styles.privacyCardItem, isMobile && { width: "100%", minWidth: "100%" }]}>
               <View style={styles.privacyCardHeader}>
                 <Ionicons name="download" size={20} color={theme.colors.primary} />
                 <Text style={styles.privacyCardTitle}>Portabilidad de Datos Personales</Text>
@@ -1367,6 +1523,7 @@ export const AdministrationScreen: React.FC = () => {
                   title="Exportar Archivo JSON"
                   icon="code-slash"
                   onPress={() => handleExportPrivacyData("json")}
+                  fullWidth
                 />
 
                 <Button
@@ -1374,12 +1531,13 @@ export const AdministrationScreen: React.FC = () => {
                   title="Exportar Planilla CSV"
                   icon="grid-outline"
                   onPress={() => handleExportPrivacyData("csv")}
+                  fullWidth
                 />
               </View>
             </Card>
 
             {/* Tarjeta 2: Derecho al Olvido y Anonimización */}
-            <Card style={[styles.cardBox, { flex: 1 }]}>
+            <Card style={[styles.cardBox, styles.privacyCardItem, isMobile && { width: "100%", minWidth: "100%" }]}>
               <View style={styles.privacyCardHeader}>
                 <Ionicons name="finger-print" size={20} color={theme.colors.danger} />
                 <Text style={[styles.privacyCardTitle, { color: theme.colors.dangerDark }]}>
@@ -1393,7 +1551,11 @@ export const AdministrationScreen: React.FC = () => {
               </Text>
 
               <Text style={styles.fieldLabel}>Seleccionar Usuario Titular:</Text>
-              <View style={styles.userPickerContainer}>
+              <ScrollView
+                style={styles.userPickerContainer}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={true}
+              >
                 {systemUsers
                   .filter((u) => !u.rut.startsWith("XX."))
                   .map((u) => {
@@ -1423,7 +1585,7 @@ export const AdministrationScreen: React.FC = () => {
                         />
                         <View style={{ flex: 1, marginLeft: 8 }}>
                           <Text style={styles.userPickerName}>
-                            {u.name} ({u.role})
+                            {u.name} ({u.role === "admin" ? "Administrador" : u.role === "warehouse" ? "Bodeguero" : "Técnico"})
                           </Text>
                           <Text style={styles.userPickerSub}>
                             RUT: {u.rut} — {u.email}
@@ -1437,7 +1599,7 @@ export const AdministrationScreen: React.FC = () => {
                       </TouchableOpacity>
                     );
                   })}
-              </View>
+              </ScrollView>
 
               <Button
                 variant="danger"
@@ -1445,6 +1607,7 @@ export const AdministrationScreen: React.FC = () => {
                 icon="trash-bin-outline"
                 onPress={handleStartAnonymization}
                 disabled={!selectedUserToAnonymize}
+                fullWidth
               />
             </Card>
           </View>
@@ -1594,64 +1757,69 @@ export const AdministrationScreen: React.FC = () => {
 
           {/* Tabla Historial de Respaldos y Restauraciones */}
           <Card style={styles.cardBox}>
-            <View style={styles.tableHeaderRow}>
-              <Text style={[styles.thCell, { flex: 1.3 }]}>Fecha y Hora</Text>
-              <Text style={[styles.thCell, { flex: 2.2 }]}>Nombre de Archivo</Text>
-              <Text style={[styles.thCell, { flex: 1 }]}>Tipo</Text>
-              <Text style={[styles.thCell, { flex: 1, textAlign: "right" }]}>Tamaño</Text>
-              <Text style={[styles.thCell, { flex: 1.2, textAlign: "center" }]}>Estado Respaldo</Text>
-              <Text style={[styles.thCell, { flex: 1.6, textAlign: "center" }]}>Prueba Restauración</Text>
-            </View>
-
-            {backupLogs.map((item) => (
-              <View key={item.id} style={[styles.tableRow, item.status === "fallo" && styles.tableRowFallo]}>
-                <Text style={[styles.tdCell, { flex: 1.3, fontSize: 11 }]}>{item.timestamp}</Text>
-
-                <View style={{ flex: 2.2 }}>
-                  <Text style={styles.backupFilename}>{item.filename}</Text>
-                  {item.errorReason && (
-                    <Text style={styles.backupErrorNote}>Motivo: {item.errorReason}</Text>
-                  )}
+            <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 840 }}>
+              <View style={{ minWidth: 840, flex: 1 }}>
+                <View style={styles.tableHeaderRow}>
+                  <Text style={[styles.thCell, { width: 140 }]}>Fecha y Hora</Text>
+                  <Text style={[styles.thCell, { width: 220 }]}>Nombre de Archivo</Text>
+                  <Text style={[styles.thCell, { width: 90 }]}>Tipo</Text>
+                  <Text style={[styles.thCell, { width: 90, textAlign: "right" }]}>Tamaño</Text>
+                  <Text style={[styles.thCell, { width: 130, textAlign: "center" }]}>Estado Respaldo</Text>
+                  <Text style={[styles.thCell, { width: 170, textAlign: "center" }]}>Prueba Restauración</Text>
                 </View>
 
-                <View style={{ flex: 1 }}>
-                  <View style={[styles.backupTypeBadge, item.type === "manual" && styles.backupTypeManual]}>
-                    <Text style={styles.backupTypeBadgeText}>{item.type.toUpperCase()}</Text>
+                {backupLogs.map((item) => (
+                  <View key={item.id} style={[styles.tableRow, item.status === "fallo" && styles.tableRowFallo]}>
+                    <Text style={[styles.tdCell, { width: 140, fontSize: 11 }]}>{item.timestamp}</Text>
+
+                    <View style={{ width: 220 }}>
+                      <Text style={styles.backupFilename}>{item.filename}</Text>
+                      {item.errorReason && (
+                        <Text style={styles.backupErrorNote}>Motivo: {item.errorReason}</Text>
+                      )}
+                    </View>
+
+                    <View style={{ width: 90 }}>
+                      <View style={[styles.backupTypeBadge, item.type === "manual" && styles.backupTypeManual]}>
+                        <Text style={styles.backupTypeBadgeText}>{item.type.toUpperCase()}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={[styles.tdCell, { width: 90, textAlign: "right", fontWeight: "600" }]}>
+                      {item.sizeMb > 0 ? `${item.sizeMb} MB` : "0 MB"}
+                    </Text>
+
+                    <View style={{ width: 130, alignItems: "center" }}>
+                      <EstadoBadge
+                        status={item.status === "exito" ? "aprobada" : "rechazada"}
+                        label={item.status === "exito" ? "Éxito" : "Fallo"}
+                      />
+                    </View>
+
+                    <View style={{ width: 170, alignItems: "center" }}>
+                      {item.restorationStatus === "exito" ? (
+                        <View style={styles.testOkBadge}>
+                          <Ionicons name="checkmark-circle" size={14} color={theme.colors.ok} style={{ marginRight: 4 }} />
+                          <Text style={styles.testOkBadgeText}>Restaurado OK</Text>
+                        </View>
+                      ) : item.restorationStatus === "fallo" ? (
+                        <View style={styles.testFailBadge}>
+                          <Ionicons name="close-circle" size={14} color={theme.colors.danger} style={{ marginRight: 4 }} />
+                          <Text style={styles.testFailBadgeText}>Prueba Fallida</Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>Pendiente de prueba</Text>
+                      )}
+                    </View>
                   </View>
-                </View>
-
-                <Text style={[styles.tdCell, { flex: 1, textAlign: "right", fontWeight: "600" }]}>
-                  {item.sizeMb > 0 ? `${item.sizeMb} MB` : "0 MB"}
-                </Text>
-
-                <View style={{ flex: 1.2, alignItems: "center" }}>
-                  <EstadoBadge
-                    status={item.status === "exito" ? "aprobada" : "rechazada"}
-                    label={item.status === "exito" ? "Éxito" : "Fallo"}
-                  />
-                </View>
-
-                <View style={{ flex: 1.6, alignItems: "center" }}>
-                  {item.restorationStatus === "exito" ? (
-                    <View style={styles.testOkBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color={theme.colors.ok} style={{ marginRight: 4 }} />
-                      <Text style={styles.testOkBadgeText}>Restaurado OK</Text>
-                    </View>
-                  ) : item.restorationStatus === "fallo" ? (
-                    <View style={styles.testFailBadge}>
-                      <Ionicons name="close-circle" size={14} color={theme.colors.danger} style={{ marginRight: 4 }} />
-                      <Text style={styles.testFailBadgeText}>Prueba Fallida</Text>
-                    </View>
-                  ) : (
-                    <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>Pendiente de prueba</Text>
-                  )}
-                </View>
+                ))}
               </View>
-            ))}
+            </ScrollView>
           </Card>
         </View>
       )}
-    </ScrollView>
+        </ScrollView>
+      </View>
     </ScreenStateWrapper>
   );
 };
@@ -1660,6 +1828,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  scrollContainer: {
+    flex: 1,
   },
   contentContainer: {
     padding: theme.spacing.lg,
@@ -1910,6 +2081,129 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: theme.fontSize.sm,
     color: theme.colors.textMuted,
+  },
+
+  // Responsive Table Controls & Mobile Cards
+  tableCardHeaderBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  tableCardTitle: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+  },
+  viewModeToggleRow: {
+    flexDirection: "row",
+    backgroundColor: theme.colors.surfaceAlt,
+    borderRadius: theme.radius.sm,
+    padding: 2,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  viewModeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: theme.radius.xs,
+  },
+  viewModeBtnActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  viewModeBtnText: {
+    fontSize: 11,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textSecondary,
+  },
+  viewModeBtnTextActive: {
+    color: "#ffffff",
+    fontWeight: theme.fontWeight.bold,
+  },
+  mobileCardsContainer: {
+    gap: 12,
+  },
+  mobileUserCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 14,
+    ...theme.shadows.sm,
+  },
+  mobileUserCardDisabled: {
+    backgroundColor: theme.colors.surfaceAlt,
+    opacity: 0.85,
+    borderColor: theme.colors.borderLight,
+  },
+  mobileUserCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  mobileUserName: {
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.text,
+    lineHeight: 18,
+  },
+  mobileUserEmail: {
+    fontSize: theme.fontSize.caption,
+    color: theme.colors.textMuted,
+    marginTop: 2,
+  },
+  mobileRutBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: theme.radius.xs,
+    marginTop: 6,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: theme.colors.borderLight,
+  },
+  mobileRutText: {
+    fontSize: 11,
+    fontWeight: theme.fontWeight.semibold,
+    color: theme.colors.textSecondary,
+  },
+  mobileBadgesCol: {
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+  },
+  mobileUserCardDivider: {
+    height: 1,
+    backgroundColor: theme.colors.borderLight,
+    marginVertical: 12,
+  },
+  mobileUserCardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  mobileLoginInfo: {
+    justifyContent: "center",
+  },
+  mobileLoginLabel: {
+    fontSize: 10,
+    fontWeight: theme.fontWeight.bold,
+    color: theme.colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  mobileLoginValue: {
+    fontSize: theme.fontSize.caption,
+    fontWeight: theme.fontWeight.medium,
+    color: theme.colors.textSecondary,
+  },
+  mobileActionBox: {
+    alignItems: "flex-end",
   },
 
   // Modal Forms
@@ -2353,6 +2647,10 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 16,
   },
+  privacyCardItem: {
+    flex: 1,
+    minWidth: 320,
+  },
   privacyCardHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -2390,13 +2688,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     marginBottom: 16,
     backgroundColor: theme.colors.surfaceAlt,
+    overflow: "hidden",
   },
   userPickerItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 10,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.borderLight,
+    minHeight: 48,
   },
   userPickerItemSelected: {
     backgroundColor: theme.colors.primaryLight,
