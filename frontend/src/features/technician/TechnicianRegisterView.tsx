@@ -293,7 +293,7 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
           ) : currentProject ? (
             <Card variant="elevated">
               <View style={styles.advanceHeaderRow}>
-                <View>
+                <View style={{ flex: 1, marginRight: 8 }}>
                   <Text style={styles.cardHeading}>Reporte de Avance Físico</Text>
                   <Text style={styles.cardSub}>
                     Porcentaje de avance en obra (Avance previo: {currentProject.progress}%)
@@ -337,10 +337,17 @@ export const TechnicianRegisterView: React.FC<TechnicianRegisterViewProps> = ({
                     <TextInput
                       value={String(advancePct)}
                       onChangeText={(v) => {
-                        const num = Number(v);
+                        const cleaned = v.replace(/[^0-9]/g, "");
+                        if (cleaned === "") {
+                          setAdvancePct(0);
+                          return;
+                        }
+                        const num = parseInt(cleaned, 10);
                         if (!isNaN(num)) setAdvancePct(Math.max(0, Math.min(100, num)));
                       }}
                       keyboardType="numeric"
+                      maxLength={3}
+                      selectTextOnFocus
                       style={styles.pctInput}
                     />
                     <Text style={styles.pctUnit}>%</Text>
@@ -928,6 +935,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: theme.colors.borderDark,
+    overflow: "hidden",
   },
   subFieldLabel: {
     fontSize: 11,
@@ -939,15 +947,18 @@ const styles = StyleSheet.create({
   },
   quickPctRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
+    gap: 6,
     marginBottom: 12,
   },
   quickPctChip: {
     flex: 1,
+    minWidth: 44,
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 8,
-    marginHorizontal: 2,
+    paddingHorizontal: 4,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.card,
     borderWidth: 1,
@@ -971,16 +982,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 6,
+    width: "100%",
   },
   stepBtn: {
+    flex: 1,
     backgroundColor: theme.colors.card,
     borderWidth: 1.5,
     borderColor: theme.colors.borderDark,
-    paddingHorizontal: 12,
+    paddingHorizontal: 6,
     paddingVertical: 10,
     borderRadius: theme.radius.md,
     minHeight: 44,
-    minWidth: 48,
+    minWidth: 42,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -990,6 +1004,7 @@ const styles = StyleSheet.create({
     color: theme.colors.primaryDark,
   },
   pctDisplay: {
+    flex: 1.35,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -997,19 +1012,25 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: theme.colors.primary,
     borderRadius: theme.radius.md,
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     minHeight: 44,
+    minWidth: 72,
+    maxWidth: 110,
   },
   pctInput: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "bold",
     color: theme.colors.primaryDark,
     textAlign: "center",
-    minWidth: 44,
+    width: 44,
+    minWidth: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {}),
   },
   pctUnit: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "bold",
     color: theme.colors.primaryDark,
     marginLeft: 2,
