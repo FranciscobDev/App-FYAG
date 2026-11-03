@@ -1,19 +1,19 @@
 import React from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { AuthProvider } from "@/context/AuthContext";
-import { AppProvider } from "@/context/AppContext";
-import { RootNavigator } from "@/navigation/RootNavigator";
+import { ProveedorAutenticacion } from "@/contexto/ContextoAutenticacion";
+import { ProveedorAplicacion } from "@/contexto/ContextoAplicacion";
+import { NavegadorRaiz } from "@/navegacion/NavegadorRaiz";
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <AppProvider>
-          <RootNavigator />
+      <ProveedorAutenticacion>
+        <ProveedorAplicacion>
+          <NavegadorRaiz />
           <StatusBar style="dark" />
-        </AppProvider>
-      </AuthProvider>
+        </ProveedorAplicacion>
+      </ProveedorAutenticacion>
     </SafeAreaProvider>
   );
 }
