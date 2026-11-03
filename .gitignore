@@ -3,6 +3,10 @@
 # Repositorio: App-FYAG (React Native, Expo, TypeScript, Node.js)
 # =============================================================================
 
+
+node_modules/
+.env
+.expo/
 # 1. Dependencias (Node.js & Gestores de paquetes)
 node_modules/
 **/node_modules/
