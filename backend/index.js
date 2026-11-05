@@ -7,6 +7,8 @@ const articuloRoutes = require('./routes/articuloRoutes');
 const proveedorRoutes = require('./routes/proveedorRoutes');
 const usuarioRoutes = require('./routes/usuarioRoutes');
 const proyectoRoutes = require('./routes/proyectoRoutes');
+const authRoutes = require('./routes/authRoutes');
+const verificarToken = require('./middleware/authMiddleware');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,11 +16,14 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Rutas de la API
-app.use('/api/articulos', articuloRoutes);
-app.use('/api/proveedores', proveedorRoutes);
-app.use('/api/usuarios', usuarioRoutes);
-app.use('/api/proyectos', proyectoRoutes);
+// Público: solo el login
+app.use('/api/auth', authRoutes);
+
+// Protegido: requiere token en el encabezado Authorization
+app.use('/api/articulos', verificarToken, articuloRoutes);
+app.use('/api/proveedores', verificarToken, proveedorRoutes);
+app.use('/api/usuarios', verificarToken, usuarioRoutes);
+app.use('/api/proyectos', verificarToken, proyectoRoutes);
 
 const probarConexion = async () => {
     try {

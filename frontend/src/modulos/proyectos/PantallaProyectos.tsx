@@ -1,9 +1,9 @@
-import { SeccionTecnicos } from "./SeccionTecnicos";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,7 +32,7 @@ import {
   listarProyectos,
 } from "./proyectosApi";
 import { estilos } from "./estilos";
-
+import { SeccionTecnicos } from "./SeccionTecnicos";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -187,29 +187,28 @@ export const PantallaProyectos: React.FC = () => {
   };
 
   const confirmarEliminar = (p: Proyecto) => {
-    Alert.alert(
-      "Eliminar proyecto",
-      `¿Eliminar "${p.nombre_proyecto}"? Esta acción no se puede deshacer.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: async () => {
-            const res = await eliminarProyecto(p.id_proyecto);
-            if (!res.ok || !res.data) {
-              mostrarAviso(res.error ?? "Error al eliminar");
-              return;
-            }
-            establecerProyectos((prev) =>
-              prev.filter((x) => x.id_proyecto !== p.id_proyecto)
-            );
-            establecerSeleccionado(null);
-            mostrarAviso(res.data.mensaje);
-          },
-        },
-      ]
-    );
+    const ejecutar = async () => {
+      const res = await eliminarProyecto(p.id_proyecto);
+      if (!res.ok || !res.data) {
+        mostrarAviso(res.error ?? "Error al eliminar");
+        return;
+      }
+      establecerProyectos((prev) => prev.filter((x) => x.id_proyecto !== p.id_proyecto));
+      establecerSeleccionado(null);
+      mostrarAviso(res.data.mensaje);
+    };
+
+    const mensaje = `¿Eliminar "${p.nombre_proyecto}"? Esta acción no se puede deshacer.`;
+
+    if (Platform.OS === "web") {
+      if (window.confirm(mensaje)) ejecutar();
+      return;
+    }
+
+    Alert.alert("Eliminar proyecto", mensaje, [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Eliminar", style: "destructive", onPress: ejecutar },
+    ]);
   };
 
   const modal = (
@@ -279,9 +278,18 @@ export const PantallaProyectos: React.FC = () => {
               </View>
 
               <View style={estilos.metricsGrilla}>
-                <Metrica etiqueta="Presupuesto inicial" valor={formatearCLP(seleccionado.presupuesto_inicial)} />
-                <Metrica etiqueta="Presupuesto horas" valor={`${seleccionado.presupuesto_horas} HH`} />
-                <Metrica etiqueta="Presupuesto usado" valor={formatearCLP(seleccionado.valor_venta)} />
+                <Metrica
+                  etiqueta="Presupuesto inicial"
+                  valor={formatearCLP(seleccionado.presupuesto_inicial)}
+                />
+                <Metrica
+                  etiqueta="Presupuesto horas"
+                  valor={`${seleccionado.presupuesto_horas} HH`}
+                />
+                <Metrica
+                  etiqueta="Presupuesto usado"
+                  valor={formatearCLP(seleccionado.valor_venta)}
+                />
                 <Metrica etiqueta="Avance" valor={`${porcentaje}%`} />
               </View>
 
@@ -295,16 +303,16 @@ export const PantallaProyectos: React.FC = () => {
               </View>
             </View>
 
-
-
-
             <SeccionTecnicos
               proyectoId={seleccionado.id_proyecto}
               onAviso={mostrarAviso}
             />
 
             <View style={estilos.detalleAccionesFila}>
-              <TouchableOpacity style={styles.boton} onPress={() => abrirEditar(seleccionado)}>
+              <TouchableOpacity
+                style={styles.boton}
+                onPress={() => abrirEditar(seleccionado)}
+              >
                 <Text style={styles.botonTexto}>Editar</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -395,7 +403,11 @@ export const PantallaProyectos: React.FC = () => {
               return (
                 <Pressable
                   key={p.id_proyecto}
-                  style={[estilos.finalAuditoriaTarjeta, estilos.proyectoListaTarjeta, { marginTop: 0 }]}
+                  style={[
+                    estilos.finalAuditoriaTarjeta,
+                    estilos.proyectoListaTarjeta,
+                    { marginTop: 0 },
+                  ]}
                   onPress={() => establecerSeleccionado(p)}
                 >
                   <View style={estilos.tarjetaSuperior}>
@@ -459,7 +471,11 @@ const Metrica: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valo
   </View>
 );
 
-type CampoNumerico = "presupuesto_inicial" | "presupuesto_horas" | "valor_venta" | "porcentaje_avance";
+type CampoNumerico =
+  | "presupuesto_inicial"
+  | "presupuesto_horas"
+  | "valor_venta"
+  | "porcentaje_avance";
 
 type ModalProps = {
   visible: boolean;

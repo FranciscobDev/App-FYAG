@@ -37,15 +37,19 @@ export interface Resultado<T> {
   error?: string;
 }
 
+import { encabezadosAuth } from "@/nucleo/sesion";
+
 async function peticion<T>(url: string, opciones?: RequestInit): Promise<Resultado<T>> {
   try {
     const res = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
       ...opciones,
+      headers: {
+        "Content-Type": "application/json",
+        ...encabezadosAuth(),
+      },
     });
     const json = await res.json();
     if (!res.ok) {
-      // El controlador responde { mensaje } o { error }
       return { ok: false, error: json.mensaje ?? json.error ?? "Error en el servidor" };
     }
     return { ok: true, data: json as T };
