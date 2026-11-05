@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
-import { ROLES, ORDEN_ROLES } from "@/nucleo/roles";
 import { tema } from "@/nucleo/tema";
 import { Rol } from "@/nucleo/tipos";
 import { Boton } from "@/componentes/base/Boton";
@@ -28,15 +27,14 @@ export interface PropiedadesPlantillaAutenticacion {
 }
 
 export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion> = ({
-  onSuccessLogin,
   initialView = "login",
 }) => {
-  const { establecerRol } = usarAutenticacion();
+  const { iniciarSesion } = usarAutenticacion();
   const [vista, establecerVista] = useState<VistaAutenticacion>(initialView);
 
   // 1. LOGIN STATE
-  const [correo, establecerCorreo] = useState("admin@fyag.cl");
-  const [contrasena, establecerContrasena] = useState("Fyag2026*");
+  const [correo, establecerCorreo] = useState("");
+  const [contrasena, establecerContrasena] = useState("");
   const [cargando, establecerCargando] = useState(false);
   const [failedAttempts, establecerFailedAttempts] = useState(0);
   const [lockoutSegundos, establecerLockoutSegundos] = useState(0); // 15 min = 900s
@@ -95,75 +93,42 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
   const passwordsCoincidencia = nuevoContrasena.length > 0 && nuevoContrasena === confirmarContrasena;
   const esRestablecerValido = tieneMinimoLength && tieneUppercase && tieneNumero && passwordsCoincidencia;
 
-  // Manejar Login
-  const manejarInicioSesion = (forcedRole?: Rol) => {
+  // Manejar Login (con API real)
+  const manejarInicioSesion = async () => {
     if (lockoutSegundos > 0) {
       mostrarAviso(`Acceso bloqueado temporalmente. Espera ${formatearTiempo(lockoutSegundos)}`, "danger");
       return;
     }
 
-    if (!forcedRole && (!correo.trim() || !contrasena.trim())) {
+    if (!correo.trim() || !contrasena) {
       mostrarAviso("Por favor, ingresa tu correo electrónico y contraseña para acceder al sistema.", "warn");
       return;
     }
 
     establecerCargando(true);
+    try {
+      const error = await iniciarSesion(correo.trim(), contrasena);
 
-    setTimeout(() => {
-      establecerCargando(false);
+      if (error) {
+        const siguienteAttempts = failedAttempts + 1;
+        establecerFailedAttempts(siguienteAttempts);
 
-      // Simulación de credenciales correctas o rol forzado
-      let targetRol: Rol = forcedRole || "admin";
-
-      if (!forcedRole) {
-        const lower = correo.toLowerCase().trim();
-        if (lower.includes("bodega")) {
-          targetRol = "warehouse";
-        } else if (lower.includes("tecnico")) {
-          targetRol = "technician";
-        } else if (lower.includes("admin")) {
-          targetRol = "admin";
-        } else if (contrasena !== "Fyag2026*" && contrasena !== "123456") {
-          // Intento fallido
-          const siguienteAttempts = failedAttempts + 1;
-          establecerFailedAttempts(siguienteAttempts);
-
-          if (siguienteAttempts >= 3) {
-            establecerLockoutSegundos(900); // 15 minutos
-            mostrarAviso("Por seguridad de tu cuenta, el acceso se ha bloqueado temporalmente por 15 minutos tras 3 intentos.", "danger");
-          } else {
-            mostrarAviso(`Las credenciales no coinciden. Te queda(n) ${3 - siguienteAttempts} intento(s) antes del bloqueo preventivo.`, "warn");
-          }
-          return;
+        if (siguienteAttempts >= 3) {
+          establecerLockoutSegundos(900); // 15 minutos
+          mostrarAviso("Por seguridad de tu cuenta, el acceso se ha bloqueado temporalmente por 15 minutos tras 3 intentos.", "danger");
+        } else {
+          mostrarAviso(`${error}. Te queda(n) ${3 - siguienteAttempts} intento(s) antes del bloqueo.`, "warn");
         }
+        return;
       }
 
-      // Login exitoso
+      // Login exitoso: NavegadorRaiz cambia de pantalla automáticamente
       establecerFailedAttempts(0);
       establecerLockoutSegundos(0);
-      establecerRol(targetRol);
-
-      const pathMap = {
-        admin: "/admin (Escritorio Web)",
-        warehouse: "/bodega (Tablet)",
-        technician: "/tecnico (Celular Mobile-First)",
-      };
-
-      mostrarAviso(`Inicio exitoso. Redirigiendo a ${pathMap[targetRol]}`, "ok");
-      if (onSuccessLogin) onSuccessLogin(targetRol);
-    }, 600);
-  };
-
-  // Simular fallo intencional para verificar bloqueo
-  const simulateFailedAttempt = () => {
-    if (lockoutSegundos > 0) return;
-    const nextAttempts = failedAttempts + 1;
-    establecerFailedAttempts(nextAttempts);
-    if (nextAttempts >= 3) {
-      establecerLockoutSegundos(900); // 15 min
-      mostrarAviso("3 intentos fallidos simulados: Cuenta bloqueada durante 15 min.", "danger");
-    } else {
-      mostrarAviso(`Intento fallido ${nextAttempts} de 3 registrado.`, "warn");
+    } catch {
+      mostrarAviso("Ocurrió un error inesperado al iniciar sesión.", "danger");
+    } finally {
+      establecerCargando(false);
     }
   };
 
@@ -206,7 +171,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
         contentContainerStyle={estilos.scrollContenido}
         keyboardShouldPersistTaps="handled"
       >
-        {/* LOGO CENTRADO CON ESTÉTICA PROFESIONAL */}
+        {/* LOGO CENTRADO */}
         <View style={estilos.marcaContenedor}>
           <View style={estilos.logoCirculo}>
             <Ionicons name="flash" size={32} color={tema.colors.textInverse} />
@@ -220,9 +185,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
 
         {/* TARJETA CENTRADA */}
         <Tarjeta variant="elevated" style={estilos.tarjeta}>
-          {/* ========================================================================= */}
-          {/* VISTA 1: LOGIN                                                            */}
-          {/* ========================================================================= */}
+          {/* VISTA 1: LOGIN */}
           {vista === "login" && (
             <View>
               <Text style={estilos.tarjetaTitulo}>Iniciar Sesión</Text>
@@ -268,7 +231,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
 
               {/* Campos */}
               <CampoTexto
-                label="Correo Electrónico o RUT"
+                label="Correo Electrónico"
                 value={correo}
                 onChangeText={establecerCorreo}
                 placeholder="ej: usuario@fyag.cl"
@@ -301,63 +264,10 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                 onPress={() => manejarInicioSesion()}
                 style={{ marginTop: 6 }}
               />
-
-              {/* Atajos Rápidos por Rol para Redirección */}
-              <View style={estilos.rolShortcutsCaja}>
-                <Text style={estilos.shortcutsTitulo}>Redirección directa según rol:</Text>
-                <View style={estilos.shortcutsFila}>
-                  <TouchableOpacity
-                    style={estilos.shortcutChip}
-                    onPress={() => {
-                      establecerCorreo("admin@fyag.cl");
-                      manejarInicioSesion("admin");
-                    }}
-                  >
-                    <Ionicons name="desktop-outline" size={14} color={tema.colors.primaryDark} />
-                    <Text style={estilos.shortcutTexto}>/admin</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[estilos.shortcutChip, { borderColor: tema.colors.warnBorder, backgroundColor: tema.colors.warnLight }]}
-                    onPress={() => {
-                      establecerCorreo("bodega@fyag.cl");
-                      manejarInicioSesion("warehouse");
-                    }}
-                  >
-                    <Ionicons name="tablet-portrait-outline" size={14} color={tema.colors.warnDark} />
-                    <Text style={[estilos.shortcutTexto, { color: tema.colors.warnDark }]}>/bodega</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[estilos.shortcutChip, { borderColor: tema.colors.primary, backgroundColor: "#1c1917" }]}
-                    onPress={() => {
-                      establecerCorreo("tecnico@fyag.cl");
-                      manejarInicioSesion("technician");
-                    }}
-                  >
-                    <Ionicons name="phone-portrait-outline" size={14} color="#f59e0b" />
-                    <Text style={[estilos.shortcutTexto, { color: "#f59e0b" }]}>/tecnico</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Botón de Test: Simular Fallo */}
-              {lockoutSegundos === 0 && (
-                <TouchableOpacity
-                  onPress={simulateFailedAttempt}
-                  style={estilos.testFailBoton}
-                >
-                  <Text style={estilos.testFailTexto}>
-                    ⚡ Simular intento fallido ({failedAttempts}/3)
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           )}
 
-          {/* ========================================================================= */}
-          {/* VISTA 2: RECUPERAR CONTRASEÑA (REGLA: SIEMPRE EL MISMO MENSAJE)          */}
-          {/* ========================================================================= */}
+          {/* VISTA 2: RECUPERAR CONTRASEÑA */}
           {vista === "forgot" && (
             <View>
               <Text style={estilos.tarjetaTitulo}>Recuperar Contraseña</Text>
@@ -379,7 +289,6 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                     Por motivos de seguridad y confidencialidad, el sistema siempre muestra esta misma confirmación exista o no la cuenta.
                   </Text>
 
-                  {/* Acciones para continuar el test */}
                   <View style={estilos.recoveryAcciones}>
                     <Boton
                       title="Simular Clic en Enlace de Correo"
@@ -434,9 +343,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
             </View>
           )}
 
-          {/* ========================================================================= */}
-          {/* VISTA 3: RESTABLECER CONTRASEÑA (CHECKLIST EN VIVO Y ESTADOS DE ENLACE)   */}
-          {/* ========================================================================= */}
+          {/* VISTA 3: RESTABLECER CONTRASEÑA */}
           {vista === "reset" && (
             <View>
               <Text style={estilos.tarjetaTitulo}>Restablecer Contraseña</Text>
@@ -536,7 +443,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                     variant="primary"
                     size="md"
                     onPress={() => {
-                      establecerContrasena(nuevoContrasena);
+                      establecerContrasena("");
                       establecerVista("login");
                     }}
                     style={{ marginTop: 14 }}
@@ -569,70 +476,46 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                   <View style={estilos.listaChequeoTarjeta}>
                     <Text style={estilos.listaChequeoEncabezado}>Requisitos de Seguridad de Contraseña:</Text>
 
-                    {/* Regla 1: Mínimo 10 caracteres */}
                     <View style={estilos.listaChequeoElemento}>
                       <Ionicons
                         name={tieneMinimoLength ? "checkmark-circle" : "close-circle"}
                         size={18}
                         color={tieneMinimoLength ? tema.colors.ok : tema.colors.textMuted}
                       />
-                      <Text
-                        style={[
-                          estilos.listaChequeoTexto,
-                          tieneMinimoLength && estilos.listaChequeoTextoMet,
-                        ]}
-                      >
+                      <Text style={[estilos.listaChequeoTexto, tieneMinimoLength && estilos.listaChequeoTextoMet]}>
                         Mínimo 10 caracteres ({nuevoContrasena.length}/10)
                       </Text>
                     </View>
 
-                    {/* Regla 2: Una letra mayúscula */}
                     <View style={estilos.listaChequeoElemento}>
                       <Ionicons
                         name={tieneUppercase ? "checkmark-circle" : "close-circle"}
                         size={18}
                         color={tieneUppercase ? tema.colors.ok : tema.colors.textMuted}
                       />
-                      <Text
-                        style={[
-                          estilos.listaChequeoTexto,
-                          tieneUppercase && estilos.listaChequeoTextoMet,
-                        ]}
-                      >
+                      <Text style={[estilos.listaChequeoTexto, tieneUppercase && estilos.listaChequeoTextoMet]}>
                         Al menos una letra mayúscula (A-Z)
                       </Text>
                     </View>
 
-                    {/* Regla 3: Un número */}
                     <View style={estilos.listaChequeoElemento}>
                       <Ionicons
                         name={tieneNumero ? "checkmark-circle" : "close-circle"}
                         size={18}
                         color={tieneNumero ? tema.colors.ok : tema.colors.textMuted}
                       />
-                      <Text
-                        style={[
-                          estilos.listaChequeoTexto,
-                          tieneNumero && estilos.listaChequeoTextoMet,
-                        ]}
-                      >
+                      <Text style={[estilos.listaChequeoTexto, tieneNumero && estilos.listaChequeoTextoMet]}>
                         Al menos un número (0-9)
                       </Text>
                     </View>
 
-                    {/* Regla 4: Coincidencia */}
                     <View style={estilos.listaChequeoElemento}>
                       <Ionicons
                         name={passwordsCoincidencia ? "checkmark-circle" : "close-circle"}
                         size={18}
                         color={passwordsCoincidencia ? tema.colors.ok : tema.colors.textMuted}
                       />
-                      <Text
-                        style={[
-                          estilos.listaChequeoTexto,
-                          passwordsCoincidencia && estilos.listaChequeoTextoMet,
-                        ]}
-                      >
+                      <Text style={[estilos.listaChequeoTexto, passwordsCoincidencia && estilos.listaChequeoTextoMet]}>
                         Ambas contraseñas coinciden
                       </Text>
                     </View>
@@ -821,51 +704,6 @@ const estilos = StyleSheet.create({
     fontSize: tema.fontSize.xs,
     fontWeight: "600",
     color: tema.colors.primaryDark,
-  },
-  rolShortcutsCaja: {
-    marginTop: 18,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: tema.colors.borderLight,
-  },
-  shortcutsTitulo: {
-    fontSize: 11,
-    fontWeight: "bold",
-    color: tema.colors.textMuted,
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  shortcutsFila: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  shortcutChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: tema.colors.primaryLight,
-    borderWidth: 1,
-    borderColor: tema.colors.primaryBorder,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: tema.radius.md,
-    flex: 1,
-    marginHorizontal: 3,
-    justifyContent: "center",
-  },
-  shortcutTexto: {
-    fontSize: 11,
-    fontWeight: "bold",
-    color: tema.colors.primaryDark,
-    marginLeft: 4,
-  },
-  testFailBoton: {
-    marginTop: 12,
-    alignItems: "center",
-  },
-  testFailTexto: {
-    fontSize: 11,
-    color: tema.colors.dangerDark,
-    fontWeight: "600",
   },
   safeMensajeBanner: {
     backgroundColor: tema.colors.okLight,
