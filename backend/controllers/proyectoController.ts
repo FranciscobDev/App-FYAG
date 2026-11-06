@@ -1,9 +1,51 @@
-const pool = require('../config/db');
+import { Request, Response } from 'express';
+import { DatabaseError } from 'pg';
+import pool from '../config/db';
+
+export interface Proyecto {
+    id_proyecto: number;
+    nombre_proyecto: string;
+    tipo_proyecto: string;
+    cliente: string | null;
+    direccion: string | null;
+    fecha_inicio: string | null;
+    fecha_fin: string | null;
+    presupuesto_inicial: number;
+    presupuesto_horas: number;
+    valor_venta: number;
+    porcentaje_avance: number;
+    estado_proyecto: string;
+    id_usuario: number | null;
+}
+
+interface ProyectoBody {
+    nombre_proyecto?: string;
+    tipo_proyecto?: string;
+    cliente?: string | null;
+    direccion?: string | null;
+    fecha_inicio?: string | null;
+    fecha_fin?: string | null;
+    presupuesto_inicial?: number;
+    presupuesto_horas?: number;
+    valor_venta?: number;
+    porcentaje_avance?: number;
+    estado_proyecto?: string;
+    id_usuario?: number | null;
+}
+
+interface TecnicoResumen {
+    id_usuario: number;
+    nombre: string;
+}
+
+const esErrorPg = (error: unknown): error is DatabaseError => {
+    return typeof error === 'object' && error !== null && 'code' in error;
+};
 
 // Listar todos
-const obtenerProyectos = async (req, res) => {
+export const obtenerProyectos = async (_req: Request, res: Response): Promise<void> => {
     try {
-        const result = await pool.query('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
+        const result = await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error al obtener proyectos:', error);
@@ -12,16 +54,17 @@ const obtenerProyectos = async (req, res) => {
 };
 
 // Obtener uno por ID
-const obtenerProyectoPorId = async (req, res) => {
+export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const result = await pool.query(
+        const result = await pool.query<Proyecto>(
             'SELECT * FROM proyecto WHERE id_proyecto = $1',
             [id]
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'Proyecto no encontrado' });
+            res.status(404).json({ mensaje: 'Proyecto no encontrado' });
+            return;
         }
 
         res.status(200).json(result.rows[0]);
@@ -32,14 +75,16 @@ const obtenerProyectoPorId = async (req, res) => {
 };
 
 // Crear un proyecto
-const crearProyecto = async (req, res) => {
+export const crearProyecto = async (req: Request<Record<string, string>, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const {
         nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta,
         porcentaje_avance, estado_proyecto, id_usuario
     } = req.body;
+
     if (!nombre_proyecto) {
-        return res.status(400).json({ mensaje: 'El nombre del proyecto es obligatorio' });
+        res.status(400).json({ mensaje: 'El nombre del proyecto es obligatorio' });
+        return;
     }
 
     try {
@@ -63,17 +108,19 @@ const crearProyecto = async (req, res) => {
             id_usuario || null
         ];
 
-        const result = await pool.query(query, values);
+        const result = await pool.query<Proyecto>(query, values);
         res.status(201).json({
             mensaje: 'Proyecto creado exitosamente',
             proyecto: result.rows[0]
         });
     } catch (error) {
-        if (error.code === '22P02') {
-            return res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+        if (esErrorPg(error) && error.code === '22P02') {
+            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+            return;
         }
-        if (error.code === '23503') {
-            return res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+        if (esErrorPg(error) && error.code === '23503') {
+            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+            return;
         }
         console.error('Error al crear proyecto:', error);
         res.status(500).json({ error: 'Error al crear el proyecto' });
@@ -81,7 +128,7 @@ const crearProyecto = async (req, res) => {
 };
 
 // Modificar un proyecto
-const actualizarProyecto = async (req, res) => {
+export const actualizarProyecto = async (req: Request<{ id: string }, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const { id } = req.params;
     const {
         nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
@@ -102,10 +149,11 @@ const actualizarProyecto = async (req, res) => {
             fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario, id
         ];
 
-        const result = await pool.query(query, values);
+        const result = await pool.query<Proyecto>(query, values);
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'Proyecto no encontrado para actualizar' });
+            res.status(404).json({ mensaje: 'Proyecto no encontrado para actualizar' });
+            return;
         }
 
         res.status(200).json({
@@ -113,11 +161,13 @@ const actualizarProyecto = async (req, res) => {
             proyecto: result.rows[0]
         });
     } catch (error) {
-        if (error.code === '22P02') {
-            return res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+        if (esErrorPg(error) && error.code === '22P02') {
+            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+            return;
         }
-        if (error.code === '23503') {
-            return res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+        if (esErrorPg(error) && error.code === '23503') {
+            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+            return;
         }
         console.error('Error al actualizar proyecto:', error);
         res.status(500).json({ error: 'Error al actualizar el proyecto' });
@@ -125,16 +175,17 @@ const actualizarProyecto = async (req, res) => {
 };
 
 // Eliminar un proyecto
-const eliminarProyecto = async (req, res) => {
+export const eliminarProyecto = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const result = await pool.query(
+        const result = await pool.query<Proyecto>(
             'DELETE FROM proyecto WHERE id_proyecto = $1 RETURNING *',
             [id]
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'Proyecto no encontrado para eliminar' });
+            res.status(404).json({ mensaje: 'Proyecto no encontrado para eliminar' });
+            return;
         }
 
         res.status(200).json({
@@ -142,10 +193,11 @@ const eliminarProyecto = async (req, res) => {
             proyectoEliminado: result.rows[0]
         });
     } catch (error) {
-        if (error.code === '23503') {
-            return res.status(400).json({
+        if (esErrorPg(error) && error.code === '23503') {
+            res.status(400).json({
                 mensaje: 'No se puede eliminar el proyecto porque tiene horas o solicitudes asociadas'
             });
+            return;
         }
         console.error('Error al eliminar proyecto:', error);
         res.status(500).json({ error: 'Error al eliminar el proyecto' });
@@ -155,9 +207,9 @@ const eliminarProyecto = async (req, res) => {
 // ---------- Técnicos asignados a proyectos ----------
 
 // Listar usuarios con rol técnico activos (para el selector)
-const listarTecnicos = async (req, res) => {
+export const listarTecnicos = async (_req: Request, res: Response): Promise<void> => {
     try {
-        const result = await pool.query(
+        const result = await pool.query<TecnicoResumen>(
             `SELECT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
              FROM usuario u
@@ -173,10 +225,10 @@ const listarTecnicos = async (req, res) => {
 };
 
 // Técnicos asignados a un proyecto
-const obtenerTecnicosDeProyecto = async (req, res) => {
+export const obtenerTecnicosDeProyecto = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const result = await pool.query(
+        const result = await pool.query<TecnicoResumen>(
             `SELECT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
              FROM proyecto_tecnico pt
@@ -193,12 +245,16 @@ const obtenerTecnicosDeProyecto = async (req, res) => {
 };
 
 // Asignar un técnico a un proyecto (solo usuarios con rol técnico)
-const asignarTecnico = async (req, res) => {
+export const asignarTecnico = async (
+    req: Request<{ id: string }, unknown, { id_usuario?: number }>,
+    res: Response
+): Promise<void> => {
     const { id } = req.params;
     const { id_usuario } = req.body;
 
     if (!id_usuario) {
-        return res.status(400).json({ mensaje: 'Debe indicar el técnico a asignar' });
+        res.status(400).json({ mensaje: 'Debe indicar el técnico a asignar' });
+        return;
     }
 
     try {
@@ -210,7 +266,8 @@ const asignarTecnico = async (req, res) => {
             [id_usuario]
         );
         if (esTecnico.rows.length === 0) {
-            return res.status(400).json({ mensaje: 'El usuario seleccionado no es un técnico' });
+            res.status(400).json({ mensaje: 'El usuario seleccionado no es un técnico' });
+            return;
         }
 
         await pool.query(
@@ -219,14 +276,17 @@ const asignarTecnico = async (req, res) => {
         );
         res.status(201).json({ mensaje: 'Técnico asignado al proyecto' });
     } catch (error) {
-        if (error.code === '23505') {
-            return res.status(409).json({ mensaje: 'El técnico ya está asignado a este proyecto' });
+        if (esErrorPg(error) && error.code === '23505') {
+            res.status(409).json({ mensaje: 'El técnico ya está asignado a este proyecto' });
+            return;
         }
-        if (error.code === '23503') {
-            return res.status(400).json({ mensaje: 'El proyecto o el técnico no existe' });
+        if (esErrorPg(error) && error.code === '23503') {
+            res.status(400).json({ mensaje: 'El proyecto o el técnico no existe' });
+            return;
         }
-        if (error.code === '22P02') {
-            return res.status(400).json({ mensaje: 'Identificador inválido' });
+        if (esErrorPg(error) && error.code === '22P02') {
+            res.status(400).json({ mensaje: 'Identificador inválido' });
+            return;
         }
         console.error('Error al asignar técnico:', error);
         res.status(500).json({ error: 'Error al asignar el técnico' });
@@ -234,7 +294,7 @@ const asignarTecnico = async (req, res) => {
 };
 
 // Quitar un técnico de un proyecto
-const quitarTecnico = async (req, res) => {
+export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string }>, res: Response): Promise<void> => {
     const { id, idUsuario } = req.params;
     try {
         const result = await pool.query(
@@ -243,7 +303,8 @@ const quitarTecnico = async (req, res) => {
         );
 
         if (result.rows.length === 0) {
-            return res.status(404).json({ mensaje: 'El técnico no está asignado a este proyecto' });
+            res.status(404).json({ mensaje: 'El técnico no está asignado a este proyecto' });
+            return;
         }
 
         res.status(200).json({ mensaje: 'Técnico quitado del proyecto' });
@@ -253,14 +314,3 @@ const quitarTecnico = async (req, res) => {
     }
 };
 
-module.exports = {
-    obtenerProyectos,
-    obtenerProyectoPorId,
-    crearProyecto,
-    actualizarProyecto,
-    eliminarProyecto,
-    listarTecnicos,
-    obtenerTecnicosDeProyecto,
-    asignarTecnico,
-    quitarTecnico,
-};

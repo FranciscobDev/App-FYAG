@@ -1,16 +1,35 @@
-const pool = require('../config/db');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+import { Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import pool from '../config/db';
 
-const login = async (req, res) => {
+interface LoginBody {
+    correo_usuario?: string;
+    contrasena?: string;
+}
+
+interface UsuarioRow {
+    id_usuario: number;
+    nombre_usuario: string;
+    apellido_usuario: string;
+    correo_usuario: string;
+    rut: string | null;
+    id_rol: number;
+    nombre_rol: string | null;
+    activo: boolean;
+    contrasena_hash: string | null;
+}
+
+export const login = async (req: Request<Record<string, string>, unknown, LoginBody>, res: Response): Promise<void> => {
     const { correo_usuario, contrasena } = req.body;
 
     if (!correo_usuario || !contrasena) {
-        return res.status(400).json({ mensaje: 'Correo y contraseña son obligatorios' });
+        res.status(400).json({ mensaje: 'Correo y contraseña son obligatorios' });
+        return;
     }
 
     try {
-        const result = await pool.query(
+        const result = await pool.query<UsuarioRow>(
             `SELECT u.id_usuario, u.nombre_usuario, u.apellido_usuario, u.correo_usuario,
                     u.rut, u.id_rol, r.nombre_rol, u.activo, u.contrasena_hash
              FROM usuario u
@@ -26,18 +45,20 @@ const login = async (req, res) => {
 
         // Mismo mensaje si el correo no existe o la clave es incorrecta
         if (!claveOk) {
-            return res.status(401).json({ mensaje: 'Correo o contraseña incorrectos' });
+            res.status(401).json({ mensaje: 'Correo o contraseña incorrectos' });
+            return;
         }
 
         if (!fila.activo) {
-            return res.status(403).json({ mensaje: 'Tu cuenta está desactivada' });
+            res.status(403).json({ mensaje: 'Tu cuenta está desactivada' });
+            return;
         }
 
         const { contrasena_hash, ...usuario } = fila;
 
         const token = jwt.sign(
             { id: usuario.id_usuario, rol: usuario.nombre_rol },
-            process.env.JWT_SECRET,
+            process.env.JWT_SECRET as string,
             { expiresIn: '8h' }
         );
 
@@ -48,4 +69,3 @@ const login = async (req, res) => {
     }
 };
 
-module.exports = { login };

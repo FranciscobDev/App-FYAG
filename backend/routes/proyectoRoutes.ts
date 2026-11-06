@@ -1,16 +1,17 @@
-const express = require('express');
-const router = express.Router();
-const {
-  obtenerProyectos,
-  obtenerProyectoPorId,
-  crearProyecto,
-  actualizarProyecto,
-  eliminarProyecto,
-  listarTecnicos,
-  obtenerTecnicosDeProyecto,
-  asignarTecnico,
-  quitarTecnico,
-} = require('../controllers/proyectoController');
+import { Router } from 'express';
+import {
+    obtenerProyectos,
+    obtenerProyectoPorId,
+    crearProyecto,
+    actualizarProyecto,
+    eliminarProyecto,
+    listarTecnicos,
+    obtenerTecnicosDeProyecto,
+    asignarTecnico,
+    quitarTecnico,
+} from '../controllers/proyectoController';
+
+const router = Router();
 
 router.get('/', obtenerProyectos);
 router.post('/', crearProyecto);
@@ -26,4 +27,5 @@ router.get('/:id/tecnicos', obtenerTecnicosDeProyecto);
 router.post('/:id/tecnicos', asignarTecnico);
 router.delete('/:id/tecnicos/:idUsuario', quitarTecnico);
 
-module.exports = router;
+export default router;
+
