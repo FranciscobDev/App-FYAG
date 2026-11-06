@@ -54,6 +54,12 @@ export const login = async (req: Request<Record<string, string>, unknown, LoginB
             return;
         }
 
+        // Registrar fecha y hora del último acceso
+        await pool.query(
+            'UPDATE usuario SET ultimo_acceso = CURRENT_TIMESTAMP WHERE id_usuario = $1',
+            [fila.id_usuario]
+        );
+
         const { contrasena_hash, ...usuario } = fila;
 
         const token = jwt.sign(

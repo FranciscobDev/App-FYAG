@@ -14,7 +14,7 @@ declare global {
     }
 }
 
-const verificarToken = (req: Request, res: Response, next: NextFunction): void => {
+export const verificarToken = (req: Request, res: Response, next: NextFunction): void => {
     const encabezado = req.headers.authorization || '';
     const token = encabezado.startsWith('Bearer ') ? encabezado.slice(7) : null;
 
@@ -31,5 +31,22 @@ const verificarToken = (req: Request, res: Response, next: NextFunction): void =
     }
 };
 
-export default verificarToken;
+export const verificarAdmin = (req: Request, res: Response, next: NextFunction): void => {
+    const payload = typeof req.usuario === 'object' ? req.usuario : null;
+    const rolLimpio = (payload?.rol ?? '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
 
+    if (!rolLimpio.includes('admin')) {
+        res.status(403).json({
+            mensaje: 'Acceso denegado: solo el Administrador puede gestionar cuentas de usuario',
+        });
+        return;
+    }
+
+    next();
+};
+
+export default verificarToken;
