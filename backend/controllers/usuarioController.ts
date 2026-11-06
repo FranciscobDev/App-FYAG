@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
+import { registrarAuditoria } from '../services/auditoriaService';
+
+export { registrarAuditoria };
 
 export interface Usuario {
     id_usuario: number;
@@ -218,6 +221,14 @@ export const crearUsuario = async (req: Request<Record<string, string>, unknown,
             [insert.rows[0].id_usuario]
         );
 
+        // Operación 1 requerida por [BACK-1]: registrarAuditoria al crear usuario
+        await registrarAuditoria({
+            accion: 'crear',
+            idUsuarioAfectado: insert.rows[0].id_usuario,
+            idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
+            detalles: `Usuario ${correo_usuario.trim().toLowerCase()} creado con rol ID ${idRolFinal}`,
+        });
+
         res.status(201).json({
             mensaje: 'Usuario creado exitosamente',
             usuario: result.rows[0]
@@ -301,6 +312,37 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
 
         const result = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
 
+        // Operación 2 requerida por [BACK-1]: registrarAuditoria al deshabilitar usuario
+        if (activo === false) {
+            await registrarAuditoria({
+                accion: 'deshabilitar',
+                idUsuarioAfectado: id,
+                idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
+                detalles: `Usuario ${usuarioActual.correo_usuario} (ID ${id}) deshabilitado`,
+            });
+        }
+
+        // Operación 3 requerida por [BACK-1]: registrarAuditoria al editar usuario
+        const huboModificacionDatos =
+            nombre_usuario !== undefined ||
+            apellido_usuario !== undefined ||
+            correo_usuario !== undefined ||
+            rut !== undefined ||
+            id_rol !== undefined ||
+            rol_codigo !== undefined ||
+            especializacion !== undefined ||
+            contrasena !== undefined ||
+            activo === true;
+
+        if (huboModificacionDatos) {
+            await registrarAuditoria({
+                accion: 'editar',
+                idUsuarioAfectado: id,
+                idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
+                detalles: `Datos del usuario ${usuarioActual.correo_usuario} (ID ${id}) actualizados${contrasena ? ' (incluye cambio de contraseña con hash)' : ''}`,
+            });
+        }
+
         res.status(200).json({
             mensaje: 'Usuario actualizado exitosamente',
             usuario: result.rows[0]
@@ -316,6 +358,44 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
         }
         console.error('Error al actualizar usuario:', error);
         res.status(500).json({ error: 'Error interno al actualizar el usuario' });
+    }
+};
+
+// Deshabilitar usuario (Requerimiento [BACK-1])
+export const deshabilitarUsuario = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { id } = req.params;
+    try {
+        const actual = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
+        if (actual.rows.length === 0) {
+            res.status(404).json({ mensaje: 'Usuario no encontrado para deshabilitar' });
+            return;
+        }
+
+        const usuarioActual = actual.rows[0];
+        if (usuarioActual.activo && normalizarTexto(usuarioActual.nombre_rol).includes('admin')) {
+            const otrosAdmins = await contarAdminsActivosExcluyendo(id);
+            if (otrosAdmins === 0) {
+                res.status(400).json({
+                    mensaje: 'No se puede deshabilitar al único Administrador activo del sistema',
+                });
+                return;
+            }
+        }
+
+        await pool.query('UPDATE usuario SET activo = FALSE WHERE id_usuario = $1', [id]);
+
+        // Operación de deshabilitación requerida por [BACK-1]
+        await registrarAuditoria({
+            accion: 'deshabilitar',
+            idUsuarioAfectado: id,
+            idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
+            detalles: `Usuario ${usuarioActual.correo_usuario} (ID ${id}) deshabilitado`,
+        });
+
+        res.status(200).json({ mensaje: 'Usuario deshabilitado correctamente' });
+    } catch (error) {
+        console.error('Error al deshabilitar usuario:', error);
+        res.status(500).json({ error: 'Error interno al deshabilitar el usuario' });
     }
 };
 

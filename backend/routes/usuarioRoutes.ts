@@ -5,6 +5,7 @@ import {
     listarRoles,
     crearUsuario,
     actualizarUsuario,
+    deshabilitarUsuario,
     eliminarUsuario,
 } from '../controllers/usuarioController';
 import { verificarAdmin } from '../middleware/authMiddleware';
@@ -19,6 +20,7 @@ router.get('/roles', listarRoles);
 
 router.get('/:id', obtenerUsuarioPorId);
 router.put('/:id', verificarAdmin, actualizarUsuario);
+router.patch('/:id/deshabilitar', verificarAdmin, deshabilitarUsuario);
 router.delete('/:id', verificarAdmin, eliminarUsuario);
 
 export default router;
