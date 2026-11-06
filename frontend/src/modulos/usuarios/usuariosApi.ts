@@ -73,6 +73,11 @@ export const actualizarUsuario = (id: number, datos: Partial<FormularioUsuario>)
     body: JSON.stringify(datos),
   });
 
+export const deshabilitarUsuario = (id: number) =>
+  peticion<{ mensaje: string }>(`${obtenerRuta()}/${id}/deshabilitar`, {
+    method: "PATCH",
+  });
+
 export const eliminarUsuario = (id: number) =>
   peticion<{ mensaje: string }>(`${obtenerRuta()}/${id}`, {
     method: "DELETE",
