@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   ScrollView,
   Text,
@@ -9,19 +9,73 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
+import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { esRutValido } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import { Rol, UsuarioSistema, ParametroSistema } from "@/nucleo/tipos";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
+import {
+  listarUsuarios,
+  crearUsuario,
+  actualizarUsuario,
+  Usuario as UsuarioBd,
+} from "@/modulos/usuarios/usuariosApi";
 import { estilos } from "./estilos";
 import {
   SeccionUsuariosRoles,
   SeccionAuditoria,
   SeccionParametrosSistema,
 } from "./componentes";
+import { CredencialesCreadas } from "./componentes/SeccionUsuariosRoles";
 
 type AdminTab = "usuarios" | "auditoria" | "parametros";
+
+function mapearRolDesdeNombreBd(nombreRol: string | null | undefined, idRol?: number): Rol {
+  const normalizado = (nombreRol ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+  if (normalizado.includes("admin")) return "admin";
+  if (normalizado.includes("bodeg") || normalizado.includes("warehouse") || normalizado.includes("almacen")) {
+    return "warehouse";
+  }
+  if (normalizado.includes("tecnic") || normalizado.includes("technician") || normalizado.includes("terreno")) {
+    return "technician";
+  }
+  if (idRol === 1) return "admin";
+  if (idRol === 2) return "warehouse";
+  return "technician";
+}
+
+function mapearUsuarioBdASistema(u: UsuarioBd): UsuarioSistema {
+  const nombreCompleto = `${u.nombre_usuario || ""} ${u.apellido_usuario || ""}`.trim();
+  const ultimoAccesoStr = u.ultimo_acceso
+    ? new Date(u.ultimo_acceso).toLocaleString("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    : "Nunca";
+  return {
+    id: `db_${u.id_usuario}`,
+    id_usuario: u.id_usuario,
+    rut: u.rut || "Sin RUT",
+    name: nombreCompleto || u.correo_usuario,
+    nombre: u.nombre_usuario,
+    apellido: u.apellido_usuario,
+    email: u.correo_usuario,
+    role: mapearRolDesdeNombreBd(u.nombre_rol, u.id_rol),
+    especializacion: u.especializacion,
+    disabled: !u.activo,
+    createdAt: new Date().toISOString(),
+    lastLogin: ultimoAccesoStr,
+  };
+}
 
 export const PantallaAdministracion: React.FC = () => {
   const { width } = useWindowDimensions();
@@ -29,11 +83,14 @@ export const PantallaAdministracion: React.FC = () => {
   const [usuarioVistaModo, establecerUsuarioVistaModo] = useState<"auto" | "cards" | "table">("auto");
   const effectiveVistaModo = usuarioVistaModo === "auto" ? (esMobile ? "cards" : "table") : usuarioVistaModo;
 
+  const { usuario: usuarioActual } = usarAutenticacion();
   const {
     usuariosSistema,
     registrosAuditoria,
     parametrosSistema,
     registrosRespaldo,
+    sincronizarUsuariosSistema,
+    registrarEventoAuditoria,
     crearUsuarioSistema,
     alternarUsuarioSistemaDeshabilitado,
     anonimizarUsuario,
@@ -45,6 +102,8 @@ export const PantallaAdministracion: React.FC = () => {
 
   const [activoPestana, establecerActivoPestana] = useState<AdminTab>("usuarios");
   const [feedback, establecerFeedback] = useState<{ type: "ok" | "error" | "info"; message: string } | null>(null);
+  const [cargandoUsuariosBd, establecerCargandoUsuariosBd] = useState(false);
+  const [guardandoUsuario, establecerGuardandoUsuario] = useState(false);
 
   const mostrarFeedback = (type: "ok" | "error" | "info", message: string) => {
     establecerFeedback({ type, message });
@@ -52,11 +111,33 @@ export const PantallaAdministracion: React.FC = () => {
   };
 
   // =========================================================================
-  // 1. USUARIOS Y PRIVACIDAD (LEY 19.628 INTEGRADA)
+  // 1. USUARIOS Y PRIVACIDAD (CONECTADO A POSTGRESQL + LEY 19.628)
   // =========================================================================
+  const cargarUsuariosDesdeBd = useCallback(async (silencioso = false) => {
+    establecerCargandoUsuariosBd(true);
+    const res = await listarUsuarios();
+    establecerCargandoUsuariosBd(false);
+
+    if (res.ok && res.data) {
+      const mapeados = res.data.map(mapearUsuarioBdASistema);
+      sincronizarUsuariosSistema(mapeados);
+      if (!silencioso) {
+        mostrarFeedback("info", `Sincronizados ${mapeados.length} usuarios desde PostgreSQL.`);
+      }
+    } else if (!silencioso) {
+      mostrarFeedback("error", res.error || "No se pudo sincronizar la lista de usuarios con el servidor.");
+    }
+  }, [sincronizarUsuariosSistema]);
+
+  useEffect(() => {
+    cargarUsuariosDesdeBd(true);
+  }, [cargarUsuariosDesdeBd]);
+
   const [usuarioBuscar, establecerUsuarioBuscar] = useState("");
   const [usuarioRolFiltrar, establecerUsuarioRolFiltrar] = useState<string>("todos");
   const [nuevoUsuarioModalAbrir, establecerNuevoUsuarioModalAbrir] = useState(false);
+  const [usuarioEditando, establecerUsuarioEditando] = useState<UsuarioSistema | null>(null);
+  const [credencialesRecientes, establecerCredencialesRecientes] = useState<CredencialesCreadas | null>(null);
   const [seleccionadoUsuarioHastaAlternar, establecerSeleccionadoUsuarioHastaAlternar] = useState<UsuarioSistema | null>(null);
   const [alternarConfirmarAbrir, establecerAlternarConfirmarAbrir] = useState(false);
 
@@ -64,17 +145,22 @@ export const PantallaAdministracion: React.FC = () => {
   const [usuarioParaAnonimizar, establecerUsuarioParaAnonimizar] = useState<UsuarioSistema | null>(null);
   const [confirmarPalabraClaveEntrada, establecerConfirmarPalabraClaveEntrada] = useState("");
 
-  // Formulario nuevo usuario
-  const rutEntradaReferencia = useRef<TextInput>(null);
-  const nombreEntradaReferencia = useRef<TextInput>(null);
-  const correoEntradaReferencia = useRef<TextInput>(null);
+  // Formulario crear / editar usuario
+  const rutEntradaReferencia = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const nombreEntradaReferencia = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const correoEntradaReferencia = useRef<React.ComponentRef<typeof TextInput>>(null);
   const [formularioRut, establecerFormularioRut] = useState("");
   const [formularioRutError, establecerFormularioRutError] = useState("");
   const [formularioNombre, establecerFormularioNombre] = useState("");
   const [formularioNombreError, establecerFormularioNombreError] = useState("");
+  const [formularioApellido, establecerFormularioApellido] = useState("");
+  const [formularioApellidoError, establecerFormularioApellidoError] = useState("");
   const [formularioCorreo, establecerFormularioCorreo] = useState("");
   const [formularioCorreoError, establecerFormularioCorreoError] = useState("");
+  const [formularioContrasena, establecerFormularioContrasena] = useState("");
+  const [formularioContrasenaError, establecerFormularioContrasenaError] = useState("");
   const [formularioRol, establecerFormularioRol] = useState<Rol>("technician");
+  const [formularioEspecializacion, establecerFormularioEspecializacion] = useState("");
   const [formularioError, establecerFormularioError] = useState("");
 
   const activoAdministradoresConteo = usuariosSistema.filter((u) => u.role === "admin" && !u.disabled).length;
@@ -90,57 +176,225 @@ export const PantallaAdministracion: React.FC = () => {
     });
   }, [usuariosSistema, usuarioBuscar, usuarioRolFiltrar]);
 
-  const manejarCrearUsuario = () => {
+  const limpiarErroresFormulario = () => {
     establecerFormularioRutError("");
     establecerFormularioNombreError("");
+    establecerFormularioApellidoError("");
     establecerFormularioCorreoError("");
+    establecerFormularioContrasenaError("");
     establecerFormularioError("");
+  };
 
-    if (!formularioRut.trim()) {
-      establecerFormularioRutError("El RUT es obligatorio.");
-      establecerFormularioError("El RUT es obligatorio.");
-      rutEntradaReferencia.current?.focus();
+  const manejarAbrirCrearUsuario = () => {
+    limpiarErroresFormulario();
+    establecerUsuarioEditando(null);
+    establecerFormularioNombre("");
+    establecerFormularioApellido("");
+    establecerFormularioRut("");
+    establecerFormularioCorreo("");
+    establecerFormularioContrasena("");
+    establecerFormularioRol("technician");
+    establecerFormularioEspecializacion("");
+    establecerNuevoUsuarioModalAbrir(true);
+  };
+
+  const manejarAbrirEditarUsuario = (u: UsuarioSistema) => {
+    limpiarErroresFormulario();
+    establecerUsuarioEditando(u);
+
+    let nombreInicial = u.nombre || "";
+    let apellidoInicial = u.apellido || "";
+    if (!nombreInicial && u.name) {
+      const partes = u.name.trim().split(/\s+/);
+      nombreInicial = partes[0] || "";
+      apellidoInicial = partes.slice(1).join(" ") || "";
+    }
+
+    establecerFormularioNombre(nombreInicial);
+    establecerFormularioApellido(apellidoInicial);
+    establecerFormularioRut(u.rut && u.rut !== "Sin RUT" ? u.rut : "");
+    establecerFormularioCorreo(u.email);
+    establecerFormularioContrasena("");
+    establecerFormularioRol(u.role);
+    establecerFormularioEspecializacion(u.especializacion || "");
+    establecerNuevoUsuarioModalAbrir(true);
+  };
+
+  const generarContrasenaSugerida = () => {
+    const sufijo = Math.floor(1000 + Math.random() * 9000);
+    const prefijoRol =
+      formularioRol === "admin"
+        ? "Admin"
+        : formularioRol === "warehouse"
+          ? "Bodega"
+          : "Tecnico";
+    establecerFormularioContrasena(`${prefijoRol}.${sufijo}`);
+    establecerFormularioContrasenaError("");
+  };
+
+  const manejarGuardarUsuario = async () => {
+    limpiarErroresFormulario();
+
+    if (!formularioNombre.trim()) {
+      establecerFormularioNombreError("El nombre es obligatorio.");
+      establecerFormularioError("El nombre del usuario es obligatorio.");
+      nombreEntradaReferencia.current?.focus();
       return;
     }
-    if (!esRutValido(formularioRut)) {
+
+    if (!formularioApellido.trim()) {
+      establecerFormularioApellidoError("El apellido es obligatorio.");
+      establecerFormularioError("El apellido del usuario es obligatorio.");
+      return;
+    }
+
+    if (formularioRut.trim() && !esRutValido(formularioRut.trim())) {
       establecerFormularioRutError("RUT inválido. Formato esperado: 12.345.678-5");
       establecerFormularioError("El RUT ingresado no es válido. Formato esperado: 12.345.678-5");
       rutEntradaReferencia.current?.focus();
       return;
     }
-    if (!formularioNombre.trim()) {
-      establecerFormularioNombreError("El nombre completo es obligatorio.");
-      establecerFormularioError("El nombre completo es obligatorio.");
-      nombreEntradaReferencia.current?.focus();
-      return;
-    }
+
     if (!formularioCorreo.trim() || !formularioCorreo.includes("@") || !formularioCorreo.includes(".")) {
-      establecerFormularioCorreoError("Ingrese un correo corporativo válido.");
-      establecerFormularioError("Ingrese un correo electrónico institucional válido.");
+      establecerFormularioCorreoError("Ingrese un correo electrónico válido.");
+      establecerFormularioError("Ingrese un correo electrónico válido para el inicio de sesión.");
       correoEntradaReferencia.current?.focus();
       return;
     }
 
-    const resultado = crearUsuarioSistema({
-      rut: formularioRut.trim(),
-      name: formularioNombre.trim(),
-      email: formularioCorreo.trim().toLowerCase(),
-      role: formularioRol,
-      lastLogin: "Nunca",
+    if (!usuarioEditando && formularioContrasena.trim().length < 4) {
+      establecerFormularioContrasenaError("La contraseña debe tener al menos 4 caracteres.");
+      establecerFormularioError("Debe asignar una contraseña de al menos 4 caracteres para que el usuario pueda iniciar sesión.");
+      return;
+    }
+
+    if (usuarioEditando && formularioContrasena.trim().length > 0 && formularioContrasena.trim().length < 4) {
+      establecerFormularioContrasenaError("La nueva contraseña debe tener al menos 4 caracteres.");
+      establecerFormularioError("Si desea cambiar la contraseña, debe tener al menos 4 caracteres.");
+      return;
+    }
+
+    const nombreLimpio = formularioNombre.trim();
+    const apellidoLimpio = formularioApellido.trim();
+    const nombreCompleto = `${nombreLimpio} ${apellidoLimpio}`.trim();
+    const correoLimpio = formularioCorreo.trim().toLowerCase();
+    const rutLimpio = formularioRut.trim() ? formularioRut.trim() : null;
+    const contrasenaLimpia = formularioContrasena.trim();
+    const especializacionLimpia =
+      formularioRol === "technician" && formularioEspecializacion.trim()
+        ? formularioEspecializacion.trim()
+        : null;
+
+    establecerGuardandoUsuario(true);
+
+    // MODO EDICIÓN
+    if (usuarioEditando && usuarioEditando.id_usuario) {
+      const res = await actualizarUsuario(usuarioEditando.id_usuario, {
+        nombre_usuario: nombreLimpio,
+        apellido_usuario: apellidoLimpio,
+        correo_usuario: correoLimpio,
+        rut: rutLimpio,
+        rol_codigo: formularioRol,
+        especializacion: especializacionLimpia,
+        contrasena: contrasenaLimpia || undefined,
+        activo: !usuarioEditando.disabled,
+      });
+
+      establecerGuardandoUsuario(false);
+
+      if (!res.ok) {
+        establecerFormularioError(res.error || "No se pudo actualizar el usuario en PostgreSQL.");
+        return;
+      }
+
+      await cargarUsuariosDesdeBd(true);
+      establecerNuevoUsuarioModalAbrir(false);
+
+      registrarEventoAuditoria({
+        userRut: usuarioActual?.rut || "12.456.789-5",
+        userName: usuarioActual?.name || "Administrador",
+        userRole: "admin",
+        entity: "Usuarios",
+        action: "modificacion",
+        fieldChanged: contrasenaLimpia ? "Datos y Contraseña" : "Datos de Cuenta",
+        oldValue: `${usuarioEditando.name} (${usuarioEditando.email} - ${usuarioEditando.role})`,
+        newValue: `${nombreCompleto} (${correoLimpio} - ${formularioRol})`,
+        description: `Actualización de cuenta de usuario en PostgreSQL${contrasenaLimpia ? " (incluye cambio de contraseña)" : ""}`,
+      });
+
+      mostrarFeedback("ok", `Cuenta de ${nombreCompleto} actualizada exitosamente.`);
+      if (contrasenaLimpia) {
+        establecerCredencialesRecientes({
+          nombre: nombreCompleto,
+          correo: correoLimpio,
+          contrasena: contrasenaLimpia,
+          rol: formularioRol,
+          esEdicion: true,
+        });
+      }
+      return;
+    }
+
+    // MODO CREACIÓN EN POSTGRESQL
+    const res = await crearUsuario({
+      nombre_usuario: nombreLimpio,
+      apellido_usuario: apellidoLimpio,
+      correo_usuario: correoLimpio,
+      rut: rutLimpio,
+      rol_codigo: formularioRol,
+      especializacion: especializacionLimpia,
+      contrasena: contrasenaLimpia,
+      activo: true,
     });
 
-    if (resultado.success) {
+    establecerGuardandoUsuario(false);
+
+    if (res.ok && res.data?.usuario) {
+      await cargarUsuariosDesdeBd(true);
       establecerNuevoUsuarioModalAbrir(false);
-      establecerFormularioRut("");
-      establecerFormularioRutError("");
-      establecerFormularioNombre("");
-      establecerFormularioNombreError("");
-      establecerFormularioCorreo("");
-      establecerFormularioCorreoError("");
-      establecerFormularioRol("technician");
-      mostrarFeedback("ok", `Usuario ${formularioNombre} creado exitosamente.`);
+
+      registrarEventoAuditoria({
+        userRut: usuarioActual?.rut || "12.456.789-5",
+        userName: usuarioActual?.name || "Administrador",
+        userRole: "admin",
+        entity: "Usuarios",
+        action: "creacion",
+        fieldChanged: "Nuevo Usuario BD",
+        oldValue: "-",
+        newValue: `${nombreCompleto} (${formularioRol}) - ${correoLimpio}`,
+        description: `Creación de cuenta en PostgreSQL con rol ${formularioRol} y correo ${correoLimpio}`,
+      });
+
+      mostrarFeedback("ok", `Cuenta creada para ${nombreCompleto}. Ya puede iniciar sesión.`);
+      establecerCredencialesRecientes({
+        nombre: nombreCompleto,
+        correo: correoLimpio,
+        contrasena: contrasenaLimpia,
+        rol: formularioRol,
+        esEdicion: false,
+      });
     } else {
-      establecerFormularioError(resultado.error || "Error al crear usuario.");
+      // Si el backend devuelve un error de validación (ej. correo o RUT duplicado), mostrarlo en el formulario
+      if (res.error && res.error !== "No se pudo conectar con el servidor") {
+        establecerFormularioError(res.error);
+        return;
+      }
+
+      // Fallback local solo si no hay conexión al servidor
+      const resultadoLocal = crearUsuarioSistema({
+        rut: rutLimpio || "Sin RUT",
+        name: nombreCompleto,
+        email: correoLimpio,
+        role: formularioRol,
+        lastLogin: "Nunca",
+      });
+
+      if (resultadoLocal.success) {
+        establecerNuevoUsuarioModalAbrir(false);
+        mostrarFeedback("info", `Usuario ${nombreCompleto} registrado en modo local (sin conexión al servidor).`);
+      } else {
+        establecerFormularioError(res.error || resultadoLocal.error || "Error al crear usuario.");
+      }
     }
   };
 
@@ -156,15 +410,56 @@ export const PantallaAdministracion: React.FC = () => {
     establecerAlternarConfirmarAbrir(true);
   };
 
-  const executeAlternarUsuario = () => {
+  const executeAlternarUsuario = async () => {
     if (!seleccionadoUsuarioHastaAlternar) return;
-    const res = alternarUsuarioSistemaDeshabilitado(seleccionadoUsuarioHastaAlternar.id);
+    const usuarioObjetivo = seleccionadoUsuarioHastaAlternar;
     establecerAlternarConfirmarAbrir(false);
+
+    if (usuarioObjetivo.id_usuario) {
+      const partesNombre = usuarioObjetivo.name.trim().split(/\s+/);
+      const nombre = usuarioObjetivo.nombre || partesNombre[0] || "Usuario";
+      const apellido = usuarioObjetivo.apellido || partesNombre.slice(1).join(" ") || "-";
+      const nuevoActivo = usuarioObjetivo.disabled; // si estaba disabled, pasa a activo=true
+
+      const res = await actualizarUsuario(usuarioObjetivo.id_usuario, {
+        nombre_usuario: nombre,
+        apellido_usuario: apellido,
+        correo_usuario: usuarioObjetivo.email,
+        rut: usuarioObjetivo.rut !== "Sin RUT" ? usuarioObjetivo.rut : null,
+        rol_codigo: usuarioObjetivo.role,
+        especializacion: usuarioObjetivo.especializacion || null,
+        activo: nuevoActivo,
+      });
+
+      if (res.ok) {
+        await cargarUsuariosDesdeBd(true);
+        registrarEventoAuditoria({
+          userRut: usuarioActual?.rut || "12.456.789-5",
+          userName: usuarioActual?.name || "Administrador",
+          userRole: "admin",
+          entity: "Usuarios",
+          action: nuevoActivo ? "modificacion" : "deshabilitacion",
+          fieldChanged: `Estado ${usuarioObjetivo.name}`,
+          oldValue: usuarioObjetivo.disabled ? "deshabilitado" : "activo",
+          newValue: nuevoActivo ? "activo" : "deshabilitado",
+          description: `Cambio de estado de acceso en PostgreSQL para ${usuarioObjetivo.email}`,
+        });
+        mostrarFeedback(
+          "ok",
+          `Usuario ${usuarioObjetivo.name} ${nuevoActivo ? "habilitado" : "deshabilitado"} correctamente.`
+        );
+      } else {
+        mostrarFeedback("error", res.error || "No fue posible modificar el estado del usuario.");
+      }
+      establecerSeleccionadoUsuarioHastaAlternar(null);
+      return;
+    }
+
+    const res = alternarUsuarioSistemaDeshabilitado(usuarioObjetivo.id);
     if (res.success) {
       mostrarFeedback(
         "ok",
-        `Usuario ${seleccionadoUsuarioHastaAlternar.name} ${
-          seleccionadoUsuarioHastaAlternar.disabled ? "habilitado" : "deshabilitado"
+        `Usuario ${usuarioObjetivo.name} ${usuarioObjetivo.disabled ? "habilitado" : "deshabilitado"
         } correctamente.`
       );
     } else {
@@ -173,16 +468,50 @@ export const PantallaAdministracion: React.FC = () => {
     establecerSeleccionadoUsuarioHastaAlternar(null);
   };
 
-  const manejarConfirmarAnonimizacion = () => {
+  const manejarConfirmarAnonimizacion = async () => {
     if (!usuarioParaAnonimizar) return;
     if (confirmarPalabraClaveEntrada.trim().toUpperCase() !== "CONFIRMAR") {
       mostrarFeedback("error", 'Debe escribir exactamente "CONFIRMAR" para autorizar la acción.');
       return;
     }
-    const res = anonimizarUsuario(usuarioParaAnonimizar.id);
+
+    const objetivo = usuarioParaAnonimizar;
     establecerUsuarioParaAnonimizar(null);
     establecerConfirmarPalabraClaveEntrada("");
 
+    if (objetivo.id_usuario) {
+      const shortId = String(objetivo.id_usuario).padStart(4, "0");
+      const res = await actualizarUsuario(objetivo.id_usuario, {
+        nombre_usuario: "Usuario",
+        apellido_usuario: `Anonimizado #${shortId}`,
+        correo_usuario: `anonimo_${shortId}@privacidad.local`,
+        rut: null,
+        rol_codigo: objetivo.role,
+        especializacion: null,
+        activo: false,
+      });
+
+      if (res.ok) {
+        await cargarUsuariosDesdeBd(true);
+        registrarEventoAuditoria({
+          userRut: usuarioActual?.rut || "12.456.789-5",
+          userName: usuarioActual?.name || "Administrador",
+          userRole: "admin",
+          entity: "Privacidad",
+          action: "anonimizacion",
+          fieldChanged: "Datos Personales",
+          oldValue: `${objetivo.name} (${objetivo.rut})`,
+          newValue: "[DATOS ANONIMIZADOS IRREVERSIBLEMENTE - LEY 19.628]",
+          description: `Ejercicio de derecho al olvido y anonimización de titular en PostgreSQL para ID ${objetivo.id_usuario}`,
+        });
+        mostrarFeedback("ok", "Datos personales del usuario anonimizados conforme a la Ley 19.628.");
+      } else {
+        mostrarFeedback("error", res.error || "No se pudo anonimizar al usuario.");
+      }
+      return;
+    }
+
+    const res = anonimizarUsuario(objetivo.id);
     if (res.success) {
       mostrarFeedback("ok", "Datos personales del usuario anonimizados conforme a la Ley 19.628.");
     } else {
@@ -209,7 +538,11 @@ export const PantallaAdministracion: React.FC = () => {
 
       let coincidenciaFecha = true;
       if (auditoriaFechaFiltrar === "hoy") {
-        coincidenciaFecha = log.timestamp.includes("14-10-2026") || log.timestamp.includes("Hoy");
+        const hoyIso = new Date().toISOString().slice(0, 10);
+        coincidenciaFecha =
+          log.timestamp.includes(hoyIso) ||
+          log.timestamp.includes("14-10-2026") ||
+          log.timestamp.includes("Hoy");
       }
       return matchSearch && coincidenciaEntity && coincidenciaFecha;
     });
@@ -276,7 +609,7 @@ export const PantallaAdministracion: React.FC = () => {
       <View style={estilos.contenedor}>
         <EncabezadoPagina
           title="Sistema y Auditoría"
-          subtitle="Gestión de usuarios, bitácora de auditoría inmutable, parámetros operativos y respaldos"
+          subtitle="Gestión de cuentas de usuario (Admin, Bodeguero y Técnico), bitácora de auditoría y respaldos"
           breadcrumbs={["Inicio", "Administración", "Sistema y Auditoría"]}
         />
 
@@ -296,16 +629,16 @@ export const PantallaAdministracion: React.FC = () => {
                   feedback.type === "ok"
                     ? "checkmark-circle"
                     : feedback.type === "error"
-                    ? "alert-circle"
-                    : "information-circle"
+                      ? "alert-circle"
+                      : "information-circle"
                 }
                 size={20}
                 color={
                   feedback.type === "ok"
                     ? tema.colors.ok
                     : feedback.type === "error"
-                    ? tema.colors.danger
-                    : tema.colors.primaryDark
+                      ? tema.colors.danger
+                      : tema.colors.primaryDark
                 }
               />
               <Text
@@ -353,11 +686,19 @@ export const PantallaAdministracion: React.FC = () => {
             activoAdministradoresConteo={activoAdministradoresConteo}
             activoPestana={activoPestana}
             alternarConfirmarAbrir={alternarConfirmarAbrir}
+            cargandoUsuariosBd={cargandoUsuariosBd}
             correoEntradaReferencia={correoEntradaReferencia}
+            credencialesRecientes={credencialesRecientes}
             effectiveVistaModo={effectiveVistaModo}
             establecerAlternarConfirmarAbrir={establecerAlternarConfirmarAbrir}
+            establecerCredencialesRecientes={establecerCredencialesRecientes}
+            establecerFormularioApellido={establecerFormularioApellido}
+            establecerFormularioApellidoError={establecerFormularioApellidoError}
+            establecerFormularioContrasena={establecerFormularioContrasena}
+            establecerFormularioContrasenaError={establecerFormularioContrasenaError}
             establecerFormularioCorreo={establecerFormularioCorreo}
             establecerFormularioCorreoError={establecerFormularioCorreoError}
+            establecerFormularioEspecializacion={establecerFormularioEspecializacion}
             establecerFormularioNombre={establecerFormularioNombre}
             establecerFormularioNombreError={establecerFormularioNombreError}
             establecerFormularioRol={establecerFormularioRol}
@@ -369,22 +710,33 @@ export const PantallaAdministracion: React.FC = () => {
             establecerUsuarioVistaModo={establecerUsuarioVistaModo}
             executeAlternarUsuario={executeAlternarUsuario}
             filtradoUsuarios={filtradoUsuarios}
+            formularioApellido={formularioApellido}
+            formularioApellidoError={formularioApellidoError}
+            formularioContrasena={formularioContrasena}
+            formularioContrasenaError={formularioContrasenaError}
             formularioCorreo={formularioCorreo}
             formularioCorreoError={formularioCorreoError}
             formularioError={formularioError}
+            formularioEspecializacion={formularioEspecializacion}
             formularioNombre={formularioNombre}
             formularioNombreError={formularioNombreError}
             formularioRol={formularioRol}
             formularioRut={formularioRut}
             formularioRutError={formularioRutError}
+            generarContrasenaSugerida={generarContrasenaSugerida}
+            guardandoUsuario={guardandoUsuario}
+            manejarAbrirCrearUsuario={manejarAbrirCrearUsuario}
+            manejarAbrirEditarUsuario={manejarAbrirEditarUsuario}
             manejarAlternarUsuario={manejarAlternarUsuario}
-            manejarCrearUsuario={manejarCrearUsuario}
+            manejarGuardarUsuario={manejarGuardarUsuario}
+            manejarRecargarUsuarios={() => cargarUsuariosDesdeBd(false)}
             mostrarFeedback={mostrarFeedback}
             nombreEntradaReferencia={nombreEntradaReferencia}
             nuevoUsuarioModalAbrir={nuevoUsuarioModalAbrir}
             rutEntradaReferencia={rutEntradaReferencia}
             seleccionadoUsuarioHastaAlternar={seleccionadoUsuarioHastaAlternar}
             usuarioBuscar={usuarioBuscar}
+            usuarioEditando={usuarioEditando}
             usuarioRolFiltrar={usuarioRolFiltrar}
             usuariosSistema={usuariosSistema}
             width={width}

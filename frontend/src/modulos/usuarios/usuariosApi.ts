@@ -18,6 +18,7 @@ export interface Usuario {
   nombre_rol: string | null;
   especializacion: string | null;
   activo: boolean;
+  ultimo_acceso?: string | null;
 }
 
 export interface FormularioUsuario {
@@ -25,7 +26,8 @@ export interface FormularioUsuario {
   apellido_usuario: string;
   correo_usuario: string;
   rut: string | null;
-  id_rol: number | null;
+  id_rol?: number | null;
+  rol_codigo?: "admin" | "warehouse" | "technician";
   especializacion: string | null;
   contrasena?: string;
   activo: boolean;

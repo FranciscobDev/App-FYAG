@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ActivityIndicator,
   ScrollView,
   Text,
   TextInput,
@@ -14,19 +15,36 @@ import { Tarjeta } from "@/componentes/base/Tarjeta";
 import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
 import { CampoTexto } from "@/componentes/formularios/CampoTexto";
+import { CampoContrasena } from "@/componentes/formularios/CampoContrasena";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { TarjetaKpi } from "@/componentes/datos/TarjetaKpi";
 import { estilos } from "../estilos";
+
+export interface CredencialesCreadas {
+  nombre: string;
+  correo: string;
+  contrasena: string;
+  rol: Rol;
+  esEdicion?: boolean;
+}
 
 export interface PropiedadesSeccionUsuariosRoles {
   activoAdministradoresConteo: number;
   activoPestana: string;
   alternarConfirmarAbrir: boolean;
-  correoEntradaReferencia: React.RefObject<TextInput | null>;
+  cargandoUsuariosBd?: boolean;
+  correoEntradaReferencia: React.RefObject<any>;
+  credencialesRecientes: CredencialesCreadas | null;
   effectiveVistaModo: "cards" | "table";
   establecerAlternarConfirmarAbrir: (val: boolean) => void;
+  establecerCredencialesRecientes: (val: CredencialesCreadas | null) => void;
+  establecerFormularioApellido: (val: string) => void;
+  establecerFormularioApellidoError: (val: string) => void;
+  establecerFormularioContrasena: (val: string) => void;
+  establecerFormularioContrasenaError: (val: string) => void;
   establecerFormularioCorreo: (val: string) => void;
   establecerFormularioCorreoError: (val: string) => void;
+  establecerFormularioEspecializacion: (val: string) => void;
   establecerFormularioNombre: (val: string) => void;
   establecerFormularioNombreError: (val: string) => void;
   establecerFormularioRol: (val: Rol) => void;
@@ -38,22 +56,33 @@ export interface PropiedadesSeccionUsuariosRoles {
   establecerUsuarioVistaModo: (val: "auto" | "cards" | "table") => void;
   executeAlternarUsuario: () => void;
   filtradoUsuarios: UsuarioSistema[];
+  formularioApellido: string;
+  formularioApellidoError: string;
+  formularioContrasena: string;
+  formularioContrasenaError: string;
   formularioCorreo: string;
   formularioCorreoError: string;
   formularioError: string;
+  formularioEspecializacion: string;
   formularioNombre: string;
   formularioNombreError: string;
   formularioRol: Rol;
   formularioRut: string;
   formularioRutError: string;
+  generarContrasenaSugerida: () => void;
+  guardandoUsuario?: boolean;
+  manejarAbrirCrearUsuario: () => void;
+  manejarAbrirEditarUsuario: (u: UsuarioSistema) => void;
   manejarAlternarUsuario: (u: UsuarioSistema) => void;
-  manejarCrearUsuario: () => void;
+  manejarGuardarUsuario: () => void;
+  manejarRecargarUsuarios?: () => void;
   mostrarFeedback: (type: "ok" | "error" | "info", msg: string) => void;
-  nombreEntradaReferencia: React.RefObject<TextInput | null>;
+  nombreEntradaReferencia: React.RefObject<any>;
   nuevoUsuarioModalAbrir: boolean;
-  rutEntradaReferencia: React.RefObject<TextInput | null>;
+  rutEntradaReferencia: React.RefObject<any>;
   seleccionadoUsuarioHastaAlternar: UsuarioSistema | null;
   usuarioBuscar: string;
+  usuarioEditando: UsuarioSistema | null;
   usuarioRolFiltrar: string;
   usuariosSistema: UsuarioSistema[];
   width: number;
@@ -65,15 +94,30 @@ export interface PropiedadesSeccionUsuariosRoles {
   manejarConfirmarAnonimizacion: () => void;
 }
 
+const etiquetaRol = (rol: Rol) =>
+  rol === "admin"
+    ? "Administrador"
+    : rol === "warehouse"
+    ? "Bodeguero"
+    : "Técnico";
+
 export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = ({
   activoAdministradoresConteo,
   activoPestana,
   alternarConfirmarAbrir,
+  cargandoUsuariosBd = false,
   correoEntradaReferencia,
+  credencialesRecientes,
   effectiveVistaModo,
   establecerAlternarConfirmarAbrir,
+  establecerCredencialesRecientes,
+  establecerFormularioApellido,
+  establecerFormularioApellidoError,
+  establecerFormularioContrasena,
+  establecerFormularioContrasenaError,
   establecerFormularioCorreo,
   establecerFormularioCorreoError,
+  establecerFormularioEspecializacion,
   establecerFormularioNombre,
   establecerFormularioNombreError,
   establecerFormularioRol,
@@ -85,22 +129,33 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
   establecerUsuarioVistaModo,
   executeAlternarUsuario,
   filtradoUsuarios,
+  formularioApellido,
+  formularioApellidoError,
+  formularioContrasena,
+  formularioContrasenaError,
   formularioCorreo,
   formularioCorreoError,
   formularioError,
+  formularioEspecializacion,
   formularioNombre,
   formularioNombreError,
   formularioRol,
   formularioRut,
   formularioRutError,
+  generarContrasenaSugerida,
+  guardandoUsuario = false,
+  manejarAbrirCrearUsuario,
+  manejarAbrirEditarUsuario,
   manejarAlternarUsuario,
-  manejarCrearUsuario,
+  manejarGuardarUsuario,
+  manejarRecargarUsuarios,
   mostrarFeedback,
   nombreEntradaReferencia,
   nuevoUsuarioModalAbrir,
   rutEntradaReferencia,
   seleccionadoUsuarioHastaAlternar,
   usuarioBuscar,
+  usuarioEditando,
   usuarioRolFiltrar,
   usuariosSistema,
   usuarioParaAnonimizar,
@@ -203,12 +258,23 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
             />
           )}
 
+          {manejarRecargarUsuarios && (
+            <Boton
+              variant="secondary"
+              size="sm"
+              title={cargandoUsuariosBd ? "Sincronizando..." : "Sincronizar BD"}
+              icon="refresh-outline"
+              onPress={manejarRecargarUsuarios}
+              disabled={cargandoUsuariosBd}
+            />
+          )}
+
           {/* Botón Nuevo Usuario */}
           <Boton
             variant="primary"
             title="Nuevo Usuario"
             icon="person-add"
-            onPress={() => establecerNuevoUsuarioModalAbrir(true)}
+            onPress={manejarAbrirCrearUsuario}
           />
         </View>
       </Tarjeta>
@@ -216,9 +282,14 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
       {/* Tabla / Tarjetas de Usuarios Responsiva */}
       <Tarjeta style={estilos.tarjetaCaja}>
         <View style={estilos.tablaTarjetaEncabezadoBarra}>
-          <Text style={estilos.tablaTarjetaTitulo}>
-            Usuarios Registrados ({filtradoUsuarios.length})
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={estilos.tablaTarjetaTitulo}>
+              Usuarios Registrados ({filtradoUsuarios.length})
+            </Text>
+            {cargandoUsuariosBd && (
+              <ActivityIndicator size="small" color={tema.colors.primary} />
+            )}
+          </View>
           <View style={estilos.vistaModoAlternarFila}>
             <TouchableOpacity
               style={[estilos.vistaModoBoton, effectiveVistaModo === "cards" && estilos.vistaModoBotonActivo]}
@@ -260,7 +331,7 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
             title="Sin usuarios coincidentes"
             description="No se encontraron usuarios con los filtros de rol o búsqueda aplicados."
             actionTitle="+ Nuevo Usuario"
-            onAction={() => establecerNuevoUsuarioModalAbrir(true)}
+            onAction={manejarAbrirCrearUsuario}
             containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
           />
         ) : effectiveVistaModo === "cards" ? (
@@ -276,9 +347,19 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                     <View style={{ flex: 1, paddingRight: 8 }}>
                       <Text style={estilos.mobileUsuarioNombre}>{u.name}</Text>
                       <Text style={estilos.mobileUsuarioCorreo}>{u.email}</Text>
-                      <View style={estilos.mobileRutInsignia}>
-                        <Ionicons name="card-outline" size={12} color={tema.colors.textSecondary} style={{ marginRight: 4 }} />
-                        <Text style={estilos.mobileRutTexto}>{u.rut}</Text>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                        <View style={[estilos.mobileRutInsignia, { marginTop: 0 }]}>
+                          <Ionicons name="card-outline" size={12} color={tema.colors.textSecondary} style={{ marginRight: 4 }} />
+                          <Text style={estilos.mobileRutTexto}>{u.rut || "Sin RUT"}</Text>
+                        </View>
+                        {u.especializacion ? (
+                          <View style={[estilos.mobileRutInsignia, { marginTop: 0 }]}>
+                            <Ionicons name="construct-outline" size={12} color={tema.colors.primaryDark} style={{ marginRight: 4 }} />
+                            <Text style={[estilos.mobileRutTexto, { color: tema.colors.primaryDark }]}>
+                              {u.especializacion}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     </View>
 
@@ -299,11 +380,7 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                             u.role === "technician" && estilos.rolInsigniaTextoTecnico,
                           ]}
                         >
-                          {u.role === "admin"
-                            ? "Administrador"
-                            : u.role === "warehouse"
-                            ? "Bodeguero"
-                            : "Técnico"}
+                          {etiquetaRol(u.role)}
                         </Text>
                       </View>
 
@@ -320,14 +397,30 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
 
                   <View style={estilos.mobileUsuarioTarjetaPie}>
                     <View style={estilos.mobileInicioSesionInfo}>
-                      <Text style={estilos.mobileInicioSesionEtiqueta}>ÚLTIMO ACCESO</Text>
+                      <Text style={estilos.mobileInicioSesionEtiqueta}>ACCESO LOGIN</Text>
                       <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-                        <Ionicons name="time-outline" size={13} color={tema.colors.textMuted} style={{ marginRight: 4 }} />
-                        <Text style={estilos.mobileInicioSesionValor}>{u.lastLogin || "Nunca"}</Text>
+                        <Ionicons
+                          name={u.disabled ? "lock-closed-outline" : "checkmark-circle-outline"}
+                          size={13}
+                          color={u.disabled ? tema.colors.danger : tema.colors.ok}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={estilos.mobileInicioSesionValor}>
+                          {u.disabled ? "Bloqueado" : "Habilitado en BD"}
+                        </Text>
                       </View>
                     </View>
 
                     <View style={[estilos.mobileAccionCaja, { flexDirection: "row", flexWrap: "wrap", gap: 6 }]}>
+                      {!yaAnonimizado && (
+                        <Boton
+                          variant="secondary"
+                          size="sm"
+                          title="Editar / Clave"
+                          icon="key-outline"
+                          onPress={() => manejarAbrirEditarUsuario(u)}
+                        />
+                      )}
                       {esOnlyAdmin ? (
                         <TouchableOpacity
                           style={estilos.lockedBoton}
@@ -373,15 +466,15 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
           </View>
         ) : (
           /* VISTA ESCRITORIO / TABLA */
-          <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 920 }}>
-            <View style={{ minWidth: 920, flex: 1 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 980 }}>
+            <View style={{ minWidth: 980, flex: 1 }}>
               <View style={estilos.tablaEncabezadoFila}>
-                <Text style={[estilos.thCelda, { width: 220 }]}>Usuario & Contacto</Text>
+                <Text style={[estilos.thCelda, { width: 220 }]}>Usuario & Correo Login</Text>
                 <Text style={[estilos.thCelda, { width: 120 }]}>RUT</Text>
-                <Text style={[estilos.thCelda, { width: 130 }]}>Rol Asignado</Text>
+                <Text style={[estilos.thCelda, { width: 150 }]}>Rol Asignado</Text>
                 <Text style={[estilos.thCelda, { width: 100 }]}>Estado</Text>
-                <Text style={[estilos.thCelda, { width: 110 }]}>Último Acceso</Text>
-                <Text style={[estilos.thCelda, { width: 240, textAlign: "right" }]}>Acciones de Cuenta y Privacidad</Text>
+                <Text style={[estilos.thCelda, { width: 110 }]}>Especialidad</Text>
+                <Text style={[estilos.thCelda, { width: 280, textAlign: "right" }]}>Acciones de Cuenta y Privacidad</Text>
               </View>
 
               {filtradoUsuarios.map((u) => {
@@ -395,9 +488,11 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                       <Text style={estilos.usuarioCorreoTexto}>{u.email}</Text>
                     </View>
 
-                    <Text style={[estilos.tdCelda, { width: 120, fontWeight: "600" }]}>{u.rut}</Text>
+                    <Text style={[estilos.tdCelda, { width: 120, fontWeight: "600" }]}>
+                      {u.rut || "Sin RUT"}
+                    </Text>
 
-                    <View style={{ width: 130 }}>
+                    <View style={{ width: 150 }}>
                       <View
                         style={[
                           estilos.rolInsignia,
@@ -414,11 +509,7 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                             u.role === "technician" && estilos.rolInsigniaTextoTecnico,
                           ]}
                         >
-                          {u.role === "admin"
-                            ? "Administrador"
-                            : u.role === "warehouse"
-                            ? "Bodeguero"
-                            : "Técnico"}
+                          {etiquetaRol(u.role)}
                         </Text>
                       </View>
                     </View>
@@ -431,10 +522,19 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                     </View>
 
                     <Text style={[estilos.tdCelda, { width: 110, color: tema.colors.textMuted }]}>
-                      {u.lastLogin || "Nunca"}
+                      {u.especializacion || "General"}
                     </Text>
 
-                    <View style={{ width: 240, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 6 }}>
+                    <View style={{ width: 280, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 6 }}>
+                      {!yaAnonimizado && (
+                        <Boton
+                          variant="secondary"
+                          size="sm"
+                          title="Editar / Clave"
+                          icon="key-outline"
+                          onPress={() => manejarAbrirEditarUsuario(u)}
+                        />
+                      )}
                       {esOnlyAdmin ? (
                         <TouchableOpacity
                           style={estilos.lockedBoton}
@@ -481,15 +581,21 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
         )}
       </Tarjeta>
 
-      {/* Modal Formulario Nuevo Usuario */}
+      {/* Modal Formulario Crear / Editar Usuario */}
       <VistaModal
         visible={nuevoUsuarioModalAbrir}
         onClose={() => establecerNuevoUsuarioModalAbrir(false)}
-        title="Crear Nuevo Usuario de Sistema"
+        title={
+          usuarioEditando
+            ? `Editar Cuenta: ${usuarioEditando.name}`
+            : "Crear Cuenta de Usuario (Admin / Bodega / Técnico)"
+        }
       >
         <View style={estilos.formularioContenedor}>
           <Text style={estilos.formularioSubtitulo}>
-            Complete los datos para generar una cuenta con acceso controlado y rol único.
+            {usuarioEditando
+              ? "Actualice los datos de la cuenta, cambie el rol o asigne una nueva contraseña de acceso."
+              : "Asigne correo, contraseña y rol para que el usuario pueda autenticarse directamente en el inicio de sesión."}
           </Text>
 
           {formularioError !== "" && (
@@ -498,6 +604,31 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
               <Text style={estilos.errorAlertaTexto}>{formularioError}</Text>
             </View>
           )}
+
+          <CampoTexto
+            ref={nombreEntradaReferencia as any}
+            label="Nombre(s)"
+            placeholder="Ej: Marcelo"
+            required
+            value={formularioNombre}
+            onChangeText={(text) => {
+              establecerFormularioNombre(text);
+              if (formularioNombreError) establecerFormularioNombreError("");
+            }}
+            error={formularioNombreError}
+          />
+
+          <CampoTexto
+            label="Apellido(s)"
+            placeholder="Ej: Gómez Paredes"
+            required
+            value={formularioApellido}
+            onChangeText={(text) => {
+              establecerFormularioApellido(text);
+              if (formularioApellidoError) establecerFormularioApellidoError("");
+            }}
+            error={formularioApellidoError}
+          />
 
           <CampoTexto
             ref={rutEntradaReferencia as any}
@@ -512,21 +643,10 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
           />
 
           <CampoTexto
-            ref={nombreEntradaReferencia as any}
-            label="Nombre Completo"
-            placeholder="Ej: Marcelo Gómez Paredes"
-            value={formularioNombre}
-            onChangeText={(text) => {
-              establecerFormularioNombre(text);
-              if (formularioNombreError) establecerFormularioNombreError("");
-            }}
-            error={formularioNombreError}
-          />
-
-          <CampoTexto
             ref={correoEntradaReferencia as any}
-            label="Correo Electrónico Corporativo"
+            label="Correo Electrónico de Acceso (Login)"
             placeholder="ejemplo@fyag.cl"
+            required
             value={formularioCorreo}
             onChangeText={(text) => {
               establecerFormularioCorreo(text);
@@ -537,25 +657,57 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
             autoCapitalize="none"
           />
 
-          <Text style={estilos.campoEtiqueta}>Rol Asignado (Rol Único Excluyente):</Text>
+          <View style={{ marginBottom: 4 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <View style={{ flex: 1 }}>
+                <CampoContrasena
+                  label={
+                    usuarioEditando
+                      ? "Nueva Contraseña (opcional, dejar en blanco para mantener actual)"
+                      : "Contraseña de Acceso"
+                  }
+                  required={!usuarioEditando}
+                  placeholder={usuarioEditando ? "Ingresar solo si desea cambiarla" : "Mínimo 4 caracteres"}
+                  value={formularioContrasena}
+                  onChangeText={(text) => {
+                    establecerFormularioContrasena(text);
+                    if (formularioContrasenaError) establecerFormularioContrasenaError("");
+                  }}
+                  error={formularioContrasenaError}
+                  helper="El usuario ingresará con su correo y esta contraseña en la pantalla de Login."
+                />
+              </View>
+            </View>
+            <View style={{ alignSelf: "flex-end", marginTop: -8, marginBottom: 8 }}>
+              <Boton
+                variant="secondary"
+                size="sm"
+                title="Generar contraseña sugerida"
+                icon="sparkles-outline"
+                onPress={generarContrasenaSugerida}
+              />
+            </View>
+          </View>
+
+          <Text style={estilos.campoEtiqueta}>Rol Asignado en el Sistema:</Text>
           <View style={estilos.rolOpcionesGrilla}>
             {[
               {
                 id: "admin" as Rol,
                 title: "Administrador",
-                desc: "Acceso total, auditoría, configuración, proyectos y finanzas.",
+                desc: "Acceso total: gestión de usuarios, auditoría, configuración, proyectos, compras y finanzas.",
                 icon: "shield-checkmark",
               },
               {
                 id: "warehouse" as Rol,
                 title: "Bodeguero",
-                desc: "Control de insumos, recepción de compras, egresos y cardex.",
+                desc: "Acceso a módulo de Bodega: inventario, recepción de compras, despachos, herramientas y cardex.",
                 icon: "cube",
               },
               {
                 id: "technician" as Rol,
                 title: "Técnico en Faena",
-                desc: "Registro de avance, solicitud de materiales, horas y hojas de servicio.",
+                desc: "Acceso a módulo de Terreno: mis obras, solicitud de materiales, registro de horas y hojas de servicio.",
                 icon: "hammer",
               },
             ].map((opt) => {
@@ -588,19 +740,111 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
             })}
           </View>
 
+          {formularioRol === "technician" && (
+            <CampoTexto
+              label="Especialización Técnica (Opcional)"
+              placeholder="Ej: Climatización HVAC, Electricidad Industrial, Redes..."
+              value={formularioEspecializacion}
+              onChangeText={establecerFormularioEspecializacion}
+            />
+          )}
+
           <View style={estilos.modalAccionesFila}>
             <Boton
               variant="secondary"
               title="Cancelar"
               onPress={() => establecerNuevoUsuarioModalAbrir(false)}
+              disabled={guardandoUsuario}
             />
             <Boton
               variant="primary"
-              title="Crear Cuenta"
-              onPress={manejarCrearUsuario}
+              title={
+                guardandoUsuario
+                  ? "Guardando..."
+                  : usuarioEditando
+                  ? "Guardar Cambios"
+                  : "Crear Cuenta"
+              }
+              icon={usuarioEditando ? "save-outline" : "person-add-outline"}
+              onPress={manejarGuardarUsuario}
+              disabled={guardandoUsuario}
             />
           </View>
         </View>
+      </VistaModal>
+
+      {/* Modal Resumen de Credenciales Asignadas */}
+      <VistaModal
+        visible={Boolean(credencialesRecientes)}
+        onClose={() => establecerCredencialesRecientes(null)}
+        title={
+          credencialesRecientes?.esEdicion
+            ? "Credenciales Actualizadas"
+            : "Cuenta Creada Exitosamente"
+        }
+      >
+        {credencialesRecientes && (
+          <View style={estilos.confirmarCaja}>
+            <Ionicons name="checkmark-circle" size={46} color={tema.colors.ok} />
+            <Text style={estilos.confirmarTitulo}>
+              {credencialesRecientes.esEdicion
+                ? `Se actualizaron los datos de acceso de ${credencialesRecientes.nombre}`
+                : `La cuenta de ${credencialesRecientes.nombre} ya está activa`}
+            </Text>
+            <Text style={estilos.confirmarDescripcion}>
+              Comparta estas credenciales con el usuario para que pueda iniciar sesión en la aplicación según su rol asignado:
+            </Text>
+
+            <View
+              style={{
+                width: "100%",
+                backgroundColor: tema.colors.surfaceAlt,
+                borderWidth: 1,
+                borderColor: tema.colors.border,
+                borderRadius: tema.radius.md,
+                padding: 14,
+                gap: 8,
+                marginBottom: 16,
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                  Rol asignado:
+                </Text>
+                <Text style={{ fontSize: 13, color: tema.colors.primaryDark, fontWeight: "bold" }}>
+                  {etiquetaRol(credencialesRecientes.rol)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                  Correo de acceso:
+                </Text>
+                <Text selectable style={{ fontSize: 13, color: tema.colors.text, fontWeight: "bold" }}>
+                  {credencialesRecientes.correo}
+                </Text>
+              </View>
+              {credencialesRecientes.contrasena ? (
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                    Contraseña:
+                  </Text>
+                  <Text selectable style={{ fontSize: 14, color: tema.colors.okDark, fontWeight: "bold" }}>
+                    {credencialesRecientes.contrasena}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            <View style={estilos.modalAccionesFila}>
+              <Boton
+                variant="primary"
+                title="Entendido"
+                icon="checkmark-outline"
+                onPress={() => establecerCredencialesRecientes(null)}
+              />
+            </View>
+          </View>
+        )}
       </VistaModal>
 
       {/* Modal de Confirmación para Deshabilitar/Habilitar */}
@@ -625,8 +869,8 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
           </Text>
           <Text style={estilos.confirmarDescripcion}>
             {seleccionadoUsuarioHastaAlternar?.disabled
-              ? "El usuario volverá a tener acceso al sistema con las credenciales correspondientes a su rol."
-              : "El usuario perderá inmediatamente el acceso a la plataforma. Esta acción quedará registrada en la bitácora de auditoría."}
+              ? "El usuario volverá a tener acceso al inicio de sesión con las credenciales correspondientes a su rol."
+              : "El usuario perderá inmediatamente el acceso al login de la plataforma. Esta acción quedará registrada en PostgreSQL y en la bitácora de auditoría."}
           </Text>
 
           <View style={estilos.modalAccionesFila}>

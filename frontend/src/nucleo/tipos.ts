@@ -502,10 +502,14 @@ export interface SesionTrabajoActiva {
 
 export interface UsuarioSistema {
   id: string;
+  id_usuario?: number;
   rut: string;
   name: string;
+  nombre?: string;
+  apellido?: string;
   email: string;
   role: Rol;
+  especializacion?: string | null;
   disabled: boolean;
   createdAt: string;
   lastLogin?: string;

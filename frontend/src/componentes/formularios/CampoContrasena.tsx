@@ -37,7 +37,7 @@ export const CampoContrasena: React.FC<PropiedadesCampoContrasena> = ({
 }) => {
   const [mostrarContrasena, establecerMostrarContrasena] = useState(false);
   const [esEnfocado, establecerEsEnfocado] = useState(false);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const esEditable = disabled ? false : (editable !== undefined ? editable : true);
 
   return (

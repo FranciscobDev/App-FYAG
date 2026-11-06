@@ -199,6 +199,8 @@ interface TipoContextoAplicacion {
   parametrosSistema: ParametroSistema[];
   registrosRespaldo: RegistroRespaldo[];
   listaNotificaciones: DetalleNotificacion[];
+  sincronizarUsuariosSistema: (usuarios: UsuarioSistema[]) => void;
+  registrarEventoAuditoria: (entry: Omit<RegistroAuditoria, "id" | "timestamp">) => void;
   crearUsuarioSistema: (user: Omit<UsuarioSistema, "id" | "createdAt" | "disabled">) => { success: boolean; error?: string };
   alternarUsuarioSistemaDeshabilitado: (userId: string) => { success: boolean; error?: string };
   anonimizarUsuario: (userId: string) => { success: boolean; error?: string };
@@ -982,11 +984,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((p) =>
         p.id === id
           ? {
-              ...p,
-              status: "cerrado",
-              closedAt: new Date().toISOString(),
-              closedBy,
-            }
+            ...p,
+            status: "cerrado",
+            closedAt: new Date().toISOString(),
+            closedBy,
+          }
           : p
       )
     );
@@ -1041,11 +1043,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         const loans = (t.loans || []).map((l, idx) =>
           idx === 0
             ? {
-                ...l,
-                returnDate: new Date().toISOString().slice(0, 10),
-                returnCondition: condition,
-                returnNotes: notes,
-              }
+              ...l,
+              returnDate: new Date().toISOString().slice(0, 10),
+              returnCondition: condition,
+              returnNotes: notes,
+            }
             : l
         );
         return {
@@ -1182,10 +1184,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             prevProj.map((p) =>
               p.code === r.projectCode
                 ? {
-                    ...p,
-                    costReal: Math.max(0, p.costReal - totalReturnedValue),
-                    costRealMaterials: Math.max(0, (p.costRealMaterials || 0) - totalReturnedValue),
-                  }
+                  ...p,
+                  costReal: Math.max(0, p.costReal - totalReturnedValue),
+                  costRealMaterials: Math.max(0, (p.costRealMaterials || 0) - totalReturnedValue),
+                }
                 : p
             )
           );
@@ -1318,12 +1320,12 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((r) =>
         r.id === returnId
           ? {
-              ...r,
-              status: "resuelta",
-              resolutionType,
-              resolutionNotes: notes,
-              resolvedAt: new Date().toISOString().slice(0, 10),
-            }
+            ...r,
+            status: "resuelta",
+            resolutionType,
+            resolutionNotes: notes,
+            resolvedAt: new Date().toISOString().slice(0, 10),
+          }
           : r
       )
     );
@@ -1394,12 +1396,12 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         prev.map((p) =>
           p.id === entry.projectId
             ? {
-                ...p,
-                hoursReal: (p.hoursReal || 0) + entry.hours,
-                costRealHours: (p.costRealHours || 0) + entry.hours * hourlyRate,
-                costReal: p.costReal + entry.hours * hourlyRate,
-                laborEntries: [newLaborEntry, ...(p.laborEntries || [])],
-              }
+              ...p,
+              hoursReal: (p.hoursReal || 0) + entry.hours,
+              costRealHours: (p.costRealHours || 0) + entry.hours * hourlyRate,
+              costReal: p.costReal + entry.hours * hourlyRate,
+              laborEntries: [newLaborEntry, ...(p.laborEntries || [])],
+            }
             : p
         )
       );
@@ -1496,11 +1498,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         prev.map((p) =>
           p.id === existing.projectId
             ? {
-                ...p,
-                hoursReal: Math.max(0, (p.hoursReal || 0) + hourDiff),
-                costRealHours: Math.max(0, (p.costRealHours || 0) + hourDiff * hourlyRate),
-                costReal: Math.max(0, p.costReal + hourDiff * hourlyRate),
-              }
+              ...p,
+              hoursReal: Math.max(0, (p.hoursReal || 0) + hourDiff),
+              costRealHours: Math.max(0, (p.costRealHours || 0) + hourDiff * hourlyRate),
+              costReal: Math.max(0, p.costReal + hourDiff * hourlyRate),
+            }
             : p
         )
       );
@@ -1590,12 +1592,12 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((p) =>
         p.id === data.projectId
           ? {
-              ...p,
-              hoursReal: (p.hoursReal || 0) + data.hours,
-              costRealHours: (p.costRealHours || 0) + totalCost,
-              costReal: p.costReal + totalCost,
-              laborEntries: [newLaborEntry, ...(p.laborEntries || [])],
-            }
+            ...p,
+            hoursReal: (p.hoursReal || 0) + data.hours,
+            costRealHours: (p.costRealHours || 0) + totalCost,
+            costReal: p.costReal + totalCost,
+            laborEntries: [newLaborEntry, ...(p.laborEntries || [])],
+          }
           : p
       )
     );
@@ -1637,6 +1639,19 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   // 9. ADMINISTRATION & NOTIFICATIONS
+  const sincronizarUsuariosSistema = (usuarios: UsuarioSistema[]) => {
+    setSystemUsers(usuarios);
+  };
+
+  const registrarEventoAuditoria = (entry: Omit<RegistroAuditoria, "id" | "timestamp">) => {
+    const auditEntry: RegistroAuditoria = {
+      ...entry,
+      id: `aud_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      timestamp: new Date().toISOString(),
+    };
+    setAuditLogs((prev) => [auditEntry, ...prev]);
+  };
+
   const crearUsuarioSistema = (user: Omit<UsuarioSistema, "id" | "createdAt" | "disabled">) => {
     if (usuariosSistema.some((u) => u.email.trim().toLowerCase() === user.email.trim().toLowerCase())) {
       return { success: false, error: "El correo electrónico ya está registrado." };
@@ -1726,13 +1741,13 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((u) =>
         u.id === userId
           ? {
-              ...u,
-              rut: "XX.XXX.XXX-X",
-              name: `Usuario Anonimizado #${shortId}`,
-              email: `anonimo_${shortId}@privacidad.local`,
-              phone: "+56 9 0000 0000",
-              disabled: true,
-            }
+            ...u,
+            rut: "XX.XXX.XXX-X",
+            name: `Usuario Anonimizado #${shortId}`,
+            email: `anonimo_${shortId}@privacidad.local`,
+            phone: "+56 9 0000 0000",
+            disabled: true,
+          }
           : u
       )
     );
@@ -1947,6 +1962,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         actualizarHoraTrabajoTecnico,
         registrarHorasManualesAdmin,
         crearReporteAvanceTecnico,
+        sincronizarUsuariosSistema,
+        registrarEventoAuditoria,
         crearUsuarioSistema,
         alternarUsuarioSistemaDeshabilitado,
         anonimizarUsuario,
