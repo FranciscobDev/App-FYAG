@@ -5,7 +5,6 @@
 
 
 node_modules/
-.env
 .expo/
 # 1. Dependencias (Node.js & Gestores de paquetes)
 node_modules/
@@ -61,15 +60,14 @@ android/
 *.app
 *.dSYM/
 
-# 6. Variables de entorno y secretos
-.env
+# 6. Variables de entorno y secretos (se permite .env)
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 .env*.local
-*.env
-*.env.*
+!.env
+!backend/.env
 !.env.example
 
 # 7. Caches, linters y compilación TypeScript
