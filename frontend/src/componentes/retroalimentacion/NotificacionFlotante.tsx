@@ -2,11 +2,14 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Animated,
+  Platform,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
 
@@ -30,6 +33,11 @@ export const NotificacionFlotante: React.FC<PropiedadesNotificacionFlotante> = (
   title,
 }) => {
   const [reduceMotion, establecerReduceMotion] = useState(false);
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-20)).current;
 
@@ -123,6 +131,7 @@ export const NotificacionFlotante: React.FC<PropiedadesNotificacionFlotante> = (
       style={[
         estilos.contenedor,
         {
+          top: Math.max(superiorInset + 12, 24),
           backgroundColor: bg,
           borderColor: borde,
           opacity,

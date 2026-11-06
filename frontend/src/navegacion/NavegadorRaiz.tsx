@@ -1,6 +1,7 @@
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
+import { StatusBar } from "expo-status-bar";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { tema } from "@/nucleo/tema";
 import { PlantillaAdmin } from "@/plantillas/PlantillaAdmin";
@@ -14,6 +15,7 @@ export const NavegadorRaiz: React.FC = () => {
   if (!haySesion) {
     return (
       <View style={estilos.contenedor}>
+        <StatusBar style="dark" />
         <PlantillaAutenticacion />
       </View>
     );
@@ -22,6 +24,7 @@ export const NavegadorRaiz: React.FC = () => {
   return (
     <NavigationContainer>
       <View style={estilos.contenedor}>
+        <StatusBar style="light" />
         {rolActual === "admin" && <PlantillaAdmin onLogout={cerrarSesion} />}
         {rolActual === "warehouse" && <PlantillaBodega onLogout={cerrarSesion} />}
         {rolActual === "technician" && <PlantillaTecnico onLogout={cerrarSesion} />}

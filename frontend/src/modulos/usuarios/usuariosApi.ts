@@ -1,5 +1,6 @@
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api";
-const RUTA = `${BASE_URL}/usuarios`;
+import { encabezadosAuth, obtenerBaseUrlApi } from "@/nucleo/sesion";
+
+const obtenerRuta = () => `${obtenerBaseUrlApi()}/usuarios`;
 
 export interface Rol {
   id_rol: number;
@@ -36,8 +37,6 @@ export interface Resultado<T> {
   error?: string;
 }
 
-import { encabezadosAuth } from "@/nucleo/sesion";
-
 async function peticion<T>(url: string, opciones?: RequestInit): Promise<Resultado<T>> {
   try {
     const res = await fetch(url, {
@@ -56,23 +55,23 @@ async function peticion<T>(url: string, opciones?: RequestInit): Promise<Resulta
     return { ok: false, error: "No se pudo conectar con el servidor" };
   }
 }
-export const listarUsuarios = () => peticion<Usuario[]>(RUTA);
+export const listarUsuarios = () => peticion<Usuario[]>(obtenerRuta());
 
-export const listarRoles = () => peticion<Rol[]>(`${RUTA}/roles`);
+export const listarRoles = () => peticion<Rol[]>(`${obtenerRuta()}/roles`);
 
 export const crearUsuario = (datos: FormularioUsuario) =>
-  peticion<{ mensaje: string; usuario: Usuario }>(RUTA, {
+  peticion<{ mensaje: string; usuario: Usuario }>(obtenerRuta(), {
     method: "POST",
     body: JSON.stringify(datos),
   });
 
 export const actualizarUsuario = (id: number, datos: Partial<FormularioUsuario>) =>
-  peticion<{ mensaje: string; usuario: Usuario }>(`${RUTA}/${id}`, {
+  peticion<{ mensaje: string; usuario: Usuario }>(`${obtenerRuta()}/${id}`, {
     method: "PUT",
     body: JSON.stringify(datos),
   });
 
 export const eliminarUsuario = (id: number) =>
-  peticion<{ mensaje: string }>(`${RUTA}/${id}`, {
+  peticion<{ mensaje: string }>(`${obtenerRuta()}/${id}`, {
     method: "DELETE",
   });

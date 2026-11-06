@@ -1,4 +1,4 @@
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api";
+import { fijarBaseUrlApi, obtenerUrlsCandidatasApi } from "@/nucleo/sesion";
 
 export interface UsuarioApi {
   id_usuario: number;
@@ -17,29 +17,53 @@ export interface RespuestaLogin {
   error?: string;
 }
 
-export const loginApi = async (correo: string, contrasena: string): Promise<RespuestaLogin> => {
+const intentarLoginEnUrl = async (
+  baseUrl: string,
+  correo: string,
+  contrasena: string
+): Promise<{ conectado: boolean; respuesta?: RespuestaLogin }> => {
   const controlador = new AbortController();
-  const temporizador = setTimeout(() => controlador.abort(), 10000);
+  const temporizador = setTimeout(() => controlador.abort(), 5000);
 
   try {
-    const res = await fetch(`${BASE_URL}/auth/login`, {
+    const res = await fetch(`${baseUrl}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ correo_usuario: correo, contrasena }),
       signal: controlador.signal,
     });
     const json = await res.json().catch(() => ({}));
+    fijarBaseUrlApi(baseUrl);
+
     if (!res.ok) {
-      return { ok: false, error: json.mensaje ?? "No se pudo iniciar sesión" };
+      return {
+        conectado: true,
+        respuesta: { ok: false, error: json.mensaje ?? "Correo o contraseña incorrectos" },
+      };
     }
-    return { ok: true, data: json };
-  } catch (e) {
-    const expiro = (e as Error).name === "AbortError";
     return {
-      ok: false,
-      error: expiro ? "El servidor no respondió a tiempo" : "No se pudo conectar con el servidor",
+      conectado: true,
+      respuesta: { ok: true, data: json },
     };
+  } catch {
+    return { conectado: false };
   } finally {
     clearTimeout(temporizador);
   }
+};
+
+export const loginApi = async (correo: string, contrasena: string): Promise<RespuestaLogin> => {
+  const urls = obtenerUrlsCandidatasApi();
+
+  for (const url of urls) {
+    const intento = await intentarLoginEnUrl(url, correo, contrasena);
+    if (intento.conectado && intento.respuesta) {
+      return intento.respuesta;
+    }
+  }
+
+  return {
+    ok: false,
+    error: `No se pudo conectar al servidor (${urls[0]}). Verifica que el celular y el PC estén en el mismo Wi-Fi y el puerto 3000 esté abierto.`,
+  };
 };

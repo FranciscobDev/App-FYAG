@@ -1,8 +1,10 @@
 import React from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleProp,
   StyleSheet,
   Text,
@@ -10,6 +12,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
 
@@ -37,6 +40,11 @@ export const PanelLateral: React.FC<PropiedadesPanelLateral> = ({
   containerStyle,
 }) => {
   const esDerecha = position === "right";
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
 
   return (
     <Modal
@@ -57,7 +65,12 @@ export const PanelLateral: React.FC<PropiedadesPanelLateral> = ({
           ]}
         >
           {/* Header del Drawer */}
-          <View style={estilos.encabezado}>
+          <View
+            style={[
+              estilos.encabezado,
+              { paddingTop: Math.max(superiorInset + 12, 20) },
+            ]}
+          >
             <View style={estilos.tituloColumna}>
               <Text style={estilos.titulo}>{title}</Text>
               {subtitle && <Text style={estilos.subtitulo}>{subtitle}</Text>}
@@ -83,7 +96,16 @@ export const PanelLateral: React.FC<PropiedadesPanelLateral> = ({
           </ScrollView>
 
           {/* Footer opcional */}
-          {footer && <View style={estilos.pie}>{footer}</View>}
+          {footer && (
+            <View
+              style={[
+                estilos.pie,
+                { paddingBottom: Math.max(insets.bottom + 12, tema.spacing.md) },
+              ]}
+            >
+              {footer}
+            </View>
+          )}
         </View>
       </View>
     </Modal>

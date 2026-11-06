@@ -3,11 +3,30 @@ import { Rol, Usuario } from "@/nucleo/tipos";
 import { establecerToken } from "@/nucleo/sesion";
 import { UsuarioApi, loginApi } from "@/modulos/autenticacion/authApi";
 
-// Nombres de rol tal como están en la tabla `roles`
-const ROL_DESDE_BD: Record<string, Rol> = {
-  Administrador: "admin",
-  Bodeguero: "warehouse",
-  Tecnico: "technician",
+// Normaliza el nombre del rol desde la BD (sin tildes ni sensibilidad a mayúsculas)
+const resolverRolDesdeBd = (nombreRol?: string | null, idRol?: number | null): Rol | null => {
+  const limpio = (nombreRol ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (limpio.includes("admin") || limpio.includes("geren") || limpio.includes("jefe")) {
+    return "admin";
+  }
+  if (limpio.includes("bodeg") || limpio.includes("almac") || limpio.includes("invent")) {
+    return "warehouse";
+  }
+  if (limpio.includes("tecnic") || limpio.includes("terreno") || limpio.includes("oper")) {
+    return "technician";
+  }
+
+  // Respaldo por id_rol si nombre_rol viene nulo o distinto
+  if (idRol === 1) return "admin";
+  if (idRol === 2) return "warehouse";
+  if (idRol === 3) return "technician";
+
+  return null;
 };
 
 const USUARIO_VACIO: Usuario = {
@@ -47,7 +66,7 @@ const ContextoAutenticacion = createContext<TipoContextoAutenticacion>({
 });
 
 const construirSesion = (u: UsuarioApi): Sesion | null => {
-  const rol = ROL_DESDE_BD[u.nombre_rol ?? ""];
+  const rol = resolverRolDesdeBd(u.nombre_rol, u.id_rol);
   if (!rol) return null; // Sin rol reconocido: no se da acceso
 
   const nombre = `${u.nombre_usuario} ${u.apellido_usuario}`.trim();

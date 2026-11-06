@@ -1,8 +1,10 @@
 import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleProp,
   StyleSheet,
   Text,
@@ -10,6 +12,7 @@ import {
   View,
   ViewStyle,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
@@ -49,6 +52,11 @@ export const CampanaNotificaciones: React.FC<PropiedadesCampanaNotificaciones> =
 }) => {
   const [modalAbrir, establecerModalAbrir] = useState(false);
   const [seleccionadoTipo, establecerSeleccionadoTipo] = useState<FilterType>("todas");
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
   const esOscuro = variant === "dark";
   const resueltoColor = iconColor || (esOscuro ? "#ffffff" : tema.colors.text);
 
@@ -159,7 +167,16 @@ export const CampanaNotificaciones: React.FC<PropiedadesCampanaNotificaciones> =
         animationType="fade"
         onRequestClose={() => establecerModalAbrir(false)}
       >
-        <Pressable style={estilos.backdrop} onPress={() => establecerModalAbrir(false)}>
+        <Pressable
+          style={[
+            estilos.backdrop,
+            {
+              paddingTop: superiorInset + 58,
+              paddingBottom: Math.max(insets.bottom + 12, 16),
+            },
+          ]}
+          onPress={() => establecerModalAbrir(false)}
+        >
           <View style={estilos.modalTarjeta} onStartShouldSetResponder={() => true}>
             {/* Encabezado */}
             <View style={estilos.encabezado}>

@@ -4,12 +4,14 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { ROLES, ORDEN_ROLES } from "@/nucleo/roles";
@@ -83,6 +85,13 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
     conteosFisicos,
   } = usarAplicacion();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
+  const inferiorInset = insets.bottom;
+  const esMovil = width < 600;
 
   // Menú Drawer lateral desplegable desde las 3 líneas
   const [menuLateralAbrir, establecerMenuLateralAbrir] = useState(false);
@@ -551,7 +560,18 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
       {/* ========================================================================= */}
       {/* 1. TOPBAR RESPONSIVA                                                      */}
       {/* ========================================================================= */}
-      <View style={[estilos.barraSuperior, width < 600 && estilos.barraSuperiorCompacto]}>
+      <View
+        style={[
+          estilos.barraSuperior,
+          esMovil && estilos.barraSuperiorCompacto,
+          {
+            paddingTop: superiorInset,
+            minHeight: (esMovil ? 56 : 64) + superiorInset,
+            paddingLeft: Math.max(insets.left, esMovil ? tema.spacing.md : tema.spacing.lg),
+            paddingRight: Math.max(insets.right, esMovil ? tema.spacing.md : tema.spacing.lg),
+          },
+        ]}
+      >
         {/* Lado Izquierdo: Botón Menú + Logo */}
         <View style={estilos.superiorIzquierda}>
           <TouchableOpacity
@@ -632,7 +652,16 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
       {/* ========================================================================= */}
       {/* 2. LAYOUT: CONTENIDO A PANTALLA COMPLETA (SIN MENÚ LATERAL FIJO)          */}
       {/* ========================================================================= */}
-      <View style={estilos.cuerpoEnvoltorio}>
+      <View
+        style={[
+          estilos.cuerpoEnvoltorio,
+          {
+            paddingBottom: inferiorInset,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+      >
         <View style={estilos.principalContenido}>
           <View style={estilos.contenidoContenedor}>
             {renderizarContenido()}
@@ -654,7 +683,12 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
 
           <View style={estilos.menuLateralContenido} onStartShouldSetResponder={() => true}>
             {/* Header del Drawer */}
-            <View style={estilos.menuLateralEncabezado}>
+            <View
+              style={[
+                estilos.menuLateralEncabezado,
+                { paddingTop: Math.max(superiorInset + 10, 14) },
+              ]}
+            >
               <View style={estilos.marcaFila}>
                 <View style={estilos.marcaLogoCaja}>
                   <Ionicons name="flash" size={16} color={tema.colors.textInverse} />
@@ -743,7 +777,12 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
             </ScrollView>
 
             {/* SECCIÓN FIJA ABAJO A LA IZQUIERDA: LOGIN / PERFIL DE USUARIO */}
-            <View style={estilos.menuLateralUsuarioPie}>
+            <View
+              style={[
+                estilos.menuLateralUsuarioPie,
+                { paddingBottom: Math.max(inferiorInset + 10, 12) },
+              ]}
+            >
               <TouchableOpacity
                 onPress={() => {
                   establecerUsuarioMenuAbrir(true);
@@ -776,7 +815,13 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
         animationType="fade"
         onRequestClose={() => establecerUsuarioMenuAbrir(false)}
       >
-        <Pressable style={estilos.modalBackdrop} onPress={() => establecerUsuarioMenuAbrir(false)}>
+        <Pressable
+          style={[
+            estilos.modalBackdrop,
+            { paddingBottom: Math.max(inferiorInset + 64, 76) },
+          ]}
+          onPress={() => establecerUsuarioMenuAbrir(false)}
+        >
           <View style={estilos.usuarioMenuTarjeta} onStartShouldSetResponder={() => true}>
             <View style={estilos.usuarioMenuEncabezado}>
               <View style={estilos.avatarGrande}>
@@ -862,7 +907,13 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
         onRequestClose={() => establecerGlobalBuscarAbrir(false)}
       >
         <Pressable
-          style={estilos.buscadorModalOverlay}
+          style={[
+            estilos.buscadorModalOverlay,
+            {
+              paddingTop: Math.max(superiorInset + 16, 56),
+              paddingBottom: Math.max(inferiorInset + 16, 16),
+            },
+          ]}
           onPress={() => establecerGlobalBuscarAbrir(false)}
         >
           <View
@@ -995,7 +1046,8 @@ const estilos = StyleSheet.create({
     backgroundColor: tema.colors.background,
   },
   barraSuperior: {
-    height: 64,
+    minHeight: 64,
+    paddingVertical: 8,
     backgroundColor: "#1c1917", // Dark Titanium Bar
     borderBottomWidth: 1.5,
     borderBottomColor: "#292524",

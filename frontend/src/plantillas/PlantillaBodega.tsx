@@ -1,14 +1,17 @@
 import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
@@ -61,6 +64,13 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
   const { usuario, rolActual, establecerRol } = usarAutenticacion();
   const { productos, solicitudesMaterial, recepcionesPendientes, ordenesDevolucion } = usarAplicacion();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
+  const inferiorInset = insets.bottom;
+  const esCompacto = width < 560;
 
   const [activoRoute, establecerActivoRoute] = useState<RutaBodega>("home");
   const [menuLateralAbrir, establecerMenuLateralAbrir] = useState(false);
@@ -237,7 +247,18 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
       {/* ========================================================================= */}
       {/* 1. TOPBAR RESPONSIVA                                                      */}
       {/* ========================================================================= */}
-      <View style={[estilos.barraSuperior, width < 560 && estilos.barraSuperiorCompacto]}>
+      <View
+        style={[
+          estilos.barraSuperior,
+          esCompacto && estilos.barraSuperiorCompacto,
+          {
+            paddingTop: superiorInset,
+            minHeight: (esCompacto ? 56 : 64) + superiorInset,
+            paddingLeft: Math.max(insets.left, esCompacto ? tema.spacing.md : tema.spacing.lg),
+            paddingRight: Math.max(insets.right, esCompacto ? tema.spacing.md : tema.spacing.lg),
+          },
+        ]}
+      >
         <View style={estilos.superiorIzquierda}>
           <TouchableOpacity
             onPress={() => establecerMenuLateralAbrir(true)}
@@ -274,7 +295,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
       {/* ========================================================================= */}
       {/* 2. CUERPO: ÁREA PRINCIPAL A PANTALLA COMPLETA                             */}
       {/* ========================================================================= */}
-      <View style={estilos.cuerpoEnvoltorio}>
+      <View
+        style={[
+          estilos.cuerpoEnvoltorio,
+          {
+            paddingBottom: inferiorInset,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+      >
         {/* ÁREA DE CONTENIDO */}
         <View style={estilos.principalContenido}>
           {/* Banner de código escaneado si existe */}
@@ -310,7 +340,12 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
 
           <View style={estilos.menuLateralContenido} onStartShouldSetResponder={() => true}>
             {/* Header del Drawer */}
-            <View style={estilos.menuLateralEncabezado}>
+            <View
+              style={[
+                estilos.menuLateralEncabezado,
+                { paddingTop: Math.max(superiorInset + 10, 14) },
+              ]}
+            >
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <View style={estilos.marcaIconoCirculo}>
                   <Ionicons name="cube" size={20} color={tema.colors.textInverse} />
@@ -401,7 +436,12 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
             </ScrollView>
 
             {/* SECCIÓN FIJA ABAJO A LA IZQUIERDA: LOGIN / PERFIL DE USUARIO */}
-            <View style={estilos.menuLateralUsuarioPie}>
+            <View
+              style={[
+                estilos.menuLateralUsuarioPie,
+                { paddingBottom: Math.max(inferiorInset + 10, 12) },
+              ]}
+            >
               <TouchableOpacity
                 onPress={() => {
                   establecerUsuarioMenuAbrir(true);
@@ -429,7 +469,10 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
       {/* ========================================================================= */}
       <TouchableOpacity
         onPress={() => establecerEscanerAbrir(true)}
-        style={estilos.floatingEscanearFab}
+        style={[
+          estilos.floatingEscanearFab,
+          { bottom: Math.max(inferiorInset + 16, 24) },
+        ]}
         activeOpacity={0.85}
         accessibilityLabel="Escanear código QR o código de barras de material"
         accessibilityRole="button"
@@ -454,7 +497,13 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
         animationType="fade"
         onRequestClose={() => establecerUsuarioMenuAbrir(false)}
       >
-        <Pressable style={estilos.modalBackdrop} onPress={() => establecerUsuarioMenuAbrir(false)}>
+        <Pressable
+          style={[
+            estilos.modalBackdrop,
+            { paddingBottom: Math.max(inferiorInset + 64, 76) },
+          ]}
+          onPress={() => establecerUsuarioMenuAbrir(false)}
+        >
           <View style={estilos.usuarioMenuTarjeta} onStartShouldSetResponder={() => true}>
             <View style={estilos.usuarioMenuEncabezado}>
               <View style={[estilos.avatarGrande, { backgroundColor: tema.colors.warnDark }]}>
@@ -536,7 +585,8 @@ const estilos = StyleSheet.create({
     backgroundColor: tema.colors.background,
   },
   barraSuperior: {
-    height: 64,
+    minHeight: 64,
+    paddingVertical: 8,
     backgroundColor: "#1c1917", // Dark Titanium Bar
     borderBottomWidth: 1.5,
     borderBottomColor: "#292524",

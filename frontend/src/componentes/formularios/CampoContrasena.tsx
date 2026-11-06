@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
+  Pressable,
   StyleProp,
   StyleSheet,
   Text,
@@ -30,10 +31,13 @@ export const CampoContrasena: React.FC<PropiedadesCampoContrasena> = ({
   containerStyle,
   style,
   editable,
+  onFocus,
+  onBlur,
   ...rest
 }) => {
   const [mostrarContrasena, establecerMostrarContrasena] = useState(false);
   const [esEnfocado, establecerEsEnfocado] = useState(false);
+  const inputRef = useRef<TextInput>(null);
   const esEditable = disabled ? false : (editable !== undefined ? editable : true);
 
   return (
@@ -44,7 +48,12 @@ export const CampoContrasena: React.FC<PropiedadesCampoContrasena> = ({
         {required && <Text style={estilos.requiredMarcar}> *</Text>}
       </Text>
 
-      <View
+      <Pressable
+        onPress={() => {
+          if (esEditable) {
+            inputRef.current?.focus();
+          }
+        }}
         style={[
           estilos.entradaContenedor,
           esEnfocado && estilos.entradaEnfocado,
@@ -66,21 +75,31 @@ export const CampoContrasena: React.FC<PropiedadesCampoContrasena> = ({
         />
 
         <TextInput
+          {...rest}
+          ref={inputRef}
           secureTextEntry={!mostrarContrasena}
-          placeholderTextColor={tema.colors.textLight}
-          onFocus={() => establecerEsEnfocado(true)}
-          onBlur={() => establecerEsEnfocado(false)}
+          autoCapitalize="none"
+          autoCorrect={false}
+          textContentType="password"
+          placeholderTextColor={tema.colors.textMuted}
+          onFocus={(e) => {
+            establecerEsEnfocado(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            establecerEsEnfocado(false);
+            onBlur?.(e);
+          }}
           accessibilityLabel={label}
           aria-required={required}
           aria-invalid={Boolean(error)}
           editable={esEditable}
           style={[estilos.entrada, style]}
-          {...rest}
         />
 
         {/* Botón para alternar visibilidad con mínimo touch target */}
         <TouchableOpacity
-          onPress={() => establecerMostrarContrasena(!mostrarContrasena)}
+          onPress={() => establecerMostrarContrasena((prev) => !prev)}
           style={estilos.eyeBoton}
           activeOpacity={0.7}
           accessibilityLabel={mostrarContrasena ? "Ocultar contraseña" : "Ver contraseña"}
@@ -93,7 +112,7 @@ export const CampoContrasena: React.FC<PropiedadesCampoContrasena> = ({
             color={tema.colors.textMuted}
           />
         </TouchableOpacity>
-      </View>
+      </Pressable>
 
       {Boolean(error) ? (
         <View style={estilos.mensajeFila}>
@@ -132,12 +151,13 @@ const estilos = StyleSheet.create({
     paddingHorizontal: tema.spacing.md,
   },
   entradaEnfocado: {
-    borderColor: tema.colors.primary,
+    borderColor: tema.colors.borderFocus,
+    borderWidth: tema.borders.focus,
     backgroundColor: tema.colors.primaryLight,
-    ...tema.shadows.sm,
   },
   entradaError: {
     borderColor: tema.colors.danger,
+    borderWidth: tema.borders.focus,
     backgroundColor: tema.colors.dangerLight,
   },
   izquierdaIcono: {
@@ -145,9 +165,9 @@ const estilos = StyleSheet.create({
   },
   entrada: {
     flex: 1,
+    height: tema.touchTargets.minHeight,
     fontSize: tema.fontSize.base,
     color: tema.colors.text,
-    paddingVertical: 10,
   },
   eyeBoton: {
     padding: 6,

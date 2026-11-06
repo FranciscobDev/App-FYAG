@@ -1,7 +1,7 @@
 // proyectosApi.ts
-// Ajusta BASE_URL y la ruta según tu servidor.
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3000/api";
-const RUTA = `${BASE_URL}/proyectos`;
+import { encabezadosAuth, obtenerBaseUrlApi } from "@/nucleo/sesion";
+
+const obtenerRuta = () => `${obtenerBaseUrlApi()}/proyectos`;
 
 // Valores tomados del controlador (valores por defecto).
 // Completa con los valores exactos del ENUM de la BD.
@@ -37,8 +37,6 @@ export interface Resultado<T> {
   error?: string;
 }
 
-import { encabezadosAuth } from "@/nucleo/sesion";
-
 async function peticion<T>(url: string, opciones?: RequestInit): Promise<Resultado<T>> {
   try {
     const res = await fetch(url, {
@@ -58,24 +56,24 @@ async function peticion<T>(url: string, opciones?: RequestInit): Promise<Resulta
   }
 }
 
-export const listarProyectos = () => peticion<Proyecto[]>(RUTA);
+export const listarProyectos = () => peticion<Proyecto[]>(obtenerRuta());
 
-export const obtenerProyecto = (id: number) => peticion<Proyecto>(`${RUTA}/${id}`);
+export const obtenerProyecto = (id: number) => peticion<Proyecto>(`${obtenerRuta()}/${id}`);
 
 export const crearProyecto = (datos: FormularioProyecto) =>
-  peticion<{ mensaje: string; proyecto: Proyecto }>(RUTA, {
+  peticion<{ mensaje: string; proyecto: Proyecto }>(obtenerRuta(), {
     method: "POST",
     body: JSON.stringify(datos),
   });
 
 export const actualizarProyecto = (id: number, datos: FormularioProyecto) =>
-  peticion<{ mensaje: string; proyecto: Proyecto }>(`${RUTA}/${id}`, {
+  peticion<{ mensaje: string; proyecto: Proyecto }>(`${obtenerRuta()}/${id}`, {
     method: "PUT",
     body: JSON.stringify(datos),
   });
 
 export const eliminarProyecto = (id: number) =>
-  peticion<{ mensaje: string; proyectoEliminado: Proyecto }>(`${RUTA}/${id}`, {
+  peticion<{ mensaje: string; proyectoEliminado: Proyecto }>(`${obtenerRuta()}/${id}`, {
     method: "DELETE",
   });
 
@@ -86,18 +84,18 @@ export const eliminarProyecto = (id: number) =>
 }
 
 export const listarTecnicos = () =>
-  peticion<Tecnico[]>(`${RUTA}/tecnicos`);
+  peticion<Tecnico[]>(`${obtenerRuta()}/tecnicos`);
 
 export const listarTecnicosDeProyecto = (idProyecto: number) =>
-  peticion<Tecnico[]>(`${RUTA}/${idProyecto}/tecnicos`);
+  peticion<Tecnico[]>(`${obtenerRuta()}/${idProyecto}/tecnicos`);
 
 export const asignarTecnico = (idProyecto: number, idUsuario: number) =>
-  peticion<{ mensaje: string }>(`${RUTA}/${idProyecto}/tecnicos`, {
+  peticion<{ mensaje: string }>(`${obtenerRuta()}/${idProyecto}/tecnicos`, {
     method: "POST",
     body: JSON.stringify({ id_usuario: idUsuario }),
   });
 
 export const quitarTecnico = (idProyecto: number, idUsuario: number) =>
-  peticion<{ mensaje: string }>(`${RUTA}/${idProyecto}/tecnicos/${idUsuario}`, {
+  peticion<{ mensaje: string }>(`${obtenerRuta()}/${idProyecto}/tecnicos/${idUsuario}`, {
     method: "DELETE",
   });

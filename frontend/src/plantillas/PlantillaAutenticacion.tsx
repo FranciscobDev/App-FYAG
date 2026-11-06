@@ -3,11 +3,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { tema } from "@/nucleo/tema";
@@ -30,6 +33,12 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
   initialView = "login",
 }) => {
   const { iniciarSesion } = usarAutenticacion();
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
   const [vista, establecerVista] = useState<VistaAutenticacion>(initialView);
 
   // 1. LOGIN STATE
@@ -168,7 +177,15 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
       style={estilos.contenedor}
     >
       <ScrollView
-        contentContainerStyle={estilos.scrollContenido}
+        contentContainerStyle={[
+          estilos.scrollContenido,
+          {
+            paddingTop: Math.max(superiorInset + 20, 36),
+            paddingBottom: Math.max(insets.bottom + 24, 36),
+            paddingLeft: Math.max(insets.left, width < 380 ? tema.spacing.md : tema.spacing.lg),
+            paddingRight: Math.max(insets.right, width < 380 ? tema.spacing.md : tema.spacing.lg),
+          },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {/* LOGO CENTRADO */}
@@ -183,8 +200,14 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
           </Text>
         </View>
 
-        {/* TARJETA CENTRADA */}
-        <Tarjeta variant="elevated" style={estilos.tarjeta}>
+        {/* TARJETA CENTRADO */}
+        <Tarjeta
+          variant="elevated"
+          style={[
+            estilos.tarjeta,
+            width < 380 && { padding: tema.spacing.lg },
+          ]}
+        >
           {/* VISTA 1: LOGIN */}
           {vista === "login" && (
             <View>
@@ -236,6 +259,9 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                 onChangeText={establecerCorreo}
                 placeholder="ej: usuario@fyag.cl"
                 icon="mail-outline"
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
                 required
                 disabled={lockoutSegundos > 0}
               />
@@ -245,6 +271,8 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                 value={contrasena}
                 onChangeText={establecerContrasena}
                 placeholder="••••••••"
+                returnKeyType="done"
+                onSubmitEditing={() => manejarInicioSesion()}
                 required
                 disabled={lockoutSegundos > 0}
               />

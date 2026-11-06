@@ -45,11 +45,9 @@ yarn-debug.*
 yarn-error.*
 pnpm-debug.*
 
-# Variables de entorno locales
-.env
+# Variables de entorno locales (se permite .env)
 .env*.local
-*.env
-*.env.*
+!.env
 !.env.example
 
 # Caches y compilación

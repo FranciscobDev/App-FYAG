@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  StatusBar as RNStatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
@@ -37,6 +40,12 @@ export interface PropiedadesPlantillaTecnico {
 export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogout }) => {
   const { usuario, rolActual, establecerRol } = usarAutenticacion();
   const { solicitudesMaterial, hojasServicio } = usarAplicacion();
+  const insets = useSafeAreaInsets();
+  const superiorInset = Math.max(
+    insets.top,
+    Platform.OS === "android" ? RNStatusBar.currentHeight ?? 0 : 0
+  );
+  const inferiorInset = insets.bottom;
 
   const [activoPestana, establecerActivoPestana] = useState<PestanaTecnico>("proyectos");
   const [seleccionadoProyectoForPestana, establecerSeleccionadoProyectoForPestana] = useState<Proyecto | null>(null);
@@ -112,7 +121,17 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
       {/* ========================================================================= */}
       {/* 1. TOPBAR CELULAR MOBILE-FIRST                                            */}
       {/* ========================================================================= */}
-      <View style={estilos.barraSuperior}>
+      <View
+        style={[
+          estilos.barraSuperior,
+          {
+            paddingTop: superiorInset,
+            minHeight: 58 + superiorInset,
+            paddingLeft: Math.max(insets.left, tema.spacing.md),
+            paddingRight: Math.max(insets.right, tema.spacing.md),
+          },
+        ]}
+      >
         <View style={estilos.superiorIzquierda}>
           <View style={estilos.marcaCirculo}>
             <Ionicons name="hammer" size={16} color={tema.colors.textInverse} />
@@ -178,7 +197,17 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
       {/* ========================================================================= */}
       {/* 4. BOTTOMNAV CON EXACTAMENTE 4 PESTAÑAS (TOUCH TARGET ≥ 52 PX)            */}
       {/* ========================================================================= */}
-      <View style={estilos.inferiorNavegacion}>
+      <View
+        style={[
+          estilos.inferiorNavegacion,
+          {
+            paddingBottom: Math.max(inferiorInset, 6),
+            height: 60 + inferiorInset,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+      >
         {/* Pestaña 1: Proyectos */}
         <TouchableOpacity
           onPress={() => establecerActivoPestana("proyectos")}
@@ -300,7 +329,13 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         animationType="fade"
         onRequestClose={() => establecerUsuarioMenuAbrir(false)}
       >
-        <Pressable style={estilos.modalBackdrop} onPress={() => establecerUsuarioMenuAbrir(false)}>
+        <Pressable
+          style={[
+            estilos.modalBackdrop,
+            { paddingTop: superiorInset + 58 },
+          ]}
+          onPress={() => establecerUsuarioMenuAbrir(false)}
+        >
           <View style={estilos.usuarioMenuTarjeta} onStartShouldSetResponder={() => true}>
             <View style={estilos.usuarioMenuEncabezado}>
               <View style={[estilos.avatarGrande, { backgroundColor: "#1c1917", borderWidth: 2, borderColor: tema.colors.primary }]}>
@@ -382,7 +417,8 @@ const estilos = StyleSheet.create({
     backgroundColor: tema.colors.background,
   },
   barraSuperior: {
-    height: 60,
+    minHeight: 58,
+    paddingVertical: 8,
     backgroundColor: "#1c1917", // Dark Titanium Technical Bar
     borderBottomWidth: 1.5,
     borderBottomColor: "#292524",
