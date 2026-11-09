@@ -6,8 +6,11 @@ import {
     actualizarArticulo,
     eliminarArticulo,
 } from '../controllers/articuloController';
+import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
+
+router.use(verificarRoles('admin', 'warehouse'));
 
 router.get('/', obtenerArticulos);
 router.get('/:id', obtenerArticuloPorId);

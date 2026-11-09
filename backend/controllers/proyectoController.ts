@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
+import { normalizarRol } from '../middleware/authMiddleware';
 
 export interface Proyecto {
     id_proyecto: number;
@@ -43,9 +44,20 @@ const esErrorPg = (error: unknown): error is DatabaseError => {
 };
 
 // Listar todos
-export const obtenerProyectos = async (_req: Request, res: Response): Promise<void> => {
+export const obtenerProyectos = async (req: Request, res: Response): Promise<void> => {
     try {
-        const result = await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
+        const result = esTecnico
+            ? await pool.query<Proyecto>(
+                `SELECT p.*
+                 FROM proyecto p
+                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
+                 WHERE pt.id_usuario = $1
+                 ORDER BY p.id_proyecto ASC`,
+                [payload?.id]
+            )
+            : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error al obtener proyectos:', error);
@@ -57,10 +69,20 @@ export const obtenerProyectos = async (_req: Request, res: Response): Promise<vo
 export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const result = await pool.query<Proyecto>(
-            'SELECT * FROM proyecto WHERE id_proyecto = $1',
-            [id]
-        );
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
+        const result = esTecnico
+            ? await pool.query<Proyecto>(
+                `SELECT p.*
+                 FROM proyecto p
+                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
+                 WHERE p.id_proyecto = $1 AND pt.id_usuario = $2`,
+                [id, payload?.id]
+            )
+            : await pool.query<Proyecto>(
+                'SELECT * FROM proyecto WHERE id_proyecto = $1',
+                [id]
+            );
 
         if (result.rows.length === 0) {
             res.status(404).json({ mensaje: 'Proyecto no encontrado' });

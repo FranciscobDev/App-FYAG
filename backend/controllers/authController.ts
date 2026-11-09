@@ -75,3 +75,35 @@ export const login = async (req: Request<Record<string, string>, unknown, LoginB
     }
 };
 
+export const obtenerSesion = async (req: Request, res: Response): Promise<void> => {
+    const payload = typeof req.usuario === 'object' ? req.usuario : null;
+    if (!payload) {
+        res.status(401).json({ mensaje: 'Debes iniciar sesión' });
+        return;
+    }
+
+    try {
+        const result = await pool.query<Omit<UsuarioRow, 'contrasena_hash'>>(
+            `SELECT u.id_usuario, u.nombre_usuario, u.apellido_usuario, u.correo_usuario,
+                    u.rut, u.id_rol, r.nombre_rol, u.activo
+             FROM usuario u
+             LEFT JOIN roles r ON r.id_rol = u.id_rol
+             WHERE u.id_usuario = $1 AND u.activo = TRUE`,
+            [payload.id]
+        );
+
+        if (!result.rows[0]) {
+            res.status(401).json({
+                codigo: 'SESSION_REVOKED',
+                mensaje: 'Tu cuenta está deshabilitada o ya no existe',
+            });
+            return;
+        }
+
+        res.status(200).json({ usuario: result.rows[0] });
+    } catch (error) {
+        console.error('Error al restaurar la sesión:', error);
+        res.status(500).json({ error: 'Error interno al restaurar la sesión' });
+    }
+};
+

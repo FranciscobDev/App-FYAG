@@ -271,12 +271,23 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
                 ? await resolverIdRol(id_rol, rol_codigo)
                 : null;
 
-        // Proteger que no se desactive al último Administrador activo
-        if (eraAdminActivo && activo === false) {
+        const rolDestino = idRolResuelto !== null
+            ? await pool.query<{ nombre_rol: string }>(
+                'SELECT nombre_rol::text FROM roles WHERE id_rol = $1',
+                [idRolResuelto]
+            )
+            : null;
+        const dejaDeSerAdmin =
+            eraAdminActivo &&
+            idRolResuelto !== null &&
+            !normalizarTexto(rolDestino?.rows[0]?.nombre_rol).includes('admin');
+
+        // Proteger que el sistema conserve al menos un Administrador activo
+        if (eraAdminActivo && (activo === false || dejaDeSerAdmin)) {
             const otrosAdmins = await contarAdminsActivosExcluyendo(id);
             if (otrosAdmins === 0) {
                 res.status(400).json({
-                    mensaje: 'No se puede deshabilitar al único Administrador activo del sistema'
+                    mensaje: 'No se puede deshabilitar ni cambiar el rol del único Administrador activo del sistema'
                 });
                 return;
             }
@@ -359,6 +370,23 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
         console.error('Error al actualizar usuario:', error);
         res.status(500).json({ error: 'Error interno al actualizar el usuario' });
     }
+};
+
+// Cambiar el rol mediante una operación específica de administración
+export const cambiarRolUsuario = async (
+    req: Request<{ id: string }, unknown, UsuarioBody>,
+    res: Response
+): Promise<void> => {
+    if (req.body.id_rol === undefined && req.body.rol_codigo === undefined) {
+        res.status(400).json({ mensaje: 'Debes especificar el nuevo rol del usuario' });
+        return;
+    }
+
+    req.body = {
+        id_rol: req.body.id_rol,
+        rol_codigo: req.body.rol_codigo,
+    };
+    await actualizarUsuario(req, res);
 };
 
 // Deshabilitar usuario (Requerimiento [BACK-1])

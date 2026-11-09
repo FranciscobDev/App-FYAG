@@ -6,8 +6,11 @@ import {
     actualizarProveedor,
     eliminarProveedor,
 } from '../controllers/proveedorController';
+import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
+
+router.use(verificarRoles('admin'));
 
 router.get('/', obtenerProveedores);
 router.get('/:id', obtenerProveedorPorId);

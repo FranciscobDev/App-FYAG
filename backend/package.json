@@ -6,7 +6,8 @@
     "start": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/authMiddleware.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
