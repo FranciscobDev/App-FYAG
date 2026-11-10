@@ -20,6 +20,7 @@ import { Tarjeta } from "@/componentes/base/Tarjeta";
 import { CampoTexto } from "@/componentes/formularios/CampoTexto";
 import { CampoContrasena } from "@/componentes/formularios/CampoContrasena";
 import { NotificacionFlotante, TipoNotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
+import { solicitarRecuperacionApi } from "@/modulos/autenticacion/recuperacionApi";
 
 export type VistaAutenticacion = "login" | "forgot" | "reset";
 export type EstadoEnlaceRecuperacion = "valid" | "expired" | "used";
@@ -51,6 +52,8 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
   // 2. RECUPERAR CONTRASEÑA STATE
   const [recoveryCorreo, establecerRecoveryCorreo] = useState("");
   const [recoveryEnviado, establecerRecoveryEnviado] = useState(false);
+  // Texto que devuelve el servidor: no afirma que el correo exista ni que se haya enviado
+  const [recoveryMensaje, establecerRecoveryMensaje] = useState("");
 
   // 3. RESTABLECER CONTRASEÑA STATE
   const [restablecerEnlaceEstado, establecerRestablecerEnlaceEstado] = useState<EstadoEnlaceRecuperacion>("valid");
@@ -141,19 +144,23 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
     }
   };
 
-  // Manejar Recuperar Contraseña
-  const manejarEnviarRecovery = () => {
+  // Manejar Recuperar Contraseña (API real; el mensaje lo define el servidor, igual exista o no el correo)
+  const manejarEnviarRecovery = async () => {
     if (!recoveryCorreo.trim()) {
       mostrarAviso("Por favor, ingresa tu correo electrónico corporativo para continuar.", "warn");
       return;
     }
 
     establecerCargando(true);
-    setTimeout(() => {
-      establecerCargando(false);
-      // REGLA ESTRICTA: Siempre el mismo mensaje exista o no la cuenta
+    const respuesta = await solicitarRecuperacionApi(recoveryCorreo);
+    establecerCargando(false);
+
+    if (respuesta.ok) {
+      establecerRecoveryMensaje(respuesta.mensaje);
       establecerRecoveryEnviado(true);
-    }, 700);
+    } else {
+      mostrarAviso(respuesta.mensaje, "danger");
+    }
   };
 
   // Manejar Guardar Nueva Contraseña
@@ -311,24 +318,16 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                     <Text style={estilos.safeTitulo}>Solicitud Procesada</Text>
                   </View>
                   <Text style={estilos.safeDescripcion}>
-                    Si el correo ingresado corresponde a una cuenta activa en nuestros registros, hemos enviado un enlace de recuperación.
+                    {recoveryMensaje}
                   </Text>
                   <Text style={estilos.safeHint}>
                     Por motivos de seguridad y confidencialidad, el sistema siempre muestra esta misma confirmación exista o no la cuenta.
                   </Text>
 
                   <View style={estilos.recoveryAcciones}>
-                    <Boton
-                      title="Simular Clic en Enlace de Correo"
-                      variant="primary"
-                      size="sm"
-                      icon="mail-open-outline"
-                      onPress={() => {
-                        establecerRestablecerExito(false);
-                        establecerVista("reset");
-                      }}
-                      style={{ marginBottom: 10 }}
-                    />
+                    <Text style={estilos.safeHint}>
+                      Revisa tu bandeja de entrada y la carpeta de spam. El enlace vence en 30 minutos.
+                    </Text>
                     <TouchableOpacity
                       onPress={() => {
                         establecerRecoveryEnviado(false);

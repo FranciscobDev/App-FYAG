@@ -10,13 +10,15 @@ import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
 
-router.use(verificarRoles('admin', 'warehouse'));
+// Lectura: administración, bodega y técnicos (el técnico necesita ver el catálogo)
+const puedeLeer = verificarRoles('admin', 'warehouse', 'technician');
+// Escritura: solo administración y bodega
+const puedeEscribir = verificarRoles('admin', 'warehouse');
 
-router.get('/', obtenerArticulos);
-router.get('/:id', obtenerArticuloPorId);
-router.post('/', crearArticulo);
-router.put('/:id', actualizarArticulo);
-router.delete('/:id', eliminarArticulo);
+router.get('/', puedeLeer, obtenerArticulos);
+router.get('/:id', puedeLeer, obtenerArticuloPorId);
+router.post('/', puedeEscribir, crearArticulo);
+router.put('/:id', puedeEscribir, actualizarArticulo);
+router.delete('/:id', puedeEscribir, eliminarArticulo);
 
 export default router;
-
