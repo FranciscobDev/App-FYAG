@@ -5,8 +5,8 @@ const obtenerRuta = () => `${obtenerBaseUrlApi()}/proyectos`;
 
 // Valores tomados del controlador (valores por defecto).
 // Completa con los valores exactos del ENUM de la BD.
-export const TIPOS_PROYECTO = ["Instalacion"] as const;
-export const ESTADOS_PROYECTO = ["Planificado"] as const;
+export const TIPOS_PROYECTO = ["Instalacion", "Mantencion"] as const;
+export const ESTADOS_PROYECTO = ["Planificado", "En curso", "Pausado", "Finalizado"] as const;
 
 export type TipoProyecto = (typeof TIPOS_PROYECTO)[number];
 export type EstadoProyecto = (typeof ESTADOS_PROYECTO)[number];
