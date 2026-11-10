@@ -8,6 +8,7 @@ import articuloRoutes from './routes/articuloRoutes';
 import proveedorRoutes from './routes/proveedorRoutes';
 import usuarioRoutes from './routes/usuarioRoutes';
 import proyectoRoutes from './routes/proyectoRoutes';
+import kitRoutes from './routes/kitRoutes';
 import authRoutes from './routes/authRoutes';
 import verificarToken from './middleware/authMiddleware';
 
@@ -36,6 +37,7 @@ app.use('/api/articulos', verificarToken, articuloRoutes);
 app.use('/api/proveedores', verificarToken, proveedorRoutes);
 app.use('/api/usuarios', verificarToken, usuarioRoutes);
 app.use('/api/proyectos', verificarToken, proyectoRoutes);
+app.use('/api/kits', verificarToken, kitRoutes);
 
 const probarConexion = async (): Promise<void> => {
     try {

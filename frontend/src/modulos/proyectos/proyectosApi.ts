@@ -29,7 +29,9 @@ export interface Proyecto {
 }
 
 /** Datos que se envían al crear o actualizar. */
-export type FormularioProyecto = Omit<Proyecto, "id_proyecto">;
+export type FormularioProyecto = Omit<Proyecto, "id_proyecto"> & {
+  id_kit_proyecto?: number | null;
+};
 
 export interface Resultado<T> {
   ok: boolean;
@@ -78,7 +80,7 @@ export const eliminarProyecto = (id: number) =>
   });
 
 
-  export interface Tecnico {
+export interface Tecnico {
   id_usuario: number;
   nombre: string;
 }

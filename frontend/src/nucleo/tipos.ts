@@ -570,4 +570,25 @@ export interface DetalleNotificacion {
   relatedEntityLabel?: string;
 }
 
+export interface ItemKitProyecto {
+  id_detalle_kit?: number;
+  id_articulo: number;
+  nombre_articulo: string;
+  sku?: string | null;
+  precio_unitario: number;
+  cantidad_requerida_kit: number;
+  subtotal?: number;
+}
+
+export interface KitProyecto {
+  id_kit_proyecto: number;
+  nombre_kit: string;
+  descripcion_kit?: string | null;
+  categoria?: string | null;
+  disponible_kit?: number;
+  costo_total?: number;
+  total_articulos?: number;
+  items: ItemKitProyecto[];
+}
+
 

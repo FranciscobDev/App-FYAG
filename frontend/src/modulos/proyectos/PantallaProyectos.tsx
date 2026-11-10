@@ -31,6 +31,9 @@ import {
   eliminarProyecto,
   listarProyectos,
 } from "./proyectosApi";
+import { KitProyecto } from "@/nucleo/tipos";
+import { listarKits } from "./kitsApi";
+import { ModalGestionKits } from "./ModalGestionKits";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
 
@@ -77,6 +80,10 @@ export const PantallaProyectos: React.FC = () => {
   const [errorFormulario, establecerErrorFormulario] = useState("");
   const [guardando, establecerGuardando] = useState(false);
 
+  // Kits predeterminados
+  const [kits, establecerKits] = useState<KitProyecto[]>([]);
+  const [modalKitsVisible, establecerModalKitsVisible] = useState(false);
+
   const [aviso, establecerAviso] = useState<string | null>(null);
   const mostrarAviso = (msg: string) => {
     establecerAviso(msg);
@@ -85,12 +92,15 @@ export const PantallaProyectos: React.FC = () => {
 
   const cargar = useCallback(async () => {
     establecerCargando(true);
-    const res = await listarProyectos();
-    if (res.ok && res.data) {
-      establecerProyectos(res.data);
+    const [resProy, resKits] = await Promise.all([listarProyectos(), listarKits()]);
+    if (resProy.ok && resProy.data) {
+      establecerProyectos(resProy.data);
       establecerError(null);
     } else {
-      establecerError(res.error ?? "Error al cargar proyectos");
+      establecerError(resProy.error ?? "Error al cargar proyectos");
+    }
+    if (resKits.ok && resKits.data) {
+      establecerKits(resKits.data);
     }
     establecerCargando(false);
   }, []);
@@ -116,6 +126,17 @@ export const PantallaProyectos: React.FC = () => {
   const abrirNuevo = () => {
     establecerEditando(null);
     establecerFormulario(formularioVacio(idUsuario));
+    establecerErrorFormulario("");
+    establecerModalVisible(true);
+  };
+
+  const manejarKitSeleccionadoDesdeGestion = (kit: KitProyecto) => {
+    establecerEditando(null);
+    establecerFormulario({
+      ...formularioVacio(idUsuario),
+      presupuesto_inicial: kit.costo_total ?? 0,
+      id_kit_proyecto: kit.id_kit_proyecto,
+    });
     establecerErrorFormulario("");
     establecerModalVisible(true);
   };
@@ -212,16 +233,26 @@ export const PantallaProyectos: React.FC = () => {
   };
 
   const modal = (
-    <ModalFormulario
-      visible={modalVisible}
-      editando={Boolean(editando)}
-      formulario={formulario}
-      error={errorFormulario}
-      guardando={guardando}
-      onCambiar={actualizarCampo}
-      onCancelar={() => establecerModalVisible(false)}
-      onGuardar={guardar}
-    />
+    <>
+      <ModalFormulario
+        visible={modalVisible}
+        editando={Boolean(editando)}
+        formulario={formulario}
+        kits={kits}
+        onAbrirGestionKits={() => establecerModalKitsVisible(true)}
+        error={errorFormulario}
+        guardando={guardando}
+        onCambiar={actualizarCampo}
+        onCancelar={() => establecerModalVisible(false)}
+        onGuardar={guardar}
+      />
+      <ModalGestionKits
+        visible={modalKitsVisible}
+        onClose={() => establecerModalKitsVisible(false)}
+        onKitSeleccionadoParaProyecto={manejarKitSeleccionadoDesdeGestion}
+        onKitsActualizados={cargar}
+      />
+    </>
   );
 
   // ---------- Vista de detalle ----------
@@ -346,12 +377,21 @@ export const PantallaProyectos: React.FC = () => {
               {proyectosFiltrados.length} de {proyectos.length} proyectos
             </Text>
           </View>
-          <TouchableOpacity
-            style={[estilos.botonCrearProyectoGrande, styles.boton]}
-            onPress={abrirNuevo}
-          >
-            <Text style={styles.botonTexto}>+ Nuevo</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.boton, styles.botonKits]}
+              onPress={() => establecerModalKitsVisible(true)}
+            >
+              <Ionicons name="cube-outline" size={16} color={tema.colors.primary} />
+              <Text style={styles.botonKitsTexto}>Gestionar Kits</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[estilos.botonCrearProyectoGrande, styles.boton]}
+              onPress={abrirNuevo}
+            >
+              <Text style={styles.botonTexto}>+ Nuevo</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={estilos.buscarCajaEnvoltorio}>
@@ -481,6 +521,8 @@ type ModalProps = {
   visible: boolean;
   editando: boolean;
   formulario: FormularioProyecto;
+  kits: KitProyecto[];
+  onAbrirGestionKits: () => void;
   error: string;
   guardando: boolean;
   onCambiar: <K extends keyof FormularioProyecto>(c: K, v: FormularioProyecto[K]) => void;
@@ -492,12 +534,16 @@ const ModalFormulario: React.FC<ModalProps> = ({
   visible,
   editando,
   formulario,
+  kits,
+  onAbrirGestionKits,
   error,
   guardando,
   onCambiar,
   onCancelar,
   onGuardar,
 }) => {
+  const kitSeleccionado = kits.find((k) => k.id_kit_proyecto === formulario.id_kit_proyecto);
+
   const campoNumerico = (campo: CampoNumerico, etiqueta: string) => (
     <>
       <Text style={estilos.campoEtiqueta}>{etiqueta}</Text>
@@ -580,7 +626,118 @@ const ModalFormulario: React.FC<ModalProps> = ({
             onChangeText={(t) => onCambiar("fecha_fin", t || null)}
           />
 
-          {campoNumerico("presupuesto_inicial", "Presupuesto inicial")}
+          {/* Criterio 3: Asignar kit predeterminado y autocalcular presupuesto */}
+          {!editando && (
+            <View style={styles.kitSeccionCaja}>
+              <View style={styles.kitSeccionHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.kitSeccionTitulo}>Asignar Kit Predeterminado (Opcional)</Text>
+                  <Text style={styles.kitSeccionSub}>
+                    Calcula y asigna automáticamente el presupuesto con el costo de los insumos del kit.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.btnGestionarKitsMini}
+                  onPress={onAbrirGestionKits}
+                >
+                  <Ionicons name="settings-outline" size={13} color={tema.colors.primary} />
+                  <Text style={styles.btnGestionarKitsMiniTexto}>Kits</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 6 }}>
+                <TouchableOpacity
+                  style={[
+                    styles.kitChip,
+                    !formulario.id_kit_proyecto && styles.kitChipActivo,
+                  ]}
+                  onPress={() => {
+                    onCambiar("id_kit_proyecto", null);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.kitChipTexto,
+                      !formulario.id_kit_proyecto && styles.kitChipTextoActivo,
+                    ]}
+                  >
+                    Ninguno (Sin Kit)
+                  </Text>
+                </TouchableOpacity>
+
+                {kits.map((k) => {
+                  const activo = formulario.id_kit_proyecto === k.id_kit_proyecto;
+                  return (
+                    <TouchableOpacity
+                      key={k.id_kit_proyecto}
+                      style={[styles.kitChip, activo && styles.kitChipActivo]}
+                      onPress={() => {
+                        onCambiar("id_kit_proyecto", k.id_kit_proyecto);
+                        // Criterio 3: presupuesto calculado automáticamente
+                        onCambiar("presupuesto_inicial", k.costo_total ?? 0);
+                      }}
+                    >
+                      <Ionicons
+                        name="cube"
+                        size={12}
+                        color={activo ? "#fff" : tema.colors.primary}
+                        style={{ marginRight: 4 }}
+                      />
+                      <Text
+                        style={[
+                          styles.kitChipTexto,
+                          activo && styles.kitChipTextoActivo,
+                        ]}
+                      >
+                        {k.nombre_kit} ({formatearCLP(k.costo_total ?? 0)})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {kitSeleccionado && (
+                <View style={styles.kitResumenCaja}>
+                  <View style={styles.kitResumenTop}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                        <Text style={styles.kitResumenNombre}>{kitSeleccionado.nombre_kit}</Text>
+                      </View>
+                      <Text style={styles.kitResumenDesc}>
+                        {kitSeleccionado.items.length} insumos incluidos · Categoría: {kitSeleccionado.categoria ?? "General"}
+                      </Text>
+                    </View>
+                    <View style={styles.kitResumenCosto}>
+                      <Text style={styles.kitResumenCostoLabel}>Presupuesto kit:</Text>
+                      <Text style={styles.kitResumenCostoValor}>
+                        {formatearCLP(kitSeleccionado.costo_total ?? 0)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.kitItemsPreview}>
+                    {kitSeleccionado.items.slice(0, 4).map((it, idx) => (
+                      <Text key={idx} style={styles.kitItemPreviewTexto}>
+                        • {it.cantidad_requerida_kit}x {it.nombre_articulo} ({formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
+                      </Text>
+                    ))}
+                    {kitSeleccionado.items.length > 4 && (
+                      <Text style={styles.kitItemPreviewMas}>
+                        + {kitSeleccionado.items.length - 4} insumos adicionales...
+                      </Text>
+                    )}
+                  </View>
+
+                  <Text style={styles.kitAutoPresupuestoNota}>
+                    ✓ Presupuesto inicial calculado automáticamente en {formatearCLP(kitSeleccionado.costo_total ?? 0)} en base al costo de los insumos del kit.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {campoNumerico("presupuesto_inicial", "Presupuesto inicial (Materiales)")}
           {campoNumerico("presupuesto_horas", "Presupuesto horas (HH)")}
           {campoNumerico("valor_venta", "Presupuesto usado")}
           {campoNumerico("porcentaje_avance", "Porcentaje de avance")}
@@ -707,5 +864,142 @@ const styles = StyleSheet.create({
     color: tema.colors.text,
     fontWeight: "bold",
     fontSize: tema.fontSize.sm,
+  },
+  botonKits: {
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  botonKitsTexto: {
+    color: tema.colors.primary,
+    fontWeight: "700",
+    fontSize: tema.fontSize.sm,
+  },
+  kitSeccionCaja: {
+    marginVertical: 12,
+    padding: 14,
+    backgroundColor: "#f9fafb",
+    borderWidth: 1.5,
+    borderColor: "#e5e7eb",
+    borderRadius: tema.radius.lg,
+  },
+  kitSeccionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  kitSeccionTitulo: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  kitSeccionSub: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 1,
+  },
+  btnGestionarKitsMini: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#eff6ff",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  btnGestionarKitsMiniTexto: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: tema.colors.primary,
+  },
+  kitChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    marginRight: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  kitChipActivo: {
+    backgroundColor: tema.colors.primary,
+    borderColor: tema.colors.primary,
+  },
+  kitChipTexto: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  kitChipTextoActivo: {
+    color: "#fff",
+  },
+  kitResumenCaja: {
+    marginTop: 10,
+    backgroundColor: "#ecfdf5",
+    borderWidth: 1,
+    borderColor: "#a7f3d0",
+    borderRadius: 8,
+    padding: 12,
+  },
+  kitResumenTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  kitResumenNombre: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#065f46",
+  },
+  kitResumenDesc: {
+    fontSize: 11,
+    color: "#047857",
+    marginTop: 2,
+  },
+  kitResumenCosto: {
+    alignItems: "flex-end",
+  },
+  kitResumenCostoLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#065f46",
+  },
+  kitResumenCostoValor: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#047857",
+  },
+  kitItemsPreview: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#d1fae5",
+  },
+  kitItemPreviewTexto: {
+    fontSize: 11,
+    color: "#065f46",
+    marginBottom: 2,
+  },
+  kitItemPreviewMas: {
+    fontSize: 10,
+    fontStyle: "italic",
+    color: "#047857",
+    marginTop: 2,
+  },
+  kitAutoPresupuestoNota: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
+    marginTop: 6,
   },
 });
