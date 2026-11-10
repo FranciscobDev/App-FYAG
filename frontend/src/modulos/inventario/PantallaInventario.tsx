@@ -1,3 +1,4 @@
+import { CATEGORIA_POR_DEFECTO } from "@/nucleo/categoriasArticulo";
 import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -185,7 +186,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [formularioSkuError, establecerFormularioSkuError] = useState("");
   const [formularioNombre, establecerFormularioNombre] = useState("");
   const [formularioNombreError, establecerFormularioNombreError] = useState("");
-  const [formularioCategoria, establecerFormularioCategoria] = useState("Electricidad");
+  const [formularioCategoria, establecerFormularioCategoria] = useState<string>(CATEGORIA_POR_DEFECTO);
   const [formularioUnidad, establecerFormularioUnidad] = useState<string>("un");
   const [formularioExistencia, establecerFormularioExistencia] = useState("0");
   const [formularioMinimoExistencia, establecerFormularioMinimoExistencia] = useState("10");
@@ -209,7 +210,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerFormularioSkuError("");
     establecerFormularioNombre("");
     establecerFormularioNombreError("");
-    establecerFormularioCategoria("Electricidad");
+    establecerFormularioCategoria(CATEGORIA_POR_DEFECTO);
     establecerFormularioUnidad("un");
     establecerFormularioExistencia("0");
     establecerFormularioMinimoExistencia("10");
@@ -243,7 +244,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerNuevoProductoModal(true);
   };
 
-  const manejarGuardarProducto = () => {
+  const manejarGuardarProducto = async () => {
     establecerFormularioSkuError("");
     establecerFormularioNombreError("");
     establecerFormularioError("");
@@ -262,7 +263,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     }
 
     if (editandoProducto) {
-      actualizarProducto(editandoProducto.sku, {
+      const resultadoEdicion = await actualizarProducto(editandoProducto.sku, {
         name: formularioNombre.trim(),
         category: formularioCategoria,
         unit: formularioUnidad,
@@ -273,10 +274,14 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         isBulk: formularioEsBulk,
         containerCapacity: formularioEsBulk ? Number(formularioContenedorCapacity) || 100 : undefined,
       });
+      if (!resultadoEdicion.success) {
+        establecerFormularioError(resultadoEdicion.error || "No se pudo actualizar el insumo.");
+        return;
+      }
       mostrarAviso(`Insumo ${editandoProducto.sku} actualizado exitosamente.`);
       establecerNuevoProductoModal(false);
     } else {
-      const resultado = agregarProducto({
+      const resultado = await agregarProducto({
         sku: formularioSku.trim().toUpperCase(),
         name: formularioNombre.trim(),
         category: formularioCategoria,

@@ -1,8 +1,6 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import express from 'express';
-import cors from 'cors';
 import pool from './config/db';
 import articuloRoutes from './routes/articuloRoutes';
 import proveedorRoutes from './routes/proveedorRoutes';
@@ -12,7 +10,6 @@ import kitRoutes from './routes/kitRoutes';
 import authRoutes from './routes/authRoutes';
 import verificarToken from './middleware/authMiddleware';
 
-const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
 app.use(cors());
@@ -52,8 +49,15 @@ const probarConexion = async (): Promise<void> => {
     }
 };
 
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor en puerto ${PORT}`);
-    probarConexion();
-});
-
+// Las migraciones son idempotentes: se aplican antes de aceptar tráfico
+aplicarMigraciones()
+    .then(() => {
+        app.listen(PORT, '0.0.0.0', () => {
+            console.log(`Servidor en puerto ${PORT}`);
+            probarConexion();
+        });
+    })
+    .catch((error) => {
+        console.error('❌ No se pudieron aplicar las migraciones; el servidor no arranca:', error);
+        process.exit(1);
+    });

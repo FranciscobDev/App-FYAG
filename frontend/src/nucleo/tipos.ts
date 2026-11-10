@@ -336,6 +336,8 @@ export interface RecepcionPendiente {
 }
 
 export interface Producto {
+  /** ID en la base (articulo.id_articulo); se asigna al cargar o crear desde el servidor */
+  id?: number;
   sku: string;
   name: string;
   category: string;

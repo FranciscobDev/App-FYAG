@@ -1,10 +1,14 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import type { PoolClient } from 'pg';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
 import { registrarAuditoria } from '../services/auditoriaService';
-
-export { registrarAuditoria };
+import { ejecutarTransaccion } from '../services/transaccion';
+import { snapshotUsuario } from '../services/snapshotUsuario';
+import { revocarSesionesUsuario } from '../services/sesiones';
+import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
+import { obtenerIdEjecutor } from '../middleware/authMiddleware';
 
 export interface Usuario {
     id_usuario: number;
@@ -37,9 +41,8 @@ interface UsuarioBody {
     activo?: boolean;
 }
 
-const esErrorPg = (error: unknown): error is DatabaseError => {
-    return typeof error === 'object' && error !== null && 'code' in error;
-};
+const esErrorPg = (error: unknown): error is DatabaseError =>
+    typeof error === 'object' && error !== null && 'code' in error;
 
 const normalizarTexto = (valor?: string | null): string =>
     (valor ?? '')
@@ -48,7 +51,20 @@ const normalizarTexto = (valor?: string | null): string =>
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');
 
-// Asegura que existan los 3 roles base en la tabla `roles`
+// Consulta de lectura para respuestas: nunca incluye el hash de contraseña
+const SELECT_USUARIO = `
+    SELECT u.id_usuario, u.nombre_usuario, u.apellido_usuario, u.correo_usuario,
+           u.rut, u.id_rol, r.nombre_rol::text AS nombre_rol, u.especializacion, u.activo, u.ultimo_acceso
+    FROM usuario u
+    LEFT JOIN roles r ON r.id_rol = u.id_rol
+`;
+
+const leerUsuario = async (cliente: Pick<PoolClient, 'query'>, id: number | string): Promise<Usuario | null> => {
+    const res = await cliente.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
+    return res.rows[0] ?? null;
+};
+
+// Roles base que el sistema garantiza en la tabla `roles`
 const ROLES_BASE = [
     {
         nombre_rol: 'Administrador',
@@ -67,9 +83,38 @@ const ROLES_BASE = [
     },
 ];
 
+/** Inserta un rol base dentro de una transacción auditada (sin usuario ejecutor: lo hace el sistema). */
+const sembrarRolBase = async (base: (typeof ROLES_BASE)[number]): Promise<Rol | null> => {
+    try {
+        return await ejecutarTransaccion(async (cliente) => {
+            const insertado = await cliente.query<Rol>(
+                `INSERT INTO roles (nombre_rol, descripcion) VALUES ($1, $2)
+                 RETURNING id_rol, nombre_rol::text AS nombre_rol, descripcion`,
+                [base.nombre_rol, base.descripcion]
+            );
+            const creado = insertado.rows[0];
+            await registrarAuditoria({
+                entidad: 'rol',
+                accion: 'crear',
+                idRegistro: creado.id_rol,
+                idUsuarioEjecutor: null,
+                estadoAnterior: null,
+                estadoNuevo: creado,
+                descripcion: `Rol base ${creado.nombre_rol} creado automáticamente por el sistema`,
+            }, cliente);
+            return creado;
+        });
+    } catch (error) {
+        // 23505: otra petición concurrente ya lo insertó; cualquier otro error sí se propaga
+        if (esErrorPg(error) && error.code === '23505') return null;
+        throw error;
+    }
+};
+
+// Asegura que existan los 3 roles base en la tabla `roles`
 const asegurarRolesBase = async (): Promise<Rol[]> => {
     const actuales = await pool.query<Rol>(
-        'SELECT id_rol, nombre_rol, descripcion FROM roles ORDER BY id_rol ASC'
+        'SELECT id_rol, nombre_rol::text AS nombre_rol, descripcion FROM roles ORDER BY id_rol ASC'
     );
     const filas = [...actuales.rows];
 
@@ -80,17 +125,8 @@ const asegurarRolesBase = async (): Promise<Rol[]> => {
         });
 
         if (!existe) {
-            try {
-                const insertado = await pool.query<Rol>(
-                    'INSERT INTO roles (nombre_rol, descripcion) VALUES ($1, $2) RETURNING id_rol, nombre_rol, descripcion',
-                    [base.nombre_rol, base.descripcion]
-                );
-                if (insertado.rows[0]) {
-                    filas.push(insertado.rows[0]);
-                }
-            } catch {
-                // Ignorar si otra petición concurrente lo insertó
-            }
+            const creado = await sembrarRolBase(base);
+            if (creado) filas.push(creado);
         }
     }
 
@@ -118,8 +154,11 @@ const resolverIdRol = async (idRol?: number | null, rolCodigo?: string): Promise
     return idRol ? Number(idRol) : null;
 };
 
-const contarAdminsActivosExcluyendo = async (idUsuarioExcluir: number | string): Promise<number> => {
-    const res = await pool.query<{ total: string }>(
+const contarAdminsActivosExcluyendo = async (
+    cliente: Pick<PoolClient, 'query'>,
+    idUsuarioExcluir: number | string
+): Promise<number> => {
+    const res = await cliente.query<{ total: string }>(
         `SELECT COUNT(*)::text AS total
          FROM usuario u
          JOIN roles r ON r.id_rol = u.id_rol
@@ -131,13 +170,20 @@ const contarAdminsActivosExcluyendo = async (idUsuarioExcluir: number | string):
     return Number(res.rows[0]?.total ?? 0);
 };
 
-// Consulta base: incluye el nombre del rol y nunca devuelve el hash
-const SELECT_USUARIO = `
-    SELECT u.id_usuario, u.nombre_usuario, u.apellido_usuario, u.correo_usuario,
-           u.rut, u.id_rol, r.nombre_rol::text AS nombre_rol, u.especializacion, u.activo, u.ultimo_acceso
-    FROM usuario u
-    LEFT JOIN roles r ON r.id_rol = u.id_rol
-`;
+const esAdmin = (nombreRol: string | null | undefined): boolean =>
+    normalizarTexto(nombreRol).includes('admin');
+
+const traducirErrorUsuario = (res: Response, error: unknown, mensajeInterno: string): void => {
+    if (esErrorPg(error) && error.code === '23505') {
+        res.status(400).json({ mensaje: 'El RUT o el correo ingresado ya están registrados por otro usuario' });
+        return;
+    }
+    if (esErrorPg(error) && error.code === '23503') {
+        res.status(400).json({ mensaje: 'El rol especificado no existe' });
+        return;
+    }
+    enviarErrorHttp(res, error, mensajeInterno);
+};
 
 // Listar todos
 export const obtenerUsuarios = async (_req: Request, res: Response): Promise<void> => {
@@ -180,7 +226,7 @@ export const listarRoles = async (_req: Request, res: Response): Promise<void> =
     }
 };
 
-// Crear usuario
+// Crear usuario: mutación + auditoría en una sola transacción
 export const crearUsuario = async (req: Request<Record<string, string>, unknown, UsuarioBody>, res: Response): Promise<void> => {
     const {
         nombre_usuario, apellido_usuario, correo_usuario, rut,
@@ -198,52 +244,48 @@ export const crearUsuario = async (req: Request<Record<string, string>, unknown,
         }
 
         const hash = await bcrypt.hash(String(contrasena), 10);
+        const correoNormalizado = correo_usuario.trim().toLowerCase();
 
-        const insert = await pool.query<{ id_usuario: number }>(
-            `INSERT INTO usuario (nombre_usuario, apellido_usuario, correo_usuario, rut,
-                                  id_rol, especializacion, contrasena_hash, activo)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id_usuario`,
-            [
-                nombre_usuario.trim(),
-                apellido_usuario.trim(),
-                correo_usuario.trim().toLowerCase(),
-                rut?.trim() || null,
-                idRolFinal,
-                especializacion?.trim() || null,
-                hash,
-                activo !== false
-            ]
-        );
+        const idCreado = await ejecutarTransaccion(async (cliente) => {
+            const insert = await cliente.query<{ id_usuario: number }>(
+                `INSERT INTO usuario (nombre_usuario, apellido_usuario, correo_usuario, rut,
+                                      id_rol, especializacion, contrasena_hash, activo)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 RETURNING id_usuario`,
+                [
+                    nombre_usuario.trim(),
+                    apellido_usuario.trim(),
+                    correoNormalizado,
+                    rut?.trim() || null,
+                    idRolFinal,
+                    especializacion?.trim() || null,
+                    hash,
+                    activo !== false,
+                ]
+            );
+            const id = insert.rows[0].id_usuario;
+            const despues = await snapshotUsuario(cliente, id);
 
-        const result = await pool.query<Usuario>(
-            `${SELECT_USUARIO} WHERE u.id_usuario = $1`,
-            [insert.rows[0].id_usuario]
-        );
+            await registrarAuditoria({
+                entidad: 'usuario',
+                accion: 'crear',
+                idRegistro: id,
+                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                estadoAnterior: null,
+                estadoNuevo: despues,
+                descripcion: `Usuario ${correoNormalizado} creado con rol ID ${idRolFinal}`,
+            }, cliente);
 
-        // Operación 1 requerida por [BACK-1]: registrarAuditoria al crear usuario
-        await registrarAuditoria({
-            accion: 'crear',
-            idUsuarioAfectado: insert.rows[0].id_usuario,
-            idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
-            detalles: `Usuario ${correo_usuario.trim().toLowerCase()} creado con rol ID ${idRolFinal}`,
+            return id;
         });
 
+        const usuario = await leerUsuario(pool, idCreado);
         res.status(201).json({
             mensaje: 'Usuario creado exitosamente',
-            usuario: result.rows[0]
+            usuario,
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '23505') {
-            res.status(400).json({ mensaje: 'El RUT o el correo ingresado ya están registrados en el sistema' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El rol especificado no existe' });
-            return;
-        }
-        console.error('Error al crear usuario:', error);
-        res.status(500).json({ error: 'Error interno al crear el usuario' });
+        traducirErrorUsuario(res, error, 'Error interno al crear el usuario');
     }
 };
 
@@ -256,119 +298,107 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
     } = req.body;
 
     try {
-        const actual = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
-        if (actual.rows.length === 0) {
-            res.status(404).json({ mensaje: 'Usuario no encontrado para actualizar' });
-            return;
-        }
-
-        const usuarioActual = actual.rows[0];
-        const eraAdminActivo =
-            usuarioActual.activo && normalizarTexto(usuarioActual.nombre_rol).includes('admin');
-
         const idRolResuelto =
             id_rol !== undefined || rol_codigo !== undefined
                 ? await resolverIdRol(id_rol, rol_codigo)
                 : null;
 
-        const rolDestino = idRolResuelto !== null
-            ? await pool.query<{ nombre_rol: string }>(
-                'SELECT nombre_rol::text FROM roles WHERE id_rol = $1',
-                [idRolResuelto]
-            )
-            : null;
-        const dejaDeSerAdmin =
-            eraAdminActivo &&
-            idRolResuelto !== null &&
-            !normalizarTexto(rolDestino?.rows[0]?.nombre_rol).includes('admin');
-
-        // Proteger que el sistema conserve al menos un Administrador activo
-        if (eraAdminActivo && (activo === false || dejaDeSerAdmin)) {
-            const otrosAdmins = await contarAdminsActivosExcluyendo(id);
-            if (otrosAdmins === 0) {
-                res.status(400).json({
-                    mensaje: 'No se puede deshabilitar ni cambiar el rol del único Administrador activo del sistema'
-                });
-                return;
-            }
-        }
-
-        // Solo se cifra si se envió una nueva contraseña
+        // Solo se cifra si se envió una nueva contraseña (el hash nunca se audita)
         const hash = contrasena ? await bcrypt.hash(String(contrasena), 10) : null;
 
-        await pool.query<{ id_usuario: number }>(
-            `UPDATE usuario
-             SET nombre_usuario   = COALESCE($1, nombre_usuario),
-                 apellido_usuario = COALESCE($2, apellido_usuario),
-                 correo_usuario   = COALESCE($3, correo_usuario),
-                 rut              = COALESCE($4, rut),
-                 id_rol           = COALESCE($5, id_rol),
-                 especializacion  = COALESCE($6, especializacion),
-                 contrasena_hash  = COALESCE($7, contrasena_hash),
-                 activo           = COALESCE($8, activo)
-             WHERE id_usuario = $9
-             RETURNING id_usuario`,
-            [
-                nombre_usuario ? nombre_usuario.trim() : null,
-                apellido_usuario ? apellido_usuario.trim() : null,
-                correo_usuario ? correo_usuario.trim().toLowerCase() : null,
-                rut ?? null,
-                idRolResuelto ?? null,
-                especializacion ?? null,
-                hash,
-                typeof activo === 'boolean' ? activo : null,
-                id
-            ]
-        );
+        const huboCambios =
+            nombre_usuario !== undefined || apellido_usuario !== undefined ||
+            correo_usuario !== undefined || rut !== undefined || id_rol !== undefined ||
+            rol_codigo !== undefined || especializacion !== undefined ||
+            contrasena !== undefined || activo !== undefined;
 
-        const result = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
+        const resultado = await ejecutarTransaccion(async (cliente) => {
+            const antes = await snapshotUsuario(cliente, id, true);
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Usuario no encontrado para actualizar');
+            }
 
-        // Operación 2 requerida por [BACK-1]: registrarAuditoria al deshabilitar usuario
-        if (activo === false) {
-            await registrarAuditoria({
-                accion: 'deshabilitar',
-                idUsuarioAfectado: id,
-                idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
-                detalles: `Usuario ${usuarioActual.correo_usuario} (ID ${id}) deshabilitado`,
-            });
-        }
+            const eraAdminActivo = Boolean(antes.activo) && esAdmin(antes.nombre_rol as string);
 
-        // Operación 3 requerida por [BACK-1]: registrarAuditoria al editar usuario
-        const huboModificacionDatos =
-            nombre_usuario !== undefined ||
-            apellido_usuario !== undefined ||
-            correo_usuario !== undefined ||
-            rut !== undefined ||
-            id_rol !== undefined ||
-            rol_codigo !== undefined ||
-            especializacion !== undefined ||
-            contrasena !== undefined ||
-            activo === true;
+            let dejaDeSerAdmin = false;
+            if (eraAdminActivo && idRolResuelto !== null) {
+                const rolDestino = await cliente.query<{ nombre_rol: string }>(
+                    'SELECT nombre_rol::text AS nombre_rol FROM roles WHERE id_rol = $1',
+                    [idRolResuelto]
+                );
+                dejaDeSerAdmin = !esAdmin(rolDestino.rows[0]?.nombre_rol);
+            }
 
-        if (huboModificacionDatos) {
-            await registrarAuditoria({
-                accion: 'editar',
-                idUsuarioAfectado: id,
-                idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
-                detalles: `Datos del usuario ${usuarioActual.correo_usuario} (ID ${id}) actualizados${contrasena ? ' (incluye cambio de contraseña con hash)' : ''}`,
-            });
-        }
+            // Proteger que el sistema conserve al menos un Administrador activo
+            if (eraAdminActivo && (activo === false || dejaDeSerAdmin)) {
+                const otrosAdmins = await contarAdminsActivosExcluyendo(cliente, id);
+                if (otrosAdmins === 0) {
+                    throw new ErrorAplicacion(
+                        400,
+                        'No se puede deshabilitar ni cambiar el rol del único Administrador activo del sistema'
+                    );
+                }
+            }
+
+            if (huboCambios) {
+                await cliente.query(
+                    `UPDATE usuario
+                     SET nombre_usuario   = COALESCE($1, nombre_usuario),
+                         apellido_usuario = COALESCE($2, apellido_usuario),
+                         correo_usuario   = COALESCE($3, correo_usuario),
+                         rut              = COALESCE($4, rut),
+                         id_rol           = COALESCE($5, id_rol),
+                         especializacion  = COALESCE($6, especializacion),
+                         contrasena_hash  = COALESCE($7, contrasena_hash),
+                         activo           = COALESCE($8, activo)
+                     WHERE id_usuario = $9`,
+                    [
+                        nombre_usuario ? nombre_usuario.trim() : null,
+                        apellido_usuario ? apellido_usuario.trim() : null,
+                        correo_usuario ? correo_usuario.trim().toLowerCase() : null,
+                        rut ?? null,
+                        idRolResuelto ?? null,
+                        especializacion ?? null,
+                        hash,
+                        typeof activo === 'boolean' ? activo : null,
+                        id,
+                    ]
+                );
+
+                // Cambio de clave o deshabilitación: cierra todas las sesiones activas
+                if (hash || activo === false) {
+                    await revocarSesionesUsuario(cliente, id);
+                }
+
+                const despues = await snapshotUsuario(cliente, id);
+                const cambioRol = idRolResuelto !== null && Number(antes.id_rol) !== idRolResuelto;
+                const accion = activo === false ? 'deshabilitar' : cambioRol ? 'cambiar_rol' : 'editar';
+
+                const notas = [
+                    hash ? 'contraseña cambiada (sesiones cerradas)' : null,
+                    cambioRol ? `rol ${antes.nombre_rol} → ${despues?.nombre_rol}` : null,
+                ].filter(Boolean).join('; ');
+
+                await registrarAuditoria({
+                    entidad: 'usuario',
+                    accion,
+                    idRegistro: id,
+                    idUsuarioEjecutor: obtenerIdEjecutor(req),
+                    estadoAnterior: antes,
+                    estadoNuevo: despues,
+                    descripcion: `Usuario ${antes.correo_usuario} (ID ${id}) actualizado${notas ? ` — ${notas}` : ''}`,
+                }, cliente);
+            }
+
+            return leerUsuario(cliente, id);
+        });
 
         res.status(200).json({
             mensaje: 'Usuario actualizado exitosamente',
-            usuario: result.rows[0]
+            usuario: resultado,
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '23505') {
-            res.status(400).json({ mensaje: 'El RUT o el correo ingresado ya están registrados por otro usuario' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El rol especificado no existe' });
-            return;
-        }
-        console.error('Error al actualizar usuario:', error);
-        res.status(500).json({ error: 'Error interno al actualizar el usuario' });
+        traducirErrorUsuario(res, error, 'Error interno al actualizar el usuario');
     }
 };
 
@@ -393,37 +423,37 @@ export const cambiarRolUsuario = async (
 export const deshabilitarUsuario = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const actual = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
-        if (actual.rows.length === 0) {
-            res.status(404).json({ mensaje: 'Usuario no encontrado para deshabilitar' });
-            return;
-        }
-
-        const usuarioActual = actual.rows[0];
-        if (usuarioActual.activo && normalizarTexto(usuarioActual.nombre_rol).includes('admin')) {
-            const otrosAdmins = await contarAdminsActivosExcluyendo(id);
-            if (otrosAdmins === 0) {
-                res.status(400).json({
-                    mensaje: 'No se puede deshabilitar al único Administrador activo del sistema',
-                });
-                return;
+        await ejecutarTransaccion(async (cliente) => {
+            const antes = await snapshotUsuario(cliente, id, true);
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Usuario no encontrado para deshabilitar');
             }
-        }
 
-        await pool.query('UPDATE usuario SET activo = FALSE WHERE id_usuario = $1', [id]);
+            if (antes.activo && esAdmin(antes.nombre_rol as string)) {
+                const otrosAdmins = await contarAdminsActivosExcluyendo(cliente, id);
+                if (otrosAdmins === 0) {
+                    throw new ErrorAplicacion(400, 'No se puede deshabilitar al único Administrador activo del sistema');
+                }
+            }
 
-        // Operación de deshabilitación requerida por [BACK-1]
-        await registrarAuditoria({
-            accion: 'deshabilitar',
-            idUsuarioAfectado: id,
-            idUsuarioEjecutor: typeof req.usuario === 'object' ? req.usuario?.id : undefined,
-            detalles: `Usuario ${usuarioActual.correo_usuario} (ID ${id}) deshabilitado`,
+            await cliente.query('UPDATE usuario SET activo = FALSE WHERE id_usuario = $1', [id]);
+            await revocarSesionesUsuario(cliente, id);
+            const despues = await snapshotUsuario(cliente, id);
+
+            await registrarAuditoria({
+                entidad: 'usuario',
+                accion: 'deshabilitar',
+                idRegistro: id,
+                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                estadoAnterior: antes,
+                estadoNuevo: despues,
+                descripcion: `Usuario ${antes.correo_usuario} (ID ${id}) deshabilitado`,
+            }, cliente);
         });
 
         res.status(200).json({ mensaje: 'Usuario deshabilitado correctamente' });
     } catch (error) {
-        console.error('Error al deshabilitar usuario:', error);
-        res.status(500).json({ error: 'Error interno al deshabilitar el usuario' });
+        enviarErrorHttp(res, error, 'Error interno al deshabilitar el usuario');
     }
 };
 
@@ -431,27 +461,31 @@ export const deshabilitarUsuario = async (req: Request<{ id: string }>, res: Res
 export const eliminarUsuario = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-        const actual = await pool.query<Usuario>(`${SELECT_USUARIO} WHERE u.id_usuario = $1`, [id]);
-        if (actual.rows.length === 0) {
-            res.status(404).json({ mensaje: 'Usuario no encontrado para eliminar' });
-            return;
-        }
-
-        const usuarioActual = actual.rows[0];
-        if (usuarioActual.activo && normalizarTexto(usuarioActual.nombre_rol).includes('admin')) {
-            const otrosAdmins = await contarAdminsActivosExcluyendo(id);
-            if (otrosAdmins === 0) {
-                res.status(400).json({
-                    mensaje: 'No se puede eliminar al único Administrador activo del sistema'
-                });
-                return;
+        await ejecutarTransaccion(async (cliente) => {
+            const antes = await snapshotUsuario(cliente, id, true);
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Usuario no encontrado para eliminar');
             }
-        }
 
-        await pool.query(
-            'DELETE FROM usuario WHERE id_usuario = $1 RETURNING id_usuario',
-            [id]
-        );
+            if (antes.activo && esAdmin(antes.nombre_rol as string)) {
+                const otrosAdmins = await contarAdminsActivosExcluyendo(cliente, id);
+                if (otrosAdmins === 0) {
+                    throw new ErrorAplicacion(400, 'No se puede eliminar al único Administrador activo del sistema');
+                }
+            }
+
+            await cliente.query('DELETE FROM usuario WHERE id_usuario = $1', [id]);
+
+            await registrarAuditoria({
+                entidad: 'usuario',
+                accion: 'eliminar',
+                idRegistro: id,
+                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                estadoAnterior: antes,
+                estadoNuevo: null,
+                descripcion: `Usuario ${antes.correo_usuario} (ID ${id}) eliminado`,
+            }, cliente);
+        });
 
         res.status(200).json({ mensaje: 'Usuario eliminado correctamente' });
     } catch (error) {
@@ -461,7 +495,6 @@ export const eliminarUsuario = async (req: Request<{ id: string }>, res: Respons
             });
             return;
         }
-        console.error('Error al eliminar usuario:', error);
-        res.status(500).json({ error: 'Error al eliminar el usuario' });
+        enviarErrorHttp(res, error, 'Error al eliminar el usuario');
     }
 };
