@@ -11,6 +11,8 @@ export interface UsuarioApi {
   activo: boolean;
 }
 
+export type UsuarioSesion = UsuarioApi;
+
 export interface RespuestaLogin {
   ok: boolean;
   data?: { token: string; usuario: UsuarioApi };

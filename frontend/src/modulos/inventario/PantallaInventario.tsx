@@ -176,8 +176,8 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // =========================================================================
   // 1. CATALOGO STATE
   // =========================================================================
-  const skuEntradaReferencia = useRef<TextInput>(null);
-  const nombreEntradaReferencia = useRef<TextInput>(null);
+  const skuEntradaReferencia = useRef<any>(null);
+  const nombreEntradaReferencia = useRef<any>(null);
   const [buscarQuery, establecerBuscarQuery] = useState("");
   const [nuevoProductoModal, establecerNuevoProductoModal] = useState(false);
   const [editandoProducto, establecerEditandoProducto] = useState<Producto | null>(null);

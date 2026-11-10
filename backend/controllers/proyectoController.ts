@@ -32,6 +32,7 @@ interface ProyectoBody {
     porcentaje_avance?: number;
     estado_proyecto?: string;
     id_usuario?: number | null;
+    id_kit_proyecto?: number | null;
 }
 
 interface TecnicoResumen {
@@ -101,7 +102,7 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
     const {
         nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta,
-        porcentaje_avance, estado_proyecto, id_usuario
+        porcentaje_avance, estado_proyecto, id_usuario, id_kit_proyecto
     } = req.body;
 
     if (!nombre_proyecto) {
@@ -110,6 +111,26 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
     }
 
     try {
+        let presupuestoFinal = Number(presupuesto_inicial) || 0;
+
+        // Si se seleccionó un kit y no se especificó un presupuesto manual distinto de 0,
+        // calculamos el presupuesto sumando el costo de los insumos del kit
+        if (id_kit_proyecto && (!presupuestoFinal || presupuestoFinal === 0)) {
+            try {
+                const kitCostRes = await pool.query<{ costo_total: string }>(`
+                    SELECT COALESCE(SUM(dk.cantidad_requerida_kit * a.precio_unitario), 0) AS costo_total
+                    FROM detalle_kit dk
+                    JOIN articulo a ON a.id_articulo = dk.id_articulo
+                    WHERE dk.id_kit_proyecto = $1
+                `, [id_kit_proyecto]);
+                if (kitCostRes.rows.length > 0) {
+                    presupuestoFinal = Math.round(Number(kitCostRes.rows[0].costo_total) || 0);
+                }
+            } catch (errKitCost) {
+                console.warn('No se pudo calcular costo automático del kit:', errKitCost);
+            }
+        }
+
         const query = `
         INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -122,7 +143,7 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             direccion || null,
             fecha_inicio || null,
             fecha_fin || null,
-            presupuesto_inicial || 0,
+            presupuestoFinal,
             presupuesto_horas || 0,
             valor_venta || 0,
             porcentaje_avance || 0,
@@ -131,9 +152,35 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
         ];
 
         const result = await pool.query<Proyecto>(query, values);
+        const proyectoCreado = result.rows[0];
+
+        // Si se asignó un kit, vinculamos sus insumos al proyecto
+        if (id_kit_proyecto && proyectoCreado) {
+            try {
+                await pool.query(`
+                    CREATE TABLE IF NOT EXISTS articulo_en_proyecto (
+                        id_articulo_proyecto SERIAL PRIMARY KEY,
+                        id_proyecto INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE CASCADE,
+                        id_articulo INT NOT NULL REFERENCES articulo(id_articulo),
+                        cantidad NUMERIC(10,2) NOT NULL,
+                        id_unidad INT
+                    );
+                `);
+                await pool.query(`
+                    INSERT INTO articulo_en_proyecto (id_proyecto, id_articulo, cantidad, id_unidad)
+                    SELECT $1, dk.id_articulo, dk.cantidad_requerida_kit, a.id_unidad
+                    FROM detalle_kit dk
+                    JOIN articulo a ON a.id_articulo = dk.id_articulo
+                    WHERE dk.id_kit_proyecto = $2;
+                `, [proyectoCreado.id_proyecto, id_kit_proyecto]);
+            } catch (kitErr) {
+                console.warn('Advertencia al vincular insumos del kit al proyecto:', kitErr);
+            }
+        }
+
         res.status(201).json({
             mensaje: 'Proyecto creado exitosamente',
-            proyecto: result.rows[0]
+            proyecto: proyectoCreado
         });
     } catch (error) {
         if (esErrorPg(error) && error.code === '22P02') {

@@ -77,7 +77,7 @@ export const CampoTexto = React.forwardRef<TextInput, PropiedadesCampoTexto>(({
           />
         )}
         <TextInput
-          ref={ref}
+          ref={ref as any}
           placeholderTextColor={tema.colors.textMuted}
           onFocus={() => establecerEsEnfocado(true)}
           onBlur={() => establecerEsEnfocado(false)}
