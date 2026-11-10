@@ -11,9 +11,30 @@ import { verificarAdmin, verificarToken } from '../middleware/authMiddleware';
 const JWT_SECRET_PRUEBA = 'auth-middleware-test-secret';
 const jwtSecretOriginal = process.env.JWT_SECRET;
 const consultaOriginal = pool.query;
+const conexionOriginal = pool.connect;
 
-const simularUsuario = (usuario: { id_usuario: number; nombre_rol: string; activo: boolean }) => {
-    pool.query = (async () => ({ rows: [usuario] })) as unknown as typeof pool.query;
+interface FilaSesion {
+    id_usuario: number;
+    nombre_rol: string;
+    activo: boolean;
+    id_sesion?: string | null;
+    revocada?: boolean;
+    inactiva?: boolean;
+}
+
+// Respuesta de la consulta de sesión de verificarToken: cuenta activa, sesión vigente
+const simularUsuario = (fila: FilaSesion) => {
+    pool.query = (async () => ({
+        rows: [{ id_sesion: 'sid-prueba', revocada: false, inactiva: false, ...fila }],
+    })) as unknown as typeof pool.query;
+};
+
+/** Simula pool.connect() para las mutaciones que corren dentro de una transacción. */
+const simularTransaccion = (consulta: (sql: string, params?: unknown[]) => Promise<unknown>) => {
+    pool.connect = (async () => ({
+        query: consulta,
+        release: () => undefined,
+    })) as unknown as typeof pool.connect;
 };
 
 const crearCapturaRespuesta = () => {
@@ -37,8 +58,12 @@ const crearCapturaRespuesta = () => {
     };
 };
 
+const tokenConSesion = (id: number, rol: string) =>
+    `Bearer ${jwt.sign({ id, rol, sid: 'sid-prueba' }, JWT_SECRET_PRUEBA)}`;
+
 afterEach(() => {
     pool.query = consultaOriginal;
+    pool.connect = conexionOriginal;
     if (jwtSecretOriginal === undefined) {
         delete process.env.JWT_SECRET;
     } else {
@@ -50,11 +75,7 @@ test('Bodeguero recibe 403 al usar una ruta restringida a Admin', async () => {
     process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
     simularUsuario({ id_usuario: 17, nombre_rol: 'Bodeguero', activo: true });
 
-    const req = {
-        headers: {
-            authorization: `Bearer ${jwt.sign({ id: 17, rol: 'Administrador' }, JWT_SECRET_PRUEBA)}`,
-        },
-    } as Request;
+    const req = { headers: { authorization: tokenConSesion(17, 'Administrador') } } as Request;
     const capturaToken = crearCapturaRespuesta();
     let tokenAceptado = false;
 
@@ -79,11 +100,7 @@ test('un token de usuario deshabilitado recibe SESSION_REVOKED', async () => {
     process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
     simularUsuario({ id_usuario: 23, nombre_rol: 'Tecnico', activo: false });
 
-    const req = {
-        headers: {
-            authorization: `Bearer ${jwt.sign({ id: 23, rol: 'Tecnico' }, JWT_SECRET_PRUEBA)}`,
-        },
-    } as Request;
+    const req = { headers: { authorization: tokenConSesion(23, 'Tecnico') } } as Request;
     const captura = crearCapturaRespuesta();
     let siguienteMiddlewareEjecutado = false;
 
@@ -99,10 +116,61 @@ test('un token de usuario deshabilitado recibe SESSION_REVOKED', async () => {
     });
 });
 
+test('una sesión por inactividad responde SESSION_EXPIRED y la revoca', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    const sentencias: string[] = [];
+    pool.query = (async (sql: string) => {
+        sentencias.push(sql);
+        if (sql.includes('FROM usuario u')) {
+            return { rows: [{ id_usuario: 30, nombre_rol: 'Tecnico', activo: true, id_sesion: 'sid-prueba', revocada: false, inactiva: true }] };
+        }
+        return { rows: [] };
+    }) as unknown as typeof pool.query;
+
+    const req = { headers: { authorization: tokenConSesion(30, 'Tecnico') } } as Request;
+    const captura = crearCapturaRespuesta();
+    let siguiente = false;
+
+    await verificarToken(req, captura.respuesta, () => {
+        siguiente = true;
+    });
+
+    assert.equal(siguiente, false);
+    assert.equal(captura.obtenerStatus(), 401);
+    assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_EXPIRED');
+    assert.ok(sentencias.some((s) => s.includes('SET revocada = TRUE')), 'la sesión inactiva debe revocarse');
+});
+
+test('una sesión revocada (p. ej. tras cambiar la clave) responde SESSION_REVOKED', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    simularUsuario({ id_usuario: 31, nombre_rol: 'Tecnico', activo: true, revocada: true });
+
+    const req = { headers: { authorization: tokenConSesion(31, 'Tecnico') } } as Request;
+    const captura = crearCapturaRespuesta();
+
+    await verificarToken(req, captura.respuesta, () => undefined);
+
+    assert.equal(captura.obtenerStatus(), 401);
+    assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+});
+
+test('un token sin claim sid (anterior al modelo de sesiones) es rechazado', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    const tokenSinSid = jwt.sign({ id: 5, rol: 'Administrador' }, JWT_SECRET_PRUEBA);
+
+    const req = { headers: { authorization: `Bearer ${tokenSinSid}` } } as Request;
+    const captura = crearCapturaRespuesta();
+
+    await verificarToken(req, captura.respuesta, () => undefined);
+
+    assert.equal(captura.obtenerStatus(), 401);
+    assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+});
+
 test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /deshabilitar)', async () => {
     let intentoUpdateEjecutado = false;
 
-    pool.query = (async (sql: string) => {
+    const consulta = async (sql: string) => {
         if (sql.includes('FROM usuario u') && sql.includes('WHERE u.id_usuario = $1')) {
             return {
                 rows: [
@@ -116,6 +184,8 @@ test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /desha
                         nombre_rol: 'Administrador',
                         especializacion: null,
                         activo: true,
+                        intentos_fallidos: 0,
+                        bloqueado_hasta: null,
                     },
                 ],
             };
@@ -127,7 +197,9 @@ test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /desha
             intentoUpdateEjecutado = true;
         }
         return { rows: [] };
-    }) as unknown as typeof pool.query;
+    };
+    simularTransaccion(consulta);
+    pool.query = consulta as unknown as typeof pool.query;
 
     const req = {
         params: { id: '1' },
@@ -147,7 +219,7 @@ test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /desha
 test('[BACK-2] bloquea deshabilitar o bajar de rol al único Administrador activo (PUT /usuarios/:id)', async () => {
     let intentoUpdateEjecutado = false;
 
-    pool.query = (async (sql: string) => {
+    const consulta = async (sql: string) => {
         if (sql.includes('FROM usuario u') && sql.includes('WHERE u.id_usuario = $1')) {
             return {
                 rows: [
@@ -161,6 +233,8 @@ test('[BACK-2] bloquea deshabilitar o bajar de rol al único Administrador activ
                         nombre_rol: 'Administrador',
                         especializacion: null,
                         activo: true,
+                        intentos_fallidos: 0,
+                        bloqueado_hasta: null,
                     },
                 ],
             };
@@ -172,7 +246,9 @@ test('[BACK-2] bloquea deshabilitar o bajar de rol al único Administrador activ
             intentoUpdateEjecutado = true;
         }
         return { rows: [] };
-    }) as unknown as typeof pool.query;
+    };
+    simularTransaccion(consulta);
+    pool.query = consulta as unknown as typeof pool.query;
 
     const req = {
         params: { id: '1' },
@@ -206,6 +282,7 @@ test('[BACK-2] bloquea el login de un usuario inactivo devolviendo 403', async (
                 nombre_rol: 'Bodeguero',
                 activo: false,
                 contrasena_hash: hash,
+                bloqueada: false,
             },
         ],
     })) as unknown as typeof pool.query;
@@ -224,4 +301,41 @@ test('[BACK-2] bloquea el login de un usuario inactivo devolviendo 403', async (
     assert.deepEqual(captura.obtenerCuerpo(), {
         mensaje: 'Tu cuenta está desactivada',
     });
+});
+
+test('[BACK-2] una cuenta bloqueada responde 423 aunque la clave sea correcta', async () => {
+    const clavePlana = 'ClaveSegura123';
+    const hash = await bcrypt.hash(clavePlana, 10);
+    let consultasDeClaveEjecutadas = 0;
+
+    pool.query = (async (sql: string) => {
+        if (sql.includes('UPDATE usuario')) consultasDeClaveEjecutadas += 1;
+        return {
+            rows: [
+                {
+                    id_usuario: 60,
+                    nombre_usuario: 'Bloqueada',
+                    apellido_usuario: 'Prueba',
+                    correo_usuario: 'bloqueada@fyag.cl',
+                    rut: null,
+                    id_rol: 3,
+                    nombre_rol: 'Tecnico',
+                    activo: true,
+                    contrasena_hash: hash,
+                    bloqueada: true,
+                },
+            ],
+        };
+    }) as unknown as typeof pool.query;
+
+    const req = {
+        body: { correo_usuario: 'bloqueada@fyag.cl', contrasena: clavePlana },
+    } as unknown as Request<Record<string, string>, unknown, { correo_usuario?: string; contrasena?: string }>;
+    const captura = crearCapturaRespuesta();
+
+    await login(req, captura.respuesta);
+
+    assert.equal(captura.obtenerStatus(), 423);
+    assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'CUENTA_BLOQUEADA');
+    assert.equal(consultasDeClaveEjecutadas, 0, 'no debe contar ni registrar intentos sobre una cuenta bloqueada');
 });

@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
+import {
+  listarArticulosApi,
+  crearArticuloApi,
+  actualizarArticuloApi,
+  articuloAProducto,
+  productoACuerpoArticulo,
+} from "@/modulos/inventario/articulosApi";
 import {
   MovimientoCardex,
   Cliente,
@@ -82,8 +90,8 @@ interface TipoContextoAplicacion {
   conteosFisicos: ConteoFisico[];
 
   // Inventory actions
-  agregarProducto: (product: Producto) => { success: boolean; error?: string };
-  actualizarProducto: (sku: string, updates: Partial<Producto>) => void;
+  agregarProducto: (product: Producto) => Promise<{ success: boolean; error?: string }>;
+  actualizarProducto: (sku: string, updates: Partial<Producto>) => Promise<{ success: boolean; error?: string }>;
   alternarProductoDeshabilitado: (sku: string) => void;
   crearRegistroMerma: (record: Omit<RegistroMerma, "id" | "date">) => { success: boolean; error?: string };
   crearConteoFisico: (
@@ -242,24 +250,72 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [listaNotificaciones, setNotificationsList] = useState<DetalleNotificacion[]>(DETALLES_NOTIFICACIONES);
 
   // 1. INVENTORY
-  const agregarProducto = (product: Producto) => {
+  // Catálogo desde la API al iniciar sesión. Los campos que la base no guarda se conservan en memoria.
+  const { haySesion } = usarAutenticacion();
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    listarArticulosApi().then((filas) => {
+      if (!filas || cancelado) return;
+      setProducts((prev) =>
+        filas.map((fila) => {
+          const producto = articuloAProducto(fila);
+          const local = prev.find((p) => p.sku === producto.sku);
+          return { ...local, ...producto, unit: local?.unit ?? producto.unit };
+        })
+      );
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [haySesion]);
+
+  const agregarProducto = async (product: Producto): Promise<{ success: boolean; error?: string }> => {
     if (productos.some((p) => p.sku.trim().toUpperCase() === product.sku.trim().toUpperCase())) {
       return { success: false, error: `El SKU ${product.sku} ya está registrado.` };
     }
-    setProducts((prev) => [product, ...prev]);
+    const respuesta = await crearArticuloApi(productoACuerpoArticulo(product));
+    if (!respuesta.ok) {
+      return { success: false, error: respuesta.mensaje };
+    }
+    const { articulo } = respuesta;
+    setProducts((prev) => [
+      {
+        ...product,
+        id: articulo.id_articulo,
+        sku: articulo.sku ?? product.sku,
+        stock: Number(articulo.cantidad_disponible ?? product.stock),
+      },
+      ...prev,
+    ]);
     return { success: true };
   };
 
-  const actualizarProducto = (sku: string, updates: Partial<Producto>) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p))
-    );
+  const actualizarProducto = async (
+    sku: string,
+    updates: Partial<Producto>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const previo = productos.find((p) => p.sku === sku);
+    // Cambio optimista en pantalla; si el servidor lo rechaza, se revierte
+    setProducts((prev) => prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p)));
+
+    const cuerpo = productoACuerpoArticulo(updates);
+    if (!previo?.id || Object.keys(cuerpo).length === 0) {
+      return { success: true };
+    }
+
+    const respuesta = await actualizarArticuloApi(previo.id, cuerpo);
+    if (!respuesta.ok) {
+      setProducts((prev) => prev.map((p) => (p.sku === sku ? previo : p)));
+      return { success: false, error: respuesta.mensaje };
+    }
+    return { success: true };
   };
 
   const alternarProductoDeshabilitado = (sku: string) => {
-    setProducts((prev) =>
-      prev.map((p) => (p.sku === sku ? { ...p, disabled: !p.disabled } : p))
-    );
+    const actual = productos.find((p) => p.sku === sku);
+    if (!actual) return;
+    void actualizarProducto(sku, { disabled: !actual.disabled });
   };
 
   // Mermas (Paso 6)

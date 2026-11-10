@@ -1,3 +1,5 @@
+import { Selector } from "@/componentes/formularios/Selector";
+import { CATEGORIAS_ARTICULO } from "@/nucleo/categoriasArticulo";
 import React, { useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -304,11 +306,13 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           error={formularioNombreError}
           placeholder="Ej: Cable THHN 12 AWG"
         />
-        <CampoTexto
+        <Selector
           label="Categoría"
           value={formularioCategoria}
-          onChangeText={establecerFormularioCategoria}
-          placeholder="Ej: Electricidad, Climatización, Ferretería"
+          onChange={establecerFormularioCategoria}
+          options={CATEGORIAS_ARTICULO.map((c) => ({ label: c, value: c }))}
+          placeholder="Selecciona una categoría"
+          required
         />
 
         <Text style={estilos.formularioSeccionEtiqueta}>Unidad de Medida:</Text>
