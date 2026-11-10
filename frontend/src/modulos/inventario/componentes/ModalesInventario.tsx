@@ -50,6 +50,9 @@ export interface PropiedadesModalesInventario {
   activoDespachoSolicitud: any;
   activoProyectos: any;
   calcularFaltanteExistencia: any;
+  cardex?: any;
+  productoCardexSeleccionado?: any;
+  establecerProductoCardexSeleccionado?: any;
   confirmarDespachoVisible: any;
   conteoDiferencia: any;
   conteoDiferenciaPorcentaje: any;
@@ -153,6 +156,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   activoDespachoSolicitud,
   activoProyectos,
   calcularFaltanteExistencia,
+  cardex = [],
+  productoCardexSeleccionado = null,
+  establecerProductoCardexSeleccionado,
   confirmarDespachoVisible,
   conteoDiferencia,
   conteoDiferenciaPorcentaje,
@@ -873,6 +879,153 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           if (escanerCallback) escanerCallback(code);
         }}
       />
+
+      {/* MODAL 10: CARDEX DE MOVIMIENTOS POR INSUMO (CON RESPONSABLE "¿QUIÉN LO HIZO?") */}
+      <VistaModal
+        visible={Boolean(productoCardexSeleccionado)}
+        onClose={() => establecerProductoCardexSeleccionado && establecerProductoCardexSeleccionado(null)}
+        title={productoCardexSeleccionado ? `Cardex: ${productoCardexSeleccionado.sku}` : "Cardex"}
+        subtitle={productoCardexSeleccionado?.name || ""}
+      >
+        {productoCardexSeleccionado && (
+          <View style={estilos.modalCardexContenido}>
+            {/* Cabecera Resumen Insumo */}
+            <View style={estilos.modalCardexCabecera}>
+              <View style={estilos.modalCardexCol}>
+                <Text style={estilos.modalCardexEtiqueta}>Stock Físico</Text>
+                <Text style={estilos.modalCardexValor}>
+                  {productoCardexSeleccionado.stock} {productoCardexSeleccionado.unit}
+                </Text>
+              </View>
+              <View style={estilos.modalCardexCol}>
+                <Text style={estilos.modalCardexEtiqueta}>PMP Unitario</Text>
+                <Text style={[estilos.modalCardexValor, { color: tema.colors.primaryDark }]}>
+                  {formatearCLP(productoCardexSeleccionado.pmp || productoCardexSeleccionado.unitCost)}
+                </Text>
+              </View>
+              <View style={estilos.modalCardexCol}>
+                <Text style={estilos.modalCardexEtiqueta}>Ubicación</Text>
+                <Text style={estilos.modalCardexValor}>{productoCardexSeleccionado.location || "Central"}</Text>
+              </View>
+            </View>
+
+            {/* Listado de Movimientos del Insumo */}
+            <Text style={estilos.modalCardexSubtitulo}>
+              Historial de Movimientos y Responsables:
+            </Text>
+
+            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={true}>
+              {cardex.filter((m: MovimientoCardex) => m.sku === productoCardexSeleccionado.sku).length === 0 ? (
+                <EstadoVacio
+                  icon="swap-horizontal-outline"
+                  title="Sin movimientos previos"
+                  description={`No se han registrado movimientos en Cardex para ${productoCardexSeleccionado.sku}.`}
+                  containerStyle={{ marginVertical: 16, borderWidth: 0 }}
+                />
+              ) : (
+                cardex
+                  .filter((m: MovimientoCardex) => m.sku === productoCardexSeleccionado.sku)
+                  .map((item: MovimientoCardex) => {
+                    const esEntrada = item.qtyIn > 0;
+                    return (
+                      <View key={item.id} style={estilos.modalCardexItem}>
+                        {/* Cabecera del Movimiento */}
+                        <View style={estilos.modalCardexItemSuperior}>
+                          <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={estilos.modalCardexFecha}>{formatearFecha(item.date)}</Text>
+                            <Text style={estilos.modalCardexReferencia}>Ref: {item.reference}</Text>
+                            {item.projectName && (
+                              <Text style={estilos.modalCardexProyecto}>Obra: {item.projectName}</Text>
+                            )}
+                          </View>
+                          <Insignia
+                            label={item.typeLabel}
+                            tone={
+                              item.type === "entrada_compra" || item.type === "devolucion"
+                                ? "ok"
+                                : item.type === "merma"
+                                ? "danger"
+                                : item.type === "ajuste_conteo"
+                                ? "warn"
+                                : "info"
+                            }
+                            size="sm"
+                          />
+                        </View>
+
+                        {/* Cantidades y Saldo */}
+                        <View style={estilos.modalCardexCifrasFila}>
+                          <View style={estilos.modalCardexCifraCol}>
+                            <Text style={estilos.modalCardexCifraLbl}>Cantidad</Text>
+                            <Text
+                              style={[
+                                estilos.modalCardexCifraVal,
+                                { color: esEntrada ? tema.colors.okDark : tema.colors.danger, fontWeight: "bold" },
+                              ]}
+                            >
+                              {esEntrada ? `+${item.qtyIn}` : `-${item.qtyOut}`} {productoCardexSeleccionado.unit}
+                            </Text>
+                          </View>
+                          <View style={estilos.modalCardexCifraCol}>
+                            <Text style={estilos.modalCardexCifraLbl}>Saldo Resultante</Text>
+                            <Text style={[estilos.modalCardexCifraVal, { fontWeight: "bold" }]}>
+                              {item.balance} {productoCardexSeleccionado.unit}
+                            </Text>
+                          </View>
+                          <View style={estilos.modalCardexCifraCol}>
+                            <Text style={estilos.modalCardexCifraLbl}>PMP Movimiento</Text>
+                            <Text style={estilos.modalCardexCifraVal}>{formatearCLP(item.pmp)}</Text>
+                          </View>
+                        </View>
+
+                        {/* Bloque: ¿QUIÉN LO HIZO? (Trazabilidad y Responsable) */}
+                        <View style={estilos.modalCardexUsuarioCaja}>
+                          <View style={estilos.modalCardexUsuarioFila}>
+                            <Ionicons name="person-circle-outline" size={20} color={tema.colors.primary} />
+                            <View style={{ flex: 1, marginLeft: 8 }}>
+                              <Text style={estilos.modalCardexUsuarioTitulo}>
+                                Registrado por:{" "}
+                                <Text style={estilos.modalCardexUsuarioNombre}>
+                                  {item.userName || "Camila Vera Soto"}
+                                </Text>
+                              </Text>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                                <Insignia
+                                  label={item.userRole || "Bodeguero"}
+                                  tone={
+                                    item.userRole === "Administrador"
+                                      ? "primary"
+                                      : item.userRole === "Tecnico"
+                                      ? "ok"
+                                      : "warn"
+                                  }
+                                  size="sm"
+                                />
+                                {item.userRut && (
+                                  <Text style={estilos.modalCardexUsuarioRut}>• RUT: {item.userRut}</Text>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })
+              )}
+            </ScrollView>
+
+            <View style={[estilos.modalBotonesFila, { marginTop: 16 }]}>
+              <Boton
+                title="Cerrar Cardex"
+                variant="outline"
+                size="md"
+                onPress={() => establecerProductoCardexSeleccionado && establecerProductoCardexSeleccionado(null)}
+                style={{ width: "100%" }}
+              />
+            </View>
+          </View>
+        )}
+      </VistaModal>
     </>
   );
 };

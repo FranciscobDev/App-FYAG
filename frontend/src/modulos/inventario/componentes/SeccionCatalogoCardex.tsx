@@ -57,6 +57,7 @@ export interface PropiedadesSeccionCatalogoCardex {
   kardexFiltrarProyecto: any;
   kardexFiltrarSku: any;
   kardexFiltrarTipo: any;
+  manejarAbrirCardexProducto?: any;
   manejarAbrirEditarProducto: any;
   manejarAbrirNuevoProducto: any;
   manejarExportarCardex: any;
@@ -79,6 +80,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
   kardexFiltrarProyecto,
   kardexFiltrarSku,
   kardexFiltrarTipo,
+  manejarAbrirCardexProducto,
   manejarAbrirEditarProducto,
   manejarAbrirNuevoProducto,
   manejarExportarCardex,
@@ -230,6 +232,14 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
 
                     <View style={estilos.botonFila}>
                       <Boton
+                        title="Cardex"
+                        variant="ghost"
+                        size="sm"
+                        icon="swap-horizontal-outline"
+                        onPress={() => manejarAbrirCardexProducto && manejarAbrirCardexProducto(p)}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Boton
                         title="Editar"
                         variant="outline"
                         size="sm"
@@ -254,6 +264,13 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     <Text style={estilos.bodegaUbicacionNota}>
                       📍 Ubicación asignada: <Text style={{ fontWeight: "bold", color: tema.colors.text }}>{p.location}</Text>
                     </Text>
+                    <Boton
+                      title="Ver Cardex"
+                      variant="ghost"
+                      size="sm"
+                      icon="swap-horizontal-outline"
+                      onPress={() => manejarAbrirCardexProducto && manejarAbrirCardexProducto(p)}
+                    />
                   </View>
                 )}
               </Tarjeta>
@@ -405,6 +422,31 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     <Text style={estilos.detalleLbl}>PMP Posterior</Text>
                     <Text style={estilos.detalleValor}>{formatearCLP(item.pmp)}</Text>
                   </View>
+                </View>
+
+                {/* Trazabilidad: Quién realizó el movimiento */}
+                <View style={estilos.cardexUsuarioFila}>
+                  <Ionicons name="person-circle-outline" size={16} color={tema.colors.primary} />
+                  <Text style={estilos.cardexUsuarioTexto}>
+                    Registrado por:{" "}
+                    <Text style={{ fontWeight: "bold", color: tema.colors.text }}>
+                      {item.userName || "Camila Vera Soto"}
+                    </Text>
+                  </Text>
+                  <Insignia
+                    label={item.userRole || "Bodeguero"}
+                    tone={
+                      item.userRole === "Administrador"
+                        ? "primary"
+                        : item.userRole === "Tecnico"
+                        ? "ok"
+                        : "warn"
+                    }
+                    size="sm"
+                  />
+                  {item.userRut && (
+                    <Text style={estilos.cardexUsuarioRut}>• RUT: {item.userRut}</Text>
+                  )}
                 </View>
               </Tarjeta>
             ))

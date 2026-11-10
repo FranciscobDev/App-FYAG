@@ -372,6 +372,9 @@ export interface MovimientoCardex {
   balance: number;
   pmp: number;
   totalValue: number;
+  userName?: string;
+  userRole?: string;
+  userRut?: string;
 }
 
 

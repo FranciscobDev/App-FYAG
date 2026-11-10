@@ -376,6 +376,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       balance: prod.isBulk ? Number(newStock.toFixed(3)) : newStock,
       pmp: pmpVal,
       totalValue: pmpVal * newStock,
+      userName: data.user || "Camila Vera Soto",
+      userRole: "Bodeguero",
+      userRut: "15.321.654-2",
     };
     setCardex((prev) => [cardexEntry, ...prev]);
 
@@ -438,6 +441,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         balance: countedStock,
         pmp: pmpVal,
         totalValue: pmpVal * countedStock,
+        userName: "Camila Vera Soto",
+        userRole: "Bodeguero",
+        userRut: "15.321.654-2",
       };
       setCardex((prev) => [cardexEntry, ...prev]);
     }
@@ -475,6 +481,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       balance: count.countedStock,
       pmp: count.pmp,
       totalValue: count.pmp * count.countedStock,
+      userName: approverName || "Javier Muñoz Contreras",
+      userRole: "Administrador",
+      userRut: "12.456.789-5",
     };
     setCardex((prev) => [cardexEntry, ...prev]);
   };
@@ -678,6 +687,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         balance: prod.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
         pmp: prod.pmp || prod.unitCost,
         totalValue: (prod.pmp || prod.unitCost) * newBalance,
+        userName: "Camila Vera Soto",
+        userRole: "Bodeguero",
+        userRut: "15.321.654-2",
       };
       setCardex((prev) => [cardexEntry, ...prev]);
     });
@@ -880,6 +892,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             balance: newStock,
             pmp: newPmp,
             totalValue: Math.round(newStock * newPmp),
+            userName: "Camila Vera Soto",
+            userRole: "Bodeguero",
+            userRut: "15.321.654-2",
           };
           setCardex((prev) => [newCardex, ...prev]);
         }
@@ -1229,6 +1244,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
               balance: Number((prod.stock + qty).toFixed(3)),
               pmp: itemPmp,
               totalValue: Math.round((prod.stock + qty) * itemPmp),
+              userName: "Camila Vera Soto",
+              userRole: "Bodeguero",
+              userRut: "15.321.654-2",
             };
             setCardex((k) => [newCardex, ...k]);
           }
@@ -1336,6 +1354,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         balance: prod.stock,
         pmp: prod.pmp || prod.unitCost,
         totalValue: Math.round(prod.stock * (prod.pmp || prod.unitCost)),
+        userName: "Camila Vera Soto",
+        userRole: "Bodeguero",
+        userRut: "15.321.654-2",
       };
       setCardex((k) => [newCardex, ...k]);
     }
