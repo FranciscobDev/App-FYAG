@@ -19,4 +19,3 @@ router.put('/:id', actualizarProveedor);
 router.delete('/:id', eliminarProveedor);
 
 export default router;
-
