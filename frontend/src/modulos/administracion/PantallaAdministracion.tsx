@@ -543,6 +543,22 @@ export const PantallaAdministracion: React.FC = () => {
           log.timestamp.includes(hoyIso) ||
           log.timestamp.includes("14-10-2026") ||
           log.timestamp.includes("Hoy");
+      } else if (auditoriaFechaFiltrar === "7dias") {
+        const hoyIso = new Date().toISOString().slice(0, 10);
+        const parseLogDate = (str: string) => {
+          if (str.includes("-") && str.length >= 10) {
+            const parts = str.slice(0, 10).split("-");
+            if (parts[0].length === 4) return new Date(str).getTime();
+            if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`).getTime();
+          }
+          return new Date(str).getTime();
+        };
+        const logTime = parseLogDate(log.timestamp);
+        const hace7Dias = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        coincidenciaFecha =
+          log.timestamp.includes(hoyIso) ||
+          log.timestamp.includes("14-10-2026") ||
+          (!isNaN(logTime) && logTime >= hace7Dias);
       }
       return matchSearch && coincidenciaEntity && coincidenciaFecha;
     });

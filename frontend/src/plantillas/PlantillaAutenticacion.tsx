@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
+import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { tema } from "@/nucleo/tema";
 import { Rol } from "@/nucleo/tipos";
 import { Boton } from "@/componentes/base/Boton";
@@ -33,6 +34,11 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
   initialView = "login",
 }) => {
   const { iniciarSesion } = usarAutenticacion();
+  const { parametrosSistema } = usarAplicacion();
+  const maxAttempts = Number(parametrosSistema?.find((p) => p.id === "sec_attempts")?.value ?? 3);
+  const lockoutMinutos = Number(parametrosSistema?.find((p) => p.id === "sec_lockout_duration")?.value ?? 15);
+  const minLength = Number(parametrosSistema?.find((p) => p.id === "sec_pwd_len")?.value ?? 10);
+
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const superiorInset = Math.max(
@@ -96,7 +102,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
   };
 
   // Checklist de validación en vivo para restablecer contraseña
-  const tieneMinimoLength = nuevoContrasena.length >= 10;
+  const tieneMinimoLength = nuevoContrasena.length >= minLength;
   const tieneUppercase = /[A-Z]/.test(nuevoContrasena);
   const tieneNumero = /[0-9]/.test(nuevoContrasena);
   const passwordsCoincidencia = nuevoContrasena.length > 0 && nuevoContrasena === confirmarContrasena;
@@ -122,11 +128,11 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
         const siguienteAttempts = failedAttempts + 1;
         establecerFailedAttempts(siguienteAttempts);
 
-        if (siguienteAttempts >= 3) {
-          establecerLockoutSegundos(900); // 15 minutos
-          mostrarAviso("Por seguridad de tu cuenta, el acceso se ha bloqueado temporalmente por 15 minutos tras 3 intentos.", "danger");
+        if (siguienteAttempts >= maxAttempts) {
+          establecerLockoutSegundos(lockoutMinutos * 60);
+          mostrarAviso(`Por seguridad de tu cuenta, el acceso se ha bloqueado temporalmente por ${lockoutMinutos} minutos tras ${maxAttempts} intentos.`, "danger");
         } else {
-          mostrarAviso(`${error}. Te queda(n) ${3 - siguienteAttempts} intento(s) antes del bloqueo.`, "warn");
+          mostrarAviso(`${error}. Te queda(n) ${maxAttempts - siguienteAttempts} intento(s) antes del bloqueo.`, "warn");
         }
         return;
       }
@@ -224,7 +230,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                     <Text style={estilos.lockoutTitulo}>Cuenta Bloqueada por Seguridad</Text>
                   </View>
                   <Text style={estilos.lockoutMensaje}>
-                    Has superado los 3 intentos fallidos permitidos. Por protección de la cuenta, el acceso se encuentra suspendido.
+                    Has superado los {maxAttempts} intentos fallidos permitidos. Por protección de la cuenta, el acceso se encuentra suspendido.
                   </Text>
                   <View style={estilos.countdownInsignia}>
                     <Ionicons name="time-outline" size={16} color={tema.colors.dangerDark} />
@@ -247,7 +253,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                 <View style={estilos.advertenciaBanner}>
                   <Ionicons name="alert-circle" size={18} color={tema.colors.warnDark} />
                   <Text style={estilos.advertenciaTexto}>
-                    Intento fallido {failedAttempts} de 3. Al 3er intento la cuenta se bloqueará por 15 min.
+                    Intento fallido {failedAttempts} de {maxAttempts}. Al {maxAttempts}º intento la cuenta se bloqueará por {lockoutMinutos} min.
                   </Text>
                 </View>
               ) : null}
@@ -511,7 +517,7 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                         color={tieneMinimoLength ? tema.colors.ok : tema.colors.textMuted}
                       />
                       <Text style={[estilos.listaChequeoTexto, tieneMinimoLength && estilos.listaChequeoTextoMet]}>
-                        Mínimo 10 caracteres ({nuevoContrasena.length}/10)
+                        Mínimo {minLength} caracteres ({nuevoContrasena.length}/{minLength})
                       </Text>
                     </View>
 

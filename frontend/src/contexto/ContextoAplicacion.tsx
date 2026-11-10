@@ -1465,15 +1465,17 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Registro de horas no encontrado." };
     }
 
-    // Check 48 hours limit: technician only up to 48h, admin can always edit
+    // Check hours edit limit (H41): technician only up to configurable deadline, admin can always edit
     const createdTime = new Date(existing.createdAt).getTime();
     const nowTime = Date.now();
     const diffHours = (nowTime - createdTime) / (1000 * 60 * 60);
-    if (diffHours > 48 && userRole === "technician") {
+    const paramPlazoHoras = parametrosSistema.find((p) => p.id === "hours_edit_deadline")?.value ?? 48;
+    const plazoMaximoHoras = Number(paramPlazoHoras);
+    if (diffHours > plazoMaximoHoras && userRole === "technician") {
       return {
         success: false,
         error:
-          "Este registro supera las 48 horas de antigüedad. Según normativa, solo un Administrador puede editarlo.",
+          `Este registro supera el plazo de ${plazoMaximoHoras} horas de antigüedad. Según normativa (H41), solo un Administrador puede editarlo.`,
       };
     }
 

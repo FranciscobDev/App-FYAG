@@ -1781,6 +1781,18 @@ export const PARAMETROS_SISTEMA: ParametroSistema[] = [
     unit: "caracteres",
     type: "number",
   },
+  {
+    id: "sec_lockout_duration",
+    group: "seguridad",
+    name: "Tiempo de bloqueo de cuenta",
+    description: "Minutos de suspensión temporal tras superar el número máximo de intentos fallidos permitidos.",
+    value: 15,
+    defaultValue: 15,
+    min: 5,
+    max: 60,
+    unit: "min",
+    type: "number",
+  },
   // 2. INVENTARIO
   {
     id: "inv_tolerance",
@@ -1841,6 +1853,18 @@ export const PARAMETROS_SISTEMA: ParametroSistema[] = [
     min: 0,
     max: 30,
     unit: "%",
+    type: "number",
+  },
+  {
+    id: "hours_edit_deadline",
+    group: "costos",
+    name: "Plazo límite de edición de horas (H41)",
+    description: "Horas máximas desde el registro para que un técnico pueda modificar sus horas de trabajo antes de requerir autorización administrativa.",
+    value: 48,
+    defaultValue: 48,
+    min: 12,
+    max: 168,
+    unit: "horas",
     type: "number",
   },
   // 4. ALERTAS
