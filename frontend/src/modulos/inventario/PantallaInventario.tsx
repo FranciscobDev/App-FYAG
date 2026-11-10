@@ -310,6 +310,11 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [kardexFiltrarTipo, establecerKardexFiltrarTipo] = useState<string>("todos");
   const [kardexFiltrarProyecto, establecerKardexFiltrarProyecto] = useState<string>("todos");
   const [kardexFechaRango, establecerKardexFechaRango] = useState<"todos" | "7d" | "30d">("todos");
+  const [productoCardexSeleccionado, establecerProductoCardexSeleccionado] = useState<Producto | null>(null);
+
+  const manejarAbrirCardexProducto = (prod: Producto) => {
+    establecerProductoCardexSeleccionado(prod);
+  };
 
   const filtradoCardex = cardex.filter((entry) => {
     if (kardexFiltrarSku) {
@@ -732,6 +737,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         kardexFiltrarProyecto={kardexFiltrarProyecto}
         kardexFiltrarSku={kardexFiltrarSku}
         kardexFiltrarTipo={kardexFiltrarTipo}
+        manejarAbrirCardexProducto={manejarAbrirCardexProducto}
         manejarAbrirEditarProducto={manejarAbrirEditarProducto}
         manejarAbrirNuevoProducto={manejarAbrirNuevoProducto}
         manejarExportarCardex={manejarExportarCardex}
@@ -807,6 +813,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         activoDespachoSolicitud={activoDespachoSolicitud}
         activoProyectos={activoProyectos}
         calcularFaltanteExistencia={calcularFaltanteExistencia}
+        cardex={cardex}
+        productoCardexSeleccionado={productoCardexSeleccionado}
+        establecerProductoCardexSeleccionado={establecerProductoCardexSeleccionado}
         confirmarDespachoVisible={confirmarDespachoVisible}
         conteoDiferencia={conteoDiferencia}
         conteoDiferenciaPorcentaje={conteoDiferenciaPorcentaje}
