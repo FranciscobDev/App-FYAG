@@ -14,6 +14,7 @@ export interface Articulo {
     precio_unitario: number;
     categoria: string;
     id_proveedor: number | null;
+    id_unidad: number | null;
     activo: boolean;
     cantidad_disponible: number | null;
     stock_minimo: number | null;
@@ -26,11 +27,19 @@ interface ArticuloBody {
     precio_unitario?: number;
     categoria?: string;
     id_proveedor?: number | null;
+    id_unidad?: number | null;
     activo?: boolean;
     stock?: number;
     stock_minimo?: number;
     ubicacion?: string | null;
 }
+
+/** Campos cuyo cambio dispara un registro de auditoría individual (campos críticos). */
+const CAMPOS_CRITICOS: { campo: string; label: string; origen: 'articulo' | 'stock' }[] = [
+    { campo: 'stock_minimo', label: 'stock mínimo', origen: 'stock' },
+    { campo: 'id_unidad', label: 'unidad de medida', origen: 'articulo' },
+    { campo: 'id_proveedor', label: 'proveedor predeterminado', origen: 'articulo' },
+];
 
 // Debe coincidir con categoria_enum de la base de datos y con CATEGORIAS_ARTICULO del frontend
 export const CATEGORIAS_ARTICULO = ['Herramientas', 'Materiales', 'Equipos', 'Consumibles', 'Seguridad'] as const;
@@ -53,7 +62,7 @@ const esErrorPg = (error: unknown): error is DatabaseError => {
 // Artículo + su stock (tabla articulos_stock). ::float8 evita que PostgreSQL devuelva NUMERIC como texto.
 const SELECT_ARTICULO = `
     SELECT a.id_articulo, a.nombre_articulo, a.sku, a.precio_unitario, a.categoria,
-           a.id_proveedor, a.activo,
+           a.id_proveedor, a.id_unidad, a.activo,
            s.cantidad_disponible::float8 AS cantidad_disponible,
            s.stock_minimo::float8 AS stock_minimo,
            s.ubicacion
@@ -64,6 +73,36 @@ const SELECT_ARTICULO = `
 const leerArticulo = async (cliente: Pick<PoolClient, 'query'>, id: number | string): Promise<Articulo | null> => {
     const res = await cliente.query<Articulo>(`${SELECT_ARTICULO} WHERE a.id_articulo = $1`, [id]);
     return res.rows[0] ?? null;
+};
+
+/**
+ * Registra auditoría granular por cada campo crítico que haya cambiado.
+ * Se llama DENTRO de la transacción que ya hizo la mutación.
+ */
+const auditarCamposCriticos = async (
+    cliente: PoolClient,
+    idArticulo: number | string,
+    antes: Articulo,
+    despues: Articulo,
+    idUsuarioEjecutor: number | null,
+): Promise<void> => {
+    for (const { campo, label } of CAMPOS_CRITICOS) {
+        const valorAnterior = (antes as unknown as Record<string, unknown>)[campo];
+        const valorNuevo = (despues as unknown as Record<string, unknown>)[campo];
+        // Solo si realmente cambió (incluyendo null ↔ valor)
+        if (valorAnterior === valorNuevo) continue;
+        if (valorAnterior == null && valorNuevo == null) continue;
+
+        await registrarAuditoria({
+            entidad: 'insumo',
+            accion: 'editar_campo_critico',
+            idRegistro: idArticulo,
+            idUsuarioEjecutor,
+            estadoAnterior: { [campo]: valorAnterior },
+            estadoNuevo: { [campo]: valorNuevo },
+            descripcion: `Campo crítico «${label}» cambiado de ${String(valorAnterior ?? 'vacío')} a ${String(valorNuevo ?? 'vacío')} en artículo ID ${idArticulo}`,
+        }, cliente);
+    }
 };
 
 // Listar todos (administración, bodega y técnicos: el técnico solo lee)
@@ -93,9 +132,9 @@ export const obtenerArticuloPorId = async (req: Request<{ id: string }>, res: Re
     }
 };
 
-// Crear un artículo con su stock inicial: ambas filas en la misma transacción
+// Crear un artículo (insumo) con su stock inicial: ambas filas en la misma transacción
 export const crearArticulo = async (req: Request<Record<string, string>, unknown, ArticuloBody>, res: Response): Promise<void> => {
-    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo, stock, stock_minimo, ubicacion } = req.body;
+    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo, stock, stock_minimo, ubicacion } = req.body;
 
     if (!nombre_articulo || !categoria) {
         res.status(400).json({ mensaje: 'El nombre y la categoría son obligatorios' });
@@ -116,8 +155,8 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
     try {
         const creado = await ejecutarTransaccion(async (cliente) => {
             const insertado = await cliente.query<{ id_articulo: number }>(
-                `INSERT INTO articulo (nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                `INSERT INTO articulo (nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                  RETURNING id_articulo`,
                 [
                     nombre_articulo.trim(),
@@ -125,6 +164,7 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
                     precio_unitario || 0,
                     categoria,
                     id_proveedor || null,
+                    id_unidad || null,
                     activo !== false,
                 ]
             );
@@ -139,13 +179,13 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
             const nuevo = await leerArticulo(cliente, id);
 
             await registrarAuditoria({
-                entidad: 'articulo',
+                entidad: 'insumo',
                 accion: 'crear',
                 idRegistro: id,
                 idUsuarioEjecutor: obtenerIdEjecutor(req),
                 estadoAnterior: null,
                 estadoNuevo: nuevo,
-                descripcion: `Artículo ${nombre_articulo.trim()} (SKU ${sku || 'sin SKU'}) creado con stock inicial ${stock ?? 0}`,
+                descripcion: `Insumo «${nombre_articulo.trim()}» (SKU ${sku || 'sin SKU'}) creado con stock inicial ${stock ?? 0}`,
             }, cliente);
 
             return nuevo;
@@ -165,10 +205,11 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
     }
 };
 
-// Modificar un artículo: solo cambia los campos enviados; el resto conserva su valor
+// Modificar un artículo (insumo): solo cambia los campos enviados; el resto conserva su valor.
+// Los cambios en stock_minimo, id_unidad o id_proveedor generan registros de auditoría individuales.
 export const actualizarArticulo = async (req: Request<{ id: string }, unknown, ArticuloBody>, res: Response): Promise<void> => {
     const { id } = req.params;
-    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo, stock, stock_minimo, ubicacion } = req.body;
+    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo, stock, stock_minimo, ubicacion } = req.body;
 
     if (categoria !== undefined) {
         const errorCategoria = validarCategoriaArticulo(categoria);
@@ -199,14 +240,16 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
                      precio_unitario = COALESCE($3, precio_unitario),
                      categoria       = COALESCE($4, categoria),
                      id_proveedor    = COALESCE($5, id_proveedor),
-                     activo          = COALESCE($6, activo)
-                 WHERE id_articulo = $7`,
+                     id_unidad       = COALESCE($6, id_unidad),
+                     activo          = COALESCE($7, activo)
+                 WHERE id_articulo = $8`,
                 [
                     nombre_articulo?.trim() ?? null,
                     sku ?? null,
                     precio_unitario ?? null,
                     categoria ?? null,
                     id_proveedor ?? null,
+                    id_unidad ?? null,
                     typeof activo === 'boolean' ? activo : null,
                     id,
                 ]
@@ -232,15 +275,20 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
             }
 
             const despues = await leerArticulo(cliente, id);
+            const idEjecutor = obtenerIdEjecutor(req);
 
+            // Auditoría granular: un registro por cada campo crítico que haya cambiado
+            await auditarCamposCriticos(cliente, id, antes, despues!, idEjecutor);
+
+            // Auditoría general de la mutación
             await registrarAuditoria({
-                entidad: 'articulo',
+                entidad: 'insumo',
                 accion: activo === false ? 'deshabilitar' : 'editar',
                 idRegistro: id,
-                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                idUsuarioEjecutor: idEjecutor,
                 estadoAnterior: antes,
                 estadoNuevo: despues,
-                descripcion: `Artículo ${despues?.nombre_articulo ?? antes.nombre_articulo} (ID ${id}) actualizado`,
+                descripcion: `Insumo «${despues?.nombre_articulo ?? antes.nombre_articulo}» (ID ${id}) actualizado`,
             }, cliente);
 
             return despues;
@@ -256,6 +304,47 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
             return;
         }
         enviarErrorHttp(res, error, 'Error al actualizar el artículo');
+    }
+};
+
+// Deshabilitar un artículo (insumo) lógicamente: pone activo = false sin borrar datos.
+// Los insumos con historial solo se deshabilitan; nunca se eliminan físicamente.
+export const deshabilitarArticulo = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { id } = req.params;
+    try {
+        const deshabilitado = await ejecutarTransaccion(async (cliente) => {
+            const previo = await cliente.query<Articulo>(`${SELECT_ARTICULO} WHERE a.id_articulo = $1 FOR UPDATE OF a`, [id]);
+            const antes = previo.rows[0];
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Artículo no encontrado para deshabilitar');
+            }
+            if (!antes.activo) {
+                throw new ErrorAplicacion(400, 'El artículo ya está deshabilitado');
+            }
+
+            await cliente.query('UPDATE articulo SET activo = FALSE WHERE id_articulo = $1', [id]);
+
+            const despues = await leerArticulo(cliente, id);
+
+            await registrarAuditoria({
+                entidad: 'insumo',
+                accion: 'deshabilitar',
+                idRegistro: id,
+                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                estadoAnterior: antes,
+                estadoNuevo: despues,
+                descripcion: `Insumo «${antes.nombre_articulo}» (ID ${id}) deshabilitado lógicamente`,
+            }, cliente);
+
+            return despues;
+        });
+
+        res.status(200).json({
+            mensaje: 'Artículo deshabilitado correctamente',
+            articulo: deshabilitado,
+        });
+    } catch (error) {
+        enviarErrorHttp(res, error, 'Error al deshabilitar el artículo');
     }
 };
 
