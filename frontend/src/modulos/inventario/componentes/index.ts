@@ -4,3 +4,4 @@ export * from "./SeccionEgresoBodega";
 export * from "./SeccionMermas";
 export * from "./SeccionConteoFisico";
 export * from "./ModalesInventario";
+export * from "./CatalogoStock";

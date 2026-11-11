@@ -41,6 +41,7 @@ import {
   Producto,
   RegistroMerma,
 } from "@/nucleo/tipos";
+import { CatalogoStock } from "@/componentes/dominio/CatalogoStock";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
 
 export interface PropiedadesSeccionCatalogoCardex {
@@ -88,6 +89,8 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
   proyectos,
   rolActual,
 }) => {
+  const [modoVista, setModoVista] = useState<"tabla" | "tarjetas">("tabla");
+
   return (
     <>
       {/* =====================================================================
@@ -95,36 +98,83 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
           ===================================================================== */}
       {activoPestana === "catalogo" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          <View style={estilos.superiorCatalogBarra}>
-            <View style={estilos.buscarEnvoltorio}>
-              <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={estilos.buscarIcono} />
-              <TextInput
-                value={buscarQuery}
-                onChangeText={establecerBuscarQuery}
-                placeholder="Buscar por SKU o nombre..."
-                placeholderTextColor={tema.colors.textLight}
-                style={estilos.buscarEntrada}
-              />
-              {Boolean(buscarQuery) && (
-                <Pressable onPress={() => establecerBuscarQuery("")} hitSlop={6}>
-                  <Ionicons name="close-circle" size={16} color={tema.colors.textMuted} />
-                </Pressable>
-              )}
+          {/* Barra de alternancia de vista: Tabla (FRONT-1) / Tarjetas */}
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: 12,
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <TouchableOpacity
+                onPress={() => setModoVista("tabla")}
+                style={[
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: modoVista === "tabla" ? tema.colors.primary : "#cbd5e1",
+                    backgroundColor: modoVista === "tabla" ? tema.colors.primaryLight : "#ffffff",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="list-outline"
+                  size={16}
+                  color={modoVista === "tabla" ? tema.colors.primaryDark : "#64748b"}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: modoVista === "tabla" ? tema.colors.primaryDark : "#475569",
+                  }}
+                >
+                  Tabla Catálogo Stock [FRONT-1]
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setModoVista("tarjetas")}
+                style={[
+                  {
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 12,
+                    paddingVertical: 7,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: modoVista === "tarjetas" ? tema.colors.primary : "#cbd5e1",
+                    backgroundColor: modoVista === "tarjetas" ? tema.colors.primaryLight : "#ffffff",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name="grid-outline"
+                  size={16}
+                  color={modoVista === "tarjetas" ? tema.colors.primaryDark : "#64748b"}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: modoVista === "tarjetas" ? tema.colors.primaryDark : "#475569",
+                  }}
+                >
+                  Vista Tarjetas
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              onPress={() =>
-                abrirEscaner("Escanear SKU para Buscar", (code: any) => {
-                  establecerBuscarQuery(code);
-                })
-              }
-              style={estilos.escanearRapidoBoton}
-              accessibilityLabel="Escanear código de barras o QR"
-            >
-              <Ionicons name="barcode-outline" size={20} color={tema.colors.primary} />
-            </TouchableOpacity>
-
-            {/* Botón «Nuevo insumo» SOLO Admin */}
             {rolActual === "admin" && (
               <Boton
                 title="Nuevo insumo"
@@ -132,10 +182,63 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                 size="sm"
                 icon="add-outline"
                 onPress={manejarAbrirNuevoProducto}
-                style={{ marginLeft: 8 }}
               />
             )}
           </View>
+
+          {modoVista === "tabla" ? (
+            <CatalogoStock
+              mostrarSimuladorScrum={true}
+              onSelectInsumo={(insumo) => {
+                const prod = filtradoProductos.find((p: any) => p.sku === insumo.sku);
+                if (prod && manejarAbrirCardexProducto) {
+                  manejarAbrirCardexProducto(prod);
+                }
+              }}
+            />
+          ) : (
+            <>
+              <View style={estilos.superiorCatalogBarra}>
+                <View style={estilos.buscarEnvoltorio}>
+                  <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={estilos.buscarIcono} />
+                  <TextInput
+                    value={buscarQuery}
+                    onChangeText={establecerBuscarQuery}
+                    placeholder="Buscar por SKU o nombre..."
+                    placeholderTextColor={tema.colors.textLight}
+                    style={estilos.buscarEntrada}
+                  />
+                  {Boolean(buscarQuery) && (
+                    <Pressable onPress={() => establecerBuscarQuery("")} hitSlop={6}>
+                      <Ionicons name="close-circle" size={16} color={tema.colors.textMuted} />
+                    </Pressable>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  onPress={() =>
+                    abrirEscaner("Escanear SKU para Buscar", (code: any) => {
+                      establecerBuscarQuery(code);
+                    })
+                  }
+                  style={estilos.escanearRapidoBoton}
+                  accessibilityLabel="Escanear código de barras o QR"
+                >
+                  <Ionicons name="barcode-outline" size={20} color={tema.colors.primary} />
+                </TouchableOpacity>
+
+                {/* Botón «Nuevo insumo» SOLO Admin */}
+                {rolActual === "admin" && (
+                  <Boton
+                    title="Nuevo insumo"
+                    variant="primary"
+                    size="sm"
+                    icon="add-outline"
+                    onPress={manejarAbrirNuevoProducto}
+                    style={{ marginLeft: 8 }}
+                  />
+                )}
+              </View>
 
           {filtradoProductos.length === 0 ? (
             <EstadoVacio
@@ -277,6 +380,8 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
             );
           })
         )}
+            </>
+          )}
         </ScrollView>
       )}
 
