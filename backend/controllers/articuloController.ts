@@ -116,6 +116,36 @@ export const obtenerArticulos = async (_req: Request, res: Response): Promise<vo
     }
 };
 
+// Endpoint optimizado para catÃ¡logo con bÃºsqueda rÃ¡pida (SKU o nombre)
+export const obtenerCatalogoStock = async (req: Request, res: Response): Promise<void> => {
+    const { busqueda } = req.query;
+    try {
+        let query = `
+            SELECT a.id_articulo, a.nombre_articulo, a.sku,
+                   COALESCE(s.cantidad_disponible, 0)::float8 AS disponible,
+                   0::float8 AS comprometido,
+                   0::float8 AS en_cuarentena,
+                   COALESCE(s.stock_minimo, 0)::float8 AS stock_minimo
+            FROM articulo a
+            LEFT JOIN articulos_stock s ON s.id_articulo = a.id_articulo
+            WHERE a.activo = TRUE
+        `;
+        const params: any[] = [];
+        if (busqueda && typeof busqueda === 'string') {
+            query += ` AND (a.sku ILIKE $1 OR a.nombre_articulo ILIKE $1)`;
+            params.push(`%${busqueda}%`);
+        }
+        query += ` ORDER BY a.nombre_articulo ASC`;
+        
+        const result = await pool.query(query, params);
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Error al obtener catÃ¡logo de stock:', error);
+        res.status(500).json({ mensaje: 'Error al consultar el catÃ¡logo de stock' });
+    }
+};
+
+
 // Obtener uno por ID
 export const obtenerArticuloPorId = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
     const { id } = req.params;
