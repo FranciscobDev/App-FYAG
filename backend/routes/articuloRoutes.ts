@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
     obtenerArticulos,
     obtenerArticuloPorId,
+    obtenerCatalogoStock,
     crearArticulo,
     actualizarArticulo,
     deshabilitarArticulo,
@@ -17,6 +18,8 @@ const puedeLeer = verificarRoles('admin', 'warehouse', 'technician');
 const puedeEscribir = verificarRoles('admin', 'warehouse');
 
 router.get('/', puedeLeer, obtenerArticulos);
+router.get('/catalogo', puedeLeer, obtenerCatalogoStock);
+
 router.get('/:id', puedeLeer, obtenerArticuloPorId);
 router.post('/', puedeEscribir, crearArticulo);
 router.put('/:id', puedeEscribir, actualizarArticulo);
