@@ -5,8 +5,8 @@ const obtenerRuta = () => `${obtenerBaseUrlApi()}/proyectos`;
 
 // Valores tomados del controlador (valores por defecto).
 // Completa con los valores exactos del ENUM de la BD.
-export const TIPOS_PROYECTO = ["Instalacion"] as const;
-export const ESTADOS_PROYECTO = ["Planificado"] as const;
+export const TIPOS_PROYECTO = ["Instalacion", "Mantencion"] as const;
+export const ESTADOS_PROYECTO = ["Planificado", "En curso", "Pausado", "Finalizado"] as const;
 
 export type TipoProyecto = (typeof TIPOS_PROYECTO)[number];
 export type EstadoProyecto = (typeof ESTADOS_PROYECTO)[number];
@@ -29,7 +29,9 @@ export interface Proyecto {
 }
 
 /** Datos que se envían al crear o actualizar. */
-export type FormularioProyecto = Omit<Proyecto, "id_proyecto">;
+export type FormularioProyecto = Omit<Proyecto, "id_proyecto"> & {
+  id_kit_proyecto?: number | null;
+};
 
 export interface Resultado<T> {
   ok: boolean;
@@ -78,7 +80,7 @@ export const eliminarProyecto = (id: number) =>
   });
 
 
-  export interface Tecnico {
+export interface Tecnico {
   id_usuario: number;
   nombre: string;
 }

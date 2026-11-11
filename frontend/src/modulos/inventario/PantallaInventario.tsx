@@ -1,3 +1,4 @@
+import { InsumoForm } from "@/componentes/Insumos";
 import { CATEGORIA_POR_DEFECTO } from "@/nucleo/categoriasArticulo";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -176,10 +177,11 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // =========================================================================
   // 1. CATALOGO STATE
   // =========================================================================
-  const skuEntradaReferencia = useRef<TextInput>(null);
-  const nombreEntradaReferencia = useRef<TextInput>(null);
+  const skuEntradaReferencia = useRef<any>(null);
+  const nombreEntradaReferencia = useRef<any>(null);
   const [buscarQuery, establecerBuscarQuery] = useState("");
   const [nuevoProductoModal, establecerNuevoProductoModal] = useState(false);
+  const [registroInsumoFormVisible, establecerRegistroInsumoFormVisible] = useState(false);
   const [editandoProducto, establecerEditandoProducto] = useState<Producto | null>(null);
 
   const [formularioSku, establecerFormularioSku] = useState("");
@@ -745,6 +747,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         manejarAbrirCardexProducto={manejarAbrirCardexProducto}
         manejarAbrirEditarProducto={manejarAbrirEditarProducto}
         manejarAbrirNuevoProducto={manejarAbrirNuevoProducto}
+        manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
         manejarExportarCardex={manejarExportarCardex}
         mostrarAviso={mostrarAviso}
         proyectos={proyectos}
@@ -812,6 +815,36 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         usuario={usuario}
         width={width}
       />
+
+
+      {/* MODAL INSUMO FORM (Validación Unicidad SKU y Magnitudes con Decimales) */}
+      <Modal
+        visible={registroInsumoFormVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => establecerRegistroInsumoFormVisible(false)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+          }}
+          onPress={() => establecerRegistroInsumoFormVisible(false)}
+        >
+          <Pressable style={{ width: "100%", maxWidth: 520 }} onPress={(e) => e.stopPropagation()}>
+            <InsumoForm
+              onCancel={() => establecerRegistroInsumoFormVisible(false)}
+              onSubmit={(datos) => {
+                mostrarAviso(`Insumo ${datos.sku} (${datos.nombre}) registrado exitosamente.`);
+                establecerRegistroInsumoFormVisible(false);
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <ModalesInventario
         abrirEscaner={abrirEscaner}

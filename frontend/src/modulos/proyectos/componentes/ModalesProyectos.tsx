@@ -28,6 +28,7 @@ import {
   NotificacionFlotante,
 } from "@/componentes/comunes";
 import { Proyecto, TipoProyecto, EstadoProyecto } from "@/nucleo/tipos";
+import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "../estilos";
 
 export interface PropiedadesModalesProyectos {
@@ -218,18 +219,31 @@ export const ModalesProyectos: React.FC<PropiedadesModalesProyectos> = ({
         {/* 2. PRESUPUESTOS Y PLAZOS */}
         <Text style={estilos.formularioSeccionEncabezado}>2. Presupuestos, Plazos y Estado</Text>
         <View style={estilos.formularioFilaTwo}>
-          <CampoTexto
+          <SelectorFecha
             label="Fecha Inicio"
+            required
             value={formularioIniciarFecha}
-            onChangeText={establecerFormularioIniciarFecha}
-            placeholder="YYYY-MM-DD"
+            onChangeDate={(date) => {
+              establecerFormularioIniciarFecha(date);
+              if (formularioPlazo && formularioPlazo < date) {
+                establecerFormularioPlazo(date);
+              }
+            }}
+            placeholder="Seleccionar inicio"
             containerStyle={{ flex: 1, marginRight: 8 }}
           />
-          <CampoTexto
+          <SelectorFecha
             label="Fecha Límite"
             value={formularioPlazo}
-            onChangeText={establecerFormularioPlazo}
-            placeholder="YYYY-MM-DD"
+            onChangeDate={establecerFormularioPlazo}
+            onClear={() => establecerFormularioPlazo("")}
+            minDate={formularioIniciarFecha}
+            error={
+              formularioIniciarFecha && formularioPlazo && formularioPlazo < formularioIniciarFecha
+                ? "La fecha límite no puede ser anterior al inicio"
+                : undefined
+            }
+            placeholder="Sin fecha límite"
             containerStyle={{ flex: 1 }}
           />
         </View>

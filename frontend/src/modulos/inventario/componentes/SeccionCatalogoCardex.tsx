@@ -61,6 +61,7 @@ export interface PropiedadesSeccionCatalogoCardex {
   manejarAbrirCardexProducto?: any;
   manejarAbrirEditarProducto: any;
   manejarAbrirNuevoProducto: any;
+  manejarAbrirInsumoForm?: any;
   manejarExportarCardex: any;
   mostrarAviso: any;
   proyectos: any;
@@ -84,6 +85,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
   manejarAbrirCardexProducto,
   manejarAbrirEditarProducto,
   manejarAbrirNuevoProducto,
+  manejarAbrirInsumoForm,
   manejarExportarCardex,
   mostrarAviso,
   proyectos,
@@ -176,13 +178,26 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
             </View>
 
             {rolActual === "admin" && (
-              <Boton
-                title="Nuevo insumo"
-                variant="primary"
-                size="sm"
-                icon="add-outline"
-                onPress={manejarAbrirNuevoProducto}
-              />
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Boton
+                  title="Nuevo insumo"
+                  variant="primary"
+                  size="sm"
+                  icon="add-outline"
+                  onPress={manejarAbrirNuevoProducto}
+                  style={{ marginLeft: 8 }}
+                />
+                {Boolean(manejarAbrirInsumoForm) && (
+                  <Boton
+                    title="Registro Rápido"
+                    variant="outline"
+                    size="sm"
+                    icon="document-text-outline"
+                    onPress={manejarAbrirInsumoForm}
+                    style={{ marginLeft: 8 }}
+                  />
+                )}
+              </View>
             )}
           </View>
 

@@ -16,6 +16,7 @@ export interface PropiedadesSelectorFecha {
   label: string;
   value?: string; // Formato YYYY-MM-DD o DD/MM/YYYY
   onChangeDate: (dateStr: string) => void;
+  onClear?: () => void;
   placeholder?: string;
   error?: string;
   helper?: string;
@@ -35,6 +36,7 @@ export const SelectorFecha: React.FC<PropiedadesSelectorFecha> = ({
   label,
   value,
   onChangeDate,
+  onClear,
   placeholder = "DD/MM/AAAA",
   error,
   helper,
@@ -140,11 +142,24 @@ export const SelectorFecha: React.FC<PropiedadesSelectorFecha> = ({
           </Text>
         </View>
 
-        <Ionicons
-          name="chevron-down-outline"
-          size={18}
-          color={disabled ? tema.colors.textMuted : tema.colors.textSecondary}
-        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {Boolean(onClear && value && !disabled) && (
+            <TouchableOpacity
+              onPress={(e) => {
+                e.stopPropagation();
+                onClear?.();
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={tema.colors.textMuted} />
+            </TouchableOpacity>
+          )}
+          <Ionicons
+            name="chevron-down-outline"
+            size={18}
+            color={disabled ? tema.colors.textMuted : tema.colors.textSecondary}
+          />
+        </View>
       </TouchableOpacity>
 
       {Boolean(error) ? (
@@ -201,6 +216,12 @@ export const SelectorFecha: React.FC<PropiedadesSelectorFecha> = ({
                 onPress={() => manejarPreset(30)}
               >
                 <Text style={estilos.presetTexto}>+30 Días</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={estilos.presetChip}
+                onPress={() => manejarPreset(60)}
+              >
+                <Text style={estilos.presetTexto}>+60 Días</Text>
               </TouchableOpacity>
             </View>
 
@@ -263,6 +284,17 @@ export const SelectorFecha: React.FC<PropiedadesSelectorFecha> = ({
 
             {/* Botones Acción */}
             <View style={estilos.accionesFila}>
+              {Boolean(onClear && value) && (
+                <TouchableOpacity
+                  style={[estilos.cancelarBoton, { marginRight: "auto", borderColor: "#fca5a5" }]}
+                  onPress={() => {
+                    onClear?.();
+                    establecerModalAbrir(false);
+                  }}
+                >
+                  <Text style={[estilos.cancelarBotonTexto, { color: "#dc2626" }]}>Sin fecha</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={estilos.cancelarBoton}
                 onPress={() => establecerModalAbrir(false)}

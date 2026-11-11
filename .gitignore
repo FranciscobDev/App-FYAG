@@ -60,15 +60,14 @@ android/
 *.app
 *.dSYM/
 
-# 6. Variables de entorno y secretos (se permite .env)
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env*.local
-!.env
-!backend/.env
+# 6. Variables de entorno y secretos (nunca commitear secretos)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
 !.env.example
+!backend/.env.example
 
 # 7. Caches, linters y compilación TypeScript
 .cache/
@@ -138,3 +137,5 @@ AGENTS.md
 agents.md
 **/AGENTS.md
 **/agents.md
+
+backend/.env

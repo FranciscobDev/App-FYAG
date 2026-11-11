@@ -4,3 +4,4 @@ export * from "./datos";
 export * from "./retroalimentacion";
 export * from "./superposicion";
 export * from "./dominio";
+export * from "./Insumos";
