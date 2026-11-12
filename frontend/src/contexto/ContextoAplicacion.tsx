@@ -137,6 +137,8 @@ interface TipoContextoAplicacion {
   // Third Parties
   agregarProveedor: (supplier: Proveedor) => { success: boolean; error?: string };
   agregarCliente: (client: Cliente) => { success: boolean; error?: string };
+  actualizarProveedor: (id: string, updates: Partial<Proveedor>) => { success: boolean };
+  actualizarCliente: (id: string, updates: Partial<Cliente>) => { success: boolean };
   alternarProveedorDeshabilitado: (id: string) => void;
   alternarClienteDeshabilitado: (id: string) => void;
 
@@ -981,6 +983,20 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Ya existe un cliente con este RUT." };
     }
     setClients((prev) => [client, ...prev]);
+    return { success: true };
+  };
+
+  const actualizarProveedor = (id: string, updates: Partial<Proveedor>) => {
+    setSuppliers((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+    );
+    return { success: true };
+  };
+
+  const actualizarCliente = (id: string, updates: Partial<Cliente>) => {
+    setClients((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    );
     return { success: true };
   };
 
@@ -2021,6 +2037,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         confirmarRecepcionOrden,
         agregarProveedor,
         agregarCliente,
+        actualizarProveedor,
+        actualizarCliente,
         alternarProveedorDeshabilitado,
         alternarClienteDeshabilitado,
         crearProyecto,

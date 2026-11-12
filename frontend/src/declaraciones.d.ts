@@ -73,6 +73,26 @@ declare module "react-native" {
     [key: string]: any;
   }
 
+  export interface ActivityIndicatorProps {
+    size?: "small" | "large" | number;
+    color?: string;
+    animating?: boolean;
+    hidesWhenStopped?: boolean;
+    style?: StyleProp<ViewStyle>;
+    [key: string]: any;
+  }
+
+  export interface AlertButton {
+    text?: string;
+    onPress?: () => void;
+    style?: "default" | "cancel" | "destructive";
+  }
+
+  export interface AlertOptions {
+    cancelable?: boolean;
+    onDismiss?: () => void;
+  }
+
   export const View: React.FC<ViewProps>;
   export const Text: React.FC<TextProps>;
   export const TextInput: React.FC<TextInputProps>;
@@ -81,6 +101,16 @@ declare module "react-native" {
   export const Modal: React.FC<ModalProps>;
   export const ScrollView: React.FC<ScrollViewProps>;
   export const FlatList: any;
+  export const ActivityIndicator: React.FC<ActivityIndicatorProps>;
+
+  export const Alert: {
+    alert: (
+      title: string,
+      message?: string,
+      buttons?: AlertButton[],
+      options?: AlertOptions
+    ) => void;
+  };
 
   export const StyleSheet: {
     create: <T extends Record<string, any>>(styles: T) => T;

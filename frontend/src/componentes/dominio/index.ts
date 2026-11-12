@@ -3,3 +3,5 @@ export * from "./ModalEscanerQr";
 export * from "./ModalExpiracionSesion";
 export * from "./BannerSinConexion";
 export * from "./ChipSincronizacion";
+export * from "./FichaTercero";
+export * from "./CatalogoStock";
