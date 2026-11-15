@@ -7,3 +7,4 @@ export * from "./dominio";
 export * from "./Insumos";
 export * from "./AsignacionTecnicos";
 export * from "./DistintivoEstadoProyecto";
+export * from "./BandejaOrdenesCompra";

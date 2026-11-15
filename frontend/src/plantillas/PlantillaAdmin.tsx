@@ -165,6 +165,11 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
           id: "compras",
           label: "Órdenes de Compra",
           description: "Emisión, aprobación a proveedores y control de recepción",
+          badge:
+            ordenesCompra.filter((o) => o.status === "borrador" && o.isAutoMinStock).length > 0
+              ? String(ordenesCompra.filter((o) => o.status === "borrador" && o.isAutoMinStock).length)
+              : undefined,
+          badgeTone: "warn",
           icon: "cart-outline",
         },
         {
