@@ -31,6 +31,10 @@ import {
   eliminarProyecto,
   listarProyectos,
 } from "./proyectosApi";
+import { KitProyecto } from "@/nucleo/tipos";
+import { listarKits } from "./kitsApi";
+import { ModalGestionKits } from "./ModalGestionKits";
+import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
 import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
@@ -91,12 +95,15 @@ export const PantallaProyectos: React.FC = () => {
 
   const cargar = useCallback(async () => {
     establecerCargando(true);
-    const res = await listarProyectos();
-    if (res.ok && res.data) {
-      establecerProyectos(res.data);
+    const [resProy, resKits] = await Promise.all([listarProyectos(), listarKits()]);
+    if (resProy.ok && resProy.data) {
+      establecerProyectos(resProy.data);
       establecerError(null);
     } else {
-      establecerError(res.error ?? "Error al cargar proyectos");
+      establecerError(resProy.error ?? "Error al cargar proyectos");
+    }
+    if (resKits.ok && resKits.data) {
+      establecerKits(resKits.data);
     }
     establecerCargando(false);
   }, []);
@@ -123,6 +130,15 @@ export const PantallaProyectos: React.FC = () => {
     establecerEditando(null);
     establecerFormulario(formularioVacio(idUsuario));
     establecerErrorFormulario("");
+    establecerModalVisible(true);
+  };
+
+  const manejarKitSeleccionadoDesdeGestion = (kit: KitProyecto) => {
+    establecerFormulario((prev) => ({
+      ...prev,
+      presupuesto_inicial: kit.costo_total ?? 0,
+      id_kit_proyecto: kit.id_kit_proyecto,
+    }));
     establecerModalVisible(true);
   };
 
@@ -157,7 +173,7 @@ export const PantallaProyectos: React.FC = () => {
       return;
     }
 
-    // Regla de negocio: Si el proyecto ya estaba Cerrado, no se puede alterar el presupuesto
+    // Regla de negocio: si el proyecto ya estaba cerrado, no se puede alterar el presupuesto
     if (editando?.estado_proyecto === "Cerrado") {
       const presupuestoOriginal = Number(editando.presupuesto_inicial) || 0;
       const horasOriginal = Number(editando.presupuesto_horas) || 0;
@@ -170,6 +186,15 @@ export const PantallaProyectos: React.FC = () => {
         );
         return;
       }
+    }
+
+    if (
+      formulario.fecha_inicio &&
+      formulario.fecha_fin &&
+      formulario.fecha_fin < formulario.fecha_inicio
+    ) {
+      establecerErrorFormulario("La fecha de fin no puede ser anterior a la fecha de inicio.");
+      return;
     }
 
     const payload: FormularioProyecto = {
@@ -233,17 +258,27 @@ export const PantallaProyectos: React.FC = () => {
   };
 
   const modal = (
-    <ModalFormulario
-      visible={modalVisible}
-      editando={Boolean(editando)}
-      proyectoOriginal={editando}
-      formulario={formulario}
-      error={errorFormulario}
-      guardando={guardando}
-      onCambiar={actualizarCampo}
-      onCancelar={() => establecerModalVisible(false)}
-      onGuardar={guardar}
-    />
+    <>
+      <ModalFormulario
+        visible={modalVisible}
+        editando={Boolean(editando)}
+        proyectoOriginal={editando}
+        formulario={formulario}
+        kits={kits}
+        onAbrirGestionKits={() => establecerModalKitsVisible(true)}
+        error={errorFormulario}
+        guardando={guardando}
+        onCambiar={actualizarCampo}
+        onCancelar={() => establecerModalVisible(false)}
+        onGuardar={guardar}
+      />
+      <ModalGestionKits
+        visible={modalKitsVisible}
+        onClose={() => establecerModalKitsVisible(false)}
+        onKitSeleccionadoParaProyecto={manejarKitSeleccionadoDesdeGestion}
+        onKitsActualizados={cargar}
+      />
+    </>
   );
 
   // ---------- Vista de detalle ----------
@@ -565,17 +600,13 @@ const Metrica: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valo
   </View>
 );
 
-type CampoNumerico =
-  | "presupuesto_inicial"
-  | "presupuesto_horas"
-  | "valor_venta"
-  | "porcentaje_avance";
-
 type ModalProps = {
   visible: boolean;
   editando: boolean;
   proyectoOriginal: Proyecto | null;
   formulario: FormularioProyecto;
+  kits: KitProyecto[];
+  onAbrirGestionKits: () => void;
   error: string;
   guardando: boolean;
   onCambiar: <K extends keyof FormularioProyecto>(c: K, v: FormularioProyecto[K]) => void;
@@ -588,6 +619,8 @@ const ModalFormulario: React.FC<ModalProps> = ({
   editando,
   proyectoOriginal,
   formulario,
+  kits,
+  onAbrirGestionKits,
   error,
   guardando,
   onCambiar,
@@ -596,212 +629,464 @@ const ModalFormulario: React.FC<ModalProps> = ({
 }) => {
   const esCerrado = formulario.estado_proyecto === "Cerrado";
   const yaEstabaCerrado = Boolean(proyectoOriginal && proyectoOriginal.estado_proyecto === "Cerrado");
-
-  const campoNumerico = (campo: CampoNumerico, etiqueta: string) => (
-    <>
-      <Text style={estilos.campoEtiqueta}>{etiqueta}</Text>
-      <TextInput
-        editable={!esCerrado}
-        style={esCerrado ? styles.inputBloqueado : styles.input}
-        keyboardType="numeric"
-        value={String(formulario[campo] ?? "")}
-        onChangeText={(t) => onCambiar(campo, Number(t) || 0)}
-      />
-    </>
-  );
+  const kitSeleccionado = kits.find((k) => k.id_kit_proyecto === formulario.id_kit_proyecto);
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancelar}>
-      <View style={estilos.contenedor}>
-        <ScrollView contentContainerStyle={estilos.detalleScroll}>
-          <Text style={estilos.subTitulo}>
-            {yaEstabaCerrado
-              ? "Ver proyecto (Cerrado)"
-              : editando
-              ? "Editar proyecto"
-              : "Nuevo proyecto"}
-          </Text>
-          <Text style={estilos.subDescripcion}>
-            {esCerrado
-              ? "Proyecto en modo solo lectura. Los campos se encuentran bloqueados."
-              : "Los campos marcados con * son obligatorios."}
-          </Text>
-
-          {/* Banner SCRUM de control de estados */}
-          <View style={styles.scrumBanner}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <Ionicons name="information-circle" size={16} color="#92400e" />
-              <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
-            </View>
-            <Text style={styles.scrumBannerTexto}>
-              Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.
-            </Text>
-          </View>
-
-          {/* Banner de bloqueo cuando está cerrado */}
-          {esCerrado && (
-            <View style={styles.bannerCerrado}>
-              <Ionicons name="lock-closed" size={18} color="#b91c1c" />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bannerCerradoTitulo}>
-                  {yaEstabaCerrado ? "Proyecto Cerrado — Solo Lectura" : "Cambio de Estado: Cerrado"}
-                </Text>
-                <Text style={styles.bannerCerradoTexto}>
-                  Los campos se bloquean visualmente. No se permite la alteración del presupuesto inicial ni horas.
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancelar}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          {/* Encabezado del modal */}
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.modalHeaderTag}>
+                <Ionicons name="briefcase-outline" size={13} color={tema.colors.primary} />
+                <Text style={styles.modalHeaderTagTexto}>
+                  {yaEstabaCerrado
+                    ? "PROYECTO CERRADO (SOLO LECTURA)"
+                    : editando
+                    ? "EDICIÓN DE PROYECTO"
+                    : "GESTIÓN DE OBRAS"}
                 </Text>
               </View>
+              <Text style={styles.modalTitulo}>
+                {yaEstabaCerrado
+                  ? `Ver Proyecto: ${formulario.nombre_proyecto || "Cerrado"}`
+                  : editando
+                  ? `Editar Proyecto: ${formulario.nombre_proyecto || "Sin nombre"}`
+                  : "Crear Nuevo Proyecto"}
+              </Text>
+              <Text style={styles.modalSubtitulo}>
+                {esCerrado
+                  ? "Proyecto en modo solo lectura. Los campos se encuentran bloqueados."
+                  : "Define la información técnica, plazos, kit de insumos y presupuestos asignados."}
+              </Text>
             </View>
-          )}
 
-          <Text style={estilos.campoEtiqueta}>Nombre del proyecto *</Text>
-          <TextInput
-            editable={!esCerrado}
-            style={esCerrado ? styles.inputBloqueado : styles.input}
-            value={formulario.nombre_proyecto}
-            onChangeText={(t) => onCambiar("nombre_proyecto", t)}
-          />
-
-          <Text style={estilos.campoEtiqueta}>Tipo</Text>
-          <View style={estilos.botonGrupoFila}>
-            {TIPOS_PROYECTO.map((o) => (
-              <Opcion
-                key={o}
-                texto={o}
-                activo={formulario.tipo_proyecto === o}
-                deshabilitado={esCerrado}
-                onPress={() => onCambiar("tipo_proyecto", o)}
-              />
-            ))}
-          </View>
-
-          <Text style={estilos.campoEtiqueta}>Estado</Text>
-          <View style={estilos.botonGrupoFila}>
-            {ESTADOS_PROYECTO.map((o) => (
-              <Opcion
-                key={o}
-                texto={o}
-                activo={formulario.estado_proyecto === o}
-                deshabilitado={yaEstabaCerrado}
-                onPress={() => onCambiar("estado_proyecto", o)}
-              />
-            ))}
-          </View>
-
-          <Text style={estilos.campoEtiqueta}>Cliente</Text>
-          <TextInput
-            editable={!esCerrado}
-            style={esCerrado ? styles.inputBloqueado : styles.input}
-            value={formulario.cliente ?? ""}
-            onChangeText={(t) => onCambiar("cliente", t)}
-          />
-
-          <Text style={estilos.campoEtiqueta}>Dirección</Text>
-          <TextInput
-            editable={!esCerrado}
-            style={esCerrado ? styles.inputBloqueado : styles.input}
-            value={formulario.direccion ?? ""}
-            onChangeText={(t) => onCambiar("direccion", t)}
-          />
-
-          <Text style={estilos.campoEtiqueta}>Fecha de inicio (AAAA-MM-DD)</Text>
-          <TextInput
-            editable={!esCerrado}
-            style={esCerrado ? styles.inputBloqueado : styles.input}
-            value={formulario.fecha_inicio ?? ""}
-            onChangeText={(t) => onCambiar("fecha_inicio", t)}
-          />
-
-          <Text style={estilos.campoEtiqueta}>Fecha de fin (AAAA-MM-DD)</Text>
-          <TextInput
-            editable={!esCerrado}
-            style={esCerrado ? styles.inputBloqueado : styles.input}
-            value={formulario.fecha_fin ?? ""}
-            onChangeText={(t) => onCambiar("fecha_fin", t || null)}
-          />
-
-          {campoNumerico("presupuesto_inicial", "Presupuesto inicial")}
-          {campoNumerico("presupuesto_horas", "Presupuesto horas (HH)")}
-          {campoNumerico("valor_venta", "Presupuesto usado")}
-          {campoNumerico("porcentaje_avance", "Porcentaje de avance")}
-
-          {error ? <Text style={estilos.errorTexto}>{error}</Text> : null}
-
-          <View style={estilos.modalBotonesFila}>
             <TouchableOpacity
-              style={[styles.boton, styles.botonSecundario]}
+              style={styles.btnCerrarModal}
               onPress={onCancelar}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.botonTextoOscuro}>
+              <Ionicons name="close" size={22} color={tema.colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Cuerpo con desplazamiento */}
+          <ScrollView
+            style={styles.modalScrollCuerpo}
+            contentContainerStyle={{ padding: 18, paddingBottom: 28 }}
+            showsVerticalScrollIndicator={true}
+          >
+            {/* Guía visual de control de estados de proyecto */}
+            <View style={styles.scrumBanner}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Ionicons name="information-circle" size={16} color="#92400e" />
+                <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
+              </View>
+              <Text style={styles.scrumBannerTexto}>
+                Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.
+              </Text>
+            </View>
+
+            {/* Aviso de bloqueo cuando está en estado Cerrado */}
+            {esCerrado && (
+              <View style={styles.bannerCerrado}>
+                <Ionicons name="lock-closed" size={18} color="#b91c1c" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bannerCerradoTitulo}>
+                    {yaEstabaCerrado ? "Proyecto Cerrado — Solo Lectura" : "Cambio de Estado: Cerrado"}
+                  </Text>
+                  <Text style={styles.bannerCerradoTexto}>
+                    Los campos se bloquean visualmente. No se permite la alteración del presupuesto inicial ni horas.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Sección 1: Información general */}
+            <View style={styles.cardSeccion}>
+              <View style={styles.cardSeccionEncabezado}>
+                <Ionicons name="business-outline" size={16} color={tema.colors.primary} />
+                <Text style={styles.cardSeccionTitulo}>1. Información General</Text>
+              </View>
+
+              <Text style={styles.campoEtiqueta}>Nombre del Proyecto *</Text>
+              <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                <Ionicons name="document-text-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                <TextInput
+                  editable={!esCerrado}
+                  style={styles.inputConIcono}
+                  placeholder="Ej: Montaje Tableros Centro Logístico Quilicura"
+                  placeholderTextColor={tema.colors.textMuted}
+                  value={formulario.nombre_proyecto}
+                  onChangeText={(t) => onCambiar("nombre_proyecto", t)}
+                />
+              </View>
+
+              <View style={styles.dosColumnasFila}>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Cliente / Empresa</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="person-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      placeholder="Ej: Retail & Logística S.A."
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={formulario.cliente ?? ""}
+                      onChangeText={(t) => onCambiar("cliente", t)}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Dirección de la Faena</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="location-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      placeholder="Ej: Camino El Alba 1200, Quilicura"
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={formulario.direccion ?? ""}
+                      onChangeText={(t) => onCambiar("direccion", t)}
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Sección 2: Clasificación y estado */}
+            <View style={styles.cardSeccion}>
+              <View style={styles.cardSeccionEncabezado}>
+                <Ionicons name="options-outline" size={16} color={tema.colors.primary} />
+                <Text style={styles.cardSeccionTitulo}>2. Clasificación y Estado</Text>
+              </View>
+
+              <View style={styles.dosColumnasFila}>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Tipo de Proyecto</Text>
+                  <View style={styles.segmentedRow}>
+                    {TIPOS_PROYECTO.map((o) => {
+                      const activo = formulario.tipo_proyecto === o;
+                      const iconName = o === "Instalacion" ? "construct-outline" : "hammer-outline";
+                      return (
+                        <TouchableOpacity
+                          key={o}
+                          disabled={esCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            esCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !esCerrado && onCambiar("tipo_proyecto", o)}
+                        >
+                          <Ionicons
+                            name={iconName}
+                            size={14}
+                            color={activo ? "#ffffff" : "#4b5563"}
+                          />
+                          <Text style={[styles.segmentBtnTexto, activo && styles.segmentBtnTextoActivo]}>
+                            {o === "Instalacion" ? "Instalación" : "Mantención"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Estado</Text>
+                  <View style={styles.segmentedRow}>
+                    {ESTADOS_PROYECTO.map((o) => {
+                      const activo = formulario.estado_proyecto === o;
+                      return (
+                        <TouchableOpacity
+                          key={o}
+                          disabled={yaEstabaCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            yaEstabaCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !yaEstabaCerrado && onCambiar("estado_proyecto", o)}
+                        >
+                          <Text style={[styles.segmentBtnTexto, activo && styles.segmentBtnTextoActivo]}>
+                            {o}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Sección 3: Plazos y fechas */}
+            <View style={styles.cardSeccion}>
+              <View style={styles.cardSeccionEncabezado}>
+                <Ionicons name="calendar-outline" size={16} color={tema.colors.primary} />
+                <Text style={styles.cardSeccionTitulo}>3. Plazos de Ejecución</Text>
+              </View>
+
+              <View style={styles.dosColumnasFila}>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <SelectorFecha
+                    label="Fecha de Inicio"
+                    required
+                    disabled={esCerrado}
+                    value={formulario.fecha_inicio ?? ""}
+                    onChangeDate={(date) => {
+                      onCambiar("fecha_inicio", date);
+                      if (formulario.fecha_fin && formulario.fecha_fin < date) {
+                        onCambiar("fecha_fin", date);
+                      }
+                    }}
+                    placeholder="Seleccionar inicio"
+                  />
+                </View>
+
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <SelectorFecha
+                    label="Fecha de Fin"
+                    disabled={esCerrado}
+                    value={formulario.fecha_fin ?? ""}
+                    onChangeDate={(date) => onCambiar("fecha_fin", date)}
+                    onClear={() => onCambiar("fecha_fin", null)}
+                    minDate={formulario.fecha_inicio ?? undefined}
+                    error={
+                      formulario.fecha_inicio &&
+                      formulario.fecha_fin &&
+                      formulario.fecha_fin < formulario.fecha_inicio
+                        ? "La fecha de fin no puede ser anterior al inicio"
+                        : undefined
+                    }
+                    placeholder="Sin fecha límite (opcional)"
+                    helper="Toca para definir el plazo límite"
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Sección 4: Asignación de kit predeterminado al crear */}
+            {!editando && (
+              <View style={[styles.cardSeccion, styles.cardSeccionKit]}>
+                <View style={[styles.kitSeccionHeader, !kitSeleccionado && { marginBottom: 0 }]}>
+                  <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="cube-outline" size={16} color="#065f46" />
+                    <Text
+                      style={[
+                        styles.cardSeccionTitulo,
+                        { color: "#065f46", borderBottomWidth: 0, paddingBottom: 0, marginBottom: 0 },
+                      ]}
+                    >
+                      4. Asignar Kit Predeterminado (Opcional)
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    disabled={esCerrado}
+                    style={[styles.btnGestionarKitsMini, esCerrado && styles.opcionDeshabilitada]}
+                    onPress={onAbrirGestionKits}
+                  >
+                    <Ionicons name="settings-outline" size={13} color={tema.colors.primary} />
+                    <Text style={styles.btnGestionarKitsMiniTexto}>Kits</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {kitSeleccionado && (
+                  <View style={styles.kitResumenCaja}>
+                    <View style={styles.kitResumenTop}>
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                          <Text style={styles.kitResumenNombre}>{kitSeleccionado.nombre_kit}</Text>
+                        </View>
+                        <Text style={styles.kitResumenDesc}>
+                          {kitSeleccionado.items.length} insumos vinculados · Categoría: {kitSeleccionado.categoria ?? "General"}
+                        </Text>
+                      </View>
+                      <View style={styles.kitResumenCosto}>
+                        <Text style={styles.kitResumenCostoLabel}>Presupuesto Kit:</Text>
+                        <Text style={styles.kitResumenCostoValor}>
+                          {formatearCLP(kitSeleccionado.costo_total ?? 0)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.kitItemsPreview}>
+                      {kitSeleccionado.items.slice(0, 4).map((it, idx) => (
+                        <Text key={idx} style={styles.kitItemPreviewTexto}>
+                          • {it.cantidad_requerida_kit}x {it.nombre_articulo} (
+                          {formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
+                        </Text>
+                      ))}
+                      {kitSeleccionado.items.length > 4 && (
+                        <Text style={styles.kitItemPreviewMas}>
+                          + {kitSeleccionado.items.length - 4} insumos adicionales...
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+                      <Text style={styles.kitAutoPresupuestoNota}>
+                        ✓ Presupuesto asignado automáticamente.
+                      </Text>
+                      {!esCerrado && (
+                        <TouchableOpacity
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 4,
+                            paddingVertical: 4,
+                            paddingHorizontal: 8,
+                            borderRadius: 6,
+                            backgroundColor: "#fef2f2",
+                            borderWidth: 1,
+                            borderColor: "#fecaca",
+                          }}
+                          onPress={() => onCambiar("id_kit_proyecto", null)}
+                        >
+                          <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
+                          <Text style={{ fontSize: 11, fontWeight: "600", color: "#dc2626" }}>Quitar kit</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Sección 5: Presupuestos y avance */}
+            <View style={styles.cardSeccion}>
+              <View style={styles.cardSeccionEncabezado}>
+                <Ionicons name="cash-outline" size={16} color={tema.colors.primary} />
+                <Text style={styles.cardSeccionTitulo}>
+                  {!editando ? "5. Presupuestos y Avance" : "4. Presupuestos y Avance"}
+                </Text>
+              </View>
+
+              <View style={styles.dosColumnasFila}>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Presupuesto Materiales ($ CLP)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="cash-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={String(formulario.presupuesto_inicial || "")}
+                      onChangeText={(t) => onCambiar("presupuesto_inicial", Number(t) || 0)}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Presupuesto Horas (HH)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="time-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={String(formulario.presupuesto_horas || "")}
+                      onChangeText={(t) => onCambiar("presupuesto_horas", Number(t) || 0)}
+                    />
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.dosColumnasFila}>
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Presupuesto Usado / Valor Venta ($ CLP)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="pricetag-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={String(formulario.valor_venta || "")}
+                      onChangeText={(t) => onCambiar("valor_venta", Number(t) || 0)}
+                    />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1, minWidth: 200 }}>
+                  <Text style={styles.campoEtiqueta}>Porcentaje de Avance (%)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
+                    <Ionicons name="stats-chart-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
+                    <TextInput
+                      editable={!esCerrado}
+                      style={styles.inputConIcono}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={tema.colors.textMuted}
+                      value={String(formulario.porcentaje_avance ?? 0)}
+                      onChangeText={(t) => onCambiar("porcentaje_avance", Number(t) || 0)}
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+
+            {/* Mensaje de error del formulario */}
+            {Boolean(error) && (
+              <View style={styles.errorBannerModal}>
+                <Ionicons name="alert-circle" size={18} color="#dc2626" />
+                <Text style={styles.errorTextoModal}>{error}</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {/* Pie del modal con botones de acción */}
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.btnModalCancelar}
+              onPress={onCancelar}
+              disabled={guardando}
+            >
+              <Text style={styles.btnModalCancelarTexto}>
                 {yaEstabaCerrado ? "Cerrar" : "Cancelar"}
               </Text>
             </TouchableOpacity>
 
             {!yaEstabaCerrado && (
-              <TouchableOpacity style={styles.boton} onPress={onGuardar} disabled={guardando}>
-                <Text style={styles.botonTexto}>
-                  {guardando ? "Guardando..." : esCerrado ? "Guardar y Cerrar" : "Guardar"}
-                </Text>
+              <TouchableOpacity
+                style={[styles.btnModalGuardar, guardando && { opacity: 0.7 }]}
+                onPress={onGuardar}
+                disabled={guardando}
+              >
+                {guardando ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={18} color="#ffffff" />
+                    <Text style={styles.btnModalGuardarTexto}>
+                      {editando
+                        ? esCerrado
+                          ? "Guardar y Cerrar"
+                          : "Guardar Cambios"
+                        : "Crear Proyecto"}
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             )}
           </View>
-        </ScrollView>
+        </View>
       </View>
     </Modal>
   );
 };
 
-const Opcion: React.FC<{
-  texto: string;
-  activo: boolean;
-  deshabilitado?: boolean;
-  onPress: () => void;
-}> = ({ texto, activo, deshabilitado, onPress }) => (
-  <Pressable
-    onPress={deshabilitado ? undefined : onPress}
-    disabled={deshabilitado}
-    style={[
-      estilos.grupoBoton,
-      activo && estilos.grupoBotonActivo,
-      deshabilitado && !activo && styles.opcionDeshabilitada,
-    ]}
-  >
-    <Text
-      style={[
-        estilos.grupoBotonTexto,
-        activo && estilos.grupoBotonTextoActivo,
-        deshabilitado && !activo && styles.opcionTextoDeshabilitado,
-      ]}
-    >
-      {texto}
-    </Text>
-  </Pressable>
-);
-
 // ---------- Estilos locales ----------
 
 const styles = StyleSheet.create({
-  input: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: tema.colors.borderDark,
-    borderRadius: tema.radius.md,
-    paddingHorizontal: 12,
-    fontSize: tema.fontSize.sm,
-    color: tema.colors.text,
-    backgroundColor: tema.colors.card,
-    marginBottom: 8,
-  },
-  inputBloqueado: {
-    height: 44,
-    borderWidth: 1,
-    borderColor: tema.colors.border,
-    borderRadius: tema.radius.md,
-    paddingHorizontal: 12,
-    fontSize: tema.fontSize.sm,
-    color: tema.colors.textMuted,
-    backgroundColor: tema.colors.surfaceAlt,
-    marginBottom: 8,
-  },
   bannerCerrado: {
     flexDirection: "row",
     alignItems: "center",
@@ -845,9 +1130,6 @@ const styles = StyleSheet.create({
   },
   opcionDeshabilitada: {
     opacity: 0.5,
-  },
-  opcionTextoDeshabilitado: {
-    color: tema.colors.textMuted,
   },
   barra: {
     height: 6,
@@ -923,5 +1205,322 @@ const styles = StyleSheet.create({
     color: tema.colors.text,
     fontWeight: "bold",
     fontSize: tema.fontSize.sm,
+  },
+  botonKits: {
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+  },
+  botonKitsTexto: {
+    color: tema.colors.primary,
+    fontWeight: "700",
+    fontSize: tema.fontSize.sm,
+  },
+  campoEtiqueta: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
+  },
+  kitSeccionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  btnGestionarKitsMini: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: "#eff6ff",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+  },
+  btnGestionarKitsMiniTexto: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: tema.colors.primary,
+  },
+  kitResumenCaja: {
+    marginTop: 10,
+    backgroundColor: "#ecfdf5",
+    borderWidth: 1,
+    borderColor: "#a7f3d0",
+    borderRadius: 8,
+    padding: 12,
+  },
+  kitResumenTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  kitResumenNombre: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#065f46",
+  },
+  kitResumenDesc: {
+    fontSize: 11,
+    color: "#047857",
+    marginTop: 2,
+  },
+  kitResumenCosto: {
+    alignItems: "flex-end",
+  },
+  kitResumenCostoLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#065f46",
+  },
+  kitResumenCostoValor: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#047857",
+  },
+  kitItemsPreview: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#d1fae5",
+  },
+  kitItemPreviewTexto: {
+    fontSize: 11,
+    color: "#065f46",
+    marginBottom: 2,
+  },
+  kitItemPreviewMas: {
+    fontSize: 10,
+    fontStyle: "italic",
+    color: "#047857",
+    marginTop: 2,
+  },
+  kitAutoPresupuestoNota: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#059669",
+    marginTop: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 760,
+    maxHeight: "92%",
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 10,
+    display: "flex",
+    flexDirection: "column",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    backgroundColor: "#f9fafb",
+  },
+  modalHeaderTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  modalHeaderTagTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: tema.colors.primary,
+    letterSpacing: 0.6,
+  },
+  modalTitulo: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  modalSubtitulo: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  btnCerrarModal: {
+    padding: 6,
+    borderRadius: 8,
+  },
+  modalScrollCuerpo: {
+    flex: 1,
+    backgroundColor: "#f3f4f6",
+  },
+  cardSeccion: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cardSeccionKit: {
+    borderColor: "#a7f3d0",
+    backgroundColor: "#f0fdf4",
+  },
+  cardSeccionEncabezado: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  cardSeccionTitulo: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1f2937",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  dosColumnasFila: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 8,
+  },
+  inputContenedorConIcono: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: 42,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: tema.radius.md,
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 10,
+    marginBottom: 8,
+  },
+  inputContenedorBloqueado: {
+    backgroundColor: tema.colors.surfaceAlt,
+    borderColor: tema.colors.border,
+    opacity: 0.8,
+  },
+  inputIcono: {
+    marginRight: 8,
+  },
+  inputConIcono: {
+    flex: 1,
+    fontSize: 13,
+    color: "#111827",
+    height: "100%",
+  },
+  segmentedRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  segmentBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 8,
+    backgroundColor: "#f3f4f6",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  segmentBtnActivo: {
+    backgroundColor: tema.colors.primary,
+    borderColor: tema.colors.primary,
+  },
+  segmentBtnTexto: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4b5563",
+  },
+  segmentBtnTextoActivo: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  errorBannerModal: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  errorTextoModal: {
+    fontSize: 12,
+    color: "#dc2626",
+    fontWeight: "600",
+    flex: 1,
+  },
+  modalFooter: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+    backgroundColor: "#ffffff",
+  },
+  btnModalCancelar: {
+    height: 42,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  btnModalCancelarTexto: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4b5563",
+  },
+  btnModalGuardar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 42,
+    paddingHorizontal: 22,
+    borderRadius: 8,
+    backgroundColor: tema.colors.primary,
+    justifyContent: "center",
+  },
+  btnModalGuardarTexto: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#ffffff",
   },
 });
