@@ -110,6 +110,14 @@ export const SeccionOrdenesCompra: React.FC<PropiedadesSeccionOrdenesCompra> = (
             </Tarjeta>
           )}
 
+          {/* Guía visual del ciclo Borrador hacia Aprobación */}
+          <View style={estilos.scrumBannerCaja}>
+            <Insignia label="SCRUM" tone="warn" size="sm" />
+            <Text style={estilos.scrumBannerTexto}>
+              Ciclo Borrador → Aprobación: crea o edita líneas de compra en Borrador, previsualiza o descarga el PDF corporativo y aprueba con un clic para enviar al proveedor.
+            </Text>
+          </View>
+
           {/* Filtros de estado para Órdenes */}
           <View style={estilos.estadoFiltrarContenedor}>
             <Text style={estilos.estadoFiltrarEtiqueta}>Filtrar por estado del pedido:</Text>

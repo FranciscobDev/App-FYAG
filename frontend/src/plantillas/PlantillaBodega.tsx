@@ -40,7 +40,8 @@ export type RutaBodega =
   | "inventario"
   | "conteo"
   | "mermas"
-  | "herramientas";
+  | "herramientas"
+  | "proveedores";
 
 export interface ElementoNavBodega {
   id: RutaBodega;
@@ -150,6 +151,12 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           description: "Asignar herramientas a técnicos y verificar estado al retorno",
           icon: "construct-outline",
         },
+        {
+          id: "proveedores",
+          label: "Proveedores y Clientes",
+          description: "Consulta de fichas técnicas de terceros (bancos restringidos)",
+          icon: "people-outline",
+        },
       ],
     },
   ];
@@ -237,6 +244,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
         return <PantallaHerramientas />;
       case "devoluciones":
         return <PantallaDevoluciones />;
+      case "proveedores":
+        return (
+          <PantallaCompras
+            key="proveedores"
+            initialTab="terceros"
+            hideTabBar={true}
+            title="Proveedores y Clientes"
+            subtitle="Consulta de fichas técnicas de terceros (sección bancaria protegida para bodega)"
+          />
+        );
       default:
         return <PanelBodega onNavigate={(tab) => establecerActivoRoute(tab as RutaBodega)} />;
     }

@@ -10,6 +10,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
@@ -40,6 +41,7 @@ import {
   Proveedor,
   CalificacionProveedor,
 } from "@/nucleo/tipos";
+import { FichaTercero, EntidadData } from "@/componentes/dominio/FichaTercero";
 import { estilos } from "../estilos";
 
 export interface PropiedadesSeccionDirectorioTerceros {
@@ -87,6 +89,41 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
   thirdPartyOrdenar,
   thirdPartyPestana,
 }) => {
+  const { actualizarProveedor, actualizarCliente } = usarAplicacion();
+  const [fichaModalEntidad, setFichaModalEntidad] = useState<EntidadData | null>(null);
+  const [mostrarModalScrum, setMostrarModalScrum] = useState<boolean>(false);
+
+  const handleGuardarFicha = (data: Required<EntidadData>) => {
+    if (data.tipo === "Proveedor") {
+      actualizarProveedor(data.id, {
+        businessName: data.nombre,
+        email: data.contacto,
+        phone: data.telefono,
+        address: data.direccion,
+        bankDetails: {
+          bank: data.banco,
+          accountType: (data.tipoCuenta?.toLowerCase().includes("vista")
+            ? "vista"
+            : data.tipoCuenta?.toLowerCase().includes("ahorro")
+            ? "ahorro"
+            : "corriente") as any,
+          accountNumber: data.numeroCuenta,
+          transferEmail: data.transferEmail || data.contacto,
+        },
+      });
+      mostrarAviso(`Ficha de proveedor "${data.nombre}" actualizada correctamente.`);
+    } else {
+      actualizarCliente(data.id, {
+        businessName: data.nombre,
+        email: data.contacto,
+        phone: data.telefono,
+        address: data.direccion,
+      });
+      mostrarAviso(`Ficha de cliente "${data.nombre}" actualizada correctamente.`);
+    }
+    setFichaModalEntidad(null);
+  };
+
   return (
     <>
       {/* =====================================================================
@@ -123,12 +160,21 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
               </Text>
             </TouchableOpacity>
 
-            <Boton
-              title={`+ Nuevo ${thirdPartyPestana === "proveedores" ? "Proveedor" : "Cliente"}`}
-              variant="primary"
-              size="sm"
-              onPress={manejarAbrirPartyModal}
-            />
+            <View style={{ flexDirection: "row", gap: 8, marginLeft: "auto" }}>
+              <Boton
+                title="[SCRUM] Comparar Vistas"
+                variant="secondary"
+                size="sm"
+                icon="git-compare-outline"
+                onPress={() => setMostrarModalScrum(true)}
+              />
+              <Boton
+                title={`+ Nuevo ${thirdPartyPestana === "proveedores" ? "Proveedor" : "Cliente"}`}
+                variant="primary"
+                size="sm"
+                onPress={manejarAbrirPartyModal}
+              />
+            </View>
           </View>
 
           {/* Barra de búsqueda y ordenación */}
@@ -238,8 +284,31 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                   </View>
                 )}
 
-                {/* Acción: Deshabilitar o Crear OC */}
+                {/* Acción: Ver Ficha, Deshabilitar o Crear OC */}
                 <View style={estilos.partyAcciones}>
+                  <Boton
+                    title={rolActual === "admin" ? "Gestionar Ficha" : "Ver Ficha"}
+                    variant="secondary"
+                    size="sm"
+                    icon="document-text-outline"
+                    onPress={() => {
+                      setFichaModalEntidad({
+                        id: s.id,
+                        rut: s.rut,
+                        nombre: s.businessName,
+                        tipo: "Proveedor",
+                        contacto: s.email,
+                        telefono: s.phone,
+                        direccion: s.address,
+                        calificacionPromedio: s.ratingAvg || 4.7,
+                        banco: s.bankDetails?.bank || "Banco Estado",
+                        tipoCuenta: s.bankDetails?.accountType || "Cuenta Corriente",
+                        numeroCuenta: s.bankDetails?.accountNumber || "12345678-9",
+                        transferEmail: s.bankDetails?.transferEmail || s.email,
+                      });
+                    }}
+                    style={{ marginRight: 8 }}
+                  />
                   {!s.disabled && rolActual === "admin" && (
                     <Boton
                       title="Crear OC"
@@ -252,16 +321,18 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       style={{ marginRight: 8 }}
                     />
                   )}
-                  <Boton
-                    title={s.disabled ? "Habilitar Proveedor" : "Deshabilitar"}
-                    variant={s.disabled ? "success" : "secondary"}
-                    size="sm"
-                    icon={s.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                    onPress={() => {
-                      alternarProveedorDeshabilitado(s.id);
-                      mostrarAviso(`Proveedor ${s.businessName} ${s.disabled ? "habilitado" : "deshabilitado"}.`);
-                    }}
-                  />
+                  {rolActual === "admin" && (
+                    <Boton
+                      title={s.disabled ? "Habilitar Proveedor" : "Deshabilitar"}
+                      variant={s.disabled ? "success" : "secondary"}
+                      size="sm"
+                      icon={s.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                      onPress={() => {
+                        alternarProveedorDeshabilitado(s.id);
+                        mostrarAviso(`Proveedor ${s.businessName} ${s.disabled ? "habilitado" : "deshabilitado"}.`);
+                      }}
+                    />
+                  )}
                 </View>
               </Tarjeta>
             ))
@@ -310,18 +381,43 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                   <Text style={estilos.contactoLinea}>Email: {c.email} • Dirección: {c.address}</Text>
                 </View>
 
-                {/* Acción: Deshabilitar en vez de eliminar */}
+                {/* Acción: Ver Ficha, Deshabilitar */}
                 <View style={estilos.partyAcciones}>
                   <Boton
-                    title={c.disabled ? "Habilitar Cliente" : "Deshabilitar"}
-                    variant={c.disabled ? "success" : "secondary"}
+                    title={rolActual === "admin" ? "Gestionar Ficha" : "Ver Ficha"}
+                    variant="secondary"
                     size="sm"
-                    icon={c.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                    icon="document-text-outline"
                     onPress={() => {
-                      alternarClienteDeshabilitado(c.id);
-                      mostrarAviso(`Cliente ${c.businessName} ${c.disabled ? "habilitado" : "deshabilitado"}.`);
+                      setFichaModalEntidad({
+                        id: c.id,
+                        rut: c.rut,
+                        nombre: c.businessName,
+                        tipo: "Cliente",
+                        contacto: c.email,
+                        telefono: c.phone,
+                        direccion: c.address,
+                        calificacionPromedio: undefined,
+                        banco: "",
+                        tipoCuenta: "",
+                        numeroCuenta: "",
+                        transferEmail: "",
+                      });
                     }}
+                    style={{ marginRight: 8 }}
                   />
+                  {rolActual === "admin" && (
+                    <Boton
+                      title={c.disabled ? "Habilitar Cliente" : "Deshabilitar"}
+                      variant={c.disabled ? "success" : "secondary"}
+                      size="sm"
+                      icon={c.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                      onPress={() => {
+                        alternarClienteDeshabilitado(c.id);
+                        mostrarAviso(`Cliente ${c.businessName} ${c.disabled ? "habilitado" : "deshabilitado"}.`);
+                      }}
+                    />
+                  )}
                 </View>
               </Tarjeta>
             ))
@@ -329,6 +425,77 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
           )}
         </ScrollView>
       )}
+
+      {/* Modal de Ficha del Tercero [FRONT-2 / SCRUM] */}
+      <Modal
+        visible={Boolean(fichaModalEntidad) || mostrarModalScrum}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          setFichaModalEntidad(null);
+          setMostrarModalScrum(false);
+        }}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: "#f8fafc" }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              backgroundColor: "#ffffff",
+              borderBottomWidth: 1,
+              borderBottomColor: "#e2e8f0",
+            }}
+          >
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: "#0f172a" }}>
+                {mostrarModalScrum
+                  ? "[SCRUM] Comparativa de Ficha Técnica"
+                  : `Ficha de ${fichaModalEntidad?.tipo || "Tercero"}`}
+              </Text>
+              <Text style={{ fontSize: 12, color: "#64748b" }}>
+                FRONT-2: Control de acceso a datos bancarios y calificación promedio
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setFichaModalEntidad(null);
+                setMostrarModalScrum(false);
+              }}
+              style={{
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: "#f1f5f9",
+              }}
+            >
+              <Ionicons name="close" size={20} color="#334155" />
+            </TouchableOpacity>
+          </View>
+
+          <FichaTercero
+            entidadData={
+              fichaModalEntidad || {
+                nombre: "Proveedor Ejemplo SpA",
+                tipo: "Proveedor",
+                contacto: "contacto@ejemplo.cl",
+                calificacionPromedio: 4.7,
+                banco: "Banco Estado",
+                tipoCuenta: "Cuenta Corriente",
+                numeroCuenta: "12345678-9",
+              }
+            }
+            userRole={rolActual === "admin" ? "Administrador" : "Bodeguero"}
+            onSave={handleGuardarFicha}
+            onClose={() => {
+              setFichaModalEntidad(null);
+              setMostrarModalScrum(false);
+            }}
+            mostrarComparadorScrum={true}
+          />
+        </SafeAreaView>
+      </Modal>
     </>
   );
 };
