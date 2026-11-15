@@ -123,8 +123,9 @@ interface TipoContextoAplicacion {
     authorName: string
   ) => { success: boolean; error?: string };
 
-  // Purchasing actions
+  // Acciones de compras y órdenes de compra
   crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; error?: string };
+  actualizarOrdenCompra: (orderId: string, updates: Partial<OrdenCompra>) => { success: boolean; error?: string };
   aprobarYEnviarOrden: (orderId: string) => void;
   calificarProveedor: (orderId: string, rating: CalificacionProveedor) => void;
   crearFactura: (invoice: FacturaCompra) => { success: boolean; error?: string };
@@ -735,13 +736,29 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  // 3. PURCHASING
-  const crearOrdenCompra = (orderData: Partial<OrdenCompra>) => {
-    const code = `OC-2026-${String(ordenesCompra.length + 105).padStart(3, "0")}`;
-    const items = orderData.items || [];
+  // 3. GESTIÓN DE COMPRAS Y ÓRDENES DE COMPRA
+  const calcularTotalesOrden = (items: OrdenCompra["items"]) => {
     const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
     const iva = Math.round(subtotal * 0.19);
     const total = subtotal + iva;
+    return { subtotal, iva, total };
+  };
+
+  const crearOrdenCompra = (orderData: Partial<OrdenCompra>) => {
+    const anioActual = new Date().getFullYear();
+    const ultimoCorrelativo = ordenesCompra.reduce((max, o) => {
+      const partes = o.code.split("-");
+      const numero = Number(partes[partes.length - 1]);
+      return Number.isFinite(numero) && numero > max ? numero : max;
+    }, 104);
+    const code = `OC-${anioActual}-${String(ultimoCorrelativo + 1).padStart(3, "0")}`;
+
+    const items = orderData.items || [];
+    if (items.length === 0) {
+      return { success: false, error: "Debe incluir al menos un insumo en la orden." };
+    }
+
+    const { subtotal, iva, total } = calcularTotalesOrden(items);
 
     const newOrder: OrdenCompra = {
       id: `oc_${Date.now()}`,
@@ -767,9 +784,56 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true, orderId: newOrder.id };
   };
 
+  const actualizarOrdenCompra = (orderId: string, updates: Partial<OrdenCompra>) => {
+    const existente = ordenesCompra.find((o) => o.id === orderId);
+    if (!existente) {
+      return { success: false, error: "No se encontró la orden de compra." };
+    }
+    if (existente.status !== "borrador") {
+      return { success: false, error: "Solo se pueden editar órdenes en estado Borrador." };
+    }
+
+    const items = updates.items ?? existente.items;
+    if (items.length === 0) {
+      return { success: false, error: "La orden debe contener al menos una línea de compra." };
+    }
+
+    const { subtotal, iva, total } = calcularTotalesOrden(items);
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              supplierId: updates.supplierId ?? o.supplierId,
+              supplier: updates.supplier ?? o.supplier,
+              supplierRut:
+                updates.supplierRut !== undefined ? updates.supplierRut : o.supplierRut,
+              status: updates.status ?? o.status,
+              isAutoMinStock:
+                updates.isAutoMinStock !== undefined
+                  ? Boolean(updates.isAutoMinStock)
+                  : o.isAutoMinStock,
+              items,
+              subtotal,
+              iva,
+              total,
+              itemsCount: items.length,
+              expectedDate: updates.expectedDate ?? o.expectedDate,
+              notes: updates.notes !== undefined ? updates.notes : o.notes,
+            }
+          : o
+      )
+    );
+
+    return { success: true };
+  };
+
   const aprobarYEnviarOrden = (orderId: string) => {
     setPurchaseOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: "enviada" } : o))
+      prev.map((o) =>
+        o.id === orderId && o.status === "borrador" ? { ...o, status: "enviada" } : o
+      )
     );
   };
 
@@ -2031,6 +2095,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         cancelarSolicitudMaterial,
         despacharSolicitudMaterial,
         crearOrdenCompra,
+        actualizarOrdenCompra,
         aprobarYEnviarOrden,
         calificarProveedor,
         crearFactura,
