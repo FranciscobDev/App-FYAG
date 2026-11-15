@@ -37,6 +37,7 @@ import { ModalGestionKits } from "./ModalGestionKits";
 import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
+import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -84,6 +85,7 @@ export const PantallaProyectos: React.FC = () => {
   // Kits predeterminados
   const [kits, establecerKits] = useState<KitProyecto[]>([]);
   const [modalKitsVisible, establecerModalKitsVisible] = useState(false);
+  const [panelAsignacionVisible, establecerPanelAsignacionVisible] = useState(false);
 
   const [aviso, establecerAviso] = useState<string | null>(null);
   const mostrarAviso = (msg: string) => {
@@ -344,6 +346,7 @@ export const PantallaProyectos: React.FC = () => {
 
             <SeccionTecnicos
               proyectoId={seleccionado.id_proyecto}
+              proyectos={proyectos.length > 0 ? proyectos : undefined}
               onAviso={mostrarAviso}
             />
 
@@ -385,7 +388,32 @@ export const PantallaProyectos: React.FC = () => {
               {proyectosFiltrados.length} de {proyectos.length} proyectos
             </Text>
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <TouchableOpacity
+              style={[
+                styles.boton,
+                styles.botonKits,
+                panelAsignacionVisible && {
+                  backgroundColor: tema.colors.primary,
+                  borderColor: tema.colors.primary,
+                },
+              ]}
+              onPress={() => establecerPanelAsignacionVisible((prev) => !prev)}
+            >
+              <Ionicons
+                name="person-add-outline"
+                size={16}
+                color={panelAsignacionVisible ? "#ffffff" : tema.colors.primary}
+              />
+              <Text
+                style={[
+                  styles.botonKitsTexto,
+                  panelAsignacionVisible && { color: "#ffffff" },
+                ]}
+              >
+                {panelAsignacionVisible ? "Ocultar Asignación" : "Asignar Técnicos"}
+              </Text>
+            </TouchableOpacity>
             <TouchableOpacity
               style={[styles.boton, styles.botonKits]}
               onPress={() => establecerModalKitsVisible(true)}
@@ -401,6 +429,16 @@ export const PantallaProyectos: React.FC = () => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {panelAsignacionVisible && (
+          <ScrollView style={{ maxHeight: 540, marginBottom: 12 }} nestedScrollEnabled>
+            <AsignacionTecnicos
+              proyectosProp={proyectos.length > 0 ? proyectos : undefined}
+              onAviso={mostrarAviso}
+              onCancel={() => establecerPanelAsignacionVisible(false)}
+            />
+          </ScrollView>
+        )}
 
         <View style={estilos.buscarCajaEnvoltorio}>
           <Ionicons name="search" size={16} color={tema.colors.textMuted} />

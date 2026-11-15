@@ -28,6 +28,7 @@ import {
   NotificacionFlotante,
 } from "@/componentes/comunes";
 import { Proyecto, TipoProyecto, EstadoProyecto } from "@/nucleo/tipos";
+import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
 import { estilos } from "../estilos";
 
 export interface PropiedadesVistaDetalleProyecto {
@@ -285,49 +286,11 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
 
           {/* ---------------- 2. PESTAÑA TÉCNICOS (SIN DUPLICADOS) ---------------- */}
           {detallePestana === "tecnicos" && (
-            <Tarjeta variant="default">
-              <Text style={estilos.subTitulo}>Equipo Técnico Asignado a la Faena</Text>
-              <Text style={estilos.subDescripcion}>
-                Asignación de personal operativo en terreno (validación estricta sin duplicados):
-              </Text>
-
-              {tecnicos.map((t: any) => {
-                const esAsignado = seleccionadoProyecto.technicianRuts.includes(t.rut);
-                return (
-                  <View key={t.rut} style={estilos.tecnicoFila}>
-                    <View style={estilos.tecnicoAvatar}>
-                      <Ionicons name="person" size={16} color={tema.colors.primary} />
-                    </View>
-                    <View style={estilos.tecnicoInfoColumna}>
-                      <Text style={estilos.tecnicoNombre}>{t.name}</Text>
-                      <Text style={estilos.tecnicoSpecialty}>{t.specialty} • RUT: {t.rut}</Text>
-                    </View>
-
-                    {/* Botón Asignar / Desasignar (bloqueado si cerrado) */}
-                    {seleccionadoProyecto.status !== "cerrado" && rolActual === "admin" && (
-                      <Boton
-                        title={esAsignado ? "Desasignar" : "Asignar"}
-                        variant={esAsignado ? "danger" : "outline"}
-                        size="sm"
-                        onPress={() => {
-                          const actualRuts = seleccionadoProyecto.technicianRuts;
-                          const siguienteRuts = esAsignado
-                            ? actualRuts.filter((r: any) => r !== t.rut)
-                            : Array.from(new Set([...actualRuts, t.rut])); // Garantiza sin duplicados
-                          asignarTecnicosAProyecto(seleccionadoProyecto.id, siguienteRuts);
-                          establecerSeleccionadoProyecto({ ...seleccionadoProyecto, technicianRuts: siguienteRuts });
-                          mostrarAviso(
-                            esAsignado
-                              ? `Técnico ${t.name} desasignado.`
-                              : `Técnico ${t.name} asignado al proyecto.`
-                          );
-                        }}
-                      />
-                    )}
-                  </View>
-                );
-              })}
-            </Tarjeta>
+            <AsignacionTecnicos
+              proyectoIdInicial={seleccionadoProyecto.id}
+              onAviso={mostrarAviso}
+              titulo={`Asignación de Técnicos — ${seleccionadoProyecto.code}`}
+            />
           )}
 
           {/* ---------------- 3. PESTAÑA INSUMOS Y EGRESOS ---------------- */}
