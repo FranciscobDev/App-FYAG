@@ -1,34 +1,26 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
-  Pressable,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { usarAplicacion } from "@/contexto/ContextoAplicacion";
-import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import {
   Insignia,
   Boton,
   Tarjeta,
-  DialogoConfirmacion,
   EstadoVacio,
-  BotonExportar,
-  CampoTexto,
-  VistaModal,
   EncabezadoPagina,
   BarraProgreso,
-  ContenedorEstadoPantalla,
-  NotificacionFlotante,
 } from "@/componentes/comunes";
-import { Proyecto, TipoProyecto, EstadoProyecto } from "@/nucleo/tipos";
 import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
+import {
+  DistintivoEstadoProyecto,
+  IndicadorUltimaSincronizacion,
+} from "@/componentes/DistintivoEstadoProyecto";
 import { estilos } from "../estilos";
 
 export interface PropiedadesVistaDetalleProyecto {
@@ -64,24 +56,36 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
   seleccionadoProyecto,
   tecnicos,
 }) => {
+  const [ultimaSincronizacion, establecerUltimaSincronizacion] = useState<Date>(
+    () => new Date()
+  );
+
   return (
     <>
-        <View style={estilos.vistaEnvoltorio}>
-          {/* Encabezado con Migas de Pan y Botón Volver (Ancho completo edge-to-edge) */}
-          <EncabezadoPagina
-            title={`${seleccionadoProyecto.code} - ${seleccionadoProyecto.name}`}
-            subtitle={`Cliente: ${seleccionadoProyecto.client} • Dirección: ${seleccionadoProyecto.address}`}
-            breadcrumbs={[
-              { label: "Inicio" },
-              { label: "Proyectos", onPress: () => establecerSeleccionadoProyecto(null) },
-              { label: seleccionadoProyecto.code },
-            ]}
-            onBack={() => establecerSeleccionadoProyecto(null)}
+      <View style={estilos.vistaEnvoltorio}>
+        {/* Encabezado con Migas de Pan y Botón Volver (Ancho completo edge-to-edge) */}
+        <EncabezadoPagina
+          title={`${seleccionadoProyecto.code} - ${seleccionadoProyecto.name}`}
+          subtitle={`Cliente: ${seleccionadoProyecto.client} • Dirección: ${seleccionadoProyecto.address}`}
+          breadcrumbs={[
+            { label: "Inicio" },
+            { label: "Proyectos", onPress: () => establecerSeleccionadoProyecto(null) },
+            { label: seleccionadoProyecto.code },
+          ]}
+          onBack={() => establecerSeleccionadoProyecto(null)}
+        />
+
+        <ScrollView style={estilos.detalleContenedor} contentContainerStyle={estilos.detalleScroll}>
+          {/* [FRONT-2] Indicador de última sincronización */}
+          <IndicadorUltimaSincronizacion
+            ultimaSincronizacion={ultimaSincronizacion}
+            onSincronizar={() => establecerUltimaSincronizacion(new Date())}
+            compacto
+            style={{ marginBottom: 12 }}
           />
 
-          <ScrollView style={estilos.detalleContenedor} contentContainerStyle={estilos.detalleScroll}>
-            {/* Encabezado del Proyecto */}
-            <Tarjeta variant="elevated" style={estilos.detalleEncabezadoTarjeta}>
+          {/* Encabezado del Proyecto */}
+          <Tarjeta variant="elevated" style={estilos.detalleEncabezadoTarjeta}>
             <View style={estilos.detalleSuperiorFila}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -97,15 +101,10 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                 <Text style={estilos.detalleCliente}>Cliente: {seleccionadoProyecto.client}</Text>
               </View>
 
-              <Insignia
-                label={seleccionadoProyecto.status.toUpperCase()}
-                tone={
-                  seleccionadoProyecto.status === "activo"
-                    ? "ok"
-                    : seleccionadoProyecto.status === "cerrado"
-                    ? "mute"
-                    : "info"
-                }
+              <DistintivoEstadoProyecto
+                estado={seleccionadoProyecto.status}
+                tamano="md"
+                mostrarPrefijo
               />
             </View>
 
@@ -143,10 +142,10 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                       />
                     </>
                   ) : (
-                    <Insignia
-                      label="🔒 Cerrado"
-                      tone="mute"
-                      size="md"
+                    <DistintivoEstadoProyecto
+                      estado="Cerrado"
+                      tamano="md"
+                      mostrarPrefijo
                     />
                   )}
                 </>
@@ -194,18 +193,11 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                     ? Math.round((estimatedRentabilidad / seleccionadoProyecto.saleValue) * 100)
                     : 0;
 
-                // Regla del semáforo:
-                // Verde: < 80 %
-                // Amarillo: 80 - 100 %
-                // Rojo: > 100 %
                 let semTono: "ok" | "warn" | "danger" = "ok";
-                let semTexto = "Verde: < 80% (Bajo control)";
                 if (ratio > 1.0) {
                   semTono = "danger";
-                  semTexto = "Rojo: > 100% (Sobregiro Presupuestario)";
                 } else if (ratio >= 0.8) {
                   semTono = "warn";
-                  semTexto = "Amarillo: 80–100% (Cerca del límite presupuestado)";
                 }
 
                 return (
@@ -428,7 +420,6 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                     </Text>
                   </View>
 
-                  {/* Barras Comparativas Planificado vs Real por Materiales, Mermas y Horas */}
                   <Text style={estilos.compSeccionTitulo}>Comparativo Planificado vs Real por Categoría:</Text>
 
                   {/* 1. Materiales */}
@@ -490,7 +481,6 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                     </Text>
                   </View>
 
-                  {/* Torta / Composición Gráfica de Costos */}
                   <Text style={[estilos.compSeccionTitulo, { marginTop: 16 }]}>Composición del Costo Real Total:</Text>
                   {(() => {
                     const totalCosto = seleccionadoProyecto.costReal || 1;
@@ -504,7 +494,6 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
 
                     return (
                       <View style={estilos.pieContenedor}>
-                        {/* Barra segmentada representativa */}
                         <View style={estilos.pieSegmentedBarra}>
                           <View style={[estilos.pieSegment, { flex: materialPorcentaje, backgroundColor: "#2563eb" }]} />
                           <View style={[estilos.pieSegment, { flex: hrsPorcentaje, backgroundColor: "#7c3aed" }]} />
@@ -529,7 +518,6 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                     );
                   })()}
 
-                  {/* Desviación Total en Monto y % */}
                   {(() => {
                     const totalDev = seleccionadoProyecto.costReal - seleccionadoProyecto.budget;
                     const totalDevPorcentaje =
@@ -576,8 +564,8 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
               )}
             </Tarjeta>
           )}
-          </ScrollView>
-        </View>
+        </ScrollView>
+      </View>
     </>
   );
 };

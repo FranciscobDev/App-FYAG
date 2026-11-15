@@ -6,3 +6,4 @@ export * from "./superposicion";
 export * from "./dominio";
 export * from "./Insumos";
 export * from "./AsignacionTecnicos";
+export * from "./DistintivoEstadoProyecto";

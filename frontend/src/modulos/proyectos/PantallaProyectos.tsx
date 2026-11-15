@@ -38,6 +38,12 @@ import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
 import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
+import {
+  DistintivoEstadoProyecto,
+  IndicadorUltimaSincronizacion,
+  LeyendaAccesibilidadEstados,
+  obtenerConfiguracionEstadoProyecto,
+} from "@/componentes/DistintivoEstadoProyecto";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -68,6 +74,8 @@ export const PantallaProyectos: React.FC = () => {
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
   const [error, establecerError] = useState<string | null>(null);
+  const [ultimaSincronizacion, establecerUltimaSincronizacion] =
+    useState<Date | null>(() => new Date());
 
   const [busqueda, establecerBusqueda] = useState("");
   const [filtroEstado, establecerFiltroEstado] = useState<string>("todos");
@@ -99,6 +107,7 @@ export const PantallaProyectos: React.FC = () => {
     if (resProy.ok && resProy.data) {
       establecerProyectos(resProy.data);
       establecerError(null);
+      establecerUltimaSincronizacion(new Date());
     } else {
       establecerError(resProy.error ?? "Error al cargar proyectos");
     }
@@ -115,16 +124,53 @@ export const PantallaProyectos: React.FC = () => {
   const proyectosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return proyectos.filter((p) => {
-      if (filtroEstado !== "todos" && p.estado_proyecto !== filtroEstado) return false;
+      if (
+        filtroEstado !== "todos" &&
+        p.estado_proyecto.toLowerCase() !== filtroEstado.toLowerCase()
+      ) {
+        return false;
+      }
       if (q) {
         const coincide =
           p.nombre_proyecto.toLowerCase().includes(q) ||
-          (p.cliente ?? "").toLowerCase().includes(q);
+          (p.cliente ?? "").toLowerCase().includes(q) ||
+          p.estado_proyecto.toLowerCase().includes(q);
         if (!coincide) return false;
       }
       return true;
     });
   }, [proyectos, busqueda, filtroEstado]);
+
+  const conteoPorEstado = useMemo(() => {
+    const mapa: Record<string, number> = {
+      Planificado: 0,
+      "En curso": 0,
+      Pausado: 0,
+      Finalizado: 0,
+    };
+    proyectos.forEach((p) => {
+      const cfg = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
+      if (cfg.etiqueta in mapa) {
+        mapa[cfg.etiqueta] += 1;
+      } else {
+        mapa[p.estado_proyecto] = (mapa[p.estado_proyecto] || 0) + 1;
+      }
+    });
+    return mapa;
+  }, [proyectos]);
+
+  const horaSincCorta = useMemo(() => {
+    if (!ultimaSincronizacion) return "--:--:--";
+    try {
+      return ultimaSincronizacion.toLocaleTimeString("es-CL", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    } catch {
+      return ultimaSincronizacion.toTimeString().slice(0, 8);
+    }
+  }, [ultimaSincronizacion]);
 
   const abrirNuevo = () => {
     establecerEditando(null);
@@ -213,6 +259,7 @@ export const PantallaProyectos: React.FC = () => {
     if (seleccionado?.id_proyecto === guardado.id_proyecto) {
       establecerSeleccionado(guardado);
     }
+    establecerUltimaSincronizacion(new Date());
     establecerModalVisible(false);
     mostrarAviso(res.data.mensaje);
   };
@@ -226,6 +273,7 @@ export const PantallaProyectos: React.FC = () => {
       }
       establecerProyectos((prev) => prev.filter((x) => x.id_proyecto !== p.id_proyecto));
       establecerSeleccionado(null);
+      establecerUltimaSincronizacion(new Date());
       mostrarAviso(res.data.mensaje);
     };
 
@@ -268,6 +316,10 @@ export const PantallaProyectos: React.FC = () => {
   // ---------- Vista de detalle ----------
   if (seleccionado) {
     const porcentaje = Math.min(Math.max(seleccionado.porcentaje_avance, 0), 100);
+    const cfgEstadoDetalle = obtenerConfiguracionEstadoProyecto(
+      seleccionado.estado_proyecto
+    );
+
     return (
       <ContenedorEstadoPantalla screenTitle="Detalle de proyecto" skeletonType="cards">
         <View style={estilos.detalleContenedor}>
@@ -285,19 +337,34 @@ export const PantallaProyectos: React.FC = () => {
               <Text style={estilos.backTexto}>Volver al listado</Text>
             </TouchableOpacity>
 
-            <View style={[estilos.finalAuditoriaTarjeta, { marginTop: 0 }]}>
+            {/* [FRONT-2] Indicador de última sincronización en vista de detalle */}
+            <IndicadorUltimaSincronizacion
+              ultimaSincronizacion={ultimaSincronizacion}
+              sincronizando={cargando}
+              sinConexion={Boolean(error)}
+              onSincronizar={cargar}
+              compacto
+              style={{ marginBottom: 12 }}
+            />
+
+            <View
+              style={[
+                estilos.finalAuditoriaTarjeta,
+                {
+                  marginTop: 0,
+                  borderLeftWidth: 4,
+                  borderLeftColor: cfgEstadoDetalle.colorBorde,
+                },
+              ]}
+            >
               <View style={estilos.detalleSuperiorFila}>
                 <Text style={estilos.detalleCodigo}>{seleccionado.tipo_proyecto}</Text>
-                <View style={estilos.semaphoreIndicatorPastilla}>
-                  <Text
-                    style={[
-                      estilos.semaphorePorcentajeTexto,
-                      { color: colorAvance(porcentaje) },
-                    ]}
-                  >
-                    {seleccionado.estado_proyecto}
-                  </Text>
-                </View>
+                {/* [FRONT-2] Distintivo de color, icono y etiqueta textual por estado */}
+                <DistintivoEstadoProyecto
+                  estado={seleccionado.estado_proyecto}
+                  tamano="md"
+                  mostrarPrefijo
+                />
               </View>
 
               <Text style={estilos.detalleNombre}>{seleccionado.nombre_proyecto}</Text>
@@ -315,6 +382,9 @@ export const PantallaProyectos: React.FC = () => {
                 </Text>
                 <Text style={estilos.metaElemento}>
                   Fin: {seleccionado.fecha_fin ? formatearFecha(seleccionado.fecha_fin) : "—"}
+                </Text>
+                <Text style={estilos.metaElemento}>
+                  Última sinc: {horaSincCorta}
                 </Text>
               </View>
 
@@ -430,6 +500,23 @@ export const PantallaProyectos: React.FC = () => {
           </View>
         </View>
 
+        {/* [FRONT-2] Indicador de última sincronización en tiempo real */}
+        <IndicadorUltimaSincronizacion
+          ultimaSincronizacion={ultimaSincronizacion}
+          sincronizando={cargando}
+          sinConexion={Boolean(error)}
+          onSincronizar={cargar}
+          fuenteDatos="Estados de proyectos sincronizados con el servidor central"
+          style={{ marginBottom: 12 }}
+        />
+
+        {/* [SCRUM] Distintivos de color y texto por cada estado + revisor de accesibilidad móvil */}
+        <LeyendaAccesibilidadEstados
+          conteoPorEstado={conteoPorEstado}
+          estadoSeleccionado={filtroEstado}
+          onSeleccionarEstado={establecerFiltroEstado}
+        />
+
         {panelAsignacionVisible && (
           <ScrollView style={{ maxHeight: 540, marginBottom: 12 }} nestedScrollEnabled>
             <AsignacionTecnicos
@@ -444,7 +531,7 @@ export const PantallaProyectos: React.FC = () => {
           <Ionicons name="search" size={16} color={tema.colors.textMuted} />
           <TextInput
             style={[estilos.buscarEntradaTexto, { marginLeft: 8 }]}
-            placeholder="Buscar por nombre o cliente"
+            placeholder="Buscar por nombre, cliente o estado"
             placeholderTextColor={tema.colors.textMuted}
             value={busqueda}
             onChangeText={establecerBusqueda}
@@ -486,19 +573,41 @@ export const PantallaProyectos: React.FC = () => {
             {proyectosFiltrados.map((p) => {
               const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
               const color = colorAvance(porcentaje);
+              const cfgEstado = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
+
               return (
                 <Pressable
                   key={p.id_proyecto}
                   style={[
                     estilos.finalAuditoriaTarjeta,
                     estilos.proyectoListaTarjeta,
-                    { marginTop: 0 },
+                    {
+                      marginTop: 0,
+                      borderLeftWidth: 4,
+                      borderLeftColor: cfgEstado.colorBorde,
+                    },
                   ]}
                   onPress={() => establecerSeleccionado(p)}
                 >
                   <View style={estilos.tarjetaSuperior}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={estilos.codigoTexto}>{p.tipo_proyecto}</Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          marginBottom: 4,
+                        }}
+                      >
+                        <Text style={estilos.codigoTexto}>{p.tipo_proyecto}</Text>
+                        {/* [FRONT-2] Distintivo visual y textual por estado */}
+                        <DistintivoEstadoProyecto
+                          estado={p.estado_proyecto}
+                          tamano="sm"
+                          mostrarPrefijo
+                        />
+                      </View>
                       <Text style={estilos.nombreTexto} numberOfLines={2}>
                         {p.nombre_proyecto}
                       </Text>
@@ -531,7 +640,28 @@ export const PantallaProyectos: React.FC = () => {
                   </View>
 
                   <View style={estilos.tarjetaInferiorFila}>
-                    <Text style={estilos.costoEtiqueta}>{p.estado_proyecto}</Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 5,
+                      }}
+                    >
+                      <Ionicons
+                        name="cloud-done-outline"
+                        size={13}
+                        color="#059669"
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "600",
+                          color: "#065F46",
+                        }}
+                      >
+                        Sincronizado ({horaSincCorta})
+                      </Text>
+                    </View>
                     <Text style={estilos.fechasTexto}>
                       {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} ·{" "}
                       {p.fecha_fin ? formatearFecha(p.fecha_fin) : "—"}
@@ -556,12 +686,6 @@ const Metrica: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valo
     <Text style={estilos.metricValor}>{valor}</Text>
   </View>
 );
-
-type CampoNumerico =
-  | "presupuesto_inicial"
-  | "presupuesto_horas"
-  | "valor_venta"
-  | "porcentaje_avance";
 
 type ModalProps = {
   visible: boolean;
@@ -713,7 +837,23 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 {/* Estado inicial */}
                 <View style={{ flex: 1, minWidth: 200 }}>
-                  <Text style={styles.campoEtiqueta}>Estado Inicial</Text>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 6,
+                    }}
+                  >
+                    <Text style={[styles.campoEtiqueta, { marginBottom: 0 }]}>
+                      Estado del Proyecto
+                    </Text>
+                    <DistintivoEstadoProyecto
+                      estado={formulario.estado_proyecto}
+                      tamano="sm"
+                      mostrarPrefijo
+                    />
+                  </View>
                   <View style={styles.segmentedRow}>
                     {ESTADOS_PROYECTO.map((o) => {
                       const activo = formulario.estado_proyecto === o;

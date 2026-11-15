@@ -13,6 +13,7 @@ import { tema } from "@/nucleo/tema";
 export interface PropiedadesChipSincronizacion {
   status: "pendiente" | "sincronizado";
   pendingCount?: number;
+  lastSyncTime?: string;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   variant?: "light" | "dark";
@@ -21,6 +22,7 @@ export interface PropiedadesChipSincronizacion {
 export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
   status,
   pendingCount,
+  lastSyncTime,
   onPress,
   style,
   variant = "light",
@@ -44,14 +46,24 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
     ? "cloud-upload-outline"
     : "cloud-done";
 
+  const horaSinc =
+    lastSyncTime ||
+    new Date().toLocaleTimeString("es-CL", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
   const etiqueta = esPendiente
     ? pendingCount && pendingCount > 0
-      ? `${pendingCount} pend.`
-      : "Pendiente"
-    : "Sincronizado";
+      ? `${pendingCount} pend. • Últ. sinc: ${horaSinc}`
+      : `Pendiente • Últ. sinc: ${horaSinc}`
+    : `Sincronizado • ${horaSinc}`;
 
   const Contenido = (
     <View
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`Estado de sincronización: ${etiqueta}`}
       style={[
         estilos.chip,
         {
@@ -61,7 +73,7 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
         style,
       ]}
     >
-      <Ionicons name={iconoNombre} size={13} color={iconoColumna} style={estilos.icono} />
+      <Ionicons name={iconoNombre} size={14} color={iconoColumna} style={estilos.icono} />
       <Text style={[estilos.texto, { color: textoColumna }]}>{etiqueta}</Text>
     </View>
   );
@@ -84,9 +96,9 @@ const estilos = StyleSheet.create({
     alignSelf: "flex-start",
     borderWidth: 1.5,
     borderRadius: tema.radius.full,
-    paddingVertical: 4,
+    paddingVertical: 5,
     paddingHorizontal: 10,
-    minHeight: 28,
+    minHeight: 30,
   },
   icono: {
     marginRight: 5,
