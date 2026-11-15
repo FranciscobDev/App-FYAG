@@ -448,7 +448,7 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
                 ]}
               >
                 <Ionicons
-                  name="columns-outline"
+                  name="grid-outline"
                   size={14}
                   color={rolSimulado === "Comparativa" ? "#ffffff" : tema.colors.primaryDark}
                   style={{ marginRight: 4 }}

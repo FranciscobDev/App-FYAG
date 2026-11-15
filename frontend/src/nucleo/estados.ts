@@ -6,6 +6,9 @@ export type ClaveEstado =
   | "aprobada"
   | "conforme"
   | "activo"
+  | "en_curso"
+  | "pausado"
+  | "finalizado"
   | "rechazada"
   | "defectuoso"
   | "vencido"
@@ -30,7 +33,7 @@ export type ClaveEstado =
 export interface DefinicionEstado {
   label: string;
   tone: Tono;
-  icon: string; // Ionicons name
+  icon: string; // Nombre de icono en Ionicons
   colorName: string; // "ámbar" | "verde" | "rojo" | "azul" | "gris" | "celeste"
 }
 
@@ -47,6 +50,7 @@ export interface DefinicionEstado {
 export const ESTADOS: Record<ClaveEstado, DefinicionEstado> = {
   // 1. ÁMBAR
   pendiente: { label: "Pendiente", tone: "warn", icon: "time-outline", colorName: "ámbar" },
+  pausado: { label: "Pausado", tone: "warn", icon: "pause-circle-outline", colorName: "ámbar" },
   recibida_parcial: { label: "Parcial", tone: "warn", icon: "pie-chart-outline", colorName: "ámbar" },
   en_mantencion: { label: "Mantención", tone: "warn", icon: "build-outline", colorName: "ámbar" },
   pendiente_resolucion: { label: "Pendiente", tone: "warn", icon: "time-outline", colorName: "ámbar" },
@@ -55,6 +59,7 @@ export const ESTADOS: Record<ClaveEstado, DefinicionEstado> = {
   aprobada: { label: "Aprobada", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
   conforme: { label: "Conforme", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
   activo: { label: "Activo", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
+  en_curso: { label: "En Proceso", tone: "ok", icon: "play-circle-outline", colorName: "verde" },
   recibida: { label: "Recibida", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
   entregada: { label: "Entregada", tone: "ok", icon: "checkmark-done-outline", colorName: "verde" },
   disponible: { label: "Disponible", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
@@ -76,6 +81,7 @@ export const ESTADOS: Record<ClaveEstado, DefinicionEstado> = {
 
   // 6. GRIS
   cerrado: { label: "Cerrado", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
+  finalizado: { label: "Completado", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
   cerrada: { label: "Cerrada", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
   anulada: { label: "Anulada", tone: "mute", icon: "ban-outline", colorName: "gris" },
   borrador: { label: "Borrador", tone: "mute", icon: "document-text-outline", colorName: "gris" },
