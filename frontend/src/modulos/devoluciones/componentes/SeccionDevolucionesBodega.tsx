@@ -45,46 +45,46 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
 
   return (
     <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-      {/* 1. FRANJA DE RESUMEN OPERATIVO DE RETORNOS DE OBRA */}
+      {/* 1. FRANJA DE RESUMEN OPERATIVO DE RETORNOS DE OBRA (3 columnas iguales) */}
       <View
         style={{
           flexDirection: "row",
           flexWrap: "wrap",
-          gap: 10,
+          gap: 8,
           marginBottom: 14,
         }}
       >
         <View
           style={{
             flex: 1,
-            minWidth: 140,
+            minWidth: 96,
             backgroundColor: tema.colors.card,
             borderRadius: tema.radius.md,
-            padding: 12,
+            padding: 10,
             borderWidth: 1,
             borderColor: tema.colors.primaryBorder,
             flexDirection: "row",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
           <View
             style={{
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               borderRadius: 8,
               backgroundColor: tema.colors.warnLight,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="car-outline" size={20} color={tema.colors.warnDark} />
+            <Ionicons name="car-outline" size={18} color={tema.colors.warnDark} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
               {inTransitConteo}
             </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
+            <Text numberOfLines={1} style={{ fontSize: 10, color: tema.colors.textMuted, fontWeight: "600" }}>
               En Tránsito
             </Text>
           </View>
@@ -93,35 +93,35 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
         <View
           style={{
             flex: 1,
-            minWidth: 140,
+            minWidth: 96,
             backgroundColor: tema.colors.card,
             borderRadius: tema.radius.md,
-            padding: 12,
+            padding: 10,
             borderWidth: 1,
             borderColor: tema.colors.border,
             flexDirection: "row",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
           <View
             style={{
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               borderRadius: 8,
               backgroundColor: tema.colors.primaryLight,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="cube-outline" size={20} color={tema.colors.primaryDark} />
+            <Ionicons name="cube-outline" size={18} color={tema.colors.primaryDark} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
               {totalUnidadesEnTransito}
             </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
-              Unidades por Reingresar
+            <Text numberOfLines={1} style={{ fontSize: 10, color: tema.colors.textMuted, fontWeight: "600" }}>
+              Por Reingresar
             </Text>
           </View>
         </View>
@@ -129,35 +129,35 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
         <View
           style={{
             flex: 1,
-            minWidth: 140,
+            minWidth: 96,
             backgroundColor: tema.colors.card,
             borderRadius: tema.radius.md,
-            padding: 12,
+            padding: 10,
             borderWidth: 1,
             borderColor: tema.colors.border,
             flexDirection: "row",
             alignItems: "center",
-            gap: 10,
+            gap: 8,
           }}
         >
           <View
             style={{
-              width: 36,
-              height: 36,
+              width: 32,
+              height: 32,
               borderRadius: 8,
               backgroundColor: tema.colors.okLight,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Ionicons name="checkmark-done-outline" size={20} color={tema.colors.okDark} />
+            <Ionicons name="checkmark-done-outline" size={18} color={tema.colors.okDark} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
+            <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
               {recibidasConteo}
             </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
-              Retornos Recibidos
+            <Text numberOfLines={1} style={{ fontSize: 10, color: tema.colors.textMuted, fontWeight: "600" }}>
+              Recibidos
             </Text>
           </View>
         </View>

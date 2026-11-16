@@ -47,7 +47,7 @@ export const TarjetaKpi: React.FC<KpiCardProps> = ({
         </View>
       </View>
       <Text style={[estilos.valor, { color: tonoEstilo.text }]}>{value}</Text>
-      
+
       <View style={estilos.pieFila}>
         {subtitle && <Text style={estilos.subtitulo}>{subtitle}</Text>}
         {trend && (
@@ -80,52 +80,51 @@ export const TarjetaKpi: React.FC<KpiCardProps> = ({
 const estilos = StyleSheet.create({
   tarjeta: {
     backgroundColor: tema.colors.card,
-    borderRadius: tema.radius.xl,
-    padding: tema.spacing.md,
+    borderRadius: tema.radius.lg,
+    padding: 12,
     borderWidth: tema.borders.thin,
     borderColor: tema.colors.border,
     borderLeftWidth: 4,
     ...tema.shadows.subtle,
     flex: 1,
-    minWidth: 140,
-    margin: tema.spacing.xs,
+    minWidth: 135,
   },
   encabezado: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: tema.spacing.xs,
+    marginBottom: 4,
   },
   etiqueta: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: 10,
+    fontWeight: tema.fontWeight.bold,
     color: tema.colors.textMuted,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     flex: 1,
   },
   iconoContenedor: {
-    width: 32,
-    height: 32,
-    borderRadius: tema.radius.full,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 6,
   },
   valor: {
-    fontSize: tema.fontSize.xl,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: tema.fontSize.lg,
+    fontWeight: tema.fontWeight.bold,
     marginVertical: 2,
   },
   subtitulo: {
-    fontSize: tema.fontSize.xs,
+    fontSize: 11,
     color: tema.colors.textMuted,
   },
   pieFila: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 4,
+    marginTop: 2,
   },
   trendInsignia: {
     flexDirection: "row",

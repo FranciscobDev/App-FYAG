@@ -76,14 +76,14 @@ export const estilos = StyleSheet.create({
   },
   pestanaBarraScroll: {
     flexDirection: "row",
-    paddingHorizontal: tema.spacing.sm,
+    paddingHorizontal: 6,
   },
   pestanaElemento: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderBottomWidth: 2.5,
     borderBottomColor: "transparent",
   },

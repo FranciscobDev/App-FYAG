@@ -98,9 +98,9 @@ export const estilos = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: tema.spacing.sm,
+    marginBottom: tema.spacing.md,
     flexWrap: "wrap",
-    gap: 8,
+    gap: 10,
   },
   encabezado: {
     fontSize: tema.fontSize.md,

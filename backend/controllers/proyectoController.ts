@@ -8,6 +8,7 @@ export interface Proyecto {
     nombre_proyecto: string;
     tipo_proyecto: string;
     cliente: string | null;
+    id_cliente?: number | null;
     direccion: string | null;
     fecha_inicio: string | null;
     fecha_fin: string | null;
@@ -23,6 +24,7 @@ interface ProyectoBody {
     nombre_proyecto?: string;
     tipo_proyecto?: string;
     cliente?: string | null;
+    id_cliente?: number | null;
     direccion?: string | null;
     fecha_inicio?: string | null;
     fecha_fin?: string | null;
@@ -100,7 +102,7 @@ export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Re
 // Crear un proyecto
 export const crearProyecto = async (req: Request<Record<string, string>, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const {
-        nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
+        nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta,
         porcentaje_avance, estado_proyecto, id_usuario, id_kit_proyecto
     } = req.body;
@@ -112,6 +114,21 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
 
     try {
         let presupuestoFinal = Number(presupuesto_inicial) || 0;
+        let clienteNombreFinal = cliente || null;
+
+        if (id_cliente && !clienteNombreFinal) {
+            try {
+                const cliRes = await pool.query<{ razon_social: string }>(
+                    'SELECT razon_social FROM cliente WHERE id_cliente = $1',
+                    [id_cliente]
+                );
+                if (cliRes.rows[0]) {
+                    clienteNombreFinal = cliRes.rows[0].razon_social;
+                }
+            } catch {
+                // Ignorar si no se encuentra
+            }
+        }
 
         // Si se seleccionó un kit y no se especificó un presupuesto manual distinto de 0,
         // calculamos el presupuesto sumando el costo de los insumos del kit
@@ -132,14 +149,15 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
         }
 
         const query = `
-        INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *;
     `;
         const values = [
             nombre_proyecto,
             tipo_proyecto || 'Instalacion',
-            cliente || null,
+            clienteNombreFinal,
+            id_cliente || null,
             direccion || null,
             fecha_inicio || null,
             fecha_fin || null,
@@ -200,21 +218,21 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
 export const actualizarProyecto = async (req: Request<{ id: string }, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const { id } = req.params;
     const {
-        nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
+        nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario
     } = req.body;
 
     try {
         const query = `
       UPDATE proyecto
-      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3, direccion = $4,
-          fecha_inicio = $5, fecha_fin = $6, presupuesto_inicial = $7, presupuesto_horas = $8, valor_venta = $9,
-          porcentaje_avance = $10, estado_proyecto = $11, id_usuario = $12
-      WHERE id_proyecto = $13
+      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3, id_cliente = COALESCE($4, id_cliente), direccion = $5,
+          fecha_inicio = $6, fecha_fin = $7, presupuesto_inicial = $8, presupuesto_horas = $9, valor_venta = $10,
+          porcentaje_avance = $11, estado_proyecto = $12, id_usuario = $13
+      WHERE id_proyecto = $14
       RETURNING *;
     `;
         const values = [
-            nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio,
+            nombre_proyecto, tipo_proyecto, cliente, id_cliente ?? null, direccion, fecha_inicio,
             fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario, id
         ];
 

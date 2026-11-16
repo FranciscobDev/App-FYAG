@@ -95,39 +95,50 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
       {activoPestana === "terceros" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <View style={estilos.subPestanaBarra}>
-            <TouchableOpacity
-              onPress={() => establecerThirdPartyPestana("proveedores")}
-              style={[estilos.subPestanaBoton, thirdPartyPestana === "proveedores" && estilos.subPestanaBotonActivo]}
-            >
-              <Text
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1, minWidth: 210 }}>
+              <TouchableOpacity
+                onPress={() => establecerThirdPartyPestana("proveedores")}
                 style={[
-                  estilos.subPestanaTexto,
-                  thirdPartyPestana === "proveedores" && estilos.subPestanaTextoActivo,
+                  estilos.subPestanaBoton,
+                  { flex: 1, minHeight: 40, justifyContent: "center", alignItems: "center", marginRight: 0 },
+                  thirdPartyPestana === "proveedores" && estilos.subPestanaBotonActivo,
                 ]}
               >
-                Proveedores ({proveedores.length})
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    estilos.subPestanaTexto,
+                    thirdPartyPestana === "proveedores" && estilos.subPestanaTextoActivo,
+                  ]}
+                >
+                  Proveedores ({proveedores.length})
+                </Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => establecerThirdPartyPestana("clientes")}
-              style={[estilos.subPestanaBoton, thirdPartyPestana === "clientes" && estilos.subPestanaBotonActivo]}
-            >
-              <Text
+              <TouchableOpacity
+                onPress={() => establecerThirdPartyPestana("clientes")}
                 style={[
-                  estilos.subPestanaTexto,
-                  thirdPartyPestana === "clientes" && estilos.subPestanaTextoActivo,
+                  estilos.subPestanaBoton,
+                  { flex: 1, minHeight: 40, justifyContent: "center", alignItems: "center", marginRight: 0 },
+                  thirdPartyPestana === "clientes" && estilos.subPestanaBotonActivo,
                 ]}
               >
-                Clientes ({clientes.length})
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    estilos.subPestanaTexto,
+                    thirdPartyPestana === "clientes" && estilos.subPestanaTextoActivo,
+                  ]}
+                >
+                  Clientes ({clientes.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             <Boton
               title={`+ Nuevo ${thirdPartyPestana === "proveedores" ? "Proveedor" : "Cliente"}`}
               variant="primary"
               size="sm"
               onPress={manejarAbrirPartyModal}
+              style={{ minHeight: 40 }}
             />
           </View>
 
@@ -249,7 +260,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       onPress={() => {
                         manejarAbrirNuevoOrden(s.id);
                       }}
-                      style={{ marginRight: 8 }}
+                      style={{ flex: 1, minHeight: 38 }}
                     />
                   )}
                   <Boton
@@ -257,6 +268,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                     variant={s.disabled ? "success" : "secondary"}
                     size="sm"
                     icon={s.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                    style={{ flex: 1, minHeight: 38 }}
                     onPress={() => {
                       alternarProveedorDeshabilitado(s.id);
                       mostrarAviso(`Proveedor ${s.businessName} ${s.disabled ? "habilitado" : "deshabilitado"}.`);

@@ -6,6 +6,7 @@ import proveedorRoutes from './routes/proveedorRoutes';
 import usuarioRoutes from './routes/usuarioRoutes';
 import proyectoRoutes from './routes/proyectoRoutes';
 import kitRoutes from './routes/kitRoutes';
+import clienteRoutes from './routes/clienteRoutes';
 import parametrosRoutes from './routes/parametrosRoutes';
 import verificarToken from './middleware/authMiddleware';
 
@@ -35,6 +36,7 @@ app.use('/api/proveedores', verificarToken, proveedorRoutes);
 app.use('/api/usuarios', verificarToken, usuarioRoutes);
 app.use('/api/proyectos', verificarToken, proyectoRoutes);
 app.use('/api/kits', verificarToken, kitRoutes);
+app.use('/api/clientes', verificarToken, clienteRoutes);
 app.use('/api/parametros', verificarToken, parametrosRoutes);
 
 export default app;
