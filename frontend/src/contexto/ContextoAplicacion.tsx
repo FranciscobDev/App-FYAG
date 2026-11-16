@@ -7,6 +7,7 @@ import {
   articuloAProducto,
   productoACuerpoArticulo,
 } from "@/modulos/inventario/articulosApi";
+import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
 import {
   MovimientoCardex,
   Cliente,
@@ -53,7 +54,6 @@ import {
   RECEPCIONES_PENDIENTES,
   CONTEOS_FISICOS,
   PRODUCTOS,
-  PROYECTOS,
   FACTURAS_COMPRA,
   ORDENES_COMPRA,
   ORDENES_DEVOLUCION,
@@ -224,7 +224,7 @@ const ContextoAplicacion = createContext<TipoContextoAplicacion | null>(null);
 
 export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [productos, setProducts] = useState<Producto[]>(PRODUCTOS);
-  const [proyectos, setProjects] = useState<Proyecto[]>(PROYECTOS);
+  const [proyectos, setProjects] = useState<Proyecto[]>([]);
   const [solicitudesMaterial, setMaterialRequests] = useState<SolicitudMaterial[]>(SOLICITUDES_MATERIALES);
   const [ordenesCompra, setPurchaseOrders] = useState<OrdenCompra[]>(ORDENES_COMPRA);
   const [facturasCompra, setPurchaseInvoices] = useState<FacturaCompra[]>(FACTURAS_COMPRA);
@@ -267,6 +267,24 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     });
     return () => {
       cancelado = true;
+    };
+  }, [haySesion]);
+
+  // Proyectos desde la API. Para técnicos, el backend devuelve solo sus asignaciones activas.
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    const cargar = () => {
+      listarProyectos().then((r) => {
+        if (!r.ok || !r.data || cancelado) return;
+        setProjects(r.data.map(proyectoDesdeApi));
+      });
+    };
+    cargar();
+    const intervalo = setInterval(cargar, 30000);
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
     };
   }, [haySesion]);
 

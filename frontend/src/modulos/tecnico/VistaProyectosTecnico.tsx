@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+
 import {
   ScrollView,
   StyleSheet,
@@ -9,7 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
-import { formatearFecha } from "@/nucleo/formato";
+// CAMBIO: parsearFechaLocal evita el desfase de un día por UTC
+import { formatearFecha, parsearFechaLocal } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import { Insignia } from "@/componentes/base/Insignia";
 import { Boton } from "@/componentes/base/Boton";
@@ -44,8 +46,9 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
   );
 
   // Orden obligatorio por fecha límite (deadline ascendente: más urgente primero)
+  // CAMBIO: fechas "YYYY-MM-DD" interpretadas en hora local
   const ordenadoProyectos = [...tecnicoProyectos].sort((a, b) => {
-    return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+    return parsearFechaLocal(a.deadline).getTime() - parsearFechaLocal(b.deadline).getTime();
   });
 
   // Filtro por estado en chips
@@ -58,220 +61,224 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
 
   return (
     <ContenedorEstadoPantalla screenTitle="Mis Proyectos (Técnico)" skeletonType="cards">
-    <ScrollView style={estilos.contenedor} contentContainerStyle={estilos.contenido}>
-      {/* 1. HEADER & STATUS OFFLINE / ONLINE */}
-      <View style={estilos.encabezadoFila}>
-        <View style={{ flex: 1 }}>
-          <Text style={estilos.encabezadoTitulo}>Mis Proyectos en Terreno</Text>
-          <Text style={estilos.encabezadoSub}>
-            Ordenados por fecha límite de entrega ({filtradoProyectos.length} proyectos)
-          </Text>
+      <ScrollView style={estilos.contenedor} contentContainerStyle={estilos.contenido}>
+        {/* 1. HEADER & STATUS OFFLINE / ONLINE */}
+        <View style={estilos.encabezadoFila}>
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.encabezadoTitulo}>Mis Proyectos en Terreno</Text>
+            <Text style={estilos.encabezadoSub}>
+              Ordenados por fecha límite de entrega ({filtradoProyectos.length} proyectos)
+            </Text>
+          </View>
+
+          {isOffline ? (
+            <View style={estilos.sinConexionChip}>
+              <Ionicons name="cloud-offline" size={14} color={tema.colors.warnDark} />
+              <Text style={estilos.sinConexionChipTexto}>Modo Offline</Text>
+            </View>
+          ) : (
+            <View style={estilos.enLineaChip}>
+              <Ionicons name="cloud-done" size={14} color="#22c55e" />
+              <Text style={estilos.enLineaChipTexto}>En Línea</Text>
+            </View>
+          )}
         </View>
 
-        {isOffline ? (
-          <View style={estilos.sinConexionChip}>
-            <Ionicons name="cloud-offline" size={14} color={tema.colors.warnDark} />
-            <Text style={estilos.sinConexionChipTexto}>Modo Offline</Text>
-          </View>
+        {/* 2. CHIPS DE FILTRO POR ESTADO */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.filtrarScroll}>
+          {[
+            { id: "todos", label: `Todos (${ordenadoProyectos.length})` },
+            { id: "activo", label: `Activos (${ordenadoProyectos.filter((p) => p.status === "activo").length})` },
+            { id: "planificado", label: `Planificados (${ordenadoProyectos.filter((p) => p.status === "planificado").length})` },
+          ].map((f) => {
+            const esActivo = estadoFiltrar === f.id;
+            return (
+              <TouchableOpacity
+                key={f.id}
+                onPress={() => establecerEstadoFiltrar(f.id)}
+                style={[estilos.filtrarChip, esActivo && estilos.filtrarChipActivo]}
+                activeOpacity={0.7}
+              >
+                <Text style={[estilos.filtrarChipTexto, esActivo && estilos.filtrarChipTextoActivo]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {/* 3. LISTADO DE TARJETAS DE PROYECTO */}
+        {filtradoProyectos.length === 0 ? (
+          <EstadoVacio
+            icon="folder-open-outline"
+            title="Sin proyectos en este estado"
+            description="No tienes obras o faenas activas asignadas que coincidan con el filtro."
+            containerStyle={{ marginVertical: 20 }}
+          />
         ) : (
-          <View style={estilos.enLineaChip}>
-            <Ionicons name="cloud-done" size={14} color="#22c55e" />
-            <Text style={estilos.enLineaChipTexto}>En Línea</Text>
-          </View>
-        )}
-      </View>
+          filtradoProyectos.map((proj) => {
+            // Semáforo de fecha límite:
+            // Amarillo si faltan <= 5 días, Rojo si faltan <= 48 horas o vencido
+            // CAMBIO: fecha límite interpretada en hora local
+            const plazoMs = parsearFechaLocal(proj.deadline).getTime();
+            const diferenciaMs = plazoMs - now;
+            const diferenciaHoras = Math.floor(diferenciaMs / (1000 * 60 * 60));
+            const diferenciaDias = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
 
-      {/* 2. CHIPS DE FILTRO POR ESTADO */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.filtrarScroll}>
-        {[
-          { id: "todos", label: `Todos (${ordenadoProyectos.length})` },
-          { id: "activo", label: `Activos (${ordenadoProyectos.filter((p) => p.status === "activo").length})` },
-          { id: "planificado", label: `Planificados (${ordenadoProyectos.filter((p) => p.status === "planificado").length})` },
-        ].map((f) => {
-          const esActivo = estadoFiltrar === f.id;
-          return (
-            <TouchableOpacity
-              key={f.id}
-              onPress={() => establecerEstadoFiltrar(f.id)}
-              style={[estilos.filtrarChip, esActivo && estilos.filtrarChipActivo]}
-              activeOpacity={0.7}
-            >
-              <Text style={[estilos.filtrarChipTexto, esActivo && estilos.filtrarChipTextoActivo]}>
-                {f.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+            let semTono: "ok" | "warn" | "danger" = "ok";
+            let semEtiqueta = `Quedan ${diferenciaDias} días`;
 
-      {/* 3. LISTADO DE TARJETAS DE PROYECTO */}
-      {filtradoProyectos.length === 0 ? (
-        <EstadoVacio
-          icon="folder-open-outline"
-          title="Sin proyectos en este estado"
-          description="No tienes obras o faenas activas asignadas que coincidan con el filtro."
-          containerStyle={{ marginVertical: 20 }}
-        />
-      ) : (
-        filtradoProyectos.map((proj) => {
-          // Semáforo de fecha límite:
-          // Amarillo si faltan <= 5 días, Rojo si faltan <= 48 horas o vencido
-          const plazoMs = new Date(proj.deadline).getTime();
-          const diferenciaMs = plazoMs - now;
-          const diferenciaHoras = Math.floor(diferenciaMs / (1000 * 60 * 60));
-          const diferenciaDias = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
+            if (diferenciaMs <= 0) {
+              semTono = "danger";
+              semEtiqueta = "¡Plazo Vencido!";
+            } else if (diferenciaHoras <= 48) {
+              semTono = "danger";
+              semEtiqueta = `¡Crítico! Faltan ${diferenciaHoras} horas`;
+            } else if (diferenciaDias <= 5) {
+              semTono = "warn";
+              semEtiqueta = `Atención: Faltan ${diferenciaDias} días`;
+            }
 
-          let semTono: "ok" | "warn" | "danger" = "ok";
-          let semEtiqueta = `Quedan ${diferenciaDias} días`;
+            return (
+              <Tarjeta
+                key={proj.id}
+                variant="elevated"
+                style={[
+                  estilos.proyectoTarjeta,
+                  semTono === "danger" && estilos.proyectoTarjetaPeligro,
+                  semTono === "warn" && estilos.proyectoTarjetaAdvertencia,
+                ]}
+              >
+                {/* Header de Tarjeta */}
+                <View style={estilos.tarjetaSuperiorFila}>
+                  <View style={estilos.codigoFila}>
+                    <Text style={estilos.proyectoCodigo}>{proj.code}</Text>
+                    <Insignia
+                      label={proj.kind.toUpperCase()}
+                      tone={proj.kind === "obra" ? "info" : "warn"}
+                      size="sm"
+                    />
+                    <InsigniaEstado status={proj.status} size="sm" style={{ marginLeft: 6 }} />
+                  </View>
 
-          if (diferenciaMs <= 0) {
-            semTono = "danger";
-            semEtiqueta = "¡Plazo Vencido!";
-          } else if (diferenciaHoras <= 48) {
-            semTono = "danger";
-            semEtiqueta = `¡Crítico! Faltan ${diferenciaHoras} horas`;
-          } else if (diferenciaDias <= 5) {
-            semTono = "warn";
-            semEtiqueta = `Atención: Faltan ${diferenciaDias} días`;
-          }
-
-          return (
-            <Tarjeta
-              key={proj.id}
-              variant="elevated"
-              style={[
-                estilos.proyectoTarjeta,
-                semTono === "danger" && estilos.proyectoTarjetaPeligro,
-                semTono === "warn" && estilos.proyectoTarjetaAdvertencia,
-              ]}
-            >
-              {/* Header de Tarjeta */}
-              <View style={estilos.tarjetaSuperiorFila}>
-                <View style={estilos.codigoFila}>
-                  <Text style={estilos.proyectoCodigo}>{proj.code}</Text>
+                  {/* Semáforo de Plazo */}
                   <Insignia
-                    label={proj.kind.toUpperCase()}
-                    tone={proj.kind === "obra" ? "info" : "warn"}
+                    label={semEtiqueta}
+                    tone={semTono}
+                    icon={
+                      semTono === "danger"
+                        ? "alert-circle"
+                        : semTono === "warn"
+                          ? "time-outline"
+                          : "calendar-outline"
+                    }
                     size="sm"
                   />
-                  <InsigniaEstado status={proj.status} size="sm" style={{ marginLeft: 6 }} />
                 </View>
 
-                {/* Semáforo de Plazo */}
-                <Insignia
-                  label={semEtiqueta}
-                  tone={semTono}
-                  icon={
-                    semTono === "danger"
-                      ? "alert-circle"
-                      : semTono === "warn"
-                      ? "time-outline"
-                      : "calendar-outline"
-                  }
-                  size="sm"
-                />
-              </View>
+                <Text style={estilos.proyectoNombre}>{proj.name}</Text>
+                <Text style={estilos.proyectoCliente}>Cliente: {proj.client}</Text>
 
-              <Text style={estilos.proyectoNombre}>{proj.name}</Text>
-              <Text style={estilos.proyectoCliente}>Cliente: {proj.client}</Text>
-
-              <View style={estilos.direccionFila}>
-                <Ionicons name="location-outline" size={14} color={tema.colors.textMuted} />
-                <Text style={estilos.direccionTexto} numberOfLines={1}>
-                  {proj.address}
-                </Text>
-              </View>
-
-              {/* Barra de Avance Físico 0-100% */}
-              <View style={estilos.progresoContenedor}>
-                <View style={estilos.progresoEncabezado}>
-                  <Text style={estilos.progresoEtiqueta}>Avance físico de la obra</Text>
-                  <Text style={estilos.progresoPorcentaje}>{proj.progress}%</Text>
-                </View>
-                <BarraProgreso
-                  value={proj.progress}
-                  max={100}
-                  height={8}
-                  color={
-                    semTono === "danger"
-                      ? tema.colors.danger
-                      : semTono === "warn"
-                      ? tema.colors.warn
-                      : tema.colors.primary
-                  }
-                />
-              </View>
-
-              {/* Indicador de Disponibilidad Offline */}
-              <View style={estilos.sinConexionSincronizacionAviso}>
-                <Ionicons name="checkmark-circle" size={13} color={tema.colors.ok} style={{ marginRight: 4 }} />
-                <Text style={estilos.sinConexionSincronizacionTexto}>
-                  {isOffline ? "Datos guardados en almacenamiento local del celular" : "Sincronizado con base central"}
-                </Text>
-              </View>
-
-              {/* Footer con Fecha Límite y Botones Táctiles de Acción (≥ 44 px) */}
-              <View style={estilos.tarjetaPie}>
-                <View style={estilos.plazoContenedor}>
-                  <Text style={estilos.plazoEtiqueta}>Fecha Límite:</Text>
-                  <Text
-                    style={[
-                      estilos.plazoValor,
-                      semTono === "danger" && { color: tema.colors.danger, fontWeight: "bold" },
-                    ]}
-                  >
-                    {formatearFecha(proj.deadline)}
+                <View style={estilos.direccionFila}>
+                  <Ionicons name="location-outline" size={14} color={tema.colors.textMuted} />
+                  <Text style={estilos.direccionTexto} numberOfLines={1}>
+                    {proj.address}
                   </Text>
                 </View>
 
-                <View style={estilos.accionesGrupo}>
-                  {sesionTrabajoActiva?.projectId === proj.id ? (
-                    <Boton
-                      title="En Faena (HH)"
-                      variant="primary"
-                      size="sm"
-                      icon="timer"
-                      onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "horas")}
-                      style={{ marginRight: 6, height: 42 }}
-                    />
-                  ) : (
-                    <Boton
-                      title="Iniciar Faena"
-                      variant="outline"
-                      size="sm"
-                      icon="play-outline"
-                      onPress={() => {
-                        if (!sesionTrabajoActiva) {
-                          iniciarSesionTrabajo(proj.id);
-                        }
-                        onNavigateTab && onNavigateTab("registrar", proj, "horas");
-                      }}
-                      style={{ marginRight: 6, height: 42 }}
-                    />
-                  )}
-                  <Boton
-                    title="Avance"
-                    variant="outline"
-                    size="sm"
-                    icon="trending-up-outline"
-                    onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "avance")}
-                    style={{ marginRight: 6, height: 42 }}
-                  />
-                  <Boton
-                    title="Insumos"
-                    variant="primary"
-                    size="sm"
-                    icon="cube-outline"
-                    onPress={() => onNavigateTab && onNavigateTab("insumos", proj)}
-                    style={{ height: 42 }}
+                {/* Barra de Avance Físico 0-100% */}
+                <View style={estilos.progresoContenedor}>
+                  <View style={estilos.progresoEncabezado}>
+                    <Text style={estilos.progresoEtiqueta}>Avance físico de la obra</Text>
+                    <Text style={estilos.progresoPorcentaje}>{proj.progress}%</Text>
+                  </View>
+                  <BarraProgreso
+                    value={proj.progress}
+                    max={100}
+                    height={8}
+                    color={
+                      semTono === "danger"
+                        ? tema.colors.danger
+                        : semTono === "warn"
+                          ? tema.colors.warn
+                          : tema.colors.primary
+                    }
                   />
                 </View>
-              </View>
-            </Tarjeta>
-          );
-        })
-      )}
-    </ScrollView>
+
+                {/* Indicador de Disponibilidad Offline */}
+                <View style={estilos.sinConexionSincronizacionAviso}>
+                  <Ionicons name="checkmark-circle" size={13} color={tema.colors.ok} style={{ marginRight: 4 }} />
+                  <Text style={estilos.sinConexionSincronizacionTexto}>
+                    {/* CAMBIO: texto que describe lo que realmente ocurre (recarga cada 30 s) */}
+                    {isOffline
+                      ? "Datos guardados en almacenamiento local del celular"
+                      : "Datos de la base central (se actualizan cada 30 s)"}
+                  </Text>
+                </View>
+
+                {/* Footer con Fecha Límite y Botones Táctiles de Acción (≥ 44 px) */}
+                <View style={estilos.tarjetaPie}>
+                  <View style={estilos.plazoContenedor}>
+                    <Text style={estilos.plazoEtiqueta}>Fecha Límite:</Text>
+                    <Text
+                      style={[
+                        estilos.plazoValor,
+                        semTono === "danger" && { color: tema.colors.danger, fontWeight: "bold" },
+                      ]}
+                    >
+                      {formatearFecha(proj.deadline)}
+                    </Text>
+                  </View>
+
+                  <View style={estilos.accionesGrupo}>
+                    {sesionTrabajoActiva?.projectId === proj.id ? (
+                      <Boton
+                        title="En Faena (HH)"
+                        variant="primary"
+                        size="sm"
+                        icon="timer"
+                        onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "horas")}
+                        style={{ marginRight: 6, height: 42 }}
+                      />
+                    ) : (
+                      <Boton
+                        title="Iniciar Faena"
+                        variant="outline"
+                        size="sm"
+                        icon="play-outline"
+                        onPress={() => {
+                          if (!sesionTrabajoActiva) {
+                            iniciarSesionTrabajo(proj.id);
+                          }
+                          onNavigateTab && onNavigateTab("registrar", proj, "horas");
+                        }}
+                        style={{ marginRight: 6, height: 42 }}
+                      />
+                    )}
+                    <Boton
+                      title="Avance"
+                      variant="outline"
+                      size="sm"
+                      icon="trending-up-outline"
+                      onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "avance")}
+                      style={{ marginRight: 6, height: 42 }}
+                    />
+                    <Boton
+                      title="Insumos"
+                      variant="primary"
+                      size="sm"
+                      icon="cube-outline"
+                      onPress={() => onNavigateTab && onNavigateTab("insumos", proj)}
+                      style={{ height: 42 }}
+                    />
+                  </View>
+                </View>
+              </Tarjeta>
+            );
+          })
+        )}
+      </ScrollView>
     </ContenedorEstadoPantalla>
   );
 };
