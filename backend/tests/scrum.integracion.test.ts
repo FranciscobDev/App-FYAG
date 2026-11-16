@@ -466,3 +466,94 @@ test('[BACK-1] el tiempo de inactividad se toma en vivo del parámetro', async (
 
     await fijarParametro('minutos_inactividad_sesion', 30);
 });
+
+// =========================================================================
+// [BACK-1] Endpoint móvil de proyectos asignados ordenados por fecha límite ascendente
+// =========================================================================
+test('[BACK-1][SCRUM] endpoint móvil retorna exclusivamente los proyectos asignados al técnico ordenados por fecha límite ascendente y bloquea proyectos ajenos', async () => {
+    const correoT1 = `tec1-${SUFIJO}${DOMINIO}`;
+    const correoT2 = `tec2-${SUFIJO}${DOMINIO}`;
+
+    await api('POST', '/usuarios', {
+        nombre_usuario: 'Tecnico', apellido_usuario: 'Uno', correo_usuario: correoT1,
+        rol_codigo: 'technician', contrasena: CLAVE_INICIAL,
+    }, tokenAdmin);
+
+    await api('POST', '/usuarios', {
+        nombre_usuario: 'Tecnico', apellido_usuario: 'Dos', correo_usuario: correoT2,
+        rol_codigo: 'technician', contrasena: CLAVE_INICIAL,
+    }, tokenAdmin);
+
+    const loginT1 = await api('POST', '/auth/login', { correo_usuario: correoT1, contrasena: CLAVE_INICIAL });
+    const loginT2 = await api('POST', '/auth/login', { correo_usuario: correoT2, contrasena: CLAVE_INICIAL });
+
+    const idT1 = loginT1.json.usuario.id_usuario;
+    const idT2 = loginT2.json.usuario.id_usuario;
+    const tokenT1 = loginT1.json.token;
+    const tokenT2 = loginT2.json.token;
+
+    // Crear proyectos con distintas fechas límite
+    const insP1 = await pool.query(
+        `INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto)
+         VALUES ($1, 'Instalacion', '2026-12-20', 1000000, 50, 1500000, 0, 'En Proceso')
+         RETURNING id_proyecto`,
+        [`P1-T1-${SUFIJO}`]
+    );
+    const idP1 = insP1.rows[0].id_proyecto;
+
+    const insP2 = await pool.query(
+        `INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto)
+         VALUES ($1, 'Instalacion', '2026-11-20', 1000000, 50, 1500000, 0, 'En Proceso')
+         RETURNING id_proyecto`,
+        [`P2-T1-${SUFIJO}`]
+    );
+    const idP2 = insP2.rows[0].id_proyecto;
+
+    const insP3 = await pool.query(
+        `INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto)
+         VALUES ($1, 'Mantencion', '2026-12-10', 1000000, 50, 1500000, 0, 'En Proceso')
+         RETURNING id_proyecto`,
+        [`P3-T2-${SUFIJO}`]
+    );
+    const idP3 = insP3.rows[0].id_proyecto;
+
+    const insP4 = await pool.query(
+        `INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto)
+         VALUES ($1, 'Mantencion', '2026-11-10', 1000000, 50, 1500000, 0, 'Planificado')
+         RETURNING id_proyecto`,
+        [`P4-T2-${SUFIJO}`]
+    );
+    const idP4 = insP4.rows[0].id_proyecto;
+
+    await pool.query('INSERT INTO proyecto_tecnico (id_proyecto, id_usuario) VALUES ($1, $2), ($3, $4)', [idP1, idT1, idP2, idT1]);
+    await pool.query('INSERT INTO proyecto_tecnico (id_proyecto, id_usuario) VALUES ($1, $2), ($3, $4)', [idP3, idT2, idP4, idT2]);
+
+    // Consultar con Token de Técnico 1
+    const resT1 = await api('GET', '/proyectos', undefined, tokenT1);
+    assert.equal(resT1.status, 200);
+    const projsT1 = resT1.json;
+    assert.equal(projsT1.length, 2, 'Técnico 1 debe recibir exactamente 2 proyectos');
+    assert.equal(projsT1[0].id_proyecto, idP2, 'El primer proyecto debe ser P2 (fecha 2026-11-20 más próxima)');
+    assert.equal(projsT1[1].id_proyecto, idP1, 'El segundo proyecto debe ser P1 (fecha 2026-12-20 más lejana)');
+
+    // Consultar con Token de Técnico 2
+    const resT2 = await api('GET', '/proyectos', undefined, tokenT2);
+    assert.equal(resT2.status, 200);
+    const projsT2 = resT2.json;
+    assert.equal(projsT2.length, 2, 'Técnico 2 debe recibir exactamente 2 proyectos');
+    assert.equal(projsT2[0].id_proyecto, idP4, 'El primer proyecto debe ser P4 (fecha 2026-11-10 más próxima)');
+    assert.equal(projsT2[1].id_proyecto, idP3, 'El segundo proyecto debe ser P3 (fecha 2026-12-10 más lejana)');
+
+    // Verificar aislamiento cruzado (ningún técnico puede consultar proyectos ajenos)
+    const intentoAjenoT1 = await api('GET', `/proyectos/${idP4}`, undefined, tokenT1);
+    assert.equal(intentoAjenoT1.status, 404, 'Técnico 1 no puede ver proyecto asignado a Técnico 2');
+
+    const intentoAjenoT2 = await api('GET', `/proyectos/${idP1}`, undefined, tokenT2);
+    assert.equal(intentoAjenoT2.status, 404, 'Técnico 2 no puede ver proyecto asignado a Técnico 1');
+
+    // Verificar endpoint móvil alias /proyectos/movil
+    const resMovilT1 = await api('GET', '/proyectos/movil', undefined, tokenT1);
+    assert.equal(resMovilT1.status, 200);
+    assert.equal(resMovilT1.json.length, 2);
+    assert.equal(resMovilT1.json[0].id_proyecto, idP2);
+});

@@ -80,7 +80,9 @@ export const estilos = StyleSheet.create({
   },
   superiorCatalogBarra: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    gap: 8,
     marginBottom: tema.spacing.md,
   },
   buscarEnvoltorio: {
@@ -191,7 +193,9 @@ export const estilos = StyleSheet.create({
   },
   filtrarEncabezadoFila: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    gap: 8,
     marginBottom: tema.spacing.xs,
   },
   cardexBuscarEntrada: {

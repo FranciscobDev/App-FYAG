@@ -276,7 +276,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     }
     const respuesta = await crearArticuloApi(productoACuerpoArticulo(product));
     if (!respuesta.ok) {
-      return { success: false, error: respuesta.mensaje };
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     const { articulo } = respuesta;
     setProducts((prev) => [
@@ -307,7 +307,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const respuesta = await actualizarArticuloApi(previo.id, cuerpo);
     if (!respuesta.ok) {
       setProducts((prev) => prev.map((p) => (p.sku === sku ? previo : p)));
-      return { success: false, error: respuesta.mensaje };
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     return { success: true };
   };

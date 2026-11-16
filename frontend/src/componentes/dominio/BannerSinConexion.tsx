@@ -5,13 +5,17 @@ import { tema } from "@/nucleo/tema";
 
 interface OfflineBannerProps {
   onToggle?: (isOffline: boolean) => void;
+  onlyWhenOffline?: boolean;
 }
 
 /**
  * Banner de Modo Sin Conexión para Técnico en Terreno (Contexto 3: Celular)
  * Permite simular y operar sin conexión cuando se está en faenas remotas.
  */
-export const BannerSinConexion: React.FC<OfflineBannerProps> = ({ onToggle }) => {
+export const BannerSinConexion: React.FC<OfflineBannerProps> = ({
+  onToggle,
+  onlyWhenOffline = false,
+}) => {
   const [esSinConexion, establecerEsSinConexion] = useState(false);
 
   const manejarAlternar = () => {
@@ -19,6 +23,10 @@ export const BannerSinConexion: React.FC<OfflineBannerProps> = ({ onToggle }) =>
     establecerEsSinConexion(siguiente);
     if (onToggle) onToggle(siguiente);
   };
+
+  if (onlyWhenOffline && !esSinConexion) {
+    return null;
+  }
 
   return (
     <TouchableOpacity
