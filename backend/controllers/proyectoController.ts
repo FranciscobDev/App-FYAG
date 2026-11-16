@@ -55,10 +55,10 @@ export const obtenerProyectos = async (req: Request, res: Response): Promise<voi
                  FROM proyecto p
                  JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
                  WHERE pt.id_usuario = $1
-                 ORDER BY p.id_proyecto ASC`,
+                 ORDER BY p.fecha_fin ASC NULLS LAST, p.id_proyecto ASC`,
                 [payload?.id]
             )
-            : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
+            : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY fecha_fin ASC NULLS LAST, id_proyecto ASC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error al obtener proyectos:', error);
@@ -339,8 +339,10 @@ export const asignarTecnico = async (
             return;
         }
 
+        // Insertar en asignaciones_proyecto garantizando unicidad activa y conservando historial
         await pool.query(
-            'INSERT INTO proyecto_tecnico (id_proyecto, id_usuario) VALUES ($1, $2)',
+            `INSERT INTO asignaciones_proyecto (proyecto_id, tecnico_id, fecha_asignacion, activo)
+             VALUES ($1, $2, CURRENT_TIMESTAMP, TRUE)`,
             [id, id_usuario]
         );
         res.status(201).json({ mensaje: 'Técnico asignado al proyecto' });
@@ -362,12 +364,15 @@ export const asignarTecnico = async (
     }
 };
 
-// Quitar un técnico de un proyecto
+// Quitar un técnico de un proyecto (desasignar conservando historial)
 export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string }>, res: Response): Promise<void> => {
     const { id, idUsuario } = req.params;
     try {
         const result = await pool.query(
-            'DELETE FROM proyecto_tecnico WHERE id_proyecto = $1 AND id_usuario = $2 RETURNING *',
+            `UPDATE asignaciones_proyecto
+             SET activo = FALSE, fecha_desasignacion = CURRENT_TIMESTAMP
+             WHERE proyecto_id = $1 AND tecnico_id = $2 AND activo = TRUE
+             RETURNING *`,
             [id, idUsuario]
         );
 

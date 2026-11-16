@@ -826,7 +826,7 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
       {/* ========================================================================= */}
       {activoSubPestana === "sobrante" && (
         <View style={{ flex: 1 }}>
-          <PantallaDevoluciones />
+          <PantallaDevoluciones showHeader={false} />
         </View>
       )}
     </View>
@@ -840,21 +840,23 @@ const estilos = StyleSheet.create({
   },
   subPestanaBarra: {
     flexDirection: "row",
-    backgroundColor: "#1c1917", // Dark Titanium Bar
-    padding: 4,
+    backgroundColor: "#292524",
+    padding: 3,
     marginHorizontal: tema.spacing.md,
     marginTop: tema.spacing.sm,
-    borderRadius: tema.radius.md,
-    flexWrap: "wrap",
-    gap: 8,
+    marginBottom: tema.spacing.xs,
+    borderRadius: tema.radius.full,
+    borderWidth: 1,
+    borderColor: "#44403c",
   },
   subPestanaElemento: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
-    borderRadius: tema.radius.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: tema.radius.full,
   },
   subPestanaElementoActivo: {
     backgroundColor: tema.colors.primary,
@@ -879,7 +881,7 @@ const estilos = StyleSheet.create({
   },
   cuerpoContenido: {
     padding: tema.spacing.md,
-    paddingBottom: 40,
+    paddingBottom: 110,
   },
   campoEtiqueta: {
     fontSize: tema.fontSize.xs,

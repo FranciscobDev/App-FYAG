@@ -98,44 +98,45 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
       {activoPestana === "catalogo" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <View style={estilos.superiorCatalogBarra}>
-            <View style={estilos.buscarEnvoltorio}>
-              <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={estilos.buscarIcono} />
-              <TextInput
-                value={buscarQuery}
-                onChangeText={establecerBuscarQuery}
-                placeholder="Buscar por SKU o nombre..."
-                placeholderTextColor={tema.colors.textLight}
-                style={estilos.buscarEntrada}
-              />
-              {Boolean(buscarQuery) && (
-                <Pressable onPress={() => establecerBuscarQuery("")} hitSlop={6}>
-                  <Ionicons name="close-circle" size={16} color={tema.colors.textMuted} />
-                </Pressable>
-              )}
+            <View style={{ flex: 1, minWidth: 220, flexDirection: "row", alignItems: "center" }}>
+              <View style={estilos.buscarEnvoltorio}>
+                <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={estilos.buscarIcono} />
+                <TextInput
+                  value={buscarQuery}
+                  onChangeText={establecerBuscarQuery}
+                  placeholder="Buscar por SKU o nombre..."
+                  placeholderTextColor={tema.colors.textLight}
+                  style={estilos.buscarEntrada}
+                />
+                {Boolean(buscarQuery) && (
+                  <Pressable onPress={() => establecerBuscarQuery("")} hitSlop={6}>
+                    <Ionicons name="close-circle" size={16} color={tema.colors.textMuted} />
+                  </Pressable>
+                )}
+              </View>
+
+              <TouchableOpacity
+                onPress={() =>
+                  abrirEscaner("Escanear SKU para Buscar", (code: any) => {
+                    establecerBuscarQuery(code);
+                  })
+                }
+                style={estilos.escanearRapidoBoton}
+                accessibilityLabel="Escanear código de barras o QR"
+              >
+                <Ionicons name="barcode-outline" size={20} color={tema.colors.primary} />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              onPress={() =>
-                abrirEscaner("Escanear SKU para Buscar", (code: any) => {
-                  establecerBuscarQuery(code);
-                })
-              }
-              style={estilos.escanearRapidoBoton}
-              accessibilityLabel="Escanear código de barras o QR"
-            >
-              <Ionicons name="barcode-outline" size={20} color={tema.colors.primary} />
-            </TouchableOpacity>
-
-            {/* Botón «Nuevo insumo» SOLO Admin */}
+            {/* Botón «Nuevo insumo» y «Registro Rápido» SOLO Admin */}
             {rolActual === "admin" && (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <Boton
                   title="Nuevo insumo"
                   variant="primary"
                   size="sm"
                   icon="add-outline"
                   onPress={manejarAbrirNuevoProducto}
-                  style={{ marginLeft: 8 }}
                 />
                 {Boolean(manejarAbrirInsumoForm) && (
                   <Boton
@@ -144,7 +145,6 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     size="sm"
                     icon="document-text-outline"
                     onPress={manejarAbrirInsumoForm}
-                    style={{ marginLeft: 8 }}
                   />
                 )}
               </View>
@@ -301,7 +301,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <View style={estilos.filtrarSeccion}>
             <View style={estilos.filtrarEncabezadoFila}>
-              <View style={{ flex: 1, marginRight: 8 }}>
+              <View style={{ flex: 1, minWidth: 200, marginRight: 8 }}>
                 <TextInput
                   value={kardexFiltrarSku}
                   onChangeText={establecerKardexFiltrarSku}

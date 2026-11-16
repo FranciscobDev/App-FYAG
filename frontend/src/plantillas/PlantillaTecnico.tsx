@@ -94,10 +94,12 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <VistaMaterialesTecnico
             isOffline={esSinConexion}
             initialProjectId={seleccionadoProyectoForPestana?.id}
-            onNavigateTab={(tab) => {
+            onNavigateTab={(tab, subTab) => {
               if (tab === "registrar") {
-                establecerRegisterInicialSubPestana("sobrante");
+                establecerRegisterInicialSubPestana(subTab || "sobrante");
                 establecerActivoPestana("registrar");
+              } else if (tab === "proyectos") {
+                establecerActivoPestana("proyectos");
               }
             }}
           />
@@ -174,6 +176,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
       {/* 2. OFFLINE BANNER FIJO SUPERIOR (FAENAS REMOTAS SIN SEÑAL)                */}
       {/* ========================================================================= */}
       <BannerSinConexion
+        onlyWhenOffline
         onToggle={(offline) => {
           establecerEsSinConexion(offline);
           if (offline) {
