@@ -12,10 +12,21 @@ const fechaFmt = new Intl.DateTimeFormat("es-CL", {
 
 export const formatearCLP = (value: number) => clp.format(value || 0);
 export const formatearNumero = (value: number) => numero.format(value || 0);
+/** Convierte "YYYY-MM-DD" a fecha local (evita el desfase UTC de new Date). */
+export const parsearFechaLocal = (valor: string | Date | null | undefined): Date => {
+  if (!valor) return new Date(NaN);
+  if (valor instanceof Date) return valor;
+  const coincide = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor);
+  if (coincide) {
+    return new Date(Number(coincide[1]), Number(coincide[2]) - 1, Number(coincide[3]));
+  }
+  return new Date(valor);
+};
+
 export const formatearFecha = (value: Date | string) => {
   if (!value) return "-";
   try {
-    return fechaFmt.format(new Date(value));
+    return fechaFmt.format(parsearFechaLocal(value));
   } catch {
     return String(value);
   }

@@ -1,12 +1,12 @@
 // proyectosApi.ts
 import { encabezadosAuth, obtenerBaseUrlApi } from "@/nucleo/sesion";
+import type { Proyecto as ProyectoUI } from "@/nucleo/tipos";
 
 const obtenerRuta = () => `${obtenerBaseUrlApi()}/proyectos`;
 
-// Valores tomados del controlador (valores por defecto).
-// Completa con los valores exactos del ENUM de la BD.
+// Valores exactos de los ENUM de la BD (estructura_db.md)
 export const TIPOS_PROYECTO = ["Instalacion", "Mantencion"] as const;
-export const ESTADOS_PROYECTO = ["Planificado", "En curso", "Pausado", "Finalizado"] as const;
+export const ESTADOS_PROYECTO = ["Planificado", "En Proceso", "Pausado", "Completado", "Cancelado"] as const;
 
 export type TipoProyecto = (typeof TIPOS_PROYECTO)[number];
 export type EstadoProyecto = (typeof ESTADOS_PROYECTO)[number];
@@ -79,7 +79,6 @@ export const eliminarProyecto = (id: number) =>
     method: "DELETE",
   });
 
-
 export interface Tecnico {
   id_usuario: number;
   nombre: string;
@@ -101,3 +100,39 @@ export const quitarTecnico = (idProyecto: number, idUsuario: number) =>
   peticion<{ mensaje: string }>(`${obtenerRuta()}/${idProyecto}/tecnicos/${idUsuario}`, {
     method: "DELETE",
   });
+
+// ---------------------------------------------------------------------------
+// Mapeo de la fila de la BD al tipo Proyecto que usa la UI
+// ---------------------------------------------------------------------------
+
+// Estado de la BD (estado_proyecto_enum) -> estado que usa la UI
+const mapearEstado = (estado: EstadoProyecto): ProyectoUI["status"] => {
+  const mapa: Record<EstadoProyecto, string> = {
+    Planificado: "planificado",
+    "En Proceso": "activo",
+    Pausado: "pausado",
+    Completado: "cerrado",
+    Cancelado: "cerrado",
+  };
+  return mapa[estado] as ProyectoUI["status"];
+};
+
+// Convierte una fila de la tabla `proyecto` al tipo que usa la UI
+export const proyectoDesdeApi = (p: Proyecto): ProyectoUI => ({
+  id: String(p.id_proyecto),
+  code: `PRY-${p.id_proyecto}`,
+  name: p.nombre_proyecto,
+  kind: p.tipo_proyecto as ProyectoUI["kind"],
+  status: mapearEstado(p.estado_proyecto),
+  client: p.cliente ?? "",
+  address: p.direccion ?? "",
+  progress: Number(p.porcentaje_avance ?? 0),
+  technicianRuts: [], // el backend ya filtra por técnico autenticado
+  budgetMaterials: Number(p.presupuesto_inicial ?? 0),
+  budgetHours: Number(p.presupuesto_horas ?? 0),
+  saleValue: Number(p.valor_venta ?? 0),
+  budget: Number(p.presupuesto_inicial ?? 0),
+  costReal: 0,
+  startDate: p.fecha_inicio ?? "",
+  deadline: p.fecha_fin ?? "",
+});

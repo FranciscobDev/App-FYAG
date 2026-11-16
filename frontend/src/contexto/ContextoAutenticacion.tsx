@@ -1,7 +1,17 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Rol, Usuario } from "@/nucleo/tipos";
-import { establecerToken } from "@/nucleo/sesion";
+import {
+  encabezadosAuth,
+  establecerToken,
+  fijarBaseUrlApi,
+  obtenerBaseUrlApi,
+} from "@/nucleo/sesion";
 import { UsuarioApi, loginApi } from "@/modulos/autenticacion/authApi";
+
+// CAMBIO: claves donde se guarda la sesión entre recargas
+const CLAVE_TOKEN = "fyag_token";
+const CLAVE_BASE_API = "fyag_base_api";
 
 // Normaliza el nombre del rol desde la BD (sin tildes ni sensibilidad a mayúsculas)
 const resolverRolDesdeBd = (nombreRol?: string | null, idRol?: number | null): Rol | null => {
@@ -45,6 +55,8 @@ interface Sesion {
 
 interface TipoContextoAutenticacion {
   haySesion: boolean;
+  // CAMBIO: true mientras se restaura la sesión guardada al abrir la app
+  cargandoSesion: boolean;
   usuario: Usuario;
   rolActual: Rol;
   idUsuario: number | null;
@@ -57,12 +69,13 @@ interface TipoContextoAutenticacion {
 
 const ContextoAutenticacion = createContext<TipoContextoAutenticacion>({
   haySesion: false,
+  cargandoSesion: true,
   usuario: USUARIO_VACIO,
   rolActual: "technician",
   idUsuario: null,
   iniciarSesion: async () => "Sin proveedor de autenticación",
-  cerrarSesion: () => {},
-  establecerRol: () => {},
+  cerrarSesion: () => { },
+  establecerRol: () => { },
 });
 
 const construirSesion = (u: UsuarioApi): Sesion | null => {
@@ -87,6 +100,59 @@ const construirSesion = (u: UsuarioApi): Sesion | null => {
 
 export const ProveedorAutenticacion: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [sesion, establecerSesion] = useState<Sesion | null>(null);
+  // CAMBIO: evita mostrar el login mientras se revisa la sesión guardada
+  const [cargandoSesion, establecerCargandoSesion] = useState(true);
+
+  // Borra la sesión guardada en el dispositivo
+  const olvidarSesionGuardada = async () => {
+    establecerToken(null);
+    await AsyncStorage.multiRemove([CLAVE_TOKEN, CLAVE_BASE_API]);
+  };
+
+  // CAMBIO: al abrir la app (o recargar la página), valida el token guardado con el backend
+  useEffect(() => {
+    let cancelado = false;
+
+    const restaurar = async () => {
+      try {
+        const token = await AsyncStorage.getItem(CLAVE_TOKEN);
+        if (!token) return;
+
+        const baseGuardada = await AsyncStorage.getItem(CLAVE_BASE_API);
+        if (baseGuardada) fijarBaseUrlApi(baseGuardada);
+        establecerToken(token);
+
+        const res = await fetch(`${obtenerBaseUrlApi()}/auth/sesion`, {
+          headers: { "Content-Type": "application/json", ...encabezadosAuth() },
+        });
+
+        // Token vencido, revocado o cuenta deshabilitada: se pide iniciar sesión
+        if (!res.ok) {
+          await olvidarSesionGuardada();
+          return;
+        }
+
+        const json = (await res.json()) as { usuario: UsuarioApi };
+        const restaurada = construirSesion(json.usuario);
+        if (!restaurada) {
+          await olvidarSesionGuardada();
+          return;
+        }
+
+        if (!cancelado) establecerSesion(restaurada);
+      } catch {
+        // Sin conexión: no hay sesión en esta carga, pero el token guardado se conserva
+        establecerToken(null);
+      } finally {
+        if (!cancelado) establecerCargandoSesion(false);
+      }
+    };
+
+    restaurar();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   // Devuelve null si entró, o el mensaje de error si falló
   const iniciarSesion = async (correo: string, contrasena: string): Promise<string | null> => {
@@ -101,6 +167,9 @@ export const ProveedorAutenticacion: React.FC<{ children: React.ReactNode }> = (
     }
 
     establecerToken(res.data.token);
+    // CAMBIO: guarda token y base de la API para restaurarlos tras recargar
+    await AsyncStorage.setItem(CLAVE_TOKEN, res.data.token);
+    await AsyncStorage.setItem(CLAVE_BASE_API, obtenerBaseUrlApi());
     establecerSesion(nueva);
     return null;
   };
@@ -108,18 +177,21 @@ export const ProveedorAutenticacion: React.FC<{ children: React.ReactNode }> = (
   const cerrarSesion = () => {
     establecerToken(null);
     establecerSesion(null);
+    // CAMBIO: al cerrar sesión, también se borra lo guardado
+    void AsyncStorage.multiRemove([CLAVE_TOKEN, CLAVE_BASE_API]);
   };
 
   return (
     <ContextoAutenticacion.Provider
       value={{
         haySesion: sesion !== null,
+        cargandoSesion,
         usuario: sesion?.usuario ?? USUARIO_VACIO,
         rolActual: sesion?.rol ?? "technician",
         idUsuario: sesion?.idUsuario ?? null,
         iniciarSesion,
         cerrarSesion,
-        establecerRol: () => {},
+        establecerRol: () => { },
       }}
     >
       {children}
