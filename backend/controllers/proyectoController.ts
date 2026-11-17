@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
-import { normalizarRol } from '../middleware/authMiddleware';
+import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
 
 export interface Proyecto {
     id_proyecto: number;
@@ -115,18 +115,70 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
     try {
         let presupuestoFinal = Number(presupuesto_inicial) || 0;
         let clienteNombreFinal = cliente || null;
+        let idClienteValido: number | null = null;
 
-        if (id_cliente && !clienteNombreFinal) {
+        // 1. Validar y resolver id_cliente de forma segura
+        if (id_cliente) {
             try {
-                const cliRes = await pool.query<{ razon_social: string }>(
-                    'SELECT razon_social FROM cliente WHERE id_cliente = $1',
+                const cliRes = await pool.query<{ id_cliente: number; razon_social: string }>(
+                    'SELECT id_cliente, razon_social FROM cliente WHERE id_cliente = $1',
                     [id_cliente]
                 );
-                if (cliRes.rows[0]) {
-                    clienteNombreFinal = cliRes.rows[0].razon_social;
+                if (cliRes.rows.length > 0) {
+                    idClienteValido = cliRes.rows[0].id_cliente;
+                    if (!clienteNombreFinal) {
+                        clienteNombreFinal = cliRes.rows[0].razon_social;
+                    }
+                }
+            } catch (errCli) {
+                console.warn('Advertencia al verificar id_cliente:', errCli);
+            }
+        }
+
+        // Si no se vinculó por id_cliente pero viene nombre de cliente, buscar coincidencia por razón social
+        if (!idClienteValido && clienteNombreFinal) {
+            try {
+                const cliByName = await pool.query<{ id_cliente: number }>(
+                    'SELECT id_cliente FROM cliente WHERE LOWER(razon_social) = LOWER($1) LIMIT 1',
+                    [clienteNombreFinal.trim()]
+                );
+                if (cliByName.rows.length > 0) {
+                    idClienteValido = cliByName.rows[0].id_cliente;
                 }
             } catch {
-                // Ignorar si no se encuentra
+                // Silencioso
+            }
+        }
+
+        // 2. Validar y resolver id_usuario de forma segura (previene error de clave foránea)
+        let idUsuarioValido: number | null = null;
+        const idUsuarioCandidato = id_usuario ?? obtenerIdEjecutor(req);
+
+        if (idUsuarioCandidato) {
+            try {
+                const userRes = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE id_usuario = $1 LIMIT 1',
+                    [idUsuarioCandidato]
+                );
+                if (userRes.rows.length > 0) {
+                    idUsuarioValido = userRes.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
+
+        // Si no se encontró usuario válido, asignar primer administrador o usuario activo existente
+        if (!idUsuarioValido) {
+            try {
+                const primerAdmin = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE activo = true ORDER BY id_rol ASC, id_usuario ASC LIMIT 1'
+                );
+                if (primerAdmin.rows.length > 0) {
+                    idUsuarioValido = primerAdmin.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
             }
         }
 
@@ -157,7 +209,7 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             nombre_proyecto,
             tipo_proyecto || 'Instalacion',
             clienteNombreFinal,
-            id_cliente || null,
+            idClienteValido,
             direccion || null,
             fecha_inicio || null,
             fecha_fin || null,
@@ -166,7 +218,7 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             valor_venta || 0,
             porcentaje_avance || 0,
             estado_proyecto || 'Planificado',
-            id_usuario || null
+            idUsuarioValido
         ];
 
         const result = await pool.query<Proyecto>(query, values);
@@ -201,13 +253,25 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             proyecto: proyectoCreado
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '22P02') {
-            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
-            return;
+        if (esErrorPg(error)) {
+            if (error.code === '22P02') {
+                res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+                return;
+            }
+            if (error.code === '23503') {
+                const constraint = (error.constraint || '').toLowerCase();
+                const detail = (error.detail || '').toLowerCase();
+                if (constraint.includes('cliente') || detail.includes('cliente')) {
+                    res.status(400).json({ mensaje: 'El cliente seleccionado no es válido en el sistema' });
+                    return;
+                }
+                if (constraint.includes('usuario') || detail.includes('usuario')) {
+                    res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+                    return;
+                }
+                res.status(400).json({ mensaje: 'Error de integridad referencial: un dato vinculado no existe' });
+                return;
+            }
         }
         console.error('Error al crear proyecto:', error);
         res.status(500).json({ error: 'Error al crear el proyecto' });
@@ -223,17 +287,50 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
     } = req.body;
 
     try {
+        let idClienteValido: number | null = null;
+        if (id_cliente) {
+            try {
+                const cliRes = await pool.query<{ id_cliente: number }>(
+                    'SELECT id_cliente FROM cliente WHERE id_cliente = $1',
+                    [id_cliente]
+                );
+                if (cliRes.rows.length > 0) {
+                    idClienteValido = cliRes.rows[0].id_cliente;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
+
+        let idUsuarioValido: number | null = null;
+        if (id_usuario) {
+            try {
+                const userRes = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE id_usuario = $1',
+                    [id_usuario]
+                );
+                if (userRes.rows.length > 0) {
+                    idUsuarioValido = userRes.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
+
         const query = `
       UPDATE proyecto
-      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3, id_cliente = COALESCE($4, id_cliente), direccion = $5,
+      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3,
+          id_cliente = CASE WHEN $4::int IS NOT NULL THEN $4::int ELSE id_cliente END,
+          direccion = $5,
           fecha_inicio = $6, fecha_fin = $7, presupuesto_inicial = $8, presupuesto_horas = $9, valor_venta = $10,
-          porcentaje_avance = $11, estado_proyecto = $12, id_usuario = $13
+          porcentaje_avance = $11, estado_proyecto = $12,
+          id_usuario = COALESCE($13, id_usuario)
       WHERE id_proyecto = $14
       RETURNING *;
     `;
         const values = [
-            nombre_proyecto, tipo_proyecto, cliente, id_cliente ?? null, direccion, fecha_inicio,
-            fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario, id
+            nombre_proyecto, tipo_proyecto, cliente, idClienteValido, direccion, fecha_inicio,
+            fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, idUsuarioValido, id
         ];
 
         const result = await pool.query<Proyecto>(query, values);
@@ -248,13 +345,25 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
             proyecto: result.rows[0]
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '22P02') {
-            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
-            return;
+        if (esErrorPg(error)) {
+            if (error.code === '22P02') {
+                res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+                return;
+            }
+            if (error.code === '23503') {
+                const constraint = (error.constraint || '').toLowerCase();
+                const detail = (error.detail || '').toLowerCase();
+                if (constraint.includes('cliente') || detail.includes('cliente')) {
+                    res.status(400).json({ mensaje: 'El cliente seleccionado no es válido en el sistema' });
+                    return;
+                }
+                if (constraint.includes('usuario') || detail.includes('usuario')) {
+                    res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+                    return;
+                }
+                res.status(400).json({ mensaje: 'Error de integridad referencial: un dato vinculado no existe' });
+                return;
+            }
         }
         console.error('Error al actualizar proyecto:', error);
         res.status(500).json({ error: 'Error al actualizar el proyecto' });

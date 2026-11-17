@@ -38,11 +38,8 @@ import { listarKits } from "./kitsApi";
 import { ModalGestionKits } from "./ModalGestionKits";
 import {
   ClienteProyecto,
-  PlanMantencionCliente,
   listarClientes,
-  listarPlanesMantencion,
 } from "./clientesApi";
-import { ModalGestionClientesSeguimiento } from "./ModalGestionClientesSeguimiento";
 import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
@@ -87,9 +84,7 @@ const obtenerEstiloEstado = (estado: string) => {
 };
 
 export const PantallaProyectos: React.FC = () => {
-  const { usuario } = usarAutenticacion();
-  const idUsuario: number | null =
-    (usuario as unknown as { id_usuario?: number })?.id_usuario ?? null;
+  const { usuario, idUsuario } = usarAutenticacion();
 
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
@@ -108,15 +103,10 @@ export const PantallaProyectos: React.FC = () => {
   const [errorFormulario, establecerErrorFormulario] = useState("");
   const [guardando, establecerGuardando] = useState(false);
 
-  // Kits predeterminados y Clientes / Planes de Mantención
+  // Kits predeterminados y Clientes
   const [kits, establecerKits] = useState<KitProyecto[]>([]);
   const [clientesLista, establecerClientesLista] = useState<ClienteProyecto[]>([]);
-  const [planesMantencion, establecerPlanesMantencion] = useState<PlanMantencionCliente[]>([]);
   const [modalKitsVisible, establecerModalKitsVisible] = useState(false);
-  const [modalClientesVisible, establecerModalClientesVisible] = useState(false);
-  const [pestanaInicialClientes, establecerPestanaInicialClientes] = useState<
-    "clientes" | "seguimiento"
-  >("clientes");
   const [panelAsignacionVisible, establecerPanelAsignacionVisible] = useState(false);
 
   const [aviso, establecerAviso] = useState<string | null>(null);
@@ -127,11 +117,10 @@ export const PantallaProyectos: React.FC = () => {
 
   const cargar = useCallback(async () => {
     establecerCargando(true);
-    const [resProy, resKits, resCli, resPlanes] = await Promise.all([
+    const [resProy, resKits, resCli] = await Promise.all([
       listarProyectos(),
       listarKits(),
       listarClientes(),
-      listarPlanesMantencion(),
     ]);
     if (resProy.ok && resProy.data) {
       establecerProyectos(resProy.data);
@@ -144,9 +133,6 @@ export const PantallaProyectos: React.FC = () => {
     }
     if (resCli.ok && resCli.data) {
       establecerClientesLista(resCli.data);
-    }
-    if (resPlanes.ok && resPlanes.data) {
-      establecerPlanesMantencion(resPlanes.data);
     }
     establecerCargando(false);
   }, []);
@@ -181,16 +167,6 @@ export const PantallaProyectos: React.FC = () => {
       ...prev,
       presupuesto_inicial: kit.costo_total ?? 0,
       id_kit_proyecto: kit.id_kit_proyecto,
-    }));
-    establecerModalVisible(true);
-  };
-
-  const manejarClienteSeleccionadoDesdeCRM = (cli: ClienteProyecto) => {
-    establecerFormulario((prev) => ({
-      ...prev,
-      id_cliente: cli.id_cliente,
-      cliente: cli.razon_social,
-      direccion: cli.direccion || prev.direccion,
     }));
     establecerModalVisible(true);
   };
@@ -304,10 +280,6 @@ export const PantallaProyectos: React.FC = () => {
         kits={kits}
         clientes={clientesLista}
         onAbrirGestionKits={() => establecerModalKitsVisible(true)}
-        onAbrirGestionClientes={() => {
-          establecerPestanaInicialClientes("clientes");
-          establecerModalClientesVisible(true);
-        }}
         error={errorFormulario}
         guardando={guardando}
         onCambiar={actualizarCampo}
@@ -319,16 +291,6 @@ export const PantallaProyectos: React.FC = () => {
         onClose={() => establecerModalKitsVisible(false)}
         onKitSeleccionadoParaProyecto={manejarKitSeleccionadoDesdeGestion}
         onKitsActualizados={cargar}
-      />
-      <ModalGestionClientesSeguimiento
-        visible={modalClientesVisible}
-        initialTab={pestanaInicialClientes}
-        proyectos={proyectos}
-        kits={kits}
-        onClose={() => establecerModalClientesVisible(false)}
-        onSeleccionarClienteParaProyecto={manejarClienteSeleccionadoDesdeCRM}
-        onDatosActualizados={cargar}
-        onAviso={mostrarAviso}
       />
     </>
   );
@@ -574,53 +536,6 @@ export const PantallaProyectos: React.FC = () => {
                     )}
                   </TouchableOpacity>
                 </View>
-
-                {/* Fila adicional: Directorio de Clientes y Planes de Mantención (3, 6, 10, 12m) */}
-                <View style={[styles.herramientasRapidasFila, { marginBottom: 0 }]}>
-                  <TouchableOpacity
-                    style={styles.botonHerramientaSecundario}
-                    onPress={() => {
-                      establecerPestanaInicialClientes("clientes");
-                      establecerModalClientesVisible(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconoHerramientaCirculo}>
-                      <Ionicons name="business-outline" size={15} color={tema.colors.primary} />
-                    </View>
-                    <Text numberOfLines={1} style={styles.botonHerramientaTexto}>
-                      Clientes
-                    </Text>
-                    {clientesLista.length > 0 && (
-                      <View style={styles.badgeContadorKits}>
-                        <Text style={styles.badgeContadorKitsTexto}>{clientesLista.length}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.botonHerramientaSecundario}
-                    onPress={() => {
-                      establecerPestanaInicialClientes("seguimiento");
-                      establecerModalClientesVisible(true);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.iconoHerramientaCirculo}>
-                      <Ionicons name="calendar-outline" size={15} color={tema.colors.primary} />
-                    </View>
-                    <Text numberOfLines={1} style={styles.botonHerramientaTexto}>
-                      Mantenciones (3/6/10m)
-                    </Text>
-                    {planesMantencion.length > 0 && (
-                      <View style={styles.badgeContadorKits}>
-                        <Text style={styles.badgeContadorKitsTexto}>
-                          {planesMantencion.length}
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
               </View>
             </View>
           </View>
@@ -821,7 +736,6 @@ type ModalProps = {
   kits: KitProyecto[];
   clientes: ClienteProyecto[];
   onAbrirGestionKits: () => void;
-  onAbrirGestionClientes: () => void;
   error: string;
   guardando: boolean;
   onCambiar: <K extends keyof FormularioProyecto>(c: K, v: FormularioProyecto[K]) => void;
@@ -836,14 +750,49 @@ const ModalFormulario: React.FC<ModalProps> = ({
   kits,
   clientes,
   onAbrirGestionKits,
-  onAbrirGestionClientes,
   error,
   guardando,
   onCambiar,
   onCancelar,
   onGuardar,
 }) => {
+  const [desplegableClientesAbierto, setDesplegableClientesAbierto] = useState(false);
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+
+  useEffect(() => {
+    if (!visible) {
+      setDesplegableClientesAbierto(false);
+      setBusquedaCliente("");
+    }
+  }, [visible]);
+
   const kitSeleccionado = kits.find((k) => k.id_kit_proyecto === formulario.id_kit_proyecto);
+
+  const clienteSeleccionado = useMemo(() => {
+    if (formulario.id_cliente) {
+      return clientes.find((c) => c.id_cliente === formulario.id_cliente) ?? null;
+    }
+    if (formulario.cliente) {
+      return (
+        clientes.find(
+          (c) => c.razon_social.toLowerCase() === (formulario.cliente ?? "").toLowerCase()
+        ) ?? null
+      );
+    }
+    return null;
+  }, [clientes, formulario.id_cliente, formulario.cliente]);
+
+  const clientesDisponibles = useMemo(() => {
+    const activos = clientes.filter((c) => c.activo !== false);
+    if (!busquedaCliente.trim()) return activos;
+    const q = busquedaCliente.toLowerCase().trim();
+    return activos.filter(
+      (c) =>
+        c.razon_social.toLowerCase().includes(q) ||
+        c.rut_cliente.toLowerCase().includes(q) ||
+        (c.giro ?? "").toLowerCase().includes(q)
+    );
+  }, [clientes, busquedaCliente]);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancelar}>
@@ -900,78 +849,154 @@ const ModalFormulario: React.FC<ModalProps> = ({
                 />
               </View>
 
-              {/* Selector Rápido de Clientes Registrados */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <Text style={[styles.campoEtiqueta, { marginBottom: 0 }]}>
-                  Asignar Cliente Registrado (Autocompleta datos y dirección):
+              {/* Selector de Cliente con Listado y Selección Directa */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.campoEtiqueta}>
+                  Seleccionar Cliente Registrado (Autocompleta datos y dirección):
                 </Text>
-                <TouchableOpacity onPress={onAbrirGestionClientes}>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: "700",
-                      color: tema.colors.primary,
-                    }}
-                  >
-                    + Nuevo / Gestionar Clientes
-                  </Text>
-                </TouchableOpacity>
-              </View>
 
-              {clientes.filter((c) => c.activo).length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={{ marginBottom: 10 }}
-                  contentContainerStyle={{ gap: 6 }}
+                {/* Gatillador del Selector / Dropdown */}
+                <TouchableOpacity
+                  style={[
+                    styles.selectorClienteTrigger,
+                    desplegableClientesAbierto && styles.selectorClienteTriggerAbierto,
+                    clienteSeleccionado && styles.selectorClienteTriggerSeleccionado,
+                  ]}
+                  onPress={() => setDesplegableClientesAbierto((prev) => !prev)}
+                  activeOpacity={0.8}
                 >
-                  {clientes
-                    .filter((c) => c.activo)
-                    .map((c) => {
-                      const seleccionadoCli =
-                        formulario.id_cliente === c.id_cliente ||
-                        (formulario.cliente ?? "").toLowerCase() ===
-                          c.razon_social.toLowerCase();
-                      return (
-                        <TouchableOpacity
-                          key={c.id_cliente}
-                          style={[
-                            styles.chip,
-                            seleccionadoCli && styles.chipActivo,
-                          ]}
-                          onPress={() => {
-                            onCambiar("id_cliente", c.id_cliente);
-                            onCambiar("cliente", c.razon_social);
-                            if (c.direccion && !formulario.direccion) {
-                              onCambiar("direccion", c.direccion);
-                            }
-                          }}
-                        >
-                          <Ionicons
-                            name="business-outline"
-                            size={12}
-                            color={seleccionadoCli ? "#ffffff" : tema.colors.primary}
-                          />
-                          <Text
-                            style={[
-                              styles.chipTexto,
-                              seleccionadoCli && styles.chipTextoActivo,
-                            ]}
-                          >
-                            {c.razon_social} ({c.rut_cliente})
-                          </Text>
+                  <View style={styles.selectorClienteIconoCaja}>
+                    <Ionicons
+                      name={clienteSeleccionado ? "business" : "business-outline"}
+                      size={18}
+                      color={clienteSeleccionado ? tema.colors.primary : "#9ca3af"}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    {clienteSeleccionado ? (
+                      <>
+                        <Text style={styles.selectorClienteNombre} numberOfLines={1}>
+                          {clienteSeleccionado.razon_social}
+                        </Text>
+                        <Text style={styles.selectorClienteSub} numberOfLines={1}>
+                          RUT: {clienteSeleccionado.rut_cliente}
+                          {clienteSeleccionado.giro ? ` • ${clienteSeleccionado.giro}` : ""}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.selectorClientePlaceholder}>
+                        Toca aquí para seleccionar un cliente del listado...
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {clienteSeleccionado && (
+                      <TouchableOpacity
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          onCambiar("id_cliente", null);
+                          onCambiar("cliente", "");
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.selectorClienteBtnLimpiar}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                    <Ionicons
+                      name={desplegableClientesAbierto ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color="#6b7280"
+                    />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Listado Desplegable con opciones */}
+                {desplegableClientesAbierto && (
+                  <View style={styles.selectorClienteListaContenedor}>
+                    {/* Buscador interno si hay varios clientes */}
+                    <View style={styles.selectorClienteBuscadorCaja}>
+                      <Ionicons name="search-outline" size={15} color="#9ca3af" />
+                      <TextInput
+                        style={styles.selectorClienteBuscadorInput}
+                        placeholder="Buscar cliente por nombre o RUT..."
+                        placeholderTextColor="#9ca3af"
+                        value={busquedaCliente}
+                        onChangeText={setBusquedaCliente}
+                      />
+                      {busquedaCliente.length > 0 && (
+                        <TouchableOpacity onPress={() => setBusquedaCliente("")}>
+                          <Ionicons name="close-circle" size={15} color="#9ca3af" />
                         </TouchableOpacity>
-                      );
-                    })}
-                </ScrollView>
-              )}
+                      )}
+                    </View>
+
+                    <ScrollView
+                      style={{ maxHeight: 220 }}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {clientesDisponibles.length === 0 ? (
+                        <View style={{ padding: 14, alignItems: "center" }}>
+                          <Text style={{ fontSize: 12, color: "#9ca3af" }}>
+                            No se encontraron clientes activos
+                          </Text>
+                        </View>
+                      ) : (
+                        clientesDisponibles.map((cli) => {
+                          const esSeleccionado =
+                            clienteSeleccionado?.id_cliente === cli.id_cliente;
+                          return (
+                            <TouchableOpacity
+                              key={cli.id_cliente}
+                              style={[
+                                styles.selectorClienteFilaItem,
+                                esSeleccionado && styles.selectorClienteFilaItemActivo,
+                              ]}
+                              onPress={() => {
+                                onCambiar("id_cliente", cli.id_cliente);
+                                onCambiar("cliente", cli.razon_social);
+                                if (cli.direccion) {
+                                  onCambiar("direccion", cli.direccion);
+                                }
+                                setDesplegableClientesAbierto(false);
+                              }}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text
+                                  style={[
+                                    styles.selectorClienteItemTitulo,
+                                    esSeleccionado && styles.selectorClienteItemTituloActivo,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {cli.razon_social}
+                                </Text>
+                                <Text style={styles.selectorClienteItemSub} numberOfLines={1}>
+                                  RUT: {cli.rut_cliente}
+                                  {cli.direccion ? ` • 📍 ${cli.direccion}` : ""}
+                                </Text>
+                              </View>
+
+                              {esSeleccionado ? (
+                                <Ionicons
+                                  name="checkmark-circle"
+                                  size={18}
+                                  color={tema.colors.primary}
+                                />
+                              ) : (
+                                <Ionicons name="chevron-forward" size={15} color="#d1d5db" />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
 
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
@@ -2144,5 +2169,110 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     color: "#ffffff",
+  },
+  selectorClienteTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 48,
+    marginBottom: 4,
+  },
+  selectorClienteTriggerAbierto: {
+    borderColor: tema.colors.primary,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: "#fffdfa",
+  },
+  selectorClienteTriggerSeleccionado: {
+    backgroundColor: "#fffdfa",
+    borderColor: "#fde68a",
+  },
+  selectorClienteIconoCaja: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#f9fafb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  selectorClienteNombre: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  selectorClienteSub: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  selectorClientePlaceholder: {
+    fontSize: 13,
+    color: "#9ca3af",
+  },
+  selectorClienteBtnLimpiar: {
+    padding: 3,
+  },
+  selectorClienteListaContenedor: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: tema.colors.primary,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    overflow: "hidden",
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  selectorClienteBuscadorCaja: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    paddingHorizontal: 10,
+    height: 38,
+    gap: 6,
+  },
+  selectorClienteBuscadorInput: {
+    flex: 1,
+    fontSize: 12,
+    color: "#111827",
+    paddingVertical: 0,
+  },
+  selectorClienteFilaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  selectorClienteFilaItemActivo: {
+    backgroundColor: "#fffbeb",
+  },
+  selectorClienteItemTitulo: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  selectorClienteItemTituloActivo: {
+    color: tema.colors.primaryDark,
+    fontWeight: "700",
+  },
+  selectorClienteItemSub: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 2,
   },
 });

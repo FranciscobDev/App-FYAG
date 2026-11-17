@@ -66,3 +66,25 @@ CREATE TABLE IF NOT EXISTS seguimiento_contacto_cliente (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seguimiento_contacto_plan ON seguimiento_contacto_cliente (id_plan);
+
+-- 5. Clientes semilla de muestra (idempotente)
+INSERT INTO cliente (id_cliente, rut_cliente, razon_social, giro, telefono, correo_contacto, direccion, nombre_contacto, banco, tipo_cuenta, numero_cuenta, calificacion_promedio, activo)
+VALUES
+(1, '76.123.456-7', 'Inmobiliaria Pacífico SpA', 'Desarrollo y Construcción Inmobiliaria', '+56 2 2456 7890', 'contacto@inmobpacificospa.cl', 'Av. Providencia 2450, Providencia, Santiago', 'Rodrigo Sepúlveda', 'Banco de Chile', 'Cuenta Corriente', '00-12345678-01', 4.90, true),
+(2, '77.890.123-4', 'Clínica Andes S.A.', 'Servicios de Salud e Infraestructura Médica', '+56 2 2987 6543', 'operaciones@clinicaandes.cl', 'Av. Las Condes 9100, Las Condes, Santiago', 'Marcela Gajardo', 'Banco Santander', 'Cuenta Corriente', '00-76543210-09', 4.80, true),
+(3, '78.456.789-1', 'Logística & Bodegaje Renca SpA', 'Almacenamiento y Centros de Distribución', '+56 9 8765 4321', 'mantencion@logisticarenca.cl', 'Camino Lo Boza 120, Renca, Santiago', 'Gonzalo Valenzuela', 'Banco BCI', 'Cuenta Corriente', '00-98765432-05', 4.50, true),
+(4, '79.234.567-8', 'Constructora Maipo Limitada', 'Obras Civiles y Estructuras', '+56 2 2345 6789', 'obras@constructoramaipo.cl', 'Av. San Bernardo 540, San Bernardo, Santiago', 'Felipe Morales', 'Banco Estado', 'Cuenta Corriente', '00-45612378-02', 4.70, true)
+ON CONFLICT (rut_cliente) DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('cliente', 'id_cliente'), COALESCE((SELECT MAX(id_cliente) FROM cliente), 1));
+
+-- 6. Planes de Mantención iniciales de muestra (idempotente)
+INSERT INTO plan_mantencion_cliente (id_plan, id_cliente, titulo_plan, modalidad, frecuencia_meses, fecha_proxima_mantencion, costo_pactado, estado_plan, notas_plan)
+VALUES
+(1, 1, 'Mantención Trimestral Tableros y Alimentadores', 'POR_KIT', 3, CURRENT_DATE + INTERVAL '1 day', 680000, 'Activo', 'Revisión termográfica e insumos por Kit Eléctrico cada 3 meses'),
+(2, 2, 'Mantención Semestral Climatización y Bombas', 'POR_CONTRATO', 6, CURRENT_DATE + INTERVAL '12 days', 1250000, 'Activo', 'Inspección de grupos electrógenos y chillers según contrato anual'),
+(3, 3, 'Mantención 10 Meses Red Contra Incendios', 'MIXTO', 10, CURRENT_DATE - INTERVAL '6 days', 890000, 'Activo', 'Mantenimiento mayor programado cada 10 meses según norma NFPA')
+ON CONFLICT (id_plan) DO NOTHING;
+
+SELECT setval(pg_get_serial_sequence('plan_mantencion_cliente', 'id_plan'), COALESCE((SELECT MAX(id_plan) FROM plan_mantencion_cliente), 1));
+
