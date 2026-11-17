@@ -17,6 +17,7 @@ export interface Proyecto {
   nombre_proyecto: string;
   tipo_proyecto: TipoProyecto;
   cliente: string | null;
+  id_cliente?: number | null;
   direccion: string | null;
   fecha_inicio: string | null;
   fecha_fin: string | null;
@@ -31,6 +32,7 @@ export interface Proyecto {
 /** Datos que se envían al crear o actualizar. */
 export type FormularioProyecto = Omit<Proyecto, "id_proyecto"> & {
   id_kit_proyecto?: number | null;
+  id_cliente?: number | null;
 };
 
 export interface Resultado<T> {

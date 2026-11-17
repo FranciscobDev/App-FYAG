@@ -61,7 +61,26 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
       {activoPestana === "solicitudes" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <View style={estilos.solicitudSuperiorBarra}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.solicitudPestanasScroll}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.textSecondary }}>
+                Filtrar por estado ({filtradoSolicitudes.length})
+              </Text>
+              <Boton
+                title="+ Nueva Solicitud"
+                variant="primary"
+                size="sm"
+                icon="add-outline"
+                onPress={manejarAbrirNuevoSolicitud}
+                style={{ minHeight: 38 }}
+              />
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ width: "100%" }}
+              contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+            >
               {(["todas", "pendiente", "aprobada", "rechazada"] as const).map((t: any) => (
                 <TouchableOpacity
                   key={t}
@@ -74,14 +93,6 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <Boton
-              title="Nueva Solicitud"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={manejarAbrirNuevoSolicitud}
-            />
           </View>
 
           {filtradoSolicitudes.length === 0 ? (
@@ -175,8 +186,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           establecerRechazarMotivo("");
                         }}
                         style={[
-                          { borderColor: tema.colors.danger },
-                          esMovil && { flexGrow: 1 },
+                          { borderColor: tema.colors.danger, minHeight: 42 },
+                          esMovil && { flex: 1 },
                         ]}
                         textStyle={{ color: tema.colors.danger }}
                       />
@@ -189,7 +200,7 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           aprobarSolicitudMaterial(req.id, usuario.name);
                           mostrarAviso(`Solicitud ${req.code} aprobada. Comprobante generado.`);
                         }}
-                        style={esMovil ? { flexGrow: 1 } : undefined}
+                        style={[{ minHeight: 42 }, esMovil && { flex: 1.6 }]}
                       />
                     </>
                   )}

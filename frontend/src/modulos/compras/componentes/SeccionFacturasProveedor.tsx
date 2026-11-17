@@ -181,7 +181,7 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                     </Pressable>
                   </View>
 
-                  <View style={estilos.descuentoFila}>
+                  <View style={[estilos.descuentoFila, { marginBottom: 6 }]}>
                     <View style={estilos.discColumna}>
                       <Text style={estilos.discEtiqueta}>Cantidad</Text>
                       <TextInput
@@ -193,12 +193,12 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                           );
                         }}
                         keyboardType="numeric"
-                        style={estilos.discEntrada}
+                        style={[estilos.discEntrada, { height: 38 }]}
                       />
                     </View>
 
-                    <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>P. Bruto ($)</Text>
+                    <View style={[estilos.discColumna, { marginRight: 0 }]}>
+                      <Text style={estilos.discEtiqueta}>Precio Bruto ($ CLP)</Text>
                       <TextInput
                         value={String(item.grossPrice)}
                         onChangeText={(v: any) => {
@@ -208,12 +208,14 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                           );
                         }}
                         keyboardType="numeric"
-                        style={estilos.discEntrada}
+                        style={[estilos.discEntrada, { height: 38 }]}
                       />
                     </View>
+                  </View>
 
+                  <View style={estilos.descuentoFila}>
                     <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>Desc 1 %</Text>
+                      <Text style={estilos.discEtiqueta}>Desc. 1 (%)</Text>
                       <TextInput
                         value={String(item.disc1)}
                         onChangeText={(v: any) => {
@@ -223,12 +225,12 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                           );
                         }}
                         keyboardType="numeric"
-                        style={estilos.discEntrada}
+                        style={[estilos.discEntrada, { height: 36 }]}
                       />
                     </View>
 
                     <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>Desc 2 %</Text>
+                      <Text style={estilos.discEtiqueta}>Desc. 2 (%)</Text>
                       <TextInput
                         value={String(item.disc2)}
                         onChangeText={(v: any) => {
@@ -238,12 +240,12 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                           );
                         }}
                         keyboardType="numeric"
-                        style={estilos.discEntrada}
+                        style={[estilos.discEntrada, { height: 36 }]}
                       />
                     </View>
 
-                    <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>Desc 3 %</Text>
+                    <View style={[estilos.discColumna, { marginRight: 0 }]}>
+                      <Text style={estilos.discEtiqueta}>Desc. 3 (%)</Text>
                       <TextInput
                         value={String(item.disc3)}
                         onChangeText={(v: any) => {
@@ -253,7 +255,7 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                           );
                         }}
                         keyboardType="numeric"
-                        style={estilos.discEntrada}
+                        style={[estilos.discEntrada, { height: 36 }]}
                       />
                     </View>
                   </View>

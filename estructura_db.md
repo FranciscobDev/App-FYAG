@@ -635,5 +635,44 @@ CREATE TABLE herramienta_en_proyecto (
     CONSTRAINT fk_herram_proj_herramienta FOREIGN KEY (id_herramienta) REFERENCES herramienta(id_herramienta),
     CONSTRAINT fk_herram_proj_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
+
+-- ==========================================
+-- 7. SEGUIMIENTO POST-VENTA Y PLANES DE MANTENCIÓN PERIÓDICA
+-- ==========================================
+
+-- Tabla: Plan_mantencion_cliente (Programación cada N meses: 3, 6, 10, 12m, por Kit o por Contrato)
+CREATE TABLE plan_mantencion_cliente (
+    id_plan SERIAL PRIMARY KEY,
+    id_cliente INT NOT NULL REFERENCES cliente(id_cliente) ON DELETE CASCADE,
+    id_proyecto_origen INT REFERENCES proyecto(id_proyecto) ON DELETE SET NULL,
+    titulo_plan VARCHAR(200) NOT NULL,
+    modalidad VARCHAR(30) NOT NULL DEFAULT 'POR_KIT', -- 'POR_KIT' | 'POR_CONTRATO' | 'MIXTO'
+    id_kit_proyecto INT REFERENCES kit_proyecto(id_kit_proyecto) ON DELETE SET NULL,
+    codigo_contrato VARCHAR(80),
+    frecuencia_meses INT NOT NULL DEFAULT 3 CHECK (frecuencia_meses BETWEEN 1 AND 60),
+    fecha_ultima_mantencion DATE,
+    fecha_proxima_mantencion DATE NOT NULL,
+    costo_pactado INT NOT NULL DEFAULT 0,
+    estado_plan VARCHAR(30) NOT NULL DEFAULT 'Activo', -- 'Activo' | 'Pausado' | 'Finalizado'
+    notas_plan VARCHAR(300),
+    fecha_creacion TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_plan_mantencion_cliente ON plan_mantencion_cliente (id_cliente);
+CREATE INDEX idx_plan_mantencion_proxima ON plan_mantencion_cliente (fecha_proxima_mantencion);
+
+-- Tabla: Seguimiento_contacto_cliente (Bitácora de contacto al cliente y generación de faenas)
+CREATE TABLE seguimiento_contacto_cliente (
+    id_seguimiento SERIAL PRIMARY KEY,
+    id_plan INT NOT NULL REFERENCES plan_mantencion_cliente(id_plan) ON DELETE CASCADE,
+    fecha_contacto TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    canal_contacto VARCHAR(30) NOT NULL DEFAULT 'Teléfono', -- 'Teléfono' | 'Correo' | 'WhatsApp' | 'Visita'
+    resultado_contacto VARCHAR(40) NOT NULL DEFAULT 'Cliente Contactado',
+    id_proyecto_generado INT REFERENCES proyecto(id_proyecto) ON DELETE SET NULL,
+    observaciones VARCHAR(300),
+    id_usuario_ejecutor INT REFERENCES usuario(id_usuario) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_seguimiento_contacto_plan ON seguimiento_contacto_cliente (id_plan);
 ```
 

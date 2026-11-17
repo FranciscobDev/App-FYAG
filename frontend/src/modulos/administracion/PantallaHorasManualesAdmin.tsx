@@ -192,446 +192,446 @@ export const PantallaHorasManualesAdmin: React.FC = () => {
 
         <ScrollView style={estilos.scrollContenedor} contentContainerStyle={estilos.scrollCuerpo}>
 
-        {/* 1. SELECCIÓN DE TÉCNICO */}
-        <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
-          <View style={estilos.seccionEncabezadoFila}>
-            <Ionicons name="person-circle-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.seccionTitulo}>1. Seleccionar Técnico Operativo</Text>
-          </View>
-          <Text style={estilos.seccionSub}>
-            Selecciona el técnico en terreno al cual se le imputará la jornada laboral no cronometrada:
-          </Text>
-
-          <View style={estilos.tecnicoListaGrilla}>
-            {tecnicos.map((t) => {
-              const esSel = t.rut === seleccionadoTecnicoRut;
-              return (
-                <TouchableOpacity
-                  key={t.rut}
-                  onPress={() => establecerSeleccionadoTecnicoRut(t.rut)}
-                  style={[estilos.tecnicoChip, esSel && estilos.tecnicoChipActivo]}
-                  activeOpacity={0.7}
-                >
-                  <View style={[estilos.tecnicoAvatar, esSel && estilos.tecnicoAvatarActivo]}>
-                    <Ionicons
-                      name="construct"
-                      size={16}
-                      color={esSel ? "#ffffff" : tema.colors.primaryDark}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={[estilos.tecnicoNombreTexto, esSel && estilos.tecnicoNombreTextoActivo]}>
-                      {t.name}
-                    </Text>
-                    <Text style={[estilos.tecnicoMetaTexto, esSel && estilos.tecnicoMetaTextoActivo]}>
-                      {t.specialty} • RUT: {t.rut}
-                    </Text>
-                  </View>
-                  {esSel && (
-                    <Ionicons name="checkmark-circle" size={18} color="#f59e0b" style={{ marginLeft: 4 }} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </Tarjeta>
-
-        {/* 2. SELECCIÓN DE PROYECTO / FAENA */}
-        <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
-          <View style={estilos.seccionEncabezadoFila}>
-            <Ionicons name="business-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.seccionTitulo}>2. Seleccionar Proyecto o Faena</Text>
-          </View>
-          <Text style={estilos.seccionSub}>
-            Obra activa donde el técnico ejecutó sus labores:
-          </Text>
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.horizontalScroll}>
-            {activoProyectos.map((p) => {
-              const esSel = p.id === seleccionadoProyectoId;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  onPress={() => establecerSeleccionadoProyectoId(p.id)}
-                  style={[estilos.proyectoChip, esSel && estilos.proyectoChipActivo]}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[estilos.proyectoChipCodigo, esSel && estilos.proyectoChipCodigoActivo]}>
-                    {p.code}
-                  </Text>
-                  <Text style={[estilos.proyectoChipNombre, esSel && estilos.proyectoChipNombreActivo]} numberOfLines={1}>
-                    {p.name}
-                  </Text>
-                  <Text style={[estilos.proyectoChipTarifa, esSel && estilos.proyectoChipTarifaActivo]}>
-                    Tarifa: {formatearCLP(p.hourlyRate || 18500)} / HH
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </Tarjeta>
-
-        {/* 3. FECHA Y HORAS HOMBRE */}
-        <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
-          <View style={estilos.seccionEncabezadoFila}>
-            <Ionicons name="time-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.seccionTitulo}>3. Fecha de Trabajo y Jornada (HH)</Text>
-          </View>
-
-          {/* Selector de Fecha */}
-          <Text style={estilos.subCampoEtiqueta}>Fecha de ejecución en faena:</Text>
-          <View style={estilos.rapidoFechaFila}>
-            {[
-              { label: "Hoy", val: obtenerPresetFecha(0), icon: "calendar" as const },
-              { label: "Ayer", val: obtenerPresetFecha(1), icon: "time-outline" as const },
-              { label: "Anteayer", val: obtenerPresetFecha(2), icon: "play-back-outline" as const },
-            ].map((d) => {
-              const esSel = trabajoFecha === d.val;
-              return (
-                <TouchableOpacity
-                  key={d.val}
-                  onPress={() => establecerTrabajoFecha(d.val)}
-                  style={[estilos.rapidoFechaChip, esSel && estilos.rapidoFechaChipActivo]}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name={d.icon}
-                    size={13}
-                    color={esSel ? "#ffffff" : tema.colors.primaryDark}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={[estilos.rapidoFechaTexto, esSel && estilos.rapidoFechaTextoActivo]}>
-                    {d.label} ({d.val.slice(5)})
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <CampoTexto
-            label="Fecha (YYYY-MM-DD)"
-            value={trabajoFecha}
-            onChangeText={establecerTrabajoFecha}
-            placeholder="YYYY-MM-DD"
-            icon="calendar-outline"
-            containerStyle={{ marginBottom: 14 }}
-          />
-
-          {/* Stepper Táctil Bloques 0.5 h */}
-          <View style={estilos.horasEncabezadoFila}>
-            <Text style={estilos.subCampoEtiqueta}>Horas Hombre a Imputar (Bloques 0,5 h):</Text>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Insignia
-                label={`Acumulado día: ${tecnicoDailyHoras.toFixed(1)} / 24h`}
-                tone={tecnicoDailyHoras + horasValor > 24 ? "danger" : "warn"}
-                size="sm"
-              />
+          {/* 1. SELECCIÓN DE TÉCNICO */}
+          <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
+            <View style={estilos.seccionEncabezadoFila}>
+              <Ionicons name="person-circle-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.seccionTitulo}>1. Seleccionar Técnico Operativo</Text>
             </View>
-          </View>
-
-          <View style={estilos.horasAjustadorFila}>
-            <TouchableOpacity
-              onPress={() => manejarPasoHoras(-0.5)}
-              style={estilos.horaPasoBoton}
-              activeOpacity={0.7}
-              accessibilityLabel="Restar media hora"
-            >
-              <Ionicons name="remove" size={18} color={tema.colors.primaryDark} />
-              <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-            </TouchableOpacity>
-
-            <View style={estilos.horasDisplay}>
-              <Text style={estilos.horasDisplayValor}>{horasValor.toFixed(1)}</Text>
-              <Text style={estilos.horasDisplayUnidad}>HH</Text>
-            </View>
-
-            <TouchableOpacity
-              onPress={() => manejarPasoHoras(+0.5)}
-              style={estilos.horaPasoBoton}
-              activeOpacity={0.7}
-              accessibilityLabel="Sumar media hora"
-            >
-              <Ionicons name="add" size={18} color={tema.colors.primaryDark} />
-              <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Chips Rápidos Horas */}
-          <View style={estilos.rapidoHorasFila}>
-            {[4.0, 4.5, 8.0, 8.5, 9.0, 9.5].map((val) => (
-              <TouchableOpacity
-                key={val}
-                onPress={() => establecerHorasValor(val)}
-                style={[estilos.rapidoHoraChip, horasValor === val && estilos.rapidoHoraChipActivo]}
-                activeOpacity={0.7}
-              >
-                <Text style={[estilos.rapidoHoraTexto, horasValor === val && estilos.rapidoHoraTextoActivo]}>
-                  {val} h
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Tarjeta>
-
-        {/* 4. MOTIVO Y DESCRIPCIÓN */}
-        <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
-          <View style={estilos.seccionEncabezadoFila}>
-            <Ionicons name="document-text-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.seccionTitulo}>4. Motivo y Justificación de Carga Extraordinaria</Text>
-          </View>
-          <Text style={estilos.seccionSub}>
-            Indica la razón por la cual no se registró automáticamente mediante cronómetro en faena:
-          </Text>
-
-          <View style={estilos.motivoWrap}>
-            {MOTIVO_PRESETS.map((r) => {
-              const esSel = seleccionadoMotivo === r;
-              return (
-                <TouchableOpacity
-                  key={r}
-                  onPress={() => establecerSeleccionadoMotivo(r)}
-                  style={[estilos.motivoChip, esSel && estilos.motivoChipActivo]}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[estilos.motivoChipTexto, esSel && estilos.motivoChipTextoActivo]}>
-                    {r}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <CampoTexto
-            label="Descripción detallada de las labores ejecutadas"
-            value={trabajoDescripcion}
-            onChangeText={establecerTrabajoDescripcion}
-            placeholder="Ej: Montaje de cuadros eléctricos, cableado y canalización en piso 3..."
-            containerStyle={{ marginTop: 10 }}
-          />
-        </Tarjeta>
-
-        {/* 5. PREVISUALIZACIÓN FINANCIERA H27 / H28 */}
-        <Tarjeta variant="default" style={estilos.financialVistaPreviaTarjeta}>
-          <View style={estilos.manualCostoIconoCaja}>
-            <Ionicons name="calculator-outline" size={22} color={tema.colors.primaryDark} />
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={estilos.financialFormula}>
-              {horasValor.toFixed(1)} HH × {formatearCLP(porHoraTarifa)} / HH
+            <Text style={estilos.seccionSub}>
+              Selecciona el técnico en terreno al cual se le imputará la jornada laboral no cronometrada:
             </Text>
-            <Text style={estilos.financialTotal}>
-              Costo M.O. Real a Imputar: {formatearCLP(costoManoObra)} CLP
-            </Text>
-            <Text style={estilos.financialFootnote}>
-              Alimenta directamente el Costo Real H27 y la Liquidación Financiera H28 de {seleccionadoProyecto?.code}.
-            </Text>
-          </View>
-        </Tarjeta>
 
-        {Boolean(formularioError) && (
-          <View style={estilos.errorBanner}>
-            <Ionicons name="alert-circle" size={18} color={tema.colors.danger} style={{ marginRight: 6 }} />
-            <Text style={estilos.errorBannerTexto}>{formularioError}</Text>
-          </View>
-        )}
-
-        {Boolean(formularioExito) && (
-          <View style={estilos.exitoBanner}>
-            <Ionicons name="checkmark-circle" size={18} color={tema.colors.ok} style={{ marginRight: 6 }} />
-            <Text style={estilos.exitoBannerTexto}>{formularioExito}</Text>
-          </View>
-        )}
-
-        <Boton
-          title={`Imputar ${horasValor} HH a ${seleccionadoTecnico?.name || "Técnico"}`}
-          variant="primary"
-          icon="checkmark-done"
-          onPress={manejarEnviarManualHoras}
-          style={{ height: 50, marginTop: 4, marginBottom: 24 }}
-        />
-
-        {/* ========================================================================= */}
-        {/* HISTORIAL GLOBAL DE JORNADAS (CON FILTROS Y EDICIÓN ADMIN)               */}
-        {/* ========================================================================= */}
-        <Tarjeta variant="elevated" style={estilos.historialTarjetaSeccion}>
-          <View style={estilos.seccionEncabezadoFila}>
-            <Ionicons name="receipt-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.seccionTitulo}>Historial Global de Jornadas Registradas</Text>
-          </View>
-          <Text style={estilos.seccionSub}>
-            Auditoría de horas registradas por cronómetro automático o por carga manual administrativa:
-          </Text>
-
-          {/* Filtros */}
-          <View style={estilos.filtrarFila}>
-            <View style={{ flex: 1, marginRight: 6 }}>
-              <Text style={estilos.filtrarEtiqueta}>Filtrar por Técnico:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
-                <TouchableOpacity
-                  onPress={() => establecerFiltrarTecnico("todos")}
-                  style={[estilos.filtrarChip, filtrarTecnico === "todos" && estilos.filtrarChipActivo]}
-                >
-                  <Text style={[estilos.filtrarChipTexto, filtrarTecnico === "todos" && estilos.filtrarChipTextoActivo]}>
-                    Todos ({horasTecnico.length})
-                  </Text>
-                </TouchableOpacity>
-                {tecnicos.map((t) => {
-                  const esSel = filtrarTecnico === t.rut;
-                  return (
-                    <TouchableOpacity
-                      key={t.rut}
-                      onPress={() => establecerFiltrarTecnico(t.rut)}
-                      style={[estilos.filtrarChip, esSel && estilos.filtrarChipActivo]}
-                    >
-                      <Text style={[estilos.filtrarChipTexto, esSel && estilos.filtrarChipTextoActivo]}>
+            <View style={estilos.tecnicoListaGrilla}>
+              {tecnicos.map((t) => {
+                const esSel = t.rut === seleccionadoTecnicoRut;
+                return (
+                  <TouchableOpacity
+                    key={t.rut}
+                    onPress={() => establecerSeleccionadoTecnicoRut(t.rut)}
+                    style={[estilos.tecnicoChip, esSel && estilos.tecnicoChipActivo]}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[estilos.tecnicoAvatar, esSel && estilos.tecnicoAvatarActivo]}>
+                      <Ionicons
+                        name="construct"
+                        size={16}
+                        color={esSel ? "#ffffff" : tema.colors.primaryDark}
+                      />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={[estilos.tecnicoNombreTexto, esSel && estilos.tecnicoNombreTextoActivo]}>
                         {t.name}
                       </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+                      <Text style={[estilos.tecnicoMetaTexto, esSel && estilos.tecnicoMetaTextoActivo]}>
+                        {t.specialty} • RUT: {t.rut}
+                      </Text>
+                    </View>
+                    {esSel && (
+                      <Ionicons name="checkmark-circle" size={18} color="#f59e0b" style={{ marginLeft: 4 }} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          </View>
+          </Tarjeta>
 
-          {filtradoHistorial.length === 0 ? (
-            <EstadoVacio
-              icon="time-outline"
-              title="Sin registros de horas"
-              description="No hay jornadas registradas para los filtros seleccionados."
-              containerStyle={{ marginVertical: 20 }}
-            />
-          ) : (
-            filtradoHistorial.map((h) => {
-              const proyecto = proyectos.find((p) => p.id === h.projectId);
-              const tarifa = proyecto?.hourlyRate || 18500;
-              const costoReal = h.hours * tarifa;
-              const tecnicoNombre = h.technicianName || "Alejandro Ramírez";
-
-              return (
-                <View key={h.id} style={estilos.historialFilaTarjeta}>
-                  <View style={estilos.historialFilaSuperior}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={estilos.historialFilaTecnico}>{tecnicoNombre}</Text>
-                      <Text style={estilos.historialFilaProyecto}>
-                        {h.projectCode} • {h.projectName}
-                      </Text>
-                      <Text style={estilos.historialFilaFecha}>
-                        Fecha trabajada: {formatearFecha(h.date)} • Imputado: {formatearCLP(costoReal)}
-                      </Text>
-                      <Text style={estilos.historialFilaDescripcion}>{h.description}</Text>
-                    </View>
-
-                    <View style={{ alignItems: "flex-end" }}>
-                      <Insignia label={`${h.hours} HH`} tone="info" size="md" />
-                      <View style={{ marginTop: 4 }}>
-                        {h.registeredBy === "admin_manual" ? (
-                          <Insignia label="Manual" tone="warn" icon="shield-checkmark" size="sm" />
-                        ) : (
-                          <Insignia label="Cronómetro" tone="ok" icon="timer-outline" size="sm" />
-                        )}
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={estilos.historialFilaAcciones}>
-                    <Boton
-                      title="Editar (Permiso Admin)"
-                      variant="outline"
-                      size="sm"
-                      icon="create-outline"
-                      onPress={() => manejarAbrirEditarHora(h)}
-                      style={{ height: 36 }}
-                    />
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </Tarjeta>
-
-        {/* MODAL PARA EDITAR HORAS (ADMINISTRADOR) */}
-        <VistaModal
-          visible={Boolean(editandoHora)}
-          onClose={() => establecerEditandoHora(null)}
-          title="Ajuste Administrativo de Horas"
-          subtitle={editandoHora ? `${editandoHora.projectCode} • ${formatearFecha(editandoHora.date)}` : ""}
-        >
-          <View style={estilos.adminModalAviso}>
-            <Ionicons name="shield-checkmark" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
-            <Text style={estilos.adminModalAvisoTexto}>
-              Permiso de Administrador: Los cambios recalcularán automáticamente el Costo Real H27 y Rentabilidad H28 del proyecto.
+          {/* 2. SELECCIÓN DE PROYECTO / FAENA */}
+          <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
+            <View style={estilos.seccionEncabezadoFila}>
+              <Ionicons name="business-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.seccionTitulo}>2. Seleccionar Proyecto o Faena</Text>
+            </View>
+            <Text style={estilos.seccionSub}>
+              Obra activa donde el técnico ejecutó sus labores:
             </Text>
-          </View>
 
-          <Text style={estilos.subCampoEtiqueta}>Horas (Bloques de 0,5 h, máx 24):</Text>
-          <View style={estilos.horasAjustadorFila}>
-            <TouchableOpacity
-              onPress={() => establecerEditarHorasValor((p) => Math.max(0.5, Math.round((p - 0.5) * 2) / 2))}
-              style={estilos.horaPasoBoton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="remove" size={16} color={tema.colors.primaryDark} />
-              <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-            </TouchableOpacity>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.horizontalScroll}>
+              {activoProyectos.map((p) => {
+                const esSel = p.id === seleccionadoProyectoId;
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    onPress={() => establecerSeleccionadoProyectoId(p.id)}
+                    style={[estilos.proyectoChip, esSel && estilos.proyectoChipActivo]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[estilos.proyectoChipCodigo, esSel && estilos.proyectoChipCodigoActivo]}>
+                      {p.code}
+                    </Text>
+                    <Text style={[estilos.proyectoChipNombre, esSel && estilos.proyectoChipNombreActivo]} numberOfLines={1}>
+                      {p.name}
+                    </Text>
+                    <Text style={[estilos.proyectoChipTarifa, esSel && estilos.proyectoChipTarifaActivo]}>
+                      Tarifa: {formatearCLP(p.hourlyRate || 18500)} / HH
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Tarjeta>
 
-            <View style={estilos.horasDisplay}>
-              <Text style={estilos.horasDisplayValor}>{editarHorasValor.toFixed(1)}</Text>
-              <Text style={estilos.horasDisplayUnidad}>HH</Text>
+          {/* 3. FECHA Y HORAS HOMBRE */}
+          <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
+            <View style={estilos.seccionEncabezadoFila}>
+              <Ionicons name="time-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.seccionTitulo}>3. Fecha de Trabajo y Jornada (HH)</Text>
             </View>
 
-            <TouchableOpacity
-              onPress={() => establecerEditarHorasValor((p) => Math.min(24.0, Math.round((p + 0.5) * 2) / 2))}
-              style={estilos.horaPasoBoton}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="add" size={16} color={tema.colors.primaryDark} />
-              <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-            </TouchableOpacity>
-          </View>
+            {/* Selector de Fecha */}
+            <Text style={estilos.subCampoEtiqueta}>Fecha de ejecución en faena:</Text>
+            <View style={estilos.rapidoFechaFila}>
+              {[
+                { label: "Hoy", val: obtenerPresetFecha(0), icon: "calendar" as const },
+                { label: "Ayer", val: obtenerPresetFecha(1), icon: "time-outline" as const },
+                { label: "Anteayer", val: obtenerPresetFecha(2), icon: "play-back-outline" as const },
+              ].map((d) => {
+                const esSel = trabajoFecha === d.val;
+                return (
+                  <TouchableOpacity
+                    key={d.val}
+                    onPress={() => establecerTrabajoFecha(d.val)}
+                    style={[estilos.rapidoFechaChip, esSel && estilos.rapidoFechaChipActivo]}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={d.icon}
+                      size={13}
+                      color={esSel ? "#ffffff" : tema.colors.primaryDark}
+                      style={{ marginRight: 4 }}
+                    />
+                    <Text style={[estilos.rapidoFechaTexto, esSel && estilos.rapidoFechaTextoActivo]}>
+                      {d.label} ({d.val.slice(5)})
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-          <View style={estilos.rapidoHorasFila}>
-            {[1.0, 2.0, 4.0, 8.0, 10.0].map((h) => {
-              const esActivo = editarHorasValor === h;
-              return (
+            <CampoTexto
+              label="Fecha (YYYY-MM-DD)"
+              value={trabajoFecha}
+              onChangeText={establecerTrabajoFecha}
+              placeholder="YYYY-MM-DD"
+              icon="calendar-outline"
+              containerStyle={{ marginBottom: 14 }}
+            />
+
+            {/* Stepper Táctil Bloques 0.5 h */}
+            <View style={estilos.horasEncabezadoFila}>
+              <Text style={estilos.subCampoEtiqueta}>Horas Hombre a Imputar (Bloques 0,5 h):</Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Insignia
+                  label={`Acumulado día: ${tecnicoDailyHoras.toFixed(1)} / 24h`}
+                  tone={tecnicoDailyHoras + horasValor > 24 ? "danger" : "warn"}
+                  size="sm"
+                />
+              </View>
+            </View>
+
+            <View style={estilos.horasAjustadorFila}>
+              <TouchableOpacity
+                onPress={() => manejarPasoHoras(-0.5)}
+                style={estilos.horaPasoBoton}
+                activeOpacity={0.7}
+                accessibilityLabel="Restar media hora"
+              >
+                <Ionicons name="remove" size={18} color={tema.colors.primaryDark} />
+                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
+              </TouchableOpacity>
+
+              <View style={estilos.horasDisplay}>
+                <Text style={estilos.horasDisplayValor}>{horasValor.toFixed(1)}</Text>
+                <Text style={estilos.horasDisplayUnidad}>HH</Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => manejarPasoHoras(+0.5)}
+                style={estilos.horaPasoBoton}
+                activeOpacity={0.7}
+                accessibilityLabel="Sumar media hora"
+              >
+                <Ionicons name="add" size={18} color={tema.colors.primaryDark} />
+                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Chips Rápidos Horas */}
+            <View style={estilos.rapidoHorasFila}>
+              {[4.0, 4.5, 8.0, 8.5, 9.0, 9.5].map((val) => (
                 <TouchableOpacity
-                  key={`modal-h-${h}`}
-                  style={[estilos.rapidoHoraChip, esActivo && estilos.rapidoHoraChipActivo]}
-                  onPress={() => establecerEditarHorasValor(h)}
+                  key={val}
+                  onPress={() => establecerHorasValor(val)}
+                  style={[estilos.rapidoHoraChip, horasValor === val && estilos.rapidoHoraChipActivo]}
                   activeOpacity={0.7}
                 >
-                  <Text style={[estilos.rapidoHoraTexto, esActivo && estilos.rapidoHoraTextoActivo]}>
-                    {h} h
+                  <Text style={[estilos.rapidoHoraTexto, horasValor === val && estilos.rapidoHoraTextoActivo]}>
+                    {val} h
                   </Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
+              ))}
+            </View>
+          </Tarjeta>
 
-          <View style={{ marginTop: 10 }}>
+          {/* 4. MOTIVO Y DESCRIPCIÓN */}
+          <Tarjeta variant="elevated" style={estilos.seccionTarjeta}>
+            <View style={estilos.seccionEncabezadoFila}>
+              <Ionicons name="document-text-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.seccionTitulo}>4. Motivo y Justificación de Carga Extraordinaria</Text>
+            </View>
+            <Text style={estilos.seccionSub}>
+              Indica la razón por la cual no se registró automáticamente mediante cronómetro en faena:
+            </Text>
+
+            <View style={estilos.motivoWrap}>
+              {MOTIVO_PRESETS.map((r) => {
+                const esSel = seleccionadoMotivo === r;
+                return (
+                  <TouchableOpacity
+                    key={r}
+                    onPress={() => establecerSeleccionadoMotivo(r)}
+                    style={[estilos.motivoChip, esSel && estilos.motivoChipActivo]}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[estilos.motivoChipTexto, esSel && estilos.motivoChipTextoActivo]}>
+                      {r}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <CampoTexto
-              label="Motivo / Justificación del Ajuste"
-              value={editarDescripcion}
-              onChangeText={establecerEditarDescripcion}
+              label="Descripción detallada de las labores ejecutadas"
+              value={trabajoDescripcion}
+              onChangeText={establecerTrabajoDescripcion}
+              placeholder="Ej: Montaje de cuadros eléctricos, cableado y canalización en piso 3..."
+              containerStyle={{ marginTop: 10 }}
             />
-          </View>
+          </Tarjeta>
 
-          {Boolean(editarError) && <Text style={estilos.errorTexto}>{editarError}</Text>}
+          {/* 5. PREVISUALIZACIÓN FINANCIERA H27 / H28 */}
+          <Tarjeta variant="default" style={estilos.financialVistaPreviaTarjeta}>
+            <View style={estilos.manualCostoIconoCaja}>
+              <Ionicons name="calculator-outline" size={22} color={tema.colors.primaryDark} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={estilos.financialFormula}>
+                {horasValor.toFixed(1)} HH × {formatearCLP(porHoraTarifa)} / HH
+              </Text>
+              <Text style={estilos.financialTotal}>
+                Costo M.O. Real a Imputar: {formatearCLP(costoManoObra)} CLP
+              </Text>
+              <Text style={estilos.financialFootnote}>
+                Alimenta directamente el Costo Real H27 y la Liquidación Financiera H28 de {seleccionadoProyecto?.code}.
+              </Text>
+            </View>
+          </Tarjeta>
 
-          <View style={estilos.modalBotonesFila}>
-            <Boton
-              title="Cancelar"
-              variant="ghost"
-              onPress={() => establecerEditandoHora(null)}
-              style={{ marginRight: 8, flex: 1 }}
-            />
-            <Boton
-              title="Guardar Ajuste (H27/H28)"
-              variant="primary"
-              onPress={manejarConfirmarEditarHora}
-              style={{ flex: 2, height: 46 }}
-            />
-          </View>
-        </VistaModal>
+          {Boolean(formularioError) && (
+            <View style={estilos.errorBanner}>
+              <Ionicons name="alert-circle" size={18} color={tema.colors.danger} style={{ marginRight: 6 }} />
+              <Text style={estilos.errorBannerTexto}>{formularioError}</Text>
+            </View>
+          )}
+
+          {Boolean(formularioExito) && (
+            <View style={estilos.exitoBanner}>
+              <Ionicons name="checkmark-circle" size={18} color={tema.colors.ok} style={{ marginRight: 6 }} />
+              <Text style={estilos.exitoBannerTexto}>{formularioExito}</Text>
+            </View>
+          )}
+
+          <Boton
+            title={`Imputar ${horasValor} HH a ${seleccionadoTecnico?.name || "Técnico"}`}
+            variant="primary"
+            icon="checkmark-done"
+            onPress={manejarEnviarManualHoras}
+            style={{ height: 50, marginTop: 4, marginBottom: 24 }}
+          />
+
+          {/* ========================================================================= */}
+          {/* HISTORIAL GLOBAL DE JORNADAS (CON FILTROS Y EDICIÓN ADMIN)               */}
+          {/* ========================================================================= */}
+          <Tarjeta variant="elevated" style={estilos.historialTarjetaSeccion}>
+            <View style={estilos.seccionEncabezadoFila}>
+              <Ionicons name="receipt-outline" size={20} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.seccionTitulo}>Historial Global de Jornadas Registradas</Text>
+            </View>
+            <Text style={estilos.seccionSub}>
+              Auditoría de horas registradas por cronómetro automático o por carga manual administrativa:
+            </Text>
+
+            {/* Filtros */}
+            <View style={estilos.filtrarFila}>
+              <View style={{ flex: 1, marginRight: 6 }}>
+                <Text style={estilos.filtrarEtiqueta}>Filtrar por Técnico:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+                  <TouchableOpacity
+                    onPress={() => establecerFiltrarTecnico("todos")}
+                    style={[estilos.filtrarChip, filtrarTecnico === "todos" && estilos.filtrarChipActivo]}
+                  >
+                    <Text style={[estilos.filtrarChipTexto, filtrarTecnico === "todos" && estilos.filtrarChipTextoActivo]}>
+                      Todos ({horasTecnico.length})
+                    </Text>
+                  </TouchableOpacity>
+                  {tecnicos.map((t) => {
+                    const esSel = filtrarTecnico === t.rut;
+                    return (
+                      <TouchableOpacity
+                        key={t.rut}
+                        onPress={() => establecerFiltrarTecnico(t.rut)}
+                        style={[estilos.filtrarChip, esSel && estilos.filtrarChipActivo]}
+                      >
+                        <Text style={[estilos.filtrarChipTexto, esSel && estilos.filtrarChipTextoActivo]}>
+                          {t.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+
+            {filtradoHistorial.length === 0 ? (
+              <EstadoVacio
+                icon="time-outline"
+                title="Sin registros de horas"
+                description="No hay jornadas registradas para los filtros seleccionados."
+                containerStyle={{ marginVertical: 20 }}
+              />
+            ) : (
+              filtradoHistorial.map((h) => {
+                const proyecto = proyectos.find((p) => p.id === h.projectId);
+                const tarifa = proyecto?.hourlyRate || 18500;
+                const costoReal = h.hours * tarifa;
+                const tecnicoNombre = h.technicianName || "Alejandro Ramírez";
+
+                return (
+                  <View key={h.id} style={estilos.historialFilaTarjeta}>
+                    <View style={estilos.historialFilaSuperior}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <Text style={estilos.historialFilaTecnico}>{tecnicoNombre}</Text>
+                        <Text style={estilos.historialFilaProyecto}>
+                          {h.projectCode} • {h.projectName}
+                        </Text>
+                        <Text style={estilos.historialFilaFecha}>
+                          Fecha trabajada: {formatearFecha(h.date)} • Imputado: {formatearCLP(costoReal)}
+                        </Text>
+                        <Text style={estilos.historialFilaDescripcion}>{h.description}</Text>
+                      </View>
+
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Insignia label={`${h.hours} HH`} tone="info" size="md" />
+                        <View style={{ marginTop: 4 }}>
+                          {h.registeredBy === "admin_manual" ? (
+                            <Insignia label="Manual" tone="warn" icon="shield-checkmark" size="sm" />
+                          ) : (
+                            <Insignia label="Cronómetro" tone="ok" icon="timer-outline" size="sm" />
+                          )}
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={estilos.historialFilaAcciones}>
+                      <Boton
+                        title="Editar (Permiso Admin)"
+                        variant="outline"
+                        size="sm"
+                        icon="create-outline"
+                        onPress={() => manejarAbrirEditarHora(h)}
+                        style={{ height: 36 }}
+                      />
+                    </View>
+                  </View>
+                );
+              })
+            )}
+          </Tarjeta>
+
+          {/* MODAL PARA EDITAR HORAS (ADMINISTRADOR) */}
+          <VistaModal
+            visible={Boolean(editandoHora)}
+            onClose={() => establecerEditandoHora(null)}
+            title="Ajuste Administrativo de Horas"
+            subtitle={editandoHora ? `${editandoHora.projectCode} • ${formatearFecha(editandoHora.date)}` : ""}
+          >
+            <View style={estilos.adminModalAviso}>
+              <Ionicons name="shield-checkmark" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
+              <Text style={estilos.adminModalAvisoTexto}>
+                Permiso de Administrador: Los cambios recalcularán automáticamente el Costo Real H27 y Rentabilidad H28 del proyecto.
+              </Text>
+            </View>
+
+            <Text style={estilos.subCampoEtiqueta}>Horas (Bloques de 0,5 h, máx 24):</Text>
+            <View style={estilos.horasAjustadorFila}>
+              <TouchableOpacity
+                onPress={() => establecerEditarHorasValor((p) => Math.max(0.5, Math.round((p - 0.5) * 2) / 2))}
+                style={estilos.horaPasoBoton}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="remove" size={16} color={tema.colors.primaryDark} />
+                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
+              </TouchableOpacity>
+
+              <View style={estilos.horasDisplay}>
+                <Text style={estilos.horasDisplayValor}>{editarHorasValor.toFixed(1)}</Text>
+                <Text style={estilos.horasDisplayUnidad}>HH</Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => establecerEditarHorasValor((p) => Math.min(24.0, Math.round((p + 0.5) * 2) / 2))}
+                style={estilos.horaPasoBoton}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="add" size={16} color={tema.colors.primaryDark} />
+                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={estilos.rapidoHorasFila}>
+              {[1.0, 2.0, 4.0, 8.0, 10.0].map((h) => {
+                const esActivo = editarHorasValor === h;
+                return (
+                  <TouchableOpacity
+                    key={`modal-h-${h}`}
+                    style={[estilos.rapidoHoraChip, esActivo && estilos.rapidoHoraChipActivo]}
+                    onPress={() => establecerEditarHorasValor(h)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[estilos.rapidoHoraTexto, esActivo && estilos.rapidoHoraTextoActivo]}>
+                      {h} h
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ marginTop: 10 }}>
+              <CampoTexto
+                label="Motivo / Justificación del Ajuste"
+                value={editarDescripcion}
+                onChangeText={establecerEditarDescripcion}
+              />
+            </View>
+
+            {Boolean(editarError) && <Text style={estilos.errorTexto}>{editarError}</Text>}
+
+            <View style={estilos.modalBotonesFila}>
+              <Boton
+                title="Cancelar"
+                variant="ghost"
+                onPress={() => establecerEditandoHora(null)}
+                style={{ marginRight: 8, flex: 1 }}
+              />
+              <Boton
+                title="Guardar Ajuste (H27/H28)"
+                variant="primary"
+                onPress={manejarConfirmarEditarHora}
+                style={{ flex: 2, height: 46 }}
+              />
+            </View>
+          </VistaModal>
         </ScrollView>
       </View>
     </ContenedorEstadoPantalla>
@@ -670,9 +670,13 @@ const estilos = StyleSheet.create({
     marginBottom: 12,
   },
   tecnicoListaGrilla: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
   },
   tecnicoChip: {
+    flex: 1,
+    minWidth: "46%",
     flexDirection: "row",
     alignItems: "center",
     padding: 10,
@@ -680,7 +684,7 @@ const estilos = StyleSheet.create({
     backgroundColor: tema.colors.surfaceAlt,
     borderWidth: 1.5,
     borderColor: tema.colors.borderDark,
-    minHeight: 52,
+    minHeight: 54,
   },
   tecnicoChipActivo: {
     backgroundColor: "#1c1917",

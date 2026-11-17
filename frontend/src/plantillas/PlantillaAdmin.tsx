@@ -32,6 +32,7 @@ import { PanelAdmin } from "@/modulos/panel/PanelAdmin";
 import { PantallaInventario } from "@/modulos/inventario/PantallaInventario";
 import { PantallaCompras } from "@/modulos/compras/PantallaCompras";
 import { PantallaProyectos } from "@/modulos/proyectos/PantallaProyectos";
+import { PantallaClientes } from "@/modulos/proyectos/PantallaClientes";
 import { PantallaHerramientas } from "@/modulos/herramientas/PantallaHerramientas";
 import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevoluciones";
 import { PantallaAdministracion } from "@/modulos/administracion/PantallaAdministracion";
@@ -48,6 +49,7 @@ export type RutaAdmin =
   | "proveedores"
   | "compras"
   | "facturas"
+  | "clientes"
   | "proyectos"
   | "horas_tecnicos"
   | "herramientas"
@@ -176,8 +178,14 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
       ],
     },
     {
-      title: "PROYECTOS Y MANO DE OBRA",
+      title: "PROYECTOS Y CLIENTES",
       items: [
+        {
+          id: "clientes",
+          label: "Directorio de Clientes",
+          description: "Registro de clientes, asignación a obras y planes de mantención",
+          icon: "people-circle-outline",
+        },
         {
           id: "proyectos",
           label: "Proyectos y Obras",
@@ -538,6 +546,8 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
             subtitle="Validación contable con hasta 3 descuentos sucesivos y conciliación con OC"
           />
         );
+      case "clientes":
+        return <PantallaClientes />;
       case "proyectos":
         return <PantallaProyectos />;
       case "horas_tecnicos":

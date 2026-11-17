@@ -383,7 +383,26 @@ ON CONFLICT (id_detalle_solicitud) DO NOTHING;
 SELECT setval('detalle_solicitudes_id_detalle_solicitud_seq', (SELECT MAX(id_detalle_solicitud) FROM detalle_solicitudes));
 
 -- =============================================================================
--- 18. LOG DE ACCESOS Y AUDITORÍA INICIAL
+-- 18. PLANES DE MANTENCIÓN PERIÓDICA Y SEGUIMIENTO DE CLIENTES
+-- =============================================================================
+INSERT INTO plan_mantencion_cliente (id_plan, id_cliente, id_proyecto_origen, titulo_plan, modalidad, id_kit_proyecto, codigo_contrato, frecuencia_meses, fecha_ultima_mantencion, fecha_proxima_mantencion, costo_pactado, estado_plan, notas_plan) VALUES
+    (1, 1, 1, 'Mantención Trimestral Tableros y Alimentadores', 'POR_KIT',      1, NULL,           3,  '2026-08-15', '2026-11-15', 680000,  'Activo', 'Revisión termográfica e insumos por Kit Eléctrico cada 3 meses'),
+    (2, 2, 2, 'Mantención Climatización Pabellones Clínicos',   'MIXTO',        2, 'SLA-ANDES-26', 6,  '2026-06-01', '2026-12-01', 1250000, 'Activo', 'Contrato semestral con recarga R410A y cambio de filtros por Kit'),
+    (3, 3, 3, 'Inspección y Pruebas Red Contra Incendios',      'POR_CONTRATO', NULL, 'CTR-REN-10M', 10, '2026-02-10', '2026-12-10', 1890000, 'Activo', 'Mantenimiento mayor programado cada 10 meses según norma NFPA'),
+    (4, 4, 4, 'Mantención Anual Empalmes Condominio Maipo',     'POR_CONTRATO', NULL, 'CTR-MAI-12M', 12, '2025-11-20', '2026-11-20', 950000,  'Activo', 'Revisión anual de empalmes y subestación por contrato')
+ON CONFLICT (id_plan) DO NOTHING;
+
+SELECT setval('plan_mantencion_cliente_id_plan_seq', (SELECT MAX(id_plan) FROM plan_mantencion_cliente));
+
+INSERT INTO seguimiento_contacto_cliente (id_seguimiento, id_plan, canal_contacto, resultado_contacto, id_proyecto_generado, observaciones, id_usuario_ejecutor) VALUES
+    (1, 1, 'Teléfono', 'Cliente Contactado', NULL, 'Se conversó con Rodrigo Sepúlveda; solicita coordinar visita técnica para esta semana.', 1),
+    (2, 2, 'Correo',   'Visita Confirmada',  2,    'Marcela Gajardo confirmó ingreso de técnicos para mantención preventiva de climatización.', 1)
+ON CONFLICT (id_seguimiento) DO NOTHING;
+
+SELECT setval('seguimiento_contacto_cliente_id_seguimiento_seq', (SELECT MAX(id_seguimiento) FROM seguimiento_contacto_cliente));
+
+-- =============================================================================
+-- 19. LOG DE ACCESOS Y AUDITORÍA INICIAL
 -- =============================================================================
 INSERT INTO log_accesos (usuario, id_usuario, fecha, hora, ip, exito, resultado, fecha_hora) VALUES
     ('javier.munoz@fyag.cl',   1, CURRENT_DATE, '08:00:15', '192.168.1.100', TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '2 hours'),

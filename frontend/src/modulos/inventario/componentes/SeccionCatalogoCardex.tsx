@@ -98,7 +98,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
       {activoPestana === "catalogo" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <View style={estilos.superiorCatalogBarra}>
-            <View style={{ flex: 1, minWidth: 220, flexDirection: "row", alignItems: "center" }}>
+            <View style={{ flex: 1, minWidth: 260, flexDirection: "row", alignItems: "center" }}>
               <View style={estilos.buscarEnvoltorio}>
                 <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={estilos.buscarIcono} />
                 <TextInput
@@ -130,13 +130,14 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
 
             {/* Botón «Nuevo insumo» y «Registro Rápido» SOLO Admin */}
             {rolActual === "admin" && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexGrow: 1, minWidth: 260 }}>
                 <Boton
                   title="Nuevo insumo"
                   variant="primary"
                   size="sm"
                   icon="add-outline"
                   onPress={manejarAbrirNuevoProducto}
+                  style={{ flex: 1, minHeight: 40 }}
                 />
                 {Boolean(manejarAbrirInsumoForm) && (
                   <Boton
@@ -145,6 +146,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     size="sm"
                     icon="document-text-outline"
                     onPress={manejarAbrirInsumoForm}
+                    style={{ flex: 1, minHeight: 40 }}
                   />
                 )}
               </View>
@@ -168,129 +170,130 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
             filtradoProductos.map((p: any) => {
               const esLowExistencia = p.stock <= p.minStock;
               return (
-              <Tarjeta
-                key={p.sku}
-                variant={esLowExistencia ? "outlined" : "default"}
-                style={[
-                  estilos.productoTarjeta,
-                  esLowExistencia && estilos.lowExistenciaTarjeta,
-                  p.disabled && estilos.deshabilitadoTarjeta,
-                ]}
-              >
-                <View style={estilos.productoSuperiorFila}>
-                  <View style={estilos.skuInsigniaCaja}>
-                    <Text style={estilos.skuTitulo}>{p.sku}</Text>
-                    {p.isBulk && (
-                      <Insignia label="Granel" tone="info" size="sm" style={{ marginLeft: 6 }} />
-                    )}
-                    {p.disabled && (
-                      <Insignia label="Deshabilitado" tone="mute" size="sm" style={{ marginLeft: 6 }} />
-                    )}
-                  </View>
-                  <View style={estilos.existenciaEstadoIndicator}>
-                    <View
-                      style={[
-                        estilos.existenciaEstadoPunto,
-                        { backgroundColor: esLowExistencia ? tema.colors.danger : tema.colors.ok },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        estilos.existenciaEstadoNumero,
-                        { color: esLowExistencia ? tema.colors.danger : tema.colors.okDark },
-                      ]}
-                    >
-                      {p.stock} {p.unit}
-                    </Text>
-                    {esLowExistencia && (
-                      <Text style={estilos.existenciaEstadoMinimo}>(mín {p.minStock})</Text>
-                    )}
-                  </View>
-                </View>
-
-                <Text style={estilos.productoNombre}>{p.name}</Text>
-                <Text style={estilos.categoriaTexto}>
-                  {p.category} • Ubicación: {p.location} • Prov: {p.defaultSupplier || "No asignado"}
-                </Text>
-
-                {/* Stock Cell Component / Grid de disponible, comprometido, cuarentena y mínimo */}
-                <CeldaStock
-                  available={p.stock}
-                  committed={p.committed || 0}
-                  quarantine={p.quarantine || 0}
-                  minStock={p.minStock}
-                  unit={p.unit}
-                />
-
-                {/* Granel - Barra de capacidad restante si aplica */}
-                {p.isBulk && p.containerCapacity && (
-                  <View style={estilos.bulkCapacityCaja}>
-                    <BarraProgreso
-                      value={p.stock}
-                      max={p.containerCapacity}
-                      height={6}
-                      showPercentage
-                      semaforo
-                      label={`Capacidad contenedor (${p.stock.toFixed(3)} / ${p.containerCapacity} ${p.unit})`}
-                    />
-                  </View>
-                )}
-
-                {/* Acciones: Editar y Deshabilitar y Costos (Exclusivo Admin) */}
-                {rolActual === "admin" ? (
-                  <View style={estilos.productoAccionesFila}>
-                    <View style={estilos.pmpCaja}>
-                      <Text style={estilos.pmpEtiqueta}>PMP Unitario:</Text>
-                      <Text style={estilos.pmpValor}>{formatearCLP(p.pmp || p.unitCost)}</Text>
+                <Tarjeta
+                  key={p.sku}
+                  variant={esLowExistencia ? "outlined" : "default"}
+                  style={[
+                    estilos.productoTarjeta,
+                    esLowExistencia && estilos.lowExistenciaTarjeta,
+                    p.disabled && estilos.deshabilitadoTarjeta,
+                  ]}
+                >
+                  <View style={estilos.productoSuperiorFila}>
+                    <View style={estilos.skuInsigniaCaja}>
+                      <Text style={estilos.skuTitulo}>{p.sku}</Text>
+                      {p.isBulk && (
+                        <Insignia label="Granel" tone="info" size="sm" style={{ marginLeft: 6 }} />
+                      )}
+                      {p.disabled && (
+                        <Insignia label="Deshabilitado" tone="mute" size="sm" style={{ marginLeft: 6 }} />
+                      )}
                     </View>
+                    <View style={estilos.existenciaEstadoIndicator}>
+                      <View
+                        style={[
+                          estilos.existenciaEstadoPunto,
+                          { backgroundColor: esLowExistencia ? tema.colors.danger : tema.colors.ok },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          estilos.existenciaEstadoNumero,
+                          { color: esLowExistencia ? tema.colors.danger : tema.colors.okDark },
+                        ]}
+                      >
+                        {p.stock} {p.unit}
+                      </Text>
+                      {esLowExistencia && (
+                        <Text style={estilos.existenciaEstadoMinimo}>(mín {p.minStock})</Text>
+                      )}
+                    </View>
+                  </View>
 
-                    <View style={estilos.botonFila}>
+                  <Text style={estilos.productoNombre}>{p.name}</Text>
+                  <Text style={estilos.categoriaTexto}>
+                    {p.category} • Ubicación: {p.location} • Prov: {p.defaultSupplier || "No asignado"}
+                  </Text>
+
+                  {/* Stock Cell Component / Grid de disponible, comprometido, cuarentena y mínimo */}
+                  <CeldaStock
+                    available={p.stock}
+                    committed={p.committed || 0}
+                    quarantine={p.quarantine || 0}
+                    minStock={p.minStock}
+                    unit={p.unit}
+                  />
+
+                  {/* Granel - Barra de capacidad restante si aplica */}
+                  {p.isBulk && p.containerCapacity && (
+                    <View style={estilos.bulkCapacityCaja}>
+                      <BarraProgreso
+                        value={p.stock}
+                        max={p.containerCapacity}
+                        height={6}
+                        showPercentage
+                        semaforo
+                        label={`Capacidad contenedor (${p.stock.toFixed(3)} / ${p.containerCapacity} ${p.unit})`}
+                      />
+                    </View>
+                  )}
+
+                  {/* Acciones: Editar y Deshabilitar y Costos (Exclusivo Admin) */}
+                  {rolActual === "admin" ? (
+                    <View style={estilos.productoAccionesFila}>
+                      <View style={estilos.pmpCaja}>
+                        <Text style={estilos.pmpEtiqueta}>PMP Unitario:</Text>
+                        <Text style={estilos.pmpValor}>{formatearCLP(p.pmp || p.unitCost)}</Text>
+                      </View>
+
+                      <View style={estilos.botonFila}>
+                        <Boton
+                          title="Cardex"
+                          variant="outline"
+                          size="sm"
+                          icon="swap-horizontal-outline"
+                          onPress={() => manejarAbrirCardexProducto && manejarAbrirCardexProducto(p)}
+                          style={{ flex: 1, minHeight: 36 }}
+                        />
+                        <Boton
+                          title="Editar"
+                          variant="outline"
+                          size="sm"
+                          icon="create-outline"
+                          onPress={() => manejarAbrirEditarProducto(p)}
+                          style={{ flex: 1, minHeight: 36 }}
+                        />
+                        <Boton
+                          title={p.disabled ? "Habilitar" : "Deshabilitar"}
+                          variant={p.disabled ? "success" : "secondary"}
+                          size="sm"
+                          icon={p.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                          style={{ flex: 1.15, minHeight: 36 }}
+                          onPress={() => {
+                            alternarProductoDeshabilitado(p.sku);
+                            mostrarAviso(`Insumo ${p.sku} ${p.disabled ? "habilitado" : "deshabilitado"}.`);
+                          }}
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={estilos.productoBodegaFila}>
+                      <Text style={estilos.bodegaUbicacionNota}>
+                        📍 Ubicación asignada: <Text style={{ fontWeight: "bold", color: tema.colors.text }}>{p.location}</Text>
+                      </Text>
                       <Boton
-                        title="Cardex"
+                        title="Ver Cardex"
                         variant="ghost"
                         size="sm"
                         icon="swap-horizontal-outline"
                         onPress={() => manejarAbrirCardexProducto && manejarAbrirCardexProducto(p)}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Boton
-                        title="Editar"
-                        variant="outline"
-                        size="sm"
-                        icon="create-outline"
-                        onPress={() => manejarAbrirEditarProducto(p)}
-                        style={{ marginRight: 6 }}
-                      />
-                      <Boton
-                        title={p.disabled ? "Habilitar" : "Deshabilitar"}
-                        variant={p.disabled ? "success" : "secondary"}
-                        size="sm"
-                        icon={p.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                        onPress={() => {
-                          alternarProductoDeshabilitado(p.sku);
-                          mostrarAviso(`Insumo ${p.sku} ${p.disabled ? "habilitado" : "deshabilitado"}.`);
-                        }}
                       />
                     </View>
-                  </View>
-                ) : (
-                  <View style={estilos.productoBodegaFila}>
-                    <Text style={estilos.bodegaUbicacionNota}>
-                      📍 Ubicación asignada: <Text style={{ fontWeight: "bold", color: tema.colors.text }}>{p.location}</Text>
-                    </Text>
-                    <Boton
-                      title="Ver Cardex"
-                      variant="ghost"
-                      size="sm"
-                      icon="swap-horizontal-outline"
-                      onPress={() => manejarAbrirCardexProducto && manejarAbrirCardexProducto(p)}
-                    />
-                  </View>
-                )}
-              </Tarjeta>
-            );
-          })
-        )}
+                  )}
+                </Tarjeta>
+              );
+            })
+          )}
         </ScrollView>
       )}
 
@@ -394,10 +397,10 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                       item.type === "entrada_compra" || item.type === "devolucion"
                         ? "ok"
                         : item.type === "merma"
-                        ? "danger"
-                        : item.type === "ajuste_conteo"
-                        ? "warn"
-                        : "info"
+                          ? "danger"
+                          : item.type === "ajuste_conteo"
+                            ? "warn"
+                            : "info"
                     }
                     size="sm"
                   />
@@ -453,8 +456,8 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                       item.userRole === "Administrador"
                         ? "primary"
                         : item.userRole === "Tecnico"
-                        ? "ok"
-                        : "warn"
+                          ? "ok"
+                          : "warn"
                     }
                     size="sm"
                   />
