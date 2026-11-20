@@ -104,8 +104,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                   ? "No se registran solicitudes de materiales en el sistema."
                   : `No hay solicitudes con estado "${solicitudPestana}".`
               }
-              actionTitle={rolActual !== "warehouse" ? "Nueva Solicitud" : undefined}
-              onAction={rolActual !== "warehouse" ? manejarAbrirNuevoSolicitud : undefined}
+              actionTitle="Nueva Solicitud de Insumos"
+              onAction={manejarAbrirNuevoSolicitud}
               containerStyle={{ marginVertical: 32 }}
             />
           ) : (
@@ -121,8 +121,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           req.status === "aprobada"
                             ? "ok"
                             : req.status === "rechazada"
-                            ? "danger"
-                            : "warn"
+                              ? "danger"
+                              : "warn"
                         }
                         size="sm"
                       />

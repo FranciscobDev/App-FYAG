@@ -8,6 +8,8 @@ import proyectoRoutes from './routes/proyectoRoutes';
 import kitRoutes from './routes/kitRoutes';
 import clienteRoutes from './routes/clienteRoutes';
 import parametrosRoutes from './routes/parametrosRoutes';
+import ordenCompraRoutes from './routes/ordenCompraRoutes';
+import solicitudRoutes from './routes/solicitudRoutes';
 import verificarToken from './middleware/authMiddleware';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
@@ -38,5 +40,7 @@ app.use('/api/proyectos', verificarToken, proyectoRoutes);
 app.use('/api/kits', verificarToken, kitRoutes);
 app.use('/api/clientes', verificarToken, clienteRoutes);
 app.use('/api/parametros', verificarToken, parametrosRoutes);
+app.use('/api/ordenes-compra', verificarToken, ordenCompraRoutes);
+app.use('/api/solicitudes', verificarToken, solicitudRoutes);
 
 export default app;

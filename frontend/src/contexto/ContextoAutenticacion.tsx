@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Rol, Usuario } from "@/nucleo/tipos";
 import {
   encabezadosAuth,
@@ -8,6 +7,45 @@ import {
   obtenerBaseUrlApi,
 } from "@/nucleo/sesion";
 import { UsuarioApi, loginApi } from "@/modulos/autenticacion/authApi";
+
+// Almacenamiento seguro compatible con Web y Móvil sin dependencias externas
+const memoriaAlmacen: Record<string, string> = {};
+const AsyncStorage = {
+  getItem: async (clave: string): Promise<string | null> => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        return window.localStorage.getItem(clave);
+      }
+    } catch {}
+    return memoriaAlmacen[clave] ?? null;
+  },
+  setItem: async (clave: string, valor: string): Promise<void> => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem(clave, valor);
+      }
+    } catch {}
+    memoriaAlmacen[clave] = valor;
+  },
+  removeItem: async (clave: string): Promise<void> => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(clave);
+      }
+    } catch {}
+    delete memoriaAlmacen[clave];
+  },
+  multiRemove: async (claves: string[]): Promise<void> => {
+    claves.forEach((k) => {
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(k);
+        }
+      } catch {}
+      delete memoriaAlmacen[k];
+    });
+  },
+};
 
 // CAMBIO: claves donde se guarda la sesión entre recargas
 const CLAVE_TOKEN = "fyag_token";
