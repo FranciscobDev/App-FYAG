@@ -17,7 +17,8 @@ CREATE TYPE categoria_enum AS ENUM (
 );
 
 CREATE TYPE estado_proyecto_enum AS ENUM ('Planificado', 'En Proceso', 'Pausado', 'Completado', 'Cancelado');
-CREATE TYPE estado_solicitud_enum AS ENUM ('Pendiente', 'Aprobada', 'Rechazada', 'En Proceso', 'Completada');
+CREATE TYPE estado_solicitud_enum AS ENUM ('Pendiente', 'Aprobada', 'Rechazada', 'Anulada', 'En Proceso', 'Completada');
+CREATE TYPE estado_solicitud_insumos_enum AS ENUM ('Pendiente', 'Aprobada', 'Rechazada', 'Anulada');
 CREATE TYPE estado_oc_enum AS ENUM ('Borrador', 'Enviada', 'Recibida parcial', 'Recibida', 'Cerrada', 'Anulada');
 
 CREATE TYPE tipo_movimiento_enum AS ENUM ('Entrada', 'Salida', 'Ajuste', 'Transferencia');
@@ -455,7 +456,11 @@ CREATE TABLE articulos_stock (
     id_articulo INT NOT NULL,
     id_bodega INT,
     cantidad_disponible NUMERIC(12,3) DEFAULT 0.000,
+    cantidad_comprometida NUMERIC(12,3) DEFAULT 0.000,
+    cantidad_cuarentena NUMERIC(12,3) DEFAULT 0.000,
+    pmp NUMERIC(12,2) DEFAULT 0.00,
     stock_minimo NUMERIC(12,3) DEFAULT 0.000,
+    cant_reposicion NUMERIC(12,3) DEFAULT 0.000,
     ubicacion VARCHAR(100),
     CONSTRAINT fk_stock_insumo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo) ON DELETE CASCADE
 );
@@ -530,7 +535,97 @@ CREATE TABLE oc_lineas (
     CONSTRAINT fk_oc_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
 );
 
--- 5.2 Recepción de Artículos
+-- Índices optimizados para detección de insumos bajo mínimo sin OC abierta [DB]
+CREATE INDEX idx_ordenes_compra_estado_abierta
+    ON ordenes_compra (id_orden_compra, estado)
+    WHERE estado IN ('Borrador', 'Enviada', 'Recibida parcial');
+
+CREATE INDEX idx_oc_lineas_articulo_orden
+    ON oc_lineas (id_articulo, id_orden_compra);
+
+CREATE INDEX idx_articulos_stock_bajo_minimo
+    ON articulos_stock (id_articulo, cantidad_disponible, stock_minimo)
+    WHERE stock_minimo > 0 AND cantidad_disponible <= stock_minimo;
+
+-- Vista optimizada [DB]: Insumos activos con disponible <= stock_minimo sin ninguna OC abierta
+CREATE OR REPLACE VIEW vw_insumos_bajo_minimo_sin_oc_abierta AS
+SELECT
+    a.id_articulo,
+    a.sku,
+    a.nombre_articulo,
+    a.categoria,
+    a.id_proveedor,
+    a.id_unidad,
+    a.precio_unitario,
+    COALESCE(s.cantidad_disponible, 0)::float8 AS cantidad_disponible,
+    COALESCE(s.stock_minimo, 0)::float8 AS stock_minimo,
+    CASE
+        WHEN COALESCE(s.cant_reposicion, 0) > 0 THEN COALESCE(s.cant_reposicion, 0)::float8
+        ELSE GREATEST(COALESCE(s.stock_minimo, 0) * 2, 1)::float8
+    END AS cant_reposicion
+FROM articulo a
+JOIN articulos_stock s ON s.id_articulo = a.id_articulo
+WHERE a.activo = TRUE
+  AND COALESCE(s.stock_minimo, 0) > 0
+  AND COALESCE(s.cantidad_disponible, 0) <= COALESCE(s.stock_minimo, 0)
+  AND NOT EXISTS (
+      SELECT 1
+      FROM oc_lineas l
+      JOIN ordenes_compra oc ON oc.id_orden_compra = l.id_orden_compra
+      WHERE l.id_articulo = a.id_articulo
+        AND oc.estado IN ('Borrador', 'Enviada', 'Recibida parcial')
+  );
+
+-- 5.2 Recepción de Artículos y Trazabilidad Cardex por Línea [DB]
+CREATE TYPE estado_linea_recepcion_enum AS ENUM ('Conforme', 'Defectuoso', 'Faltante');
+
+CREATE TABLE recepciones (
+    id_recepcion SERIAL PRIMARY KEY,
+    id_orden_compra INT NOT NULL,
+    id_usuario_bodeguero INT NULL,
+    numero_factura VARCHAR(50) NULL,
+    estado_resultante_oc estado_oc_enum NOT NULL DEFAULT 'Recibida parcial',
+    observaciones VARCHAR(250) NULL,
+    fecha_recepcion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_recepciones_oc FOREIGN KEY (id_orden_compra) REFERENCES ordenes_compra(id_orden_compra) ON DELETE RESTRICT,
+    CONSTRAINT fk_recepciones_usuario FOREIGN KEY (id_usuario_bodeguero) REFERENCES usuario(id_usuario) ON DELETE SET NULL
+);
+
+CREATE TABLE recepcion_lineas (
+    id_recepcion_linea SERIAL PRIMARY KEY,
+    id_recepcion INT NOT NULL,
+    id_oc_linea INT NOT NULL,
+    id_articulo INT NOT NULL,
+    estado_linea estado_linea_recepcion_enum NOT NULL,
+    cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
+    precio_unitario_ingreso INT NOT NULL DEFAULT 0,
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_recepcion_lineas_recepcion FOREIGN KEY (id_recepcion) REFERENCES recepciones(id_recepcion) ON DELETE CASCADE,
+    CONSTRAINT fk_recepcion_lineas_oc_linea FOREIGN KEY (id_oc_linea) REFERENCES oc_lineas(id_oc_linea) ON DELETE RESTRICT
+);
+
+CREATE TABLE movimientos_inventario (
+    id_movimiento SERIAL PRIMARY KEY,
+    id_insumo INT NOT NULL,
+    id_orden_compra INT NULL,
+    id_recepcion INT NULL,
+    id_recepcion_linea INT NULL,
+    tipo_movimiento tipo_movimiento_enum NOT NULL DEFAULT 'Entrada',
+    destino_bolsa VARCHAR(30) NOT NULL DEFAULT 'disponible',
+    cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
+    costo_unitario NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    saldo_historico NUMERIC(12,3) NOT NULL DEFAULT 0.000,
+    pmp_historico NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    valor_total_historico BIGINT NOT NULL DEFAULT 0,
+    referencia VARCHAR(250) NULL,
+    id_usuario INT NULL,
+    fecha_movimiento TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_mov_inv_oc FOREIGN KEY (id_orden_compra) REFERENCES ordenes_compra(id_orden_compra) ON DELETE SET NULL,
+    CONSTRAINT fk_mov_inv_recepcion FOREIGN KEY (id_recepcion) REFERENCES recepciones(id_recepcion) ON DELETE CASCADE,
+    CONSTRAINT fk_mov_inv_recepcion_linea FOREIGN KEY (id_recepcion_linea) REFERENCES recepcion_lineas(id_recepcion_linea) ON DELETE CASCADE,
+    CONSTRAINT fk_mov_inv_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario) ON DELETE SET NULL
+);
+
 CREATE TABLE registro_recepcion_articulo (
     id_registro_recepcion_articulo SERIAL PRIMARY KEY,
     id_orden_compra INT NOT NULL,
@@ -551,7 +646,40 @@ CREATE TABLE registro_recepcion_articulo_detalle (
         REFERENCES oc_lineas(id_oc_linea)
 );
 
--- 5.3 Facturación
+-- 5.3 Facturación [DB]
+CREATE TABLE facturas_compra (
+    id_factura SERIAL PRIMARY KEY,
+    proveedor_id INT NOT NULL,
+    numero_factura VARCHAR(50) NOT NULL,
+    oc_id INT NULL,
+    subtotal_bruto INT NOT NULL DEFAULT 0,
+    total_descuentos INT NOT NULL DEFAULT 0,
+    subtotal_neto INT NOT NULL DEFAULT 0,
+    monto_iva INT NOT NULL DEFAULT 0,
+    total_factura INT NOT NULL DEFAULT 0,
+    tiene_discrepancia_recepcion BOOLEAN NOT NULL DEFAULT FALSE,
+    detalle_discrepancia TEXT NULL,
+    fecha_emision DATE NOT NULL DEFAULT CURRENT_DATE,
+    CONSTRAINT fk_facturas_compra_proveedor FOREIGN KEY (proveedor_id) REFERENCES proveedor(id_proveedor) ON DELETE RESTRICT,
+    CONSTRAINT fk_facturas_compra_oc FOREIGN KEY (oc_id) REFERENCES ordenes_compra(id_orden_compra) ON DELETE SET NULL,
+    CONSTRAINT uk_facturas_compra_proveedor_numero UNIQUE (proveedor_id, numero_factura)
+);
+
+CREATE TABLE factura_lineas (
+    id_factura_linea SERIAL PRIMARY KEY,
+    id_factura INT NOT NULL,
+    id_articulo INT NOT NULL,
+    cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
+    precio_bruto INT NOT NULL DEFAULT 0,
+    descuento_1_pct NUMERIC(6,2) NOT NULL DEFAULT 0.00 CHECK (descuento_1_pct >= 0 AND descuento_1_pct <= 100),
+    descuento_2_pct NUMERIC(6,2) NOT NULL DEFAULT 0.00 CHECK (descuento_2_pct >= 0 AND descuento_2_pct <= 100),
+    descuento_3_pct NUMERIC(6,2) NOT NULL DEFAULT 0.00 CHECK (descuento_3_pct >= 0 AND descuento_3_pct <= 100),
+    precio_unitario_neto INT NOT NULL DEFAULT 0,
+    subtotal_neto INT GENERATED ALWAYS AS (ROUND(cantidad * precio_unitario_neto)) STORED,
+    CONSTRAINT fk_factura_lineas_cabecera FOREIGN KEY (id_factura) REFERENCES facturas_compra(id_factura) ON DELETE CASCADE,
+    CONSTRAINT fk_factura_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
+);
+
 CREATE TABLE factura (
     id_factura SERIAL PRIMARY KEY,
     numero_factura VARCHAR(50) NOT NULL,
@@ -581,16 +709,43 @@ CREATE TABLE factura_detalle (
 -- 6. SOLICITUDES, KITS Y HERRAMIENTAS
 -- ==========================================
 
--- Tabla: Solicitudes
+-- Tabla: solicitudes_insumos [DB] (Vincula solicitudes solo a proyectos existentes y registra estado, motivo_rechazo y nro_comprobante)
+CREATE TABLE solicitudes_insumos (
+    id_solicitud SERIAL PRIMARY KEY,
+    proyecto_id INT NOT NULL,
+    bodeguero_id INT NOT NULL,
+    estado estado_solicitud_insumos_enum NOT NULL DEFAULT 'Pendiente',
+    motivo_rechazo VARCHAR(250) NULL,
+    nro_comprobante VARCHAR(80) NULL,
+    descripcion_solicitud VARCHAR(250) NULL,
+    fecha_solicitud TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_solicitudes_insumos_proyecto FOREIGN KEY (proyecto_id) REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    CONSTRAINT fk_solicitudes_insumos_bodeguero FOREIGN KEY (bodeguero_id) REFERENCES usuario(id_usuario) ON DELETE RESTRICT
+);
+
+-- Tabla: solicitud_lineas [DB]
+CREATE TABLE solicitud_lineas (
+    id_solicitud_linea SERIAL PRIMARY KEY,
+    id_solicitud INT NOT NULL,
+    id_articulo INT NOT NULL,
+    cantidad_solicitada NUMERIC(12,3) NOT NULL CHECK (cantidad_solicitada > 0),
+    cantidad_entregada NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (cantidad_entregada >= 0),
+    CONSTRAINT fk_solicitud_lineas_solicitud FOREIGN KEY (id_solicitud) REFERENCES solicitudes_insumos(id_solicitud) ON DELETE CASCADE,
+    CONSTRAINT fk_solicitud_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
+);
+
+-- Tabla: Solicitudes (Compatibilidad)
 CREATE TABLE solicitudes (
     id_solicitud SERIAL PRIMARY KEY,
     id_usuario INT NOT NULL,
-    id_proyecto INT,
+    id_proyecto INT NOT NULL,
     fecha_solicitud TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     estado_solicitud estado_solicitud_enum NOT NULL DEFAULT 'Pendiente',
+    motivo_rechazo VARCHAR(250) NULL,
+    nro_comprobante VARCHAR(80) NULL,
     descripcion_solicitud VARCHAR(250),
-    CONSTRAINT fk_solicitud_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
-    CONSTRAINT fk_solicitud_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+    CONSTRAINT fk_solicitud_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    CONSTRAINT fk_solicitud_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT
 );
 
 -- Tabla: Detalle_Solicitudes

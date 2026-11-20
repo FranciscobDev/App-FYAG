@@ -9,6 +9,23 @@ import {
 } from "@/modulos/inventario/articulosApi";
 import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
 import {
+  aprobarOrdenCompraApi,
+  actualizarOrdenCompraApi,
+  cambiarEstadoOrdenCompraApi,
+  crearOrdenCompraApi,
+  listarOrdenesCompraApi,
+  mapearEstadoHaciaBd,
+  ordenCompraDesdeApi,
+  registrarRecepcionOrdenCompraApi,
+} from "@/modulos/compras/ordenesCompraApi";
+import { aplicarEntregaChecklistEnOrden } from "@/modulos/compras/recepcionChecklistUtils";
+import {
+  aplicarReservaComprometidoEnCatalogoH6,
+  esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
+  validarFormularioNuevaSolicitudInsumos,
+} from "@/modulos/inventario/solicitudInsumosUtils";
+import {
   MovimientoCardex,
   Cliente,
   AlertaPanel,
@@ -124,8 +141,10 @@ interface TipoContextoAplicacion {
   ) => { success: boolean; error?: string };
 
   // Purchasing actions
-  crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; error?: string };
+  crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; code?: string; error?: string };
+  actualizarOrdenCompra: (orderId: string, updates: Partial<OrdenCompra>) => { success: boolean; error?: string };
   aprobarYEnviarOrden: (orderId: string) => void;
+  anularOrdenCompra: (orderId: string) => { success: boolean; error?: string };
   calificarProveedor: (orderId: string, rating: CalificacionProveedor) => void;
   crearFactura: (invoice: FacturaCompra) => { success: boolean; error?: string };
   confirmarRecepcionOrden: (
@@ -288,6 +307,19 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
+  // Órdenes de Compra desde la API al iniciar sesión
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    listarOrdenesCompraApi().then((r) => {
+      if (!r.ok || !r.data || cancelado || r.data.length === 0) return;
+      setPurchaseOrders(r.data.map(ordenCompraDesdeApi));
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [haySesion]);
+
   const agregarProducto = async (product: Producto): Promise<{ success: boolean; error?: string }> => {
     if (productos.some((p) => p.sku.trim().toUpperCase() === product.sku.trim().toUpperCase())) {
       return { success: false, error: `El SKU ${product.sku} ya está registrado.` };
@@ -314,6 +346,12 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     updates: Partial<Producto>
   ): Promise<{ success: boolean; error?: string }> => {
     const previo = productos.find((p) => p.sku === sku);
+    if (previo) {
+      const candidato = { ...previo, ...updates };
+      if (candidato.stock <= candidato.minStock) {
+        verificarYGenerarOcAutomaticaPorStockMinimo(candidato);
+      }
+    }
     // Cambio optimista en pantalla; si el servidor lo rechaza, se revierte
     setProducts((prev) => prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p)));
 
@@ -379,6 +417,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           : p
       )
     );
+    verificarYGenerarOcAutomaticaPorStockMinimo({
+      ...prod,
+      stock: prod.isBulk ? Number(newStock.toFixed(3)) : newStock,
+    });
 
     // Movimiento en Cardex
     const cardexEntry: MovimientoCardex = {
@@ -524,33 +566,31 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     urgency: "normal" | "alta" | "urgente" = "normal",
     comment?: string
   ) => {
-    const proj = proyectos.find((p) => p.id === projectId);
+    const proj = proyectos.find((p) => p.id === projectId) || null;
     if (!proj) return { success: false, error: "Proyecto no encontrado." };
-    if (proj.status === "cerrado") {
-      return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
-    }
-
-    // Check stock
-    const missing: string[] = [];
-    items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (!prod || prod.stock < item.quantity) {
-        missing.push(
-          `${item.name} (${prod ? prod.stock : 0} disponibles vs ${item.quantity} solicitados)`
-        );
-      }
-    });
-
-    if (missing.length > 0) {
+    if (!esProyectoActivoParaSolicitud(proj)) {
       return {
         success: false,
-        missingItems: missing,
-        error: "Stock insuficiente en bodega para uno o más ítems.",
+        error: `No se pueden solicitar insumos para el proyecto "${proj.code} - ${proj.name}" porque está inactivo (${proj.status.toUpperCase()}). Solo se permiten proyectos activos.`,
+      };
+    }
+
+    const validacion = validarFormularioNuevaSolicitudInsumos(proj, items, productos);
+    if (!validacion.esValida) {
+      return {
+        success: false,
+        missingItems: validacion.faltantesStock,
+        error:
+          validacion.errorGeneral ||
+          "Stock insuficiente en bodega para uno o más ítems.",
       };
     }
 
     const tech = tecnicos.find((t) => t.rut === technicianRut);
+    const sysUser = usuariosSistema.find((u) => u.rut === technicianRut);
+    const authorName = tech ? tech.name : sysUser ? sysUser.name : "Bodeguero / Técnico";
     const newCode = `SOL-2026-${String(solicitudesMaterial.length + 101).padStart(3, "0")}`;
+    const nowStr = new Date().toISOString().slice(0, 10);
     const newReq: SolicitudMaterial = {
       id: `sol_${Date.now()}`,
       code: newCode,
@@ -558,8 +598,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       projectCode: proj.code,
       projectName: proj.name,
       technicianRut: technicianRut,
-      technicianName: tech ? tech.name : "Técnico de Terreno",
-      date: new Date().toISOString().slice(0, 10),
+      technicianName: authorName,
+      date: nowStr,
       urgency,
       status: "pendiente",
       items,
@@ -567,16 +607,46 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       timeline: [
         {
           id: `step_${Date.now()}`,
-          title: "Solicitud Creada",
-          description: "Ingresada por técnico en terreno",
-          date: new Date().toISOString().slice(0, 10),
-          author: tech ? tech.name : "Técnico",
+          title: "Solicitud Creada (Stock Comprometido en H6)",
+          description: `Stock reservado en estado Comprometido para el proyecto ${proj.code}`,
+          date: nowStr,
+          author: authorName,
           status: "completado",
         },
       ],
     };
 
+    // [FRONT-1 / H6] El stock solicitado pasa inmediatamente de Disponible a Comprometido
+    setProducts((prev) => aplicarReservaComprometidoEnCatalogoH6(prev, items));
     setMaterialRequests((prev) => [newReq, ...prev]);
+
+    // Notificar al Administrador
+    const resumenInsumos = items.map((it) => `${it.quantity} ${it.unit} ${it.name}`).join(", ");
+    const alertAdmin: AlertaPanel = {
+      id: `alert_sol_${Date.now()}`,
+      title: `Nueva Solicitud Pendiente: ${newCode} (${proj.code})`,
+      description: `${authorName} solicitó insumos para ${proj.name} (${resumenInsumos}). Stock reservado en Comprometido (H6).`,
+      type: "solicitud",
+      severity: urgency === "urgente" ? "rojo" : urgency === "alta" ? "amarillo" : "info",
+      time: "Ahora mismo",
+      actionLabel: "Autorizar Solicitud",
+    };
+    setAlerts((prev) => [alertAdmin, ...prev]);
+
+    const notifAdmin: DetalleNotificacion = {
+      id: `notif_sol_${Date.now()}`,
+      title: `Nueva Solicitud de Insumos ${newCode}`,
+      message: `Pendiente de autorización para ${proj.code} - ${proj.name}: ${resumenInsumos}.`,
+      date: nowStr,
+      type: "solicitud",
+      severity: urgency === "urgente" ? "danger" : "info",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: newReq.id,
+      relatedEntityLabel: newCode,
+    };
+    setNotificationsList((prev) => [notifAdmin, ...prev]);
+
     return { success: true };
   };
 
@@ -610,6 +680,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!reason || reason.trim().length === 0) {
       return { success: false, error: "El rechazo exige motivo obligatorio." };
     }
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (targetReq && (targetReq.status === "pendiente" || targetReq.status === "aprobada")) {
+      setProducts((prev) => liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items));
+    }
     setMaterialRequests((prev) =>
       prev.map((req) => {
         if (req.id !== id) return req;
@@ -636,12 +710,23 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const modificarSolicitudMaterial = (id: string, items: ItemSolicitudMaterial[]) => {
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (targetReq && targetReq.status === "pendiente") {
+      setProducts((prev) => {
+        const liberado = liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items);
+        return aplicarReservaComprometidoEnCatalogoH6(liberado, items);
+      });
+    }
     setMaterialRequests((prev) =>
       prev.map((req) => (req.id === id ? { ...req, items } : req))
     );
   };
 
   const cancelarSolicitudMaterial = (id: string) => {
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (targetReq && (targetReq.status === "pendiente" || targetReq.status === "aprobada")) {
+      setProducts((prev) => liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items));
+    }
     setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
   };
 
@@ -752,15 +837,116 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   // 3. PURCHASING
+  const calcularSiguienteCorrelativoOc = (existentes: OrdenCompra[]): string => {
+    const anio = new Date().getFullYear();
+    let maxCorr = 0;
+    for (const oc of existentes) {
+      const m = /^OC-\d{4}-(\d+)$/.exec(oc.code.trim());
+      if (m) {
+        const n = Number(m[1]);
+        if (Number.isFinite(n) && n > maxCorr) maxCorr = n;
+      }
+    }
+    return `OC-${anio}-${String(maxCorr + 1).padStart(5, "0")}`;
+  };
+
+  /**
+   * [BACK-1] Motor automático en cliente: cuando el disponible cae a <= stock mínimo,
+   * crea un único borrador de OC usando el proveedor predeterminado y la cantidad de reposición (H35),
+   * sin duplicar si ya existe una OC abierta para ese SKU y generando alerta para H40.
+   */
+  const verificarYGenerarOcAutomaticaPorStockMinimo = (prod: Producto) => {
+    if (prod.disabled) return;
+    if (!prod.minStock || prod.minStock <= 0) return;
+    if (prod.stock > prod.minStock) return;
+
+    setPurchaseOrders((prevOrdenes) => {
+      const yaTieneOcAbierta = prevOrdenes.some(
+        (oc) =>
+          (oc.status === "borrador" || oc.status === "enviada" || oc.status === "recibida_parcial") &&
+          oc.items.some((it) => it.sku.trim().toUpperCase() === prod.sku.trim().toUpperCase())
+      );
+      if (yaTieneOcAbierta) return prevOrdenes;
+
+      const prov =
+        proveedores.find(
+          (s) =>
+            !s.disabled &&
+            (s.businessName === prod.defaultSupplier ||
+              s.tradeName === prod.defaultSupplier ||
+              s.id === prod.defaultSupplier)
+        ) || proveedores.find((s) => !s.disabled) || proveedores[0];
+
+      if (!prov) return prevOrdenes;
+
+      const cantidadRep =
+        prod.restockQuantity && prod.restockQuantity > 0
+          ? prod.restockQuantity
+          : Math.max(prod.minStock * 2, 1);
+
+      const precioUnit = prod.unitCost || prod.pmp || 1000;
+      const subtotal = Math.round(cantidadRep * precioUnit);
+      const iva = Math.round(subtotal * 0.19);
+      const total = subtotal + iva;
+      const code = calcularSiguienteCorrelativoOc(prevOrdenes);
+
+      const borradorAuto: OrdenCompra = {
+        id: `oc_auto_${prod.sku}_${Date.now()}`,
+        code,
+        supplierId: prov.id,
+        supplier: prov.businessName,
+        supplierRut: prov.rut,
+        status: "borrador",
+        isAutoMinStock: true,
+        items: [
+          {
+            sku: prod.sku,
+            name: prod.name,
+            quantity: cantidadRep,
+            unitPrice: precioUnit,
+            unit: prod.unit || "un",
+          },
+        ],
+        subtotal,
+        iva,
+        total,
+        itemsCount: 1,
+        date: new Date().toISOString().slice(0, 10),
+        expectedDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        notes: `Generada automáticamente por stock mínimo (${prod.stock} <= ${prod.minStock}). Pendiente de aprobación del Administrador (H35/H43).`,
+      };
+
+      // Generar alerta para el panel de control H40
+      setAlerts((prevAlertas) => [
+        {
+          id: `alerta_oc_${code}`,
+          title: `Stock mínimo: ${prod.name} (${code} en Borrador)`,
+          description: `Disponible (${prod.stock} ${prod.unit}) <= mínimo (${prod.minStock} ${prod.unit}). Borrador automático ${code} por ${cantidadRep} ${prod.unit} listo para aprobación.`,
+          type: "stock",
+          severity: prod.stock <= 0 ? "rojo" : "amarillo",
+          time: "Ahora",
+          actionLabel: "Revisar OC en Borrador",
+        },
+        ...prevAlertas,
+      ]);
+
+      return [borradorAuto, ...prevOrdenes];
+    });
+  };
+
   const crearOrdenCompra = (orderData: Partial<OrdenCompra>) => {
-    const code = `OC-2026-${String(ordenesCompra.length + 105).padStart(3, "0")}`;
+    const code = calcularSiguienteCorrelativoOc(ordenesCompra);
     const items = orderData.items || [];
+    if (items.length === 0) {
+      return { success: false, error: "Debe incluir al menos un insumo en la orden de compra." };
+    }
     const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
     const iva = Math.round(subtotal * 0.19);
     const total = subtotal + iva;
 
+    const tempId = `oc_${Date.now()}`;
     const newOrder: OrdenCompra = {
-      id: `oc_${Date.now()}`,
+      id: tempId,
       code,
       supplierId: orderData.supplierId || "sup1",
       supplier: orderData.supplier || "Proveedor Principal",
@@ -780,13 +966,121 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     setPurchaseOrders((prev) => [newOrder, ...prev]);
-    return { success: true, orderId: newOrder.id };
+
+    // Sincronizar con backend (genera numeración correlativa en BD y si se aprueba envía PDF por correo)
+    const idProvNum = Number(String(newOrder.supplierId).replace(/\D/g, "")) || 1;
+    void crearOrdenCompraApi({
+      proveedor_id: idProvNum,
+      origen: newOrder.isAutoMinStock ? "Stock Critico" : "Manual",
+      fecha_estimada_oc: newOrder.expectedDate,
+      observaciones: newOrder.notes,
+      aprobar_inmediatamente: newOrder.status === "enviada",
+      lineas: items.map((it) => ({
+        sku: it.sku,
+        cantidad_orden: it.quantity,
+        precio_unitario: it.unitPrice,
+      })),
+    }).then((res) => {
+      if (res.ok && res.data?.orden_compra) {
+        const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+        setPurchaseOrders((prev) =>
+          prev.map((o) => (o.id === tempId ? desdeBd : o))
+        );
+      }
+    });
+
+    return { success: true, orderId: newOrder.id, code: newOrder.code };
+  };
+
+  const actualizarOrdenCompra = (orderId: string, updates: Partial<OrdenCompra>) => {
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) {
+      return { success: false, error: "Orden de compra no encontrada." };
+    }
+    if (actual.status !== "borrador") {
+      return {
+        success: false,
+        error: "Solo se pueden editar órdenes de compra mientras estén en estado Borrador.",
+      };
+    }
+
+    const items = updates.items ?? actual.items;
+    if (items.length === 0) {
+      return { success: false, error: "La orden de compra debe tener al menos un insumo." };
+    }
+
+    const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
+    const iva = Math.round(subtotal * 0.19);
+    const total = subtotal + iva;
+
+    const actualizada: OrdenCompra = {
+      ...actual,
+      ...updates,
+      items,
+      subtotal,
+      iva,
+      total,
+      itemsCount: items.length,
+    };
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? actualizada : o))
+    );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      const idProvNum = Number(String(actualizada.supplierId).replace(/\D/g, "")) || 1;
+      void actualizarOrdenCompraApi(idOrdenNum, {
+        proveedor_id: idProvNum,
+        origen: actualizada.isAutoMinStock ? "Stock Critico" : "Manual",
+        fecha_estimada_oc: actualizada.expectedDate,
+        observaciones: actualizada.notes,
+        lineas: items.map((it) => ({
+          sku: it.sku,
+          cantidad_orden: it.quantity,
+          precio_unitario: it.unitPrice,
+        })),
+      });
+    }
+
+    return { success: true };
   };
 
   const aprobarYEnviarOrden = (orderId: string) => {
     setPurchaseOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, status: "enviada" } : o))
+      prev.map((o) => (o.id === orderId && o.status === "borrador" ? { ...o, status: "enviada" } : o))
     );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void aprobarOrdenCompraApi(idOrdenNum).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? desdeBd : o))
+          );
+        }
+      });
+    }
+  };
+
+  const anularOrdenCompra = (orderId: string) => {
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) return { success: false, error: "Orden no encontrada." };
+    if (actual.status === "cerrada" || actual.status === "recibida") {
+      return { success: false, error: "No se puede anular una orden ya recibida o cerrada." };
+    }
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "anulada" } : o))
+    );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void cambiarEstadoOrdenCompraApi(idOrdenNum, mapearEstadoHaciaBd("anulada"));
+    }
+
+    return { success: true };
   };
 
   const calificarProveedor = (orderId: string, rating: CalificacionProveedor) => {
@@ -824,25 +1118,68 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }
 
-    setPurchaseInvoices((prev) => [invoice, ...prev]);
+    const linkedOrder = invoice.orderCode
+      ? ordenesCompra.find((o) => o.code.trim().toUpperCase() === invoice.orderCode!.trim().toUpperCase())
+      : undefined;
 
-    // Recalculate PMP and update products
-    invoice.items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (prod) {
-        const currentStock = prod.stock || 0;
-        const currentPmp = prod.pmp || prod.unitCost || 0;
-        const incomingQty = item.quantity;
-        const incomingCost = item.netUnitPrice;
-        const totalQty = currentStock + incomingQty;
-        const newPmp =
-          totalQty > 0
-            ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
-            : incomingCost;
+    const yaTieneRecepcion =
+      !linkedOrder ||
+      linkedOrder.status === "recibida" ||
+      linkedOrder.status === "recibida_parcial" ||
+      linkedOrder.status === "cerrada" ||
+      linkedOrder.items.some((it) => Number(it.receivedQuantity || 0) > 0);
 
-        actualizarProducto(item.sku, { pmp: newPmp });
-      }
-    });
+    const facturaFinal: FacturaCompra = {
+      ...invoice,
+      status: yaTieneRecepcion && linkedOrder ? "recepcion_conforme" : invoice.status,
+    };
+
+    setPurchaseInvoices((prev) => [facturaFinal, ...prev]);
+
+    if (linkedOrder) {
+      setPurchaseOrders((prev) =>
+        prev.map((o) => (o.code === linkedOrder.code ? { ...o, invoiceNumber: invoice.number } : o))
+      );
+    }
+
+    // Si la recepción ya ocurrió (o es factura directa sin OC pendiente), consolida el PMP con el costo neto de la factura.
+    // Si la OC aún está en estado Enviada/Borrador sin recepción, el PMP y el stock se actualizan al confirmar la recepción conforme (H33).
+    if (yaTieneRecepcion) {
+      invoice.items.forEach((item) => {
+        const prod = productos.find((p) => p.sku === item.sku);
+        if (prod) {
+          const poItem = linkedOrder?.items.find((i) => i.sku === item.sku);
+          const receivedQty =
+            poItem && Number(poItem.receivedQuantity || 0) > 0
+              ? Number(poItem.receivedQuantity)
+              : item.quantity;
+          const currentStock = prod.stock || 0;
+          const currentPmp = prod.pmp || prod.unitCost || 0;
+          const incomingQty = receivedQty;
+          const incomingCost = item.netUnitPrice;
+          const totalQty = currentStock + incomingQty;
+          const newPmp =
+            totalQty > 0
+              ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
+              : incomingCost;
+
+          actualizarProducto(item.sku, { pmp: newPmp });
+        }
+      });
+    }
+
+    if (invoice.hasReceptionDiscrepancy && invoice.discrepancyNotes && invoice.discrepancyNotes.length > 0) {
+      const nuevaAlerta: AlertaPanel = {
+        id: `alt_fac_${Date.now()}`,
+        title: `Discrepancia Factura ${invoice.number} vs Recepción ${invoice.orderCode || ""}`.trim(),
+        description: `${invoice.supplierName}: ${invoice.discrepancyNotes.join(" | ")}`,
+        type: "costo",
+        severity: "rojo",
+        time: "Ahora",
+        actionLabel: "Revisar Factura y Recepción",
+      };
+      setAlerts((prev) => [nuevaAlerta, ...prev]);
+    }
 
     return { success: true };
   };
@@ -919,49 +1256,54 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
-    // Update OC items with cumulative received quantities
-    let allCompleted = true;
-    setPurchaseOrders((prev) =>
-      prev.map((o) => {
-        if (o.code !== ocCode) return o;
-        const updatedItems = o.items.map((it) => {
-          const check = checklist.find((c) => c.sku === it.sku);
-          if (!check) return it;
-          const recTotal = Number(((it.receivedQuantity || 0) + check.received).toFixed(3));
-          const defTotal = Number(((it.defectiveQuantity || 0) + check.defective).toFixed(3));
-          const rem = Math.max(0, it.quantity - recTotal);
-          if (rem > 0) {
-            allCompleted = false;
-          }
-          return {
-            ...it,
-            receivedQuantity: recTotal,
-            defectiveQuantity: defTotal,
-            missingQuantity: rem,
-          };
-        });
+    if (!activePo) return;
 
-        const newStatus = allCompleted ? ("recibida" as const) : ("recibida_parcial" as const);
-        return {
-          ...o,
-          status: newStatus,
-          items: updatedItems,
-          invoiceNumber: invoiceNumber || linkedInvoice?.number || o.invoiceNumber,
-        };
-      })
+    const resumenEntrega = aplicarEntregaChecklistEnOrden(
+      activePo,
+      checklist,
+      linkedInvoice ?? null,
+      invoiceNumber
     );
+    const allCompleted = resumenEntrega.esRecepcionCompleta;
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.code === ocCode ? resumenEntrega.ordenActualizada : o))
+    );
+
+    // Persistir recepción parcial o completa en el backend si tiene ID numérico
+    const idOrdenNum = Number(activePo.id);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void registrarRecepcionOrdenCompraApi(
+        idOrdenNum,
+        checklist.map((c) => ({
+          sku: c.sku,
+          cantidad_recibida: c.received,
+          cantidad_defectuosa: c.defective,
+          cantidad_faltante: c.missing,
+        })),
+        invoiceNumber || linkedInvoice?.number
+      ).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.code === ocCode ? { ...desdeBd, invoiceNumber: resumenEntrega.ordenActualizada.invoiceNumber } : o))
+          );
+        }
+      });
+    }
 
     // Remove from pending receipts only if all items have arrived
     if (allCompleted) {
       setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
     }
 
-    // Discrepancy notification & alert to Administrator
-    if (discrepancyDetails.length > 0) {
+    // Discrepancy notification & alert to Administrator (incluye diferencia con lo facturado)
+    const todasDiscrepancias = Array.from(new Set([...discrepancyDetails, ...resumenEntrega.discrepancias]));
+    if (todasDiscrepancias.length > 0) {
       const alert: AlertaPanel = {
         id: `alert_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        description: `Recepción física difiere de lo ordenado/facturado: ${discrepancyDetails.join(", ")}.`,
+        description: `Recepción física difiere de lo ordenado/facturado: ${todasDiscrepancias.join(", ")}.`,
         type: "stock",
         severity: "rojo",
         time: "Ahora mismo",
@@ -972,7 +1314,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       const notif: DetalleNotificacion = {
         id: `notif_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${discrepancyDetails.join(", ")}.`,
+        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${todasDiscrepancias.join(", ")}.`,
         date: new Date().toISOString().slice(0, 10),
         type: "stock",
         severity: "warn",
@@ -2033,7 +2375,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         cancelarSolicitudMaterial,
         despacharSolicitudMaterial,
         crearOrdenCompra,
+        actualizarOrdenCompra,
         aprobarYEnviarOrden,
+        anularOrdenCompra,
         calificarProveedor,
         crearFactura,
         confirmarRecepcionOrden,

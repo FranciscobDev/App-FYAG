@@ -41,6 +41,7 @@ import {
   CalificacionProveedor,
 } from "@/nucleo/tipos";
 import { estilos } from "../estilos";
+import { descargarPdfOrdenCompraWeb } from "../ordenesCompraApi";
 
 export interface PropiedadesModalesCompras {
   bancoNombre: any;
@@ -405,11 +406,19 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
             style={{ marginRight: 8 }}
           />
           <Boton
-            title="Descargar PDF (Simulado)"
+            title="Descargar PDF Corporativo"
             variant="primary"
             icon="download-outline"
             onPress={() => {
-              mostrarAviso("Documento PDF de Orden de Compra descargado exitosamente.");
+              if (pdfVistaPreviaOrden) {
+                void descargarPdfOrdenCompraWeb(pdfVistaPreviaOrden).then((descargado) => {
+                  mostrarAviso(
+                    descargado
+                      ? `PDF corporativo ${pdfVistaPreviaOrden.code}.pdf descargado exitosamente.`
+                      : `Documento PDF de Orden de Compra ${pdfVistaPreviaOrden.code} generado exitosamente.`
+                  );
+                });
+              }
               establecerPdfVistaPreviaOrden(null);
             }}
           />

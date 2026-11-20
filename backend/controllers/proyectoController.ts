@@ -53,10 +53,11 @@ export const obtenerProyectos = async (req: Request, res: Response): Promise<voi
         const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const result = esTecnico
             ? await pool.query<Proyecto>(
-                `SELECT p.*
+                `SELECT DISTINCT p.*
                  FROM proyecto p
-                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
-                 WHERE pt.id_usuario = $1
+                 LEFT JOIN asignaciones_proyecto ap ON ap.proyecto_id = p.id_proyecto AND ap.tecnico_id = $1 AND ap.activo = TRUE
+                 LEFT JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto AND pt.id_usuario = $1
+                 WHERE (ap.tecnico_id = $1 OR pt.id_usuario = $1 OR p.id_usuario = $1)
                  ORDER BY p.fecha_fin ASC NULLS LAST, p.id_proyecto ASC`,
                 [payload?.id]
             )
@@ -76,10 +77,11 @@ export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Re
         const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const result = esTecnico
             ? await pool.query<Proyecto>(
-                `SELECT p.*
+                `SELECT DISTINCT p.*
                  FROM proyecto p
-                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
-                 WHERE p.id_proyecto = $1 AND pt.id_usuario = $2`,
+                 LEFT JOIN asignaciones_proyecto ap ON ap.proyecto_id = p.id_proyecto AND ap.tecnico_id = $2 AND ap.activo = TRUE
+                 LEFT JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto AND pt.id_usuario = $2
+                 WHERE p.id_proyecto = $1 AND (ap.tecnico_id = $2 OR pt.id_usuario = $2 OR p.id_usuario = $2)`,
                 [id, payload?.id]
             )
             : await pool.query<Proyecto>(
@@ -409,8 +411,8 @@ export const listarTecnicos = async (_req: Request, res: Response): Promise<void
             `SELECT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
              FROM usuario u
-             JOIN roles r ON r.id_rol = u.id_rol
-             WHERE r.nombre_rol = 'Tecnico' AND u.activo = TRUE
+             LEFT JOIN roles r ON r.id_rol = u.id_rol
+             WHERE (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%') AND u.activo = TRUE
              ORDER BY u.nombre_usuario ASC`
         );
         res.status(200).json(result.rows);
@@ -425,12 +427,13 @@ export const obtenerTecnicosDeProyecto = async (req: Request<{ id: string }>, re
     const { id } = req.params;
     try {
         const result = await pool.query<TecnicoResumen>(
-            `SELECT u.id_usuario,
+            `SELECT DISTINCT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
-             FROM proyecto_tecnico pt
-             JOIN usuario u ON u.id_usuario = pt.id_usuario
-             WHERE pt.id_proyecto = $1
-             ORDER BY u.nombre_usuario ASC`,
+             FROM usuario u
+             LEFT JOIN asignaciones_proyecto ap ON ap.tecnico_id = u.id_usuario AND ap.proyecto_id = $1 AND ap.activo = TRUE
+             LEFT JOIN proyecto_tecnico pt ON pt.id_usuario = u.id_usuario AND pt.id_proyecto = $1
+             WHERE (ap.tecnico_id IS NOT NULL OR pt.id_usuario IS NOT NULL)
+             ORDER BY nombre ASC`,
             [id]
         );
         res.status(200).json(result.rows);
@@ -455,10 +458,10 @@ export const asignarTecnico = async (
 
     try {
         const esTecnico = await pool.query(
-            `SELECT 1
+            `SELECT u.id_usuario
              FROM usuario u
-             JOIN roles r ON r.id_rol = u.id_rol
-             WHERE u.id_usuario = $1 AND r.nombre_rol = 'Tecnico'`,
+             LEFT JOIN roles r ON r.id_rol = u.id_rol
+             WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%')`,
             [id_usuario]
         );
         if (esTecnico.rows.length === 0) {
@@ -466,12 +469,32 @@ export const asignarTecnico = async (
             return;
         }
 
-        // Insertar en asignaciones_proyecto garantizando unicidad activa y conservando historial
+        // 1. Insertar / reactivar en asignaciones_proyecto garantizando unicidad activa
         await pool.query(
             `INSERT INTO asignaciones_proyecto (proyecto_id, tecnico_id, fecha_asignacion, activo)
-             VALUES ($1, $2, CURRENT_TIMESTAMP, TRUE)`,
+             VALUES ($1, $2, CURRENT_TIMESTAMP, TRUE)
+             ON CONFLICT DO NOTHING`,
             [id, id_usuario]
         );
+        await pool.query(
+            `UPDATE asignaciones_proyecto
+             SET activo = TRUE, fecha_desasignacion = NULL, fecha_asignacion = CURRENT_TIMESTAMP
+             WHERE proyecto_id = $1 AND tecnico_id = $2`,
+            [id, id_usuario]
+        );
+
+        // 2. Insertar en tabla proyecto_tecnico si existe físicamente (compatibilidad)
+        try {
+            await pool.query(
+                `INSERT INTO proyecto_tecnico (id_proyecto, id_usuario, fecha_asignacion)
+                 VALUES ($1, $2, CURRENT_TIMESTAMP)
+                 ON CONFLICT DO NOTHING`,
+                [id, id_usuario]
+            );
+        } catch {
+            // Silencioso si es una vista
+        }
+
         res.status(201).json({ mensaje: 'Técnico asignado al proyecto' });
     } catch (error) {
         if (esErrorPg(error) && error.code === '23505') {
@@ -502,6 +525,15 @@ export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string
              RETURNING *`,
             [id, idUsuario]
         );
+
+        try {
+            await pool.query(
+                `DELETE FROM proyecto_tecnico WHERE id_proyecto = $1 AND id_usuario = $2`,
+                [id, idUsuario]
+            );
+        } catch {
+            // Silencioso si es vista
+        }
 
         if (result.rows.length === 0) {
             res.status(404).json({ mensaje: 'El técnico no está asignado a este proyecto' });

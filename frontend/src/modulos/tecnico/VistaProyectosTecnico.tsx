@@ -39,10 +39,9 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
   const [estadoFiltrar, establecerEstadoFiltrar] = useState<string>("todos");
 
   // Regla estricta: Técnico ve proyectos asignados y NUNCA proyectos cerrados
+  // El backend (/api/proyectos) ya filtra y entrega únicamente los proyectos asignados al técnico autenticado
   const tecnicoProyectos = proyectos.filter(
-    (p) =>
-      p.status !== "cerrado" &&
-      (p.technicianRuts.includes(usuario.rut) || p.technicianRuts.length === 0)
+    (p) => p.status !== "cerrado"
   );
 
   // Orden obligatorio por fecha límite (deadline ascendente: más urgente primero)
