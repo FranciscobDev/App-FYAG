@@ -97,7 +97,7 @@ export interface SolicitudMaterial {
   requesterRole?: Rol;
   date: string;
   urgency: "normal" | "alta" | "urgente";
-  status: "pendiente" | "aprobada" | "rechazada" | "entregada";
+  status: "pendiente" | "aprobada" | "rechazada" | "entregada" | "anulada";
   items: ItemSolicitudMaterial[];
   comment?: string;
   timeline?: PasoCronologiaSolicitud[];
@@ -107,6 +107,9 @@ export interface SolicitudMaterial {
   rejectionReason?: string;
   rejectedBy?: string;
   rejectedAt?: string;
+  updatedAt?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
 }
 
 export type EstadoOrdenCompra =

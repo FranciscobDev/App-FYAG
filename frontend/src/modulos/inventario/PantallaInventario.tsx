@@ -350,11 +350,14 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // =========================================================================
   // 3. ESTADO DE SOLICITUDES Y BANDEJA DE APROBACIÓN
   // =========================================================================
-  const [solicitudPestana, establecerSolicitudPestana] = useState<"todas" | "pendiente" | "aprobada" | "rechazada">(
-    rolActual === "admin" ? "pendiente" : "todas"
-  );
+  const [solicitudPestana, establecerSolicitudPestana] = useState<
+    "todas" | "pendiente" | "aprobada" | "rechazada" | "anulada"
+  >(rolActual === "admin" ? "pendiente" : "todas");
   const [solicitudBusqueda, establecerSolicitudBusqueda] = useState("");
   const [nuevoSolicitudModal, establecerNuevoSolicitudModal] = useState(false);
+  const [editandoSolicitud, establecerEditandoSolicitud] = useState<SolicitudMaterial | null>(null);
+  const [anularConfirmarSolicitud, establecerAnularConfirmarSolicitud] =
+    useState<SolicitudMaterial | null>(null);
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState(proyectos[0]?.id || "");
   const [solicitudElementos, establecerSolicitudElementos] = useState<{ sku: string; quantity: number }[]>([]);
   const [solicitudUrgencia, establecerSolicitudUrgencia] = useState<"normal" | "alta" | "urgente">("normal");
@@ -390,6 +393,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   const manejarAbrirNuevoSolicitud = () => {
+    establecerEditandoSolicitud(null);
     establecerSeleccionadoProyectoId(activoProyectos[0]?.id || "");
     const inicialElementos = [{ sku: productos[0]?.sku || "", quantity: 1 }];
     establecerSolicitudElementos(inicialElementos);
@@ -400,16 +404,59 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerNuevoSolicitudModal(true);
   };
 
+  const manejarAbrirEditarSolicitud = (req: SolicitudMaterial) => {
+    if (req.status !== "pendiente") {
+      mostrarAviso("Solo se pueden editar solicitudes en estado Pendiente.");
+      return;
+    }
+    const elementosIniciales = req.items.map((it) => ({
+      sku: it.sku,
+      quantity: it.quantity,
+    }));
+    establecerEditandoSolicitud(req);
+    establecerSeleccionadoProyectoId(req.projectId);
+    establecerSolicitudElementos(elementosIniciales);
+    establecerSolicitudUrgencia(req.urgency);
+    establecerSolicitudComentario(req.comment || "");
+    establecerSolicitudError("");
+    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(elementosIniciales));
+    establecerNuevoSolicitudModal(true);
+  };
+
   const manejarSolicitudElementoCambiar = (idx: number, sku: string, quantity: number) => {
     const updated = solicitudElementos.map((it, i) => (i === idx ? { sku, quantity } : it));
     establecerSolicitudElementos(updated);
     establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+    if (solicitudError) establecerSolicitudError("");
   };
 
   const manejarEnviarSolicitud = () => {
+    if (!seleccionadoProyectoId) {
+      establecerSolicitudError("Seleccione un proyecto activo.");
+      return;
+    }
     if (solicitudElementos.length === 0) {
       establecerSolicitudError("Debe agregar al menos un insumo.");
       return;
+    }
+
+    const skusVistos = new Set<string>();
+    for (const item of solicitudElementos) {
+      if (!item.sku) {
+        establecerSolicitudError("Cada línea debe tener un insumo seleccionado.");
+        return;
+      }
+      if (skusVistos.has(item.sku)) {
+        establecerSolicitudError(
+          `El insumo ${item.sku} está repetido. Ajusta la cantidad en una sola línea.`
+        );
+        return;
+      }
+      skusVistos.add(item.sku);
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        establecerSolicitudError("Todas las cantidades solicitadas deben ser mayores a 0.");
+        return;
+      }
     }
 
     const actualFaltante = calcularFaltanteExistencia(solicitudElementos);
@@ -429,12 +476,31 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       };
     });
 
+    if (editandoSolicitud) {
+      const resEdicion = modificarSolicitudMaterial(editandoSolicitud.id, {
+        projectId: seleccionadoProyectoId,
+        items: elementosHastaEnviar,
+        urgency: solicitudUrgencia,
+        comment: solicitudComentario.trim(),
+        editorName: usuario.name,
+      });
+
+      if (!resEdicion.success) {
+        establecerSolicitudError(resEdicion.error || "No se pudo actualizar la solicitud.");
+      } else {
+        mostrarAviso(`Solicitud ${editandoSolicitud.code} editada correctamente.`);
+        establecerNuevoSolicitudModal(false);
+        establecerEditandoSolicitud(null);
+      }
+      return;
+    }
+
     const res = crearSolicitudMaterial(
       seleccionadoProyectoId,
       usuario.rut,
       elementosHastaEnviar,
       solicitudUrgencia,
-      solicitudComentario,
+      solicitudComentario.trim(),
       { name: usuario.name, role: rolActual }
     );
 
@@ -793,7 +859,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       <SeccionSolicitudesMaterial
         activoPestana={activoPestana}
         aprobarSolicitudMaterial={aprobarSolicitudMaterial}
-        cancelarSolicitudMaterial={cancelarSolicitudMaterial}
+        establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
         establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
         establecerRechazarMotivo={establecerRechazarMotivo}
         establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
@@ -801,8 +867,8 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         establecerSolicitudBusqueda={establecerSolicitudBusqueda}
         establecerSolicitudPestana={establecerSolicitudPestana}
         filtradoSolicitudes={filtradoSolicitudes}
+        manejarAbrirEditarSolicitud={manejarAbrirEditarSolicitud}
         manejarAbrirNuevoSolicitud={manejarAbrirNuevoSolicitud}
-        modificarSolicitudMaterial={modificarSolicitudMaterial}
         mostrarAviso={mostrarAviso}
         rolActual={rolActual}
         solicitudBusqueda={solicitudBusqueda}
@@ -890,7 +956,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         abrirEscaner={abrirEscaner}
         activoDespachoSolicitud={activoDespachoSolicitud}
         activoProyectos={activoProyectos}
+        anularConfirmarSolicitud={anularConfirmarSolicitud}
         calcularFaltanteExistencia={calcularFaltanteExistencia}
+        cancelarSolicitudMaterial={cancelarSolicitudMaterial}
         cardex={cardex}
         productoCardexSeleccionado={productoCardexSeleccionado}
         establecerProductoCardexSeleccionado={establecerProductoCardexSeleccionado}
@@ -905,10 +973,13 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         conteoRequiresApproval={conteoRequiresApproval}
         conteoSku={conteoSku}
         editandoProducto={editandoProducto}
+        editandoSolicitud={editandoSolicitud}
         escanerCallback={escanerCallback}
         escanerTitulo={escanerTitulo}
         escanerVisible={escanerVisible}
+        establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
         establecerConfirmarDespachoVisible={establecerConfirmarDespachoVisible}
+        establecerEditandoSolicitud={establecerEditandoSolicitud}
         establecerConteoModalVisible={establecerConteoModalVisible}
         establecerConteoNotas={establecerConteoNotas}
         establecerConteoPhysicalCantidad={establecerConteoPhysicalCantidad}

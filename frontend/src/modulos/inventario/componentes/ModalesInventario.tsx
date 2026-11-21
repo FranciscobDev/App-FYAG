@@ -34,6 +34,8 @@ import {
   CeldaStock,
   ContenedorEstadoPantalla,
   NotificacionFlotante,
+  SelectorBuscable,
+  OpcionSelectorBuscable,
 } from "@/componentes/comunes";
 import {
   MovimientoCardex,
@@ -51,7 +53,12 @@ export interface PropiedadesModalesInventario {
   abrirEscaner: any;
   activoDespachoSolicitud: any;
   activoProyectos: any;
+  anularConfirmarSolicitud?: SolicitudMaterial | null;
   calcularFaltanteExistencia: any;
+  cancelarSolicitudMaterial?: (
+    id: string,
+    authorName?: string
+  ) => { success: boolean; error?: string };
   cardex?: any;
   productoCardexSeleccionado?: any;
   establecerProductoCardexSeleccionado?: any;
@@ -66,10 +73,15 @@ export interface PropiedadesModalesInventario {
   conteoRequiresApproval: any;
   conteoSku: any;
   editandoProducto: any;
+  editandoSolicitud?: SolicitudMaterial | null;
   escanerCallback: any;
   escanerTitulo: any;
   escanerVisible: any;
+  establecerAnularConfirmarSolicitud?: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
   establecerConfirmarDespachoVisible: any;
+  establecerEditandoSolicitud?: React.Dispatch<React.SetStateAction<SolicitudMaterial | null>>;
   establecerConteoModalVisible: any;
   establecerConteoNotas: any;
   establecerConteoPhysicalCantidad: any;
@@ -163,7 +175,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   abrirEscaner,
   activoDespachoSolicitud,
   activoProyectos,
+  anularConfirmarSolicitud = null,
   calcularFaltanteExistencia,
+  cancelarSolicitudMaterial,
   cardex = [],
   productoCardexSeleccionado = null,
   establecerProductoCardexSeleccionado,
@@ -178,10 +192,13 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   conteoRequiresApproval,
   conteoSku,
   editandoProducto,
+  editandoSolicitud = null,
   escanerCallback,
   escanerTitulo,
   escanerVisible,
+  establecerAnularConfirmarSolicitud,
   establecerConfirmarDespachoVisible,
+  establecerEditandoSolicitud,
   establecerConteoModalVisible,
   establecerConteoNotas,
   establecerConteoPhysicalCantidad,
@@ -268,6 +285,16 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   totalUnidadesHastaDespacho,
   usuario,
 }) => {
+  const opcionesProductosSolicitud: OpcionSelectorBuscable<string>[] = productos
+    .filter((p: Producto) => !p.disabled)
+    .map((p: Producto) => ({
+      label: p.name,
+      value: p.sku,
+      hint: `SKU: ${p.sku} • Stock disponible: ${p.stock} ${p.unit}`,
+      badge: `${p.stock} ${p.unit}`,
+      icon: "cube-outline",
+    }));
+
   return (
     <>
       {/* =====================================================================
@@ -486,12 +513,23 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </View>
       </VistaModal>
 
-      {/* MODAL 2: NUEVA SOLICITUD DE MATERIALES */}
+      {/* MODAL 2: CREAR O EDITAR SOLICITUD DE MATERIALES (SOLO PENDIENTE) */}
       <VistaModal
         visible={nuevoSolicitudModal}
-        onClose={() => establecerNuevoSolicitudModal(false)}
-        title="Crear Solicitud de Material"
-        subtitle="Validada contra stock disponible en bodega"
+        onClose={() => {
+          establecerNuevoSolicitudModal(false);
+          establecerEditandoSolicitud?.(null);
+        }}
+        title={
+          editandoSolicitud
+            ? `Editar Solicitud: ${editandoSolicitud.code}`
+            : "Crear Solicitud de Material"
+        }
+        subtitle={
+          editandoSolicitud
+            ? "Editable únicamente mientras permanezca en estado Pendiente"
+            : "Validada contra stock disponible en bodega"
+        }
       >
         <Text style={estilos.formularioSeccionEtiqueta}>Seleccionar Proyecto Activo:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
@@ -517,38 +555,78 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </ScrollView>
 
         <Text style={estilos.formularioSeccionEtiqueta}>Insumos Solicitados:</Text>
-        {solicitudElementos.map((item: any, idx: any) => {
+        {solicitudElementos.map((item: any, idx: number) => {
           const prod = productos.find((p: any) => p.sku === item.sku);
           const avail = prod ? prod.stock : 0;
           const esLacking = avail < item.quantity;
+          const opcionesDisponibles = opcionesProductosSolicitud.filter(
+            (op) =>
+              op.value === item.sku ||
+              !solicitudElementos.some((el: any) => el.sku === op.value)
+          );
 
           return (
-            <View key={idx} style={[estilos.solicitudElementoFormularioFila, esLacking && estilos.lackingExistenciaFormularioFila]}>
-              <View style={{ flex: 2, marginRight: 8 }}>
-                <Text style={estilos.elementoSkuEtiqueta}>{prod ? prod.name : item.sku}</Text>
-                <Text style={[estilos.elementoExistenciaDisponible, esLacking && { color: tema.colors.danger, fontWeight: "bold" }]}>
-                  Disponible: {avail} {prod?.unit}
-                </Text>
+            <View
+              key={`${item.sku}_${idx}`}
+              style={[
+                estilos.solicitudLineaTarjeta,
+                esLacking && estilos.lackingExistenciaFormularioFila,
+              ]}
+            >
+              <View style={estilos.solicitudLineaCabecera}>
+                <Text style={estilos.solicitudLineaTitulo}>Línea #{idx + 1}</Text>
+                <Pressable
+                  onPress={() => {
+                    const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
+                    establecerSolicitudElementos(updated);
+                    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                  }}
+                  style={{ padding: 4 }}
+                  accessibilityLabel={`Eliminar insumo línea ${idx + 1}`}
+                >
+                  <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
+                </Pressable>
               </View>
-              <TextInput
-                value={String(item.quantity)}
-                onChangeText={(val: any) => {
-                  const numero = Number(val) || 0;
-                  manejarSolicitudElementoCambiar(idx, item.sku, numero);
-                }}
-                keyboardType="numeric"
-                style={[estilos.cantidadEntrada, esLacking && { borderColor: tema.colors.danger }]}
+
+              <SelectorBuscable<string>
+                label="Insumo / Material"
+                options={opcionesDisponibles}
+                value={item.sku}
+                onChange={(nuevoSku) =>
+                  manejarSolicitudElementoCambiar(idx, nuevoSku, Math.max(1, item.quantity || 1))
+                }
+                placeholder="Seleccionar insumo..."
+                searchPlaceholder="Buscar por nombre o SKU..."
               />
-              <Pressable
-                onPress={() => {
-                  const updated = solicitudElementos.filter((_: any, i: any) => i !== idx);
-                  establecerSolicitudElementos(updated);
-                  establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
-                }}
-                style={{ padding: 4, marginLeft: 6 }}
-              >
-                <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
-              </Pressable>
+
+              <View style={estilos.solicitudLineaCantidadFila}>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      estilos.elementoExistenciaDisponible,
+                      esLacking && { color: tema.colors.danger, fontWeight: "bold" },
+                    ]}
+                  >
+                    Disponible en bodega: {avail} {prod?.unit || "un"}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                    Cant. ({prod?.unit || "un"}):
+                  </Text>
+                  <TextInput
+                    value={item.quantity === 0 ? "" : String(item.quantity)}
+                    onChangeText={(val: string) => {
+                      const limpia = val.replace(/[^0-9]/g, "");
+                      const numero = limpia === "" ? 0 : Number(limpia);
+                      manejarSolicitudElementoCambiar(idx, item.sku, numero);
+                    }}
+                    keyboardType="numeric"
+                    style={[estilos.cantidadEntrada, esLacking && { borderColor: tema.colors.danger }]}
+                    placeholder="0"
+                  />
+                </View>
+              </View>
             </View>
           );
         })}
@@ -558,12 +636,16 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           variant="outline"
           size="sm"
           onPress={() => {
-            const siguienteProducto = productos.find((p: any) => !solicitudElementos.some((i: any) => i.sku === p.sku));
-            if (siguienteProducto) {
-              const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
-              establecerSolicitudElementos(updated);
-              establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+            const siguienteProducto = productos.find(
+              (p: any) => !p.disabled && !solicitudElementos.some((i: any) => i.sku === p.sku)
+            );
+            if (!siguienteProducto) {
+              mostrarAviso("Todos los insumos disponibles ya están agregados en esta solicitud.");
+              return;
             }
+            const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
+            establecerSolicitudElementos(updated);
+            establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
           }}
           style={{ marginVertical: 8 }}
         />
@@ -621,11 +703,14 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           <Boton
             title="Cancelar"
             variant="ghost"
-            onPress={() => establecerNuevoSolicitudModal(false)}
+            onPress={() => {
+              establecerNuevoSolicitudModal(false);
+              establecerEditandoSolicitud?.(null);
+            }}
             style={{ marginRight: 8 }}
           />
           <Boton
-            title="Enviar Solicitud"
+            title={editandoSolicitud ? "Guardar Cambios" : "Enviar Solicitud"}
             variant="primary"
             disabled={faltanteExistenciaErrores.length > 0}
             onPress={manejarEnviarSolicitud}
@@ -680,6 +765,30 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         solicitud={seleccionadoComprobanteSolicitud}
         onClose={() => establecerSeleccionadoComprobanteSolicitud(null)}
         onNotify={mostrarAviso}
+      />
+
+      {/* MODAL 12: CONFIRMACIÓN PARA ANULAR SOLICITUD PENDIENTE */}
+      <DialogoConfirmacion
+        visible={Boolean(anularConfirmarSolicitud)}
+        title={`Anular Solicitud ${anularConfirmarSolicitud?.code || ""}`}
+        message={`¿Confirmas anular la solicitud ${anularConfirmarSolicitud?.code || ""} para el proyecto ${anularConfirmarSolicitud?.projectName || ""}? Pasará a estado Anulada y sus acciones quedarán bloqueadas.`}
+        confirmLabel="Sí, Anular Solicitud"
+        cancelLabel="Volver"
+        variant="danger"
+        onConfirm={() => {
+          if (anularConfirmarSolicitud && cancelarSolicitudMaterial) {
+            const res = cancelarSolicitudMaterial(anularConfirmarSolicitud.id, usuario.name);
+            if (res.success) {
+              mostrarAviso(
+                `Solicitud ${anularConfirmarSolicitud.code} anulada correctamente.`
+              );
+            } else {
+              mostrarAviso(res.error || "No fue posible anular la solicitud.");
+            }
+          }
+          establecerAnularConfirmarSolicitud?.(null);
+        }}
+        onCancel={() => establecerAnularConfirmarSolicitud?.(null)}
       />
 
       {/* MODAL 5: REGISTRAR MERMA */}

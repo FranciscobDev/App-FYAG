@@ -130,8 +130,20 @@ interface TipoContextoAplicacion {
     solicitud?: SolicitudMaterial;
     error?: string;
   };
-  modificarSolicitudMaterial: (id: string, items: ItemSolicitudMaterial[]) => void;
-  cancelarSolicitudMaterial: (id: string) => void;
+  modificarSolicitudMaterial: (
+    id: string,
+    updates: {
+      projectId?: string;
+      items: ItemSolicitudMaterial[];
+      urgency?: "normal" | "alta" | "urgente";
+      comment?: string;
+      editorName?: string;
+    }
+  ) => { success: boolean; error?: string };
+  cancelarSolicitudMaterial: (
+    id: string,
+    authorName?: string
+  ) => { success: boolean; error?: string };
   despacharSolicitudMaterial: (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
@@ -778,14 +790,157 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   };
 
-  const modificarSolicitudMaterial = (id: string, items: ItemSolicitudMaterial[]) => {
+  const modificarSolicitudMaterial = (
+    id: string,
+    updates: {
+      projectId?: string;
+      items: ItemSolicitudMaterial[];
+      urgency?: "normal" | "alta" | "urgente";
+      comment?: string;
+      editorName?: string;
+    }
+  ) => {
+    const req = solicitudesMaterial.find((r) => r.id === id);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status !== "pendiente") {
+      return {
+        success: false,
+        error: "Solo se pueden editar solicitudes en estado Pendiente.",
+      };
+    }
+    if (!updates.items || updates.items.length === 0) {
+      return { success: false, error: "Debe incluir al menos un insumo válido." };
+    }
+
+    // Validar cantidades positivas, ausencia de duplicados y disponibilidad de stock
+    const skusVistos = new Set<string>();
+    for (const item of updates.items) {
+      if (!item.sku || item.quantity <= 0) {
+        return { success: false, error: "Cada línea debe tener un insumo y cantidad mayor a 0." };
+      }
+      if (skusVistos.has(item.sku)) {
+        return {
+          success: false,
+          error: `El insumo ${item.sku} está duplicado en la solicitud.`,
+        };
+      }
+      skusVistos.add(item.sku);
+      const prod = productos.find((p) => p.sku === item.sku);
+      if (!prod || prod.stock < item.quantity) {
+        return {
+          success: false,
+          error: `Stock insuficiente para ${item.name || item.sku} (Disponible: ${prod ? prod.stock : 0}).`,
+        };
+      }
+    }
+
+    let proj = proyectos.find((p) => p.id === (updates.projectId || req.projectId));
+    if (!proj) {
+      return { success: false, error: "El proyecto seleccionado no existe." };
+    }
+    if (proj.status === "cerrado") {
+      return { success: false, error: "No se puede asignar a un proyecto cerrado." };
+    }
+
+    const ahora = new Date();
+    const fechaDia = ahora.toISOString().slice(0, 10);
+    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
+    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
+
     setMaterialRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, items } : req))
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              projectId: proj.id,
+              projectCode: proj.code,
+              projectName: proj.name,
+              items: updates.items,
+              urgency: updates.urgency ?? item.urgency,
+              comment: updates.comment !== undefined ? updates.comment : item.comment,
+              updatedAt: fechaHoraTexto,
+              timeline: [
+                ...(item.timeline || []),
+                {
+                  id: `tl_edit_${Date.now()}`,
+                  title: "Solicitud Modificada",
+                  description: `Actualizada por ${updates.editorName || "Bodeguero"} (${updates.items.length} ítem(s)) mientras sigue en Pendiente.`,
+                  date: fechaHoraTexto,
+                  author: updates.editorName || item.technicianName,
+                  status: "completado",
+                },
+              ],
+            }
+          : item
+      )
     );
+
+    return { success: true };
   };
 
-  const cancelarSolicitudMaterial = (id: string) => {
-    setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
+  const cancelarSolicitudMaterial = (id: string, authorName?: string) => {
+    const req = solicitudesMaterial.find((r) => r.id === id);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status !== "pendiente") {
+      return {
+        success: false,
+        error: "Solo se pueden anular solicitudes en estado Pendiente.",
+      };
+    }
+
+    const ahora = new Date();
+    const fechaDia = ahora.toISOString().slice(0, 10);
+    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
+    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
+    const responsable = authorName?.trim() || "Bodeguero Central";
+
+    const timeline = (req.timeline || []).map((paso) =>
+      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
+    );
+
+    setMaterialRequests((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              status: "anulada",
+              cancelledBy: responsable,
+              cancelledAt: fechaHoraTexto,
+              timeline: [
+                ...timeline,
+                {
+                  id: `tl_anul_${Date.now()}`,
+                  title: "Anulada por Bodega",
+                  description: `Solicitud anulada por ${responsable} antes de revisión administrativa.`,
+                  date: fechaHoraTexto,
+                  author: responsable,
+                  status: "completado",
+                },
+              ],
+            }
+          : r
+      )
+    );
+
+    const notifAnulada: DetalleNotificacion = {
+      id: `notif_sol_anul_${Date.now()}`,
+      title: `Solicitud ${req.code} Anulada`,
+      message: `${responsable} anuló la solicitud ${req.code} (${req.projectName}) mientras estaba pendiente.`,
+      date: `Hoy ${horaTexto}`,
+      type: "solicitud",
+      severity: "warn",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: req.id,
+      relatedEntityLabel: `Revisar ${req.code}`,
+    };
+    setNotificationsList((prev) => [notifAnulada, ...prev]);
+
+    return { success: true };
   };
 
   // Egreso / Despacho de Materiales (Paso 6)

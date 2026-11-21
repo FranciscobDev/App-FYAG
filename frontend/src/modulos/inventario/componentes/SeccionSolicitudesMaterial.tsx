@@ -19,7 +19,12 @@ import {
 } from "@/componentes/comunes";
 import { estilos } from "../estilos";
 
-export type FiltroPestanaSolicitud = "todas" | "pendiente" | "aprobada" | "rechazada";
+export type FiltroPestanaSolicitud =
+  | "todas"
+  | "pendiente"
+  | "aprobada"
+  | "rechazada"
+  | "anulada";
 
 export interface PropiedadesSeccionSolicitudesMaterial {
   activoPestana: string;
@@ -32,7 +37,9 @@ export interface PropiedadesSeccionSolicitudesMaterial {
     solicitud?: SolicitudMaterial;
     error?: string;
   };
-  cancelarSolicitudMaterial: (id: string) => void;
+  establecerAnularConfirmarSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
   establecerRechazarModalSolicitud: React.Dispatch<React.SetStateAction<SolicitudMaterial | null>>;
   establecerRechazarMotivo: React.Dispatch<React.SetStateAction<string>>;
   establecerSeleccionadoComprobanteSolicitud: React.Dispatch<
@@ -44,8 +51,8 @@ export interface PropiedadesSeccionSolicitudesMaterial {
   establecerSolicitudBusqueda: React.Dispatch<React.SetStateAction<string>>;
   establecerSolicitudPestana: React.Dispatch<React.SetStateAction<FiltroPestanaSolicitud>>;
   filtradoSolicitudes: SolicitudMaterial[];
+  manejarAbrirEditarSolicitud: (req: SolicitudMaterial) => void;
   manejarAbrirNuevoSolicitud: () => void;
-  modificarSolicitudMaterial: (id: string, items: SolicitudMaterial["items"]) => void;
   mostrarAviso: (mensaje: string) => void;
   rolActual: Rol;
   solicitudBusqueda: string;
@@ -57,7 +64,7 @@ export interface PropiedadesSeccionSolicitudesMaterial {
 export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesMaterial> = ({
   activoPestana,
   aprobarSolicitudMaterial,
-  cancelarSolicitudMaterial,
+  establecerAnularConfirmarSolicitud,
   establecerRechazarModalSolicitud,
   establecerRechazarMotivo,
   establecerSeleccionadoComprobanteSolicitud,
@@ -65,8 +72,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
   establecerSolicitudBusqueda,
   establecerSolicitudPestana,
   filtradoSolicitudes,
+  manejarAbrirEditarSolicitud,
   manejarAbrirNuevoSolicitud,
-  modificarSolicitudMaterial,
   mostrarAviso,
   rolActual,
   solicitudBusqueda,
@@ -82,6 +89,7 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
     pendiente: todasSolicitudes.filter((r) => r.status === "pendiente").length,
     aprobada: todasSolicitudes.filter((r) => r.status === "aprobada").length,
     rechazada: todasSolicitudes.filter((r) => r.status === "rechazada").length,
+    anulada: todasSolicitudes.filter((r) => r.status === "anulada").length,
   };
 
   const manejarAprobarSolicitud = (req: SolicitudMaterial) => {
@@ -105,15 +113,22 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
           ===================================================================== */}
       {activoPestana === "solicitudes" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          {/* Guía visual del flujo SCRUM para revisión y aprobación */}
-          {rolActual === "admin" && (
+          {/* Guía visual del flujo SCRUM según el rol activo */}
+          {rolActual === "admin" ? (
             <View style={estilos.scrumBandejaBanner}>
               <Insignia label="SCRUM" tone="warn" size="sm" />
               <Text style={estilos.scrumBandejaTexto}>
                 Bandeja de Aprobación: revisa las solicitudes pendientes, exige motivo obligatorio al rechazar o aprueba para visualizar el comprobante numerado y notificar al bodeguero solicitante.
               </Text>
             </View>
-          )}
+          ) : rolActual === "warehouse" ? (
+            <View style={estilos.scrumBandejaBanner}>
+              <Insignia label="SCRUM" tone="warn" size="sm" />
+              <Text style={estilos.scrumBandejaTexto}>
+                Solicitudes del Bodeguero: las acciones &ldquo;Editar&rdquo; y &ldquo;Anular&rdquo; están activas únicamente cuando el estado es Pendiente; en solicitudes Aprobadas, Rechazadas o Anuladas aparecen bloqueadas.
+              </Text>
+            </View>
+          ) : null}
 
           {/* Contadores rápidos interactivos por estado */}
           <View style={estilos.solicitudContadoresFila}>
@@ -155,7 +170,7 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
 
           <View style={estilos.solicitudSuperiorBarra}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.solicitudPestanasScroll}>
-              {(["pendiente", "aprobada", "rechazada", "todas"] as const).map((t) => (
+              {(["pendiente", "aprobada", "rechazada", "anulada", "todas"] as const).map((t) => (
                 <TouchableOpacity
                   key={t}
                   onPress={() => establecerSolicitudPestana(t)}
@@ -216,7 +231,9 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
               containerStyle={{ marginVertical: 32 }}
             />
           ) : (
-            filtradoSolicitudes.map((req) => (
+            filtradoSolicitudes.map((req) => {
+              const esPendiente = req.status === "pendiente";
+              return (
               <Tarjeta key={req.id} variant="elevated" style={estilos.solicitudElementoTarjeta}>
                 <View style={estilos.solicitudElementoSuperior}>
                   <View style={{ flex: 1, minWidth: 180 }}>
@@ -229,6 +246,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                             ? "ok"
                             : req.status === "rechazada"
                             ? "danger"
+                            : req.status === "anulada"
+                            ? "mute"
                             : "warn"
                         }
                         size="sm"
@@ -318,11 +337,21 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                       <Text style={estilos.rechazarAvisoTexto}>{req.rejectionReason}</Text>
                     </View>
                   )}
+
+                  {req.status === "anulada" && (
+                    <View style={estilos.anuladaAviso}>
+                      <Ionicons name="ban-outline" size={16} color={tema.colors.textSecondary} />
+                      <Text style={estilos.anuladaAvisoTexto}>
+                        Solicitud anulada{req.cancelledBy ? ` por ${req.cancelledBy}` : ""}
+                        {req.cancelledAt ? ` (${req.cancelledAt})` : ""}. No puede editarse ni enviarse a despacho.
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Botones de acción según rol y estado de la solicitud */}
                 <View style={estilos.solicitudBotonesFila}>
-                  {req.status === "pendiente" && rolActual === "admin" && (
+                  {esPendiente && rolActual === "admin" && (
                     <>
                       <Boton
                         title="Rechazar"
@@ -361,40 +390,59 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                     />
                   )}
 
-                  {/* Bodeguero puede modificar o anular mientras la solicitud sigue pendiente */}
-                  {req.status === "pendiente" && rolActual === "warehouse" && (
+                  {/* Bodeguero: acciones Editar y Anular activas únicamente cuando el estado es Pendiente */}
+                  {rolActual === "warehouse" && (
                     <>
+                      {!esPendiente && (
+                        <View style={estilos.bloqueadoAccionAviso}>
+                          <Ionicons
+                            name="lock-closed-outline"
+                            size={13}
+                            color={tema.colors.textMuted}
+                          />
+                          <Text style={estilos.bloqueadoAccionTexto}>
+                            Acciones bloqueadas ({req.status})
+                          </Text>
+                        </View>
+                      )}
                       <Boton
-                        title="Anular Solicitud"
-                        variant="danger"
+                        title="Editar"
+                        variant="secondary"
                         size="sm"
-                        icon="trash-outline"
-                        onPress={() => {
-                          cancelarSolicitudMaterial(req.id);
-                          mostrarAviso(`Solicitud ${req.code} anulada.`);
-                        }}
+                        icon={esPendiente ? "create-outline" : "lock-closed-outline"}
+                        disabled={!esPendiente}
+                        accessibilityHint={
+                          esPendiente
+                            ? "Editar proyecto, insumos o cantidades de esta solicitud pendiente"
+                            : "Bloqueado: solo se pueden editar solicitudes en estado Pendiente"
+                        }
+                        onPress={() => manejarAbrirEditarSolicitud(req)}
                         style={esMovil ? { flexGrow: 1 } : undefined}
                       />
                       <Boton
-                        title="Modificar Cantidades"
-                        variant="secondary"
+                        title="Anular"
+                        variant={esPendiente ? "danger" : "outline"}
                         size="sm"
-                        icon="create-outline"
-                        onPress={() => {
-                          const updated = req.items.map((i) => ({
-                            ...i,
-                            quantity: Math.max(1, i.quantity - 1),
-                          }));
-                          modificarSolicitudMaterial(req.id, updated);
-                          mostrarAviso(`Cantidades de solicitud ${req.code} modificadas.`);
-                        }}
-                        style={esMovil ? { flexGrow: 1 } : undefined}
+                        icon={esPendiente ? "ban-outline" : "lock-closed-outline"}
+                        disabled={!esPendiente}
+                        accessibilityHint={
+                          esPendiente
+                            ? "Anular esta solicitud pendiente"
+                            : "Bloqueado: solo se pueden anular solicitudes en estado Pendiente"
+                        }
+                        onPress={() => establecerAnularConfirmarSolicitud(req)}
+                        style={[
+                          !esPendiente && { borderColor: tema.colors.borderDark },
+                          esMovil && { flexGrow: 1 },
+                        ]}
+                        textStyle={!esPendiente ? { color: tema.colors.textMuted } : undefined}
                       />
                     </>
                   )}
                 </View>
               </Tarjeta>
-            ))
+              );
+            })
           )}
         </ScrollView>
       )}

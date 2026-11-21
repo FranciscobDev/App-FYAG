@@ -35,6 +35,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
 
   const criticalExistencia = productos.filter((p) => p.stock <= p.minStock && !p.disabled);
   const aprobadoForDespacho = solicitudesMaterial.filter((r) => r.status === "aprobada");
+  const pendienteSolicitudes = solicitudesMaterial.filter((r) => r.status === "pendiente");
   const inTransitDevoluciones = ordenesDevolucion.filter((r) => r.status === "en_transito");
   const pendienteHastaConfirmar = recepcionesPendientes.filter((p) => p.status === "por_confirmar");
 
@@ -139,6 +140,22 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
           </View>
           <Text style={[estilos.rapidoAccionEtiqueta, { color: tema.colors.transit }]}>
             Devoluciones Faena
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[estilos.rapidoAccionBoton, { backgroundColor: tema.colors.primaryLight }]}
+          onPress={() => onNavigate && onNavigate("solicitudes")}
+          activeOpacity={0.8}
+        >
+          <View style={estilos.rapidoAccionSuperiorFila}>
+            <Ionicons name="document-text-outline" size={26} color={tema.colors.primaryDark} />
+            {pendienteSolicitudes.length > 0 && (
+              <Insignia label={String(pendienteSolicitudes.length)} tone="warn" size="sm" />
+            )}
+          </View>
+          <Text style={[estilos.rapidoAccionEtiqueta, { color: tema.colors.primaryDark }]}>
+            Solicitudes ({solicitudesMaterial.length})
           </Text>
         </TouchableOpacity>
       </View>
