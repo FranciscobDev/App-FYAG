@@ -205,7 +205,10 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
             <View key={req.id} style={estilos.aprobadoTarjeta}>
               <View style={estilos.aprobadoSuperior}>
                 <Text style={estilos.aprobadoCodigo}>{req.code}</Text>
-                <Insignia label="Aprobada" tone="ok" size="sm" />
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  {req.receiptNumber && <Insignia label={`N° ${req.receiptNumber}`} tone="info" size="sm" />}
+                  <Insignia label="Aprobada" tone="ok" size="sm" />
+                </View>
               </View>
               <Text style={estilos.aprobadoProyecto}>{req.projectName}</Text>
               <Text style={estilos.aprobadoTecnico}>Retira: {req.technicianName}</Text>
@@ -219,7 +222,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
                 variant="primary"
                 size="sm"
                 icon="arrow-up-circle-outline"
-                onPress={() => onNavigate && onNavigate("inventario")}
+                onPress={() => onNavigate && onNavigate("egreso")}
                 style={{ marginTop: 8 }}
               />
             </View>

@@ -4,4 +4,6 @@ export * from "./SeccionEgresoBodega";
 export * from "./SeccionMermas";
 export * from "./SeccionConteoFisico";
 export * from "./ModalesInventario";
+export * from "./ModalComprobanteSolicitud";
+export * from "./ModalRechazoSolicitud";
 export * from "./CatalogoStock";

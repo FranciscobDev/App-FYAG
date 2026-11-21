@@ -1,12 +1,8 @@
 import React, { useState } from "react";
 import {
-  FlatList,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -20,14 +16,14 @@ import { Boton } from "@/componentes/base/Boton";
 import { Tarjeta } from "@/componentes/base/Tarjeta";
 import { ColumnaTabla, TablaDatos } from "@/componentes/datos/TablaDatos";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
-import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { TarjetaKpi } from "@/componentes/datos/TarjetaKpi";
-import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { InsigniaSemaforo } from "@/componentes/base/InsigniaSemaforo";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
+import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { NotificacionFlotante, TipoNotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
+import { ModalComprobanteSolicitud, ModalRechazoSolicitud } from "@/modulos/inventario/componentes";
 import { SolicitudMaterial } from "@/nucleo/tipos";
 
 interface AdminDashboardProps {
@@ -56,13 +52,11 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
     (p) => p.status === "activo" && p.budget > 0 && p.costReal / p.budget > 1.0
   );
 
-  // Reject Modal State
-  const [rechazarModalVisible, establecerRechazarModalVisible] = useState(false);
-  const [seleccionadoSolicitud, establecerSeleccionadoSolicitud] = useState<SolicitudMaterial | null>(null);
-  const [rejectionMotivo, establecerRejectionMotivo] = useState("");
-  const [rechazarError, establecerRechazarError] = useState("");
+  // Estado de modales de rechazo y comprobante numerado
+  const [seleccionadoSolicitudRechazar, establecerSeleccionadoSolicitudRechazar] = useState<SolicitudMaterial | null>(null);
+  const [comprobanteSolicitud, establecerComprobanteSolicitud] = useState<SolicitudMaterial | null>(null);
 
-  // Toast State
+  // Estado de notificación flotante
   const [avisoVisible, establecerAvisoVisible] = useState(false);
   const [avisoMensaje, establecerAvisoMensaje] = useState("");
   const [avisoTipo, establecerAvisoTipo] = useState<TipoNotificacionFlotante>("ok");
@@ -74,26 +68,22 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
   };
 
   const manejarAbrirRechazar = (req: SolicitudMaterial) => {
-    establecerSeleccionadoSolicitud(req);
-    establecerRejectionMotivo("");
-    establecerRechazarError("");
-    establecerRechazarModalVisible(true);
+    establecerSeleccionadoSolicitudRechazar(req);
   };
 
-  const manejarConfirmarRechazar = () => {
-    if (!seleccionadoSolicitud) return;
-    if (!rejectionMotivo.trim()) {
-      establecerRechazarError("Debe ingresar un motivo para rechazar la solicitud.");
+  const manejarAprobarSolicitud = (req: SolicitudMaterial) => {
+    const resultado = aprobarSolicitudMaterial(req.id, usuario.name);
+    if (!resultado.success) {
+      mostrarAviso(resultado.error || "No fue posible aprobar la solicitud.", "danger");
       return;
     }
-    const resultado = rechazarSolicitudMaterial(seleccionadoSolicitud.id, rejectionMotivo, usuario.name);
-    if (resultado.success) {
-      establecerRechazarModalVisible(false);
-      establecerSeleccionadoSolicitud(null);
-      mostrarAviso("Solicitud rechazada con motivo informado.", "warn");
-    } else if (resultado.error) {
-      establecerRechazarError(resultado.error);
+    if (resultado.solicitud) {
+      establecerComprobanteSolicitud(resultado.solicitud);
     }
+    mostrarAviso(
+      `Solicitud ${req.code} aprobada (${resultado.receiptNumber}). Resultado notificado al bodeguero solicitante.`,
+      "ok"
+    );
   };
 
   // Columnas para la Tabla de Solicitudes Pendientes (Paso 5)
@@ -173,10 +163,7 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
             variant="success"
             size="sm"
             icon="checkmark-outline"
-            onPress={() => {
-              aprobarSolicitudMaterial(req.id, usuario.name);
-              mostrarAviso(`Solicitud ${req.code} aprobada para despacho.`, "ok");
-            }}
+            onPress={() => manejarAprobarSolicitud(req)}
           />
         </View>
       ),
@@ -218,7 +205,7 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
           subtitle="Requieren aprobación"
           tone={pendienteSolicitudes.length > 0 ? "warn" : "ok"}
           icon="clipboard-outline"
-          onPress={() => onNavigate && onNavigate("inventario")}
+          onPress={() => onNavigate && onNavigate("solicitudes")}
         />
         <TarjetaKpi
           label="Insumos Bajo Mínimo"
@@ -334,9 +321,12 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
           <View style={estilos.tituloWithIcono}>
             <Ionicons name="clipboard-outline" size={18} color={tema.colors.warn} />
             <Text style={estilos.seccionTitulo}>
-              Tabla de Solicitudes Pendientes de Aprobación ({pendienteSolicitudes.length})
+              Solicitudes Pendientes de Aprobación ({pendienteSolicitudes.length})
             </Text>
           </View>
+          <TouchableOpacity onPress={() => onNavigate && onNavigate("solicitudes")}>
+            <Text style={estilos.enlaceTexto}>Ver bandeja completa</Text>
+          </TouchableOpacity>
         </View>
 
         {pendienteSolicitudes.length === 0 ? (
@@ -344,8 +334,8 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
             icon="checkmark-circle-outline"
             title="¡Todo al día!"
             description="No hay solicitudes pendientes de aprobación en este momento."
-            actionTitle="Ver Inventario"
-            onAction={() => onNavigate && onNavigate("inventario")}
+            actionTitle="Ir a Bandeja Completa"
+            onAction={() => onNavigate && onNavigate("solicitudes")}
             containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
           />
         ) : (
@@ -383,7 +373,7 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
                   ))}
                   {req.comment && (
                     <Text style={estilos.solicitudComentarioTexto}>
-                      Nota: "{req.comment}"
+                      Nota: &ldquo;{req.comment}&rdquo;
                     </Text>
                   )}
                 </View>
@@ -399,14 +389,11 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
                     textStyle={{ color: tema.colors.danger }}
                   />
                   <Boton
-                    title="Aprobar Solicitud"
+                    title="Aprobar y Ver Comprobante"
                     variant="success"
                     size="sm"
                     icon="checkmark-outline"
-                    onPress={() => {
-                      aprobarSolicitudMaterial(req.id, usuario.name);
-                      mostrarAviso(`Solicitud ${req.code} aprobada para despacho.`, "ok");
-                    }}
+                    onPress={() => manejarAprobarSolicitud(req)}
                   />
                 </View>
               </View>
@@ -415,47 +402,34 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
         )}
       </Tarjeta>
 
-      {/* REJECT MODAL */}
-      <VistaModal
-        visible={rechazarModalVisible}
-        onClose={() => establecerRechazarModalVisible(false)}
-        title="Rechazar Solicitud de Material"
-        subtitle={seleccionadoSolicitud ? `${seleccionadoSolicitud.code} • ${seleccionadoSolicitud.projectName}` : ""}
-      >
-        <Text style={estilos.modalInstruction}>
-          El rechazo exige motivo obligatorio para informar al técnico en terreno:
-        </Text>
-        <TextInput
-          value={rejectionMotivo}
-          onChangeText={(text) => {
-            establecerRejectionMotivo(text);
-            if (rechazarError) establecerRechazarError("");
-          }}
-          placeholder="Ej: Insumos no contemplados en cubicación o proyecto sin disponibilidad..."
-          placeholderTextColor={tema.colors.textLight}
-          multiline
-          numberOfLines={3}
-          style={[estilos.motivoEntrada, Boolean(rechazarError) && estilos.entradaErrorBorde]}
-        />
-        {Boolean(rechazarError) && <Text style={estilos.errorTexto}>{rechazarError}</Text>}
+      {/* MODAL DE MOTIVO OBLIGATORIO AL RECHAZAR */}
+      <ModalRechazoSolicitud
+        solicitud={seleccionadoSolicitudRechazar}
+        onClose={() => establecerSeleccionadoSolicitudRechazar(null)}
+        onConfirmarRechazo={(solicitud, motivo) => {
+          const resultado = rechazarSolicitudMaterial(solicitud.id, motivo, usuario.name);
+          if (resultado.success) {
+            mostrarAviso(
+              `Solicitud ${solicitud.code} rechazada. Motivo notificado al bodeguero solicitante.`,
+              "warn"
+            );
+            return { success: true };
+          }
+          return {
+            success: false,
+            error: resultado.error || "Debe ingresar un motivo obligatorio.",
+          };
+        }}
+      />
 
-        <View style={estilos.modalAcciones}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerRechazarModalVisible(false)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Confirmar Rechazo"
-            variant="danger"
-            icon="trash-outline"
-            onPress={manejarConfirmarRechazar}
-          />
-        </View>
-      </VistaModal>
+      {/* MODAL DE VISTA DE COMPROBANTE NUMERADO AL APROBAR */}
+      <ModalComprobanteSolicitud
+        solicitud={comprobanteSolicitud}
+        onClose={() => establecerComprobanteSolicitud(null)}
+        onNotify={(mensaje) => mostrarAviso(mensaje, "ok")}
+      />
 
-      {/* TOAST FLOTANTE */}
+      {/* NOTIFICACIÓN FLOTANTE */}
       <NotificacionFlotante
         visible={avisoVisible}
         message={avisoMensaje}
@@ -675,37 +649,6 @@ const estilos = StyleSheet.create({
   solicitudAccionFila: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  modalInstruction: {
-    fontSize: tema.fontSize.sm,
-    color: tema.colors.text,
-    marginBottom: tema.spacing.sm,
-  },
-  motivoEntrada: {
-    borderWidth: 1,
-    borderColor: tema.colors.borderDark,
-    borderRadius: tema.radius.md,
-    padding: tema.spacing.md,
-    height: 80,
-    textAlignVertical: "top",
-    color: tema.colors.text,
-    backgroundColor: tema.colors.card,
-  },
-  entradaErrorBorde: {
-    borderColor: tema.colors.danger,
-    backgroundColor: "#fff5f5",
-  },
-  errorTexto: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.danger,
-    marginTop: 4,
-  },
-  modalAcciones: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: tema.spacing.lg,
     flexWrap: "wrap",
     gap: 8,
   },

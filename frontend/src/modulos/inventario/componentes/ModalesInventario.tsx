@@ -44,6 +44,8 @@ import {
   RegistroMerma,
 } from "@/nucleo/tipos";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
+import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
+import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
 
 export interface PropiedadesModalesInventario {
   abrirEscaner: any;
@@ -97,10 +99,14 @@ export interface PropiedadesModalesInventario {
   establecerNuevoSolicitudModal: any;
   establecerRechazarModalSolicitud: any;
   establecerRechazarMotivo: any;
+  establecerSeleccionadoComprobanteSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
   establecerSeleccionadoProyectoId: any;
   establecerSeleccionadoTimelineSolicitud: any;
   establecerSolicitudComentario: any;
   establecerSolicitudElementos: any;
+  establecerSolicitudUrgencia?: React.Dispatch<React.SetStateAction<"normal" | "alta" | "urgente">>;
   faltanteExistenciaErrores: any;
   formularioBarcode: any;
   formularioCategoria: any;
@@ -140,6 +146,7 @@ export interface PropiedadesModalesInventario {
   rechazarMotivo: any;
   rechazarSolicitudMaterial: any;
   seleccionadoConteoProducto: any;
+  seleccionadoComprobanteSolicitud: SolicitudMaterial | null;
   seleccionadoMermaProducto: any;
   seleccionadoProyectoId: any;
   seleccionadoTimelineSolicitud: any;
@@ -147,6 +154,7 @@ export interface PropiedadesModalesInventario {
   solicitudComentario: any;
   solicitudElementos: any;
   solicitudError: any;
+  solicitudUrgencia?: "normal" | "alta" | "urgente";
   totalUnidadesHastaDespacho: any;
   usuario: any;
 }
@@ -203,10 +211,12 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   establecerNuevoSolicitudModal,
   establecerRechazarModalSolicitud,
   establecerRechazarMotivo,
+  establecerSeleccionadoComprobanteSolicitud,
   establecerSeleccionadoProyectoId,
   establecerSeleccionadoTimelineSolicitud,
   establecerSolicitudComentario,
   establecerSolicitudElementos,
+  establecerSolicitudUrgencia,
   faltanteExistenciaErrores,
   formularioBarcode,
   formularioCategoria,
@@ -246,6 +256,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   rechazarMotivo,
   rechazarSolicitudMaterial,
   seleccionadoConteoProducto,
+  seleccionadoComprobanteSolicitud,
   seleccionadoMermaProducto,
   seleccionadoProyectoId,
   seleccionadoTimelineSolicitud,
@@ -253,6 +264,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   solicitudComentario,
   solicitudElementos,
   solicitudError,
+  solicitudUrgencia = "normal",
   totalUnidadesHastaDespacho,
   usuario,
 }) => {
@@ -556,6 +568,33 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           style={{ marginVertical: 8 }}
         />
 
+        {establecerSolicitudUrgencia && (
+          <>
+            <Text style={estilos.formularioSeccionEtiqueta}>Nivel de Prioridad:</Text>
+            <View style={estilos.motivoPastillasFila}>
+              {(["normal", "alta", "urgente"] as const).map((nivel) => (
+                <TouchableOpacity
+                  key={nivel}
+                  onPress={() => establecerSolicitudUrgencia(nivel)}
+                  style={[
+                    estilos.motivoPastilla,
+                    solicitudUrgencia === nivel && estilos.motivoPastillaActivo,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      estilos.motivoPastillaTexto,
+                      solicitudUrgencia === nivel && estilos.motivoPastillaTextoActivo,
+                    ]}
+                  >
+                    {nivel.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
         <CampoTexto
           label="Nota o justificación (opcional)"
           value={solicitudComentario}
@@ -616,46 +655,32 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         ))}
       </VistaModal>
 
-      {/* MODAL 4: MOTIVO DE RECHAZO DE SOLICITUD */}
-      <VistaModal
-        visible={Boolean(rechazarModalSolicitud)}
+      {/* MODAL 4: MOTIVO OBLIGATORIO DE RECHAZO DE SOLICITUD */}
+      <ModalRechazoSolicitud
+        solicitud={rechazarModalSolicitud}
+        motivoInicial={rechazarMotivo}
         onClose={() => establecerRechazarModalSolicitud(null)}
-        title="Rechazar Solicitud de Material"
-        subtitle={rechazarModalSolicitud ? `${rechazarModalSolicitud.code}` : ""}
-      >
-        <Text style={estilos.modalInstruction}>
-          El rechazo exige motivo obligatorio:
-        </Text>
-        <TextInput
-          value={rechazarMotivo}
-          onChangeText={establecerRechazarMotivo}
-          placeholder="Ingrese motivo de rechazo detallado..."
-          placeholderTextColor={tema.colors.textLight}
-          multiline
-          numberOfLines={3}
-          style={estilos.motivoEntrada}
-        />
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerRechazarModalSolicitud(null)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Confirmar Rechazo"
-            variant="danger"
-            disabled={!rechazarMotivo.trim()}
-            onPress={() => {
-              if (rechazarModalSolicitud && rechazarMotivo.trim()) {
-                rechazarSolicitudMaterial(rechazarModalSolicitud.id, rechazarMotivo.trim(), usuario.name);
-                mostrarAviso(`Solicitud ${rechazarModalSolicitud.code} rechazada.`);
-                establecerRechazarModalSolicitud(null);
-              }
-            }}
-          />
-        </View>
-      </VistaModal>
+        onConfirmarRechazo={(solicitud, motivo) => {
+          const resultado = rechazarSolicitudMaterial(solicitud.id, motivo, usuario.name);
+          if (resultado?.success) {
+            mostrarAviso(
+              `Solicitud ${solicitud.code} rechazada. Motivo informado al bodeguero solicitante.`
+            );
+            return { success: true };
+          }
+          return {
+            success: false,
+            error: resultado?.error || "Debe ingresar un motivo obligatorio.",
+          };
+        }}
+      />
+
+      {/* MODAL 11: VISTA DE COMPROBANTE NUMERADO AL APROBAR */}
+      <ModalComprobanteSolicitud
+        solicitud={seleccionadoComprobanteSolicitud}
+        onClose={() => establecerSeleccionadoComprobanteSolicitud(null)}
+        onNotify={mostrarAviso}
+      />
 
       {/* MODAL 5: REGISTRAR MERMA */}
       <VistaModal

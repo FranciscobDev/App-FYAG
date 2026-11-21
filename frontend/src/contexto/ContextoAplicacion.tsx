@@ -103,16 +103,33 @@ interface TipoContextoAplicacion {
   aprobarConteoFisico: (id: string, approverName: string) => void;
   rechazarConteoFisico: (id: string, approverName: string) => void;
 
-  // Request & Dispatch actions
+  // Acciones de solicitudes y despacho de materiales
   crearSolicitudMaterial: (
     projectId: string,
     technicianRut: string,
     items: ItemSolicitudMaterial[],
     urgency?: "normal" | "alta" | "urgente",
-    comment?: string
+    comment?: string,
+    requesterInfo?: { name?: string; role?: Rol }
   ) => { success: boolean; missingItems?: string[]; error?: string };
-  aprobarSolicitudMaterial: (id: string, authorName: string) => void;
-  rechazarSolicitudMaterial: (id: string, reason: string, authorName: string) => { success: boolean; error?: string };
+  aprobarSolicitudMaterial: (
+    id: string,
+    authorName: string
+  ) => {
+    success: boolean;
+    receiptNumber?: string;
+    solicitud?: SolicitudMaterial;
+    error?: string;
+  };
+  rechazarSolicitudMaterial: (
+    id: string,
+    reason: string,
+    authorName: string
+  ) => {
+    success: boolean;
+    solicitud?: SolicitudMaterial;
+    error?: string;
+  };
   modificarSolicitudMaterial: (id: string, items: ItemSolicitudMaterial[]) => void;
   cancelarSolicitudMaterial: (id: string) => void;
   despacharSolicitudMaterial: (
@@ -501,13 +518,14 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
-  // 2. MATERIAL REQUESTS
+  // 2. GESTIÓN DE SOLICITUDES DE MATERIALES
   const crearSolicitudMaterial = (
     projectId: string,
     technicianRut: string,
     items: ItemSolicitudMaterial[],
     urgency: "normal" | "alta" | "urgente" = "normal",
-    comment?: string
+    comment?: string,
+    requesterInfo?: { name?: string; role?: Rol }
   ) => {
     const proj = proyectos.find((p) => p.id === projectId);
     if (!proj) return { success: false, error: "Proyecto no encontrado." };
@@ -515,7 +533,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
     }
 
-    // Check stock
+    // Validar disponibilidad de stock
     const missing: string[] = [];
     items.forEach((item) => {
       const prod = productos.find((p) => p.sku === item.sku);
@@ -535,7 +553,24 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     const tech = tecnicos.find((t) => t.rut === technicianRut);
-    const newCode = `SOL-2026-${String(solicitudesMaterial.length + 101).padStart(3, "0")}`;
+    const usuarioRegistrado = usuariosSistema.find((u) => u.rut === technicianRut);
+    const nombreSolicitante =
+      requesterInfo?.name?.trim() ||
+      usuarioRegistrado?.name ||
+      tech?.name ||
+      "Bodeguero Solicitante";
+    const rolSolicitante: Rol =
+      requesterInfo?.role || usuarioRegistrado?.role || (tech ? "technician" : "warehouse");
+
+    const anioActual = new Date().getFullYear();
+    const ultimoCorrelativoSol = solicitudesMaterial.reduce((max, s) => {
+      const partes = s.code.split("-");
+      const numero = Number(partes[partes.length - 1]);
+      return Number.isFinite(numero) && numero > max ? numero : max;
+    }, 412);
+    const newCode = `SOL-${anioActual}-${String(ultimoCorrelativoSol + 1).padStart(4, "0")}`;
+    const ahoraFecha = new Date().toISOString().slice(0, 10);
+
     const newReq: SolicitudMaterial = {
       id: `sol_${Date.now()}`,
       code: newCode,
@@ -543,8 +578,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       projectCode: proj.code,
       projectName: proj.name,
       technicianRut: technicianRut,
-      technicianName: tech ? tech.name : "Técnico de Terreno",
-      date: new Date().toISOString().slice(0, 10),
+      technicianName: nombreSolicitante,
+      requesterRole: rolSolicitante,
+      date: ahoraFecha,
       urgency,
       status: "pendiente",
       items,
@@ -553,71 +589,193 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         {
           id: `step_${Date.now()}`,
           title: "Solicitud Creada",
-          description: "Ingresada por técnico en terreno",
-          date: new Date().toISOString().slice(0, 10),
-          author: tech ? tech.name : "Técnico",
+          description:
+            rolSolicitante === "warehouse"
+              ? "Ingresada por Bodega Central"
+              : "Ingresada por solicitante para aprobación",
+          date: ahoraFecha,
+          author: nombreSolicitante,
           status: "completado",
+        },
+        {
+          id: `step_rev_${Date.now()}`,
+          title: "En revisión de administración",
+          description: "Pendiente de aprobación o rechazo en bandeja administrativa",
+          date: ahoraFecha,
+          author: "Administración",
+          status: "actual",
         },
       ],
     };
 
     setMaterialRequests((prev) => [newReq, ...prev]);
+
+    const notifNuevaSol: DetalleNotificacion = {
+      id: `notif_sol_new_${Date.now()}`,
+      title: `Nueva Solicitud ${newCode} (${urgency.toUpperCase()})`,
+      message: `${nombreSolicitante} solicitó ${items.length} ítem(s) para ${proj.name}. Pendiente de aprobación.`,
+      date: ahoraFecha,
+      type: "solicitud",
+      severity: urgency === "urgente" ? "danger" : "warn",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: newReq.id,
+      relatedEntityLabel: `Revisar ${newCode}`,
+    };
+    setNotificationsList((prev) => [notifNuevaSol, ...prev]);
+
     return { success: true };
   };
 
   const aprobarSolicitudMaterial = (id: string, authorName: string) => {
-    setMaterialRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== id) return req;
-        const timeline = req.timeline || [];
-        const receiptNumber = req.receiptNumber || `COMP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
-        return {
-          ...req,
-          status: "aprobada",
-          receiptNumber,
-          timeline: [
-            ...timeline,
-            {
-              id: `tl_${Date.now()}`,
-              title: "Aprobada por Administración",
-              description: `Autorizado para preparación y egreso. Comprobante N° ${receiptNumber}`,
-              date: new Date().toISOString().slice(0, 10),
-              author: authorName,
-              status: "completado",
-            },
-          ],
-        };
-      })
+    const req = solicitudesMaterial.find((r) => r.id === id);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status !== "pendiente") {
+      return { success: false, error: "Solo se pueden aprobar solicitudes en estado pendiente." };
+    }
+
+    const anioActual = new Date().getFullYear();
+    const ultimoComprobante = solicitudesMaterial.reduce((max, s) => {
+      if (!s.receiptNumber) return max;
+      const partes = s.receiptNumber.split("-");
+      const numero = Number(partes[partes.length - 1]);
+      return Number.isFinite(numero) && numero > max ? numero : max;
+    }, 407);
+    const receiptNumber =
+      req.receiptNumber || `COMP-${anioActual}-${String(ultimoComprobante + 1).padStart(4, "0")}`;
+
+    const ahora = new Date();
+    const fechaDia = ahora.toISOString().slice(0, 10);
+    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
+    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
+
+    const timeline = (req.timeline || []).map((paso) =>
+      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
     );
+
+    const solicitudActualizada: SolicitudMaterial = {
+      ...req,
+      status: "aprobada",
+      receiptNumber,
+      approvedBy: authorName,
+      approvedAt: fechaHoraTexto,
+      timeline: [
+        ...timeline,
+        {
+          id: `tl_${Date.now()}`,
+          title: "Aprobada por Administración",
+          description: `Autorizada para preparación y egreso. Comprobante N° ${receiptNumber}. Notificado a ${req.technicianName}.`,
+          date: fechaHoraTexto,
+          author: authorName,
+          status: "completado",
+        },
+        {
+          id: `tl_bod_${Date.now() + 1}`,
+          title: "Lista para Egreso en Bodega",
+          description: `Comprobante ${receiptNumber} disponible para entrega física en bodega.`,
+          date: "-",
+          author: "Bodega Central",
+          status: "actual",
+        },
+      ],
+    };
+
+    setMaterialRequests((prev) =>
+      prev.map((item) => (item.id === id ? solicitudActualizada : item))
+    );
+
+    // Notificar el resultado aprobado al bodeguero / solicitante con su número de comprobante
+    const notifAprobada: DetalleNotificacion = {
+      id: `notif_sol_apr_${Date.now()}`,
+      title: `Solicitud ${req.code} Aprobada • ${receiptNumber}`,
+      message: `Resultado para ${req.technicianName}: aprobada por ${authorName} para ${req.projectName}. Comprobante numerado N° ${receiptNumber} listo para retiro.`,
+      date: `Hoy ${horaTexto}`,
+      type: "solicitud",
+      severity: "ok",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: req.id,
+      relatedEntityLabel: `Comprobante ${receiptNumber}`,
+    };
+    setNotificationsList((prev) => [notifAprobada, ...prev]);
+
+    return {
+      success: true,
+      receiptNumber,
+      solicitud: solicitudActualizada,
+    };
   };
 
   const rechazarSolicitudMaterial = (id: string, reason: string, authorName: string) => {
-    if (!reason || reason.trim().length === 0) {
-      return { success: false, error: "El rechazo exige motivo obligatorio." };
+    const motivoLimpio = reason.trim();
+    if (motivoLimpio.length < 5) {
+      return {
+        success: false,
+        error: "El rechazo exige motivo obligatorio (mínimo 5 caracteres).",
+      };
     }
-    setMaterialRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== id) return req;
-        const timeline = req.timeline || [];
-        return {
-          ...req,
-          status: "rechazada",
-          rejectionReason: reason,
-          timeline: [
-            ...timeline,
-            {
-              id: `tl_${Date.now()}`,
-              title: "Rechazada por Administración",
-              description: `Motivo: ${reason}`,
-              date: new Date().toISOString().slice(0, 10),
-              author: authorName,
-              status: "completado",
-            },
-          ],
-        };
-      })
+
+    const req = solicitudesMaterial.find((r) => r.id === id);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status !== "pendiente") {
+      return { success: false, error: "Solo se pueden rechazar solicitudes en estado pendiente." };
+    }
+
+    const ahora = new Date();
+    const fechaDia = ahora.toISOString().slice(0, 10);
+    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
+    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
+
+    const timeline = (req.timeline || []).map((paso) =>
+      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
     );
-    return { success: true };
+
+    const solicitudActualizada: SolicitudMaterial = {
+      ...req,
+      status: "rechazada",
+      rejectionReason: motivoLimpio,
+      rejectedBy: authorName,
+      rejectedAt: fechaHoraTexto,
+      timeline: [
+        ...timeline,
+        {
+          id: `tl_${Date.now()}`,
+          title: "Rechazada por Administración",
+          description: `Motivo informado: ${motivoLimpio}`,
+          date: fechaHoraTexto,
+          author: authorName,
+          status: "completado",
+        },
+      ],
+    };
+
+    setMaterialRequests((prev) =>
+      prev.map((item) => (item.id === id ? solicitudActualizada : item))
+    );
+
+    // Notificar el resultado rechazado y su motivo obligatorio al bodeguero / solicitante
+    const notifRechazada: DetalleNotificacion = {
+      id: `notif_sol_rec_${Date.now()}`,
+      title: `Solicitud ${req.code} Rechazada`,
+      message: `Resultado para ${req.technicianName}: rechazada por ${authorName} (${req.projectName}). Motivo: ${motivoLimpio}`,
+      date: `Hoy ${horaTexto}`,
+      type: "solicitud",
+      severity: "danger",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: req.id,
+      relatedEntityLabel: `Ver motivo (${req.code})`,
+    };
+    setNotificationsList((prev) => [notifRechazada, ...prev]);
+
+    return {
+      success: true,
+      solicitud: solicitudActualizada,
+    };
   };
 
   const modificarSolicitudMaterial = (id: string, items: ItemSolicitudMaterial[]) => {
