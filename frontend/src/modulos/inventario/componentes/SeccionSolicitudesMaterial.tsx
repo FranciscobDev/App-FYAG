@@ -169,8 +169,27 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
           />
 
           <View style={estilos.solicitudSuperiorBarra}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.solicitudPestanasScroll}>
-              {(["pendiente", "aprobada", "rechazada", "anulada", "todas"] as const).map((t) => (
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.textSecondary }}>
+                Filtrar por estado ({filtradoSolicitudes.length})
+              </Text>
+              <Boton
+                title="+ Nueva Solicitud"
+                variant="primary"
+                size="sm"
+                icon="add-outline"
+                onPress={manejarAbrirNuevoSolicitud}
+                style={{ minHeight: 38 }}
+              />
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ width: "100%" }}
+              contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+            >
+              {(["todas", "pendiente", "aprobada", "rechazada"] as const).map((t: any) => (
                 <TouchableOpacity
                   key={t}
                   onPress={() => establecerSolicitudPestana(t)}
@@ -190,14 +209,6 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <Boton
-              title="Nueva Solicitud"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={manejarAbrirNuevoSolicitud}
-            />
           </View>
 
           {filtradoSolicitudes.length === 0 ? (
@@ -211,23 +222,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                   ? "No hay solicitudes pendientes de aprobación en este momento."
                   : `No hay solicitudes con estado "${solicitudPestana}".`
               }
-              actionTitle={
-                solicitudPestana !== "todas"
-                  ? "Ver Todas"
-                  : rolActual !== "admin"
-                  ? "Nueva Solicitud"
-                  : undefined
-              }
-              onAction={
-                solicitudPestana !== "todas"
-                  ? () => {
-                      establecerSolicitudPestana("todas");
-                      establecerSolicitudBusqueda("");
-                    }
-                  : rolActual !== "admin"
-                  ? manejarAbrirNuevoSolicitud
-                  : undefined
-              }
+              actionTitle="Nueva Solicitud de Insumos"
+              onAction={manejarAbrirNuevoSolicitud}
               containerStyle={{ marginVertical: 32 }}
             />
           ) : (
@@ -245,10 +241,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           req.status === "aprobada" || req.status === "entregada"
                             ? "ok"
                             : req.status === "rechazada"
-                            ? "danger"
-                            : req.status === "anulada"
-                            ? "mute"
-                            : "warn"
+                              ? "danger"
+                              : "warn"
                         }
                         size="sm"
                       />
@@ -363,8 +357,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           establecerRechazarMotivo("");
                         }}
                         style={[
-                          { borderColor: tema.colors.danger },
-                          esMovil && { flexGrow: 1 },
+                          { borderColor: tema.colors.danger, minHeight: 42 },
+                          esMovil && { flex: 1 },
                         ]}
                         textStyle={{ color: tema.colors.danger }}
                       />
@@ -372,9 +366,12 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                         title="Aprobar y Ver Comprobante"
                         variant="success"
                         size="sm"
-                        icon="checkmark-done-outline"
-                        onPress={() => manejarAprobarSolicitud(req)}
-                        style={esMovil ? { flexGrow: 1 } : undefined}
+                        icon="checkmark-outline"
+                        onPress={() => {
+                          aprobarSolicitudMaterial(req.id, usuario.name);
+                          mostrarAviso(`Solicitud ${req.code} aprobada. Comprobante generado.`);
+                        }}
+                        style={[{ minHeight: 42 }, esMovil && { flex: 1.6 }]}
                       />
                     </>
                   )}

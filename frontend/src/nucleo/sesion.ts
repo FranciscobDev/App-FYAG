@@ -1,5 +1,7 @@
 import { NativeModules, Platform, TurboModuleRegistry } from "react-native";
 
+declare const process: any;
+
 let tokenActual: string | null = null;
 let urlBaseResuelta: string | null = null;
 

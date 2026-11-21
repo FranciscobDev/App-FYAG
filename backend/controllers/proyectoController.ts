@@ -1,13 +1,14 @@
 import { Request, Response } from 'express';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
-import { normalizarRol } from '../middleware/authMiddleware';
+import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
 
 export interface Proyecto {
     id_proyecto: number;
     nombre_proyecto: string;
     tipo_proyecto: string;
     cliente: string | null;
+    id_cliente?: number | null;
     direccion: string | null;
     fecha_inicio: string | null;
     fecha_fin: string | null;
@@ -23,6 +24,7 @@ interface ProyectoBody {
     nombre_proyecto?: string;
     tipo_proyecto?: string;
     cliente?: string | null;
+    id_cliente?: number | null;
     direccion?: string | null;
     fecha_inicio?: string | null;
     fecha_fin?: string | null;
@@ -51,14 +53,15 @@ export const obtenerProyectos = async (req: Request, res: Response): Promise<voi
         const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const result = esTecnico
             ? await pool.query<Proyecto>(
-                `SELECT p.*
+                `SELECT DISTINCT p.*
                  FROM proyecto p
-                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
-                 WHERE pt.id_usuario = $1
-                 ORDER BY p.id_proyecto ASC`,
+                 LEFT JOIN asignaciones_proyecto ap ON ap.proyecto_id = p.id_proyecto AND ap.tecnico_id = $1 AND ap.activo = TRUE
+                 LEFT JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto AND pt.id_usuario = $1
+                 WHERE (ap.tecnico_id = $1 OR pt.id_usuario = $1 OR p.id_usuario = $1)
+                 ORDER BY p.fecha_fin ASC NULLS LAST, p.id_proyecto ASC`,
                 [payload?.id]
             )
-            : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY id_proyecto ASC');
+            : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY fecha_fin ASC NULLS LAST, id_proyecto ASC');
         res.status(200).json(result.rows);
     } catch (error) {
         console.error('Error al obtener proyectos:', error);
@@ -74,10 +77,11 @@ export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Re
         const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const result = esTecnico
             ? await pool.query<Proyecto>(
-                `SELECT p.*
+                `SELECT DISTINCT p.*
                  FROM proyecto p
-                 JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto
-                 WHERE p.id_proyecto = $1 AND pt.id_usuario = $2`,
+                 LEFT JOIN asignaciones_proyecto ap ON ap.proyecto_id = p.id_proyecto AND ap.tecnico_id = $2 AND ap.activo = TRUE
+                 LEFT JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto AND pt.id_usuario = $2
+                 WHERE p.id_proyecto = $1 AND (ap.tecnico_id = $2 OR pt.id_usuario = $2 OR p.id_usuario = $2)`,
                 [id, payload?.id]
             )
             : await pool.query<Proyecto>(
@@ -100,7 +104,7 @@ export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Re
 // Crear un proyecto
 export const crearProyecto = async (req: Request<Record<string, string>, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const {
-        nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
+        nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta,
         porcentaje_avance, estado_proyecto, id_usuario, id_kit_proyecto
     } = req.body;
@@ -112,6 +116,73 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
 
     try {
         let presupuestoFinal = Number(presupuesto_inicial) || 0;
+        let clienteNombreFinal = cliente || null;
+        let idClienteValido: number | null = null;
+
+        // 1. Validar y resolver id_cliente de forma segura
+        if (id_cliente) {
+            try {
+                const cliRes = await pool.query<{ id_cliente: number; razon_social: string }>(
+                    'SELECT id_cliente, razon_social FROM cliente WHERE id_cliente = $1',
+                    [id_cliente]
+                );
+                if (cliRes.rows.length > 0) {
+                    idClienteValido = cliRes.rows[0].id_cliente;
+                    if (!clienteNombreFinal) {
+                        clienteNombreFinal = cliRes.rows[0].razon_social;
+                    }
+                }
+            } catch (errCli) {
+                console.warn('Advertencia al verificar id_cliente:', errCli);
+            }
+        }
+
+        // Si no se vinculó por id_cliente pero viene nombre de cliente, buscar coincidencia por razón social
+        if (!idClienteValido && clienteNombreFinal) {
+            try {
+                const cliByName = await pool.query<{ id_cliente: number }>(
+                    'SELECT id_cliente FROM cliente WHERE LOWER(razon_social) = LOWER($1) LIMIT 1',
+                    [clienteNombreFinal.trim()]
+                );
+                if (cliByName.rows.length > 0) {
+                    idClienteValido = cliByName.rows[0].id_cliente;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
+
+        // 2. Validar y resolver id_usuario de forma segura (previene error de clave foránea)
+        let idUsuarioValido: number | null = null;
+        const idUsuarioCandidato = id_usuario ?? obtenerIdEjecutor(req);
+
+        if (idUsuarioCandidato) {
+            try {
+                const userRes = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE id_usuario = $1 LIMIT 1',
+                    [idUsuarioCandidato]
+                );
+                if (userRes.rows.length > 0) {
+                    idUsuarioValido = userRes.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
+
+        // Si no se encontró usuario válido, asignar primer administrador o usuario activo existente
+        if (!idUsuarioValido) {
+            try {
+                const primerAdmin = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE activo = true ORDER BY id_rol ASC, id_usuario ASC LIMIT 1'
+                );
+                if (primerAdmin.rows.length > 0) {
+                    idUsuarioValido = primerAdmin.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
+            }
+        }
 
         // Si se seleccionó un kit y no se especificó un presupuesto manual distinto de 0,
         // calculamos el presupuesto sumando el costo de los insumos del kit
@@ -132,14 +203,15 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
         }
 
         const query = `
-        INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        INSERT INTO proyecto (nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING *;
     `;
         const values = [
             nombre_proyecto,
             tipo_proyecto || 'Instalacion',
-            cliente || null,
+            clienteNombreFinal,
+            idClienteValido,
             direccion || null,
             fecha_inicio || null,
             fecha_fin || null,
@@ -148,7 +220,7 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             valor_venta || 0,
             porcentaje_avance || 0,
             estado_proyecto || 'Planificado',
-            id_usuario || null
+            idUsuarioValido
         ];
 
         const result = await pool.query<Proyecto>(query, values);
@@ -183,13 +255,25 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
             proyecto: proyectoCreado
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '22P02') {
-            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
-            return;
+        if (esErrorPg(error)) {
+            if (error.code === '22P02') {
+                res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+                return;
+            }
+            if (error.code === '23503') {
+                const constraint = (error.constraint || '').toLowerCase();
+                const detail = (error.detail || '').toLowerCase();
+                if (constraint.includes('cliente') || detail.includes('cliente')) {
+                    res.status(400).json({ mensaje: 'El cliente seleccionado no es válido en el sistema' });
+                    return;
+                }
+                if (constraint.includes('usuario') || detail.includes('usuario')) {
+                    res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+                    return;
+                }
+                res.status(400).json({ mensaje: 'Error de integridad referencial: un dato vinculado no existe' });
+                return;
+            }
         }
         console.error('Error al crear proyecto:', error);
         res.status(500).json({ error: 'Error al crear el proyecto' });
@@ -200,44 +284,55 @@ export const crearProyecto = async (req: Request<Record<string, string>, unknown
 export const actualizarProyecto = async (req: Request<{ id: string }, unknown, ProyectoBody>, res: Response): Promise<void> => {
     const { id } = req.params;
     const {
-        nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio, fecha_fin,
+        nombre_proyecto, tipo_proyecto, cliente, id_cliente, direccion, fecha_inicio, fecha_fin,
         presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario
     } = req.body;
 
     try {
-        const proyectoPrevio = await pool.query<Proyecto>('SELECT * FROM proyecto WHERE id_proyecto = $1', [id]);
-        if (proyectoPrevio.rows.length === 0) {
-            res.status(404).json({ mensaje: 'Proyecto no encontrado para actualizar' });
-            return;
+        let idClienteValido: number | null = null;
+        if (id_cliente) {
+            try {
+                const cliRes = await pool.query<{ id_cliente: number }>(
+                    'SELECT id_cliente FROM cliente WHERE id_cliente = $1',
+                    [id_cliente]
+                );
+                if (cliRes.rows.length > 0) {
+                    idClienteValido = cliRes.rows[0].id_cliente;
+                }
+            } catch {
+                // Silencioso
+            }
         }
 
-        const proyectoExistente = proyectoPrevio.rows[0];
-        // Bloqueo de solo lectura para proyectos cerrados: no se permite modificar presupuesto
-        if (proyectoExistente.estado_proyecto === 'Cerrado') {
-            const intentoModificarPresupuesto =
-                presupuesto_inicial !== undefined && Number(presupuesto_inicial) !== Number(proyectoExistente.presupuesto_inicial);
-            const intentoModificarHoras =
-                presupuesto_horas !== undefined && Number(presupuesto_horas) !== Number(proyectoExistente.presupuesto_horas);
-
-            if (intentoModificarPresupuesto || intentoModificarHoras) {
-                res.status(400).json({
-                    mensaje: 'No se puede modificar el presupuesto de un proyecto que ya está cerrado.'
-                });
-                return;
+        let idUsuarioValido: number | null = null;
+        if (id_usuario) {
+            try {
+                const userRes = await pool.query<{ id_usuario: number }>(
+                    'SELECT id_usuario FROM usuario WHERE id_usuario = $1',
+                    [id_usuario]
+                );
+                if (userRes.rows.length > 0) {
+                    idUsuarioValido = userRes.rows[0].id_usuario;
+                }
+            } catch {
+                // Silencioso
             }
         }
 
         const query = `
       UPDATE proyecto
-      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3, direccion = $4,
-          fecha_inicio = $5, fecha_fin = $6, presupuesto_inicial = $7, presupuesto_horas = $8, valor_venta = $9,
-          porcentaje_avance = $10, estado_proyecto = $11, id_usuario = $12
-      WHERE id_proyecto = $13
+      SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3,
+          id_cliente = CASE WHEN $4::int IS NOT NULL THEN $4::int ELSE id_cliente END,
+          direccion = $5,
+          fecha_inicio = $6, fecha_fin = $7, presupuesto_inicial = $8, presupuesto_horas = $9, valor_venta = $10,
+          porcentaje_avance = $11, estado_proyecto = $12,
+          id_usuario = COALESCE($13, id_usuario)
+      WHERE id_proyecto = $14
       RETURNING *;
     `;
         const values = [
-            nombre_proyecto, tipo_proyecto, cliente, direccion, fecha_inicio,
-            fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario, id
+            nombre_proyecto, tipo_proyecto, cliente, idClienteValido, direccion, fecha_inicio,
+            fecha_fin, presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, idUsuarioValido, id
         ];
 
         const result = await pool.query<Proyecto>(query, values);
@@ -252,13 +347,25 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
             proyecto: result.rows[0]
         });
     } catch (error) {
-        if (esErrorPg(error) && error.code === '22P02') {
-            res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
-            return;
-        }
-        if (esErrorPg(error) && error.code === '23503') {
-            res.status(400).json({ mensaje: 'El usuario responsable no existe' });
-            return;
+        if (esErrorPg(error)) {
+            if (error.code === '22P02') {
+                res.status(400).json({ mensaje: 'Valor inválido en tipo_proyecto, estado_proyecto o algún número' });
+                return;
+            }
+            if (error.code === '23503') {
+                const constraint = (error.constraint || '').toLowerCase();
+                const detail = (error.detail || '').toLowerCase();
+                if (constraint.includes('cliente') || detail.includes('cliente')) {
+                    res.status(400).json({ mensaje: 'El cliente seleccionado no es válido en el sistema' });
+                    return;
+                }
+                if (constraint.includes('usuario') || detail.includes('usuario')) {
+                    res.status(400).json({ mensaje: 'El usuario responsable no existe' });
+                    return;
+                }
+                res.status(400).json({ mensaje: 'Error de integridad referencial: un dato vinculado no existe' });
+                return;
+            }
         }
         console.error('Error al actualizar proyecto:', error);
         res.status(500).json({ error: 'Error al actualizar el proyecto' });
@@ -304,8 +411,8 @@ export const listarTecnicos = async (_req: Request, res: Response): Promise<void
             `SELECT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
              FROM usuario u
-             JOIN roles r ON r.id_rol = u.id_rol
-             WHERE r.nombre_rol = 'Tecnico' AND u.activo = TRUE
+             LEFT JOIN roles r ON r.id_rol = u.id_rol
+             WHERE (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%') AND u.activo = TRUE
              ORDER BY u.nombre_usuario ASC`
         );
         res.status(200).json(result.rows);
@@ -320,12 +427,13 @@ export const obtenerTecnicosDeProyecto = async (req: Request<{ id: string }>, re
     const { id } = req.params;
     try {
         const result = await pool.query<TecnicoResumen>(
-            `SELECT u.id_usuario,
+            `SELECT DISTINCT u.id_usuario,
                     TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
-             FROM proyecto_tecnico pt
-             JOIN usuario u ON u.id_usuario = pt.id_usuario
-             WHERE pt.id_proyecto = $1
-             ORDER BY u.nombre_usuario ASC`,
+             FROM usuario u
+             LEFT JOIN asignaciones_proyecto ap ON ap.tecnico_id = u.id_usuario AND ap.proyecto_id = $1 AND ap.activo = TRUE
+             LEFT JOIN proyecto_tecnico pt ON pt.id_usuario = u.id_usuario AND pt.id_proyecto = $1
+             WHERE (ap.tecnico_id IS NOT NULL OR pt.id_usuario IS NOT NULL)
+             ORDER BY nombre ASC`,
             [id]
         );
         res.status(200).json(result.rows);
@@ -350,10 +458,10 @@ export const asignarTecnico = async (
 
     try {
         const esTecnico = await pool.query(
-            `SELECT 1
+            `SELECT u.id_usuario
              FROM usuario u
-             JOIN roles r ON r.id_rol = u.id_rol
-             WHERE u.id_usuario = $1 AND r.nombre_rol = 'Tecnico'`,
+             LEFT JOIN roles r ON r.id_rol = u.id_rol
+             WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%')`,
             [id_usuario]
         );
         if (esTecnico.rows.length === 0) {
@@ -361,10 +469,32 @@ export const asignarTecnico = async (
             return;
         }
 
+        // 1. Insertar / reactivar en asignaciones_proyecto garantizando unicidad activa
         await pool.query(
-            'INSERT INTO proyecto_tecnico (id_proyecto, id_usuario) VALUES ($1, $2)',
+            `INSERT INTO asignaciones_proyecto (proyecto_id, tecnico_id, fecha_asignacion, activo)
+             VALUES ($1, $2, CURRENT_TIMESTAMP, TRUE)
+             ON CONFLICT DO NOTHING`,
             [id, id_usuario]
         );
+        await pool.query(
+            `UPDATE asignaciones_proyecto
+             SET activo = TRUE, fecha_desasignacion = NULL, fecha_asignacion = CURRENT_TIMESTAMP
+             WHERE proyecto_id = $1 AND tecnico_id = $2`,
+            [id, id_usuario]
+        );
+
+        // 2. Insertar en tabla proyecto_tecnico si existe físicamente (compatibilidad)
+        try {
+            await pool.query(
+                `INSERT INTO proyecto_tecnico (id_proyecto, id_usuario, fecha_asignacion)
+                 VALUES ($1, $2, CURRENT_TIMESTAMP)
+                 ON CONFLICT DO NOTHING`,
+                [id, id_usuario]
+            );
+        } catch {
+            // Silencioso si es una vista
+        }
+
         res.status(201).json({ mensaje: 'Técnico asignado al proyecto' });
     } catch (error) {
         if (esErrorPg(error) && error.code === '23505') {
@@ -384,14 +514,26 @@ export const asignarTecnico = async (
     }
 };
 
-// Quitar un técnico de un proyecto
+// Quitar un técnico de un proyecto (desasignar conservando historial)
 export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string }>, res: Response): Promise<void> => {
     const { id, idUsuario } = req.params;
     try {
         const result = await pool.query(
-            'DELETE FROM proyecto_tecnico WHERE id_proyecto = $1 AND id_usuario = $2 RETURNING *',
+            `UPDATE asignaciones_proyecto
+             SET activo = FALSE, fecha_desasignacion = CURRENT_TIMESTAMP
+             WHERE proyecto_id = $1 AND tecnico_id = $2 AND activo = TRUE
+             RETURNING *`,
             [id, idUsuario]
         );
+
+        try {
+            await pool.query(
+                `DELETE FROM proyecto_tecnico WHERE id_proyecto = $1 AND id_usuario = $2`,
+                [id, idUsuario]
+            );
+        } catch {
+            // Silencioso si es vista
+        }
 
         if (result.rows.length === 0) {
             res.status(404).json({ mensaje: 'El técnico no está asignado a este proyecto' });

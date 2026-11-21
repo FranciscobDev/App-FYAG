@@ -15,6 +15,7 @@ import { verificarRoles } from '../middleware/authMiddleware';
 const router = Router();
 
 router.get('/', verificarRoles('admin', 'technician'), obtenerProyectos);
+router.get('/movil', verificarRoles('admin', 'technician'), obtenerProyectos);
 router.post('/', verificarRoles('admin'), crearProyecto);
 
 // Debe ir antes de '/:id'

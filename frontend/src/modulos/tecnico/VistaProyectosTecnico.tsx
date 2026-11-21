@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useState } from "react";
+
 import {
   ActivityIndicator,
   ScrollView,
@@ -10,7 +11,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
-import { formatearFecha } from "@/nucleo/formato";
+// CAMBIO: parsearFechaLocal evita el desfase de un día por UTC
+import { formatearFecha, parsearFechaLocal } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import { Insignia } from "@/componentes/base/Insignia";
 import { Boton } from "@/componentes/base/Boton";
@@ -112,80 +114,17 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
         forzarSinConexion: usarOffline,
       });
 
-      establecerProyectosCargados(resultado.proyectos);
-      establecerOrigenDatos(resultado.origen);
-      establecerGuardadoEn(resultado.guardadoEn);
-      establecerSinConexionDetectada(resultado.sinConexion);
-      establecerCargando(false);
-      establecerSincronizando(false);
-
-      if (onCambioConexion) {
-        onCambioConexion(resultado.sinConexion);
-      }
-    },
-    [identificadorUsuario, isOffline, modoAvionScrum, onCambioConexion, proyectosContexto, usuario.rut]
+  // Regla estricta: Técnico ve proyectos asignados y NUNCA proyectos cerrados
+  // El backend (/api/proyectos) ya filtra y entrega únicamente los proyectos asignados al técnico autenticado
+  const tecnicoProyectos = proyectos.filter(
+    (p) => p.status !== "cerrado"
   );
 
-  useEffect(() => {
-    cargarProyectos();
-  }, [cargarProyectos]);
-
-  // Si cambian los proyectos en el contexto (por ejemplo, avance reportado en terreno),
-  // actualizamos la copia en caché local para que persista en modo avión
-  useEffect(() => {
-    if (proyectosCargados.length === 0) return;
-    const actualizados = proyectosCargados.map((p) => {
-      const enContexto = proyectosContexto.find((c) => c.id === p.id);
-      if (!enContexto) return p;
-      return {
-        ...p,
-        progress: enContexto.progress,
-        status: enContexto.status,
-      };
-    });
-    guardarMisProyectosCacheLocal(identificadorUsuario, actualizados).then((marca) => {
-      establecerGuardadoEn(marca);
-    });
-  }, [proyectosContexto]);
-
-  // Regla estricta: el técnico visualiza sus proyectos asignados y nunca proyectos cerrados
-  const tecnicoProyectos = useMemo(() => {
-    return proyectosCargados.filter(
-      (p) =>
-        p.status !== "cerrado" &&
-        p.status !== "finalizado" &&
-        (p.technicianRuts.includes(usuario.rut) || p.technicianRuts.length === 0)
-    );
-  }, [proyectosCargados, usuario.rut]);
-
-  // Orden por fecha límite (por defecto ascendente: más urgente primero; los sin fecha van al final)
-  const ordenadoProyectos = useMemo(() => {
-    return [...tecnicoProyectos].sort((a, b) => {
-      const tiempoA = obtenerTiempoPlazo(a.deadline);
-      const tiempoB = obtenerTiempoPlazo(b.deadline);
-      if (tiempoA === tiempoB) {
-        return a.name.localeCompare(b.name);
-      }
-      if (tiempoA === Number.MAX_SAFE_INTEGER) return 1;
-      if (tiempoB === Number.MAX_SAFE_INTEGER) return -1;
-      return ordenPlazoAscendente ? tiempoA - tiempoB : tiempoB - tiempoA;
-    });
-  }, [tecnicoProyectos, ordenPlazoAscendente]);
-
-  // Contadores por estado para los chips de filtro
-  const conteosEstado = useMemo(() => {
-    const activos = ordenadoProyectos.filter(
-      (p) => p.status === "activo" || p.status === "en_curso"
-    ).length;
-    const planificados = ordenadoProyectos.filter((p) => p.status === "planificado").length;
-    const pausados = ordenadoProyectos.filter((p) => p.status === "pausado").length;
-    return {
-      todos: ordenadoProyectos.length,
-      activo: activos,
-      planificado: planificados,
-      pausado: pausados,
-    };
-  }, [ordenadoProyectos]);
+  // Orden obligatorio por fecha límite (deadline ascendente: más urgente primero)
+  // CAMBIO: fechas "YYYY-MM-DD" interpretadas en hora local
+  const ordenadoProyectos = [...tecnicoProyectos].sort((a, b) => {
+    return parsearFechaLocal(a.deadline).getTime() - parsearFechaLocal(b.deadline).getTime();
+  });
 
   // Filtro por estado seleccionado
   const filtradoProyectos = useMemo(() => {
@@ -219,189 +158,81 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
   return (
     <ContenedorEstadoPantalla screenTitle="Mis Proyectos (Técnico)" skeletonType="cards">
       <ScrollView style={estilos.contenedor} contentContainerStyle={estilos.contenido}>
-        {/* 1. ENCABEZADO Y ESTADO DE CONEXIÓN / CACHÉ LOCAL */}
+        {/* 1. HEADER & STATUS OFFLINE / ONLINE */}
         <View style={estilos.encabezadoFila}>
           <View style={{ flex: 1 }}>
-            <Text style={estilos.encabezadoTitulo}>Mis Proyectos</Text>
+            <Text style={estilos.encabezadoTitulo}>Mis Proyectos en Terreno</Text>
             <Text style={estilos.encabezadoSub}>
-              Ordenados por fecha límite ({filtradoProyectos.length} de {ordenadoProyectos.length}{" "}
-              proyectos)
+              Ordenados por fecha límite de entrega ({filtradoProyectos.length} proyectos)
             </Text>
           </View>
 
-          <View style={estilos.encabezadoDerecha}>
-            {operaSinConexion ? (
-              <View style={estilos.sinConexionChip}>
-                <Ionicons name="airplane" size={14} color={tema.colors.warnDark} />
-                <Text style={estilos.sinConexionChipTexto}>Caché Local (Offline)</Text>
-              </View>
-            ) : (
-              <View style={estilos.enLineaChip}>
-                <Ionicons name="cloud-done" size={14} color="#22c55e" />
-                <Text style={estilos.enLineaChipTexto}>En Línea</Text>
-              </View>
-            )}
-
-            <TouchableOpacity
-              onPress={() => cargarProyectos()}
-              disabled={sincronizando}
-              style={estilos.botonRecargar}
-              accessibilityLabel="Actualizar lista de proyectos"
-            >
-              {sincronizando ? (
-                <ActivityIndicator size="small" color={tema.colors.primaryDark} />
-              ) : (
-                <Ionicons name="refresh" size={16} color={tema.colors.text} />
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 2. BANNER DE CACHÉ LOCAL Y VERIFICACIÓN [SCRUM] */}
-        <View
-          style={[
-            estilos.cacheBanner,
-            operaSinConexion ? estilos.cacheBannerOffline : estilos.cacheBannerOnline,
-          ]}
-        >
-          <View style={estilos.cacheBannerSuperior}>
-            <View style={estilos.cacheBannerIconoTexto}>
-              <Ionicons
-                name={operaSinConexion ? "cloud-offline-outline" : "save-outline"}
-                size={18}
-                color={operaSinConexion ? tema.colors.warnDark : tema.colors.okDark}
-              />
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text style={estilos.cacheBannerTitulo}>
-                  {operaSinConexion
-                    ? "Modo Avión / Sin Conexión — Cargado desde caché local"
-                    : `Caché local lista (${ordenadoProyectos.length} proyectos respaldados en el dispositivo)`}
-                </Text>
-                <Text style={estilos.cacheBannerSub}>
-                  {origenDatos === "cache"
-                    ? `Mostrando copia local guardada el ${formatearMarcaCache(guardadoEn)}`
-                    : `Sincronizado con el servidor y guardado localmente (${formatearMarcaCache(guardadoEn)})`}
-                </Text>
-              </View>
+          {isOffline ? (
+            <View style={estilos.sinConexionChip}>
+              <Ionicons name="cloud-offline" size={14} color={tema.colors.warnDark} />
+              <Text style={estilos.sinConexionChipTexto}>Modo Offline</Text>
             </View>
+          ) : (
+            <View style={estilos.enLineaChip}>
+              <Ionicons name="cloud-done" size={14} color="#22c55e" />
+              <Text style={estilos.enLineaChipTexto}>En Línea</Text>
+            </View>
+          )}
+        </View>
 
-            <TouchableOpacity
-              onPress={alternarModoAvionScrum}
-              style={[
-                estilos.botonScrumAvion,
-                modoAvionScrum && estilos.botonScrumAvionActivo,
-              ]}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={modoAvionScrum ? "airplane" : "airplane-outline"}
-                size={14}
-                color={modoAvionScrum ? "#ffffff" : "#92400e"}
-              />
-              <Text
-                style={[
-                  estilos.botonScrumAvionTexto,
-                  modoAvionScrum && estilos.botonScrumAvionTextoActivo,
-                ]}
+        {/* 2. CHIPS DE FILTRO POR ESTADO */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.filtrarScroll}>
+          {[
+            { id: "todos", label: `Todos (${ordenadoProyectos.length})` },
+            { id: "activo", label: `Activos (${ordenadoProyectos.filter((p) => p.status === "activo").length})` },
+            { id: "planificado", label: `Planificados (${ordenadoProyectos.filter((p) => p.status === "planificado").length})` },
+          ].map((f) => {
+            const esActivo = estadoFiltrar === f.id;
+            return (
+              <TouchableOpacity
+                key={f.id}
+                onPress={() => establecerEstadoFiltrar(f.id)}
+                style={[estilos.filtrarChip, esActivo && estilos.filtrarChipActivo]}
+                activeOpacity={0.7}
               >
-                {modoAvionScrum ? "Salir Modo Avión" : "Probar Modo Avión"}
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <Text style={[estilos.filtrarChipTexto, esActivo && estilos.filtrarChipTextoActivo]}>
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-          <Text style={estilos.scrumNota}>
-            [SCRUM] Activa modo avión en el celular (o usa el botón de prueba) para comprobar que la
-            lista guardada localmente carga sin errores y permite filtrar por estado y ordenar por
-            fecha límite.
-          </Text>
-        </View>
-
-        {/* 3. BARRA DE FILTROS POR ESTADO Y CONTROL DE ORDEN POR FECHA LÍMITE */}
-        <View style={estilos.controlesFila}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={estilos.filtrarScroll}
-          >
-            {chipsFiltro.map((f) => {
-              const esActivo = estadoFiltrar === f.id;
-              return (
-                <TouchableOpacity
-                  key={f.id}
-                  onPress={() => establecerEstadoFiltrar(f.id)}
-                  style={[estilos.filtrarChip, esActivo && estilos.filtrarChipActivo]}
-                  activeOpacity={0.7}
-                >
-                  <Text
-                    style={[
-                      estilos.filtrarChipTexto,
-                      esActivo && estilos.filtrarChipTextoActivo,
-                    ]}
-                  >
-                    {f.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          <TouchableOpacity
-            onPress={() => establecerOrdenPlazoAscendente((prev) => !prev)}
-            style={estilos.ordenBoton}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={ordenPlazoAscendente ? "arrow-up-outline" : "arrow-down-outline"}
-              size={14}
-              color={tema.colors.primaryDark}
-            />
-            <Text style={estilos.ordenBotonTexto}>
-              {ordenPlazoAscendente
-                ? "Fecha límite: más urgentes primero"
-                : "Fecha límite: más lejanos primero"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 4. LISTADO DE TARJETAS DE PROYECTO */}
-        {cargando ? (
-          <View style={estilos.cargandoContenedor}>
-            <ActivityIndicator size="large" color={tema.colors.primary} />
-            <Text style={estilos.cargandoTexto}>Cargando proyectos desde caché local...</Text>
-          </View>
-        ) : filtradoProyectos.length === 0 ? (
+        {/* 3. LISTADO DE TARJETAS DE PROYECTO */}
+        {filtradoProyectos.length === 0 ? (
           <EstadoVacio
             icon="folder-open-outline"
             title="Sin proyectos en este estado"
-            description="No tienes obras o mantenciones asignadas que coincidan con el filtro seleccionado."
+            description="No tienes obras o faenas activas asignadas que coincidan con el filtro."
             containerStyle={{ marginVertical: 20 }}
           />
         ) : (
           filtradoProyectos.map((proj) => {
             // Semáforo de fecha límite:
             // Amarillo si faltan <= 5 días, Rojo si faltan <= 48 horas o vencido
-            const plazoMs = obtenerTiempoPlazo(proj.deadline);
-            const tienePlazoValido = plazoMs !== Number.MAX_SAFE_INTEGER;
-            const diferenciaMs = tienePlazoValido ? plazoMs - ahoraMs : 0;
+            // CAMBIO: fecha límite interpretada en hora local
+            const plazoMs = parsearFechaLocal(proj.deadline).getTime();
+            const diferenciaMs = plazoMs - now;
             const diferenciaHoras = Math.floor(diferenciaMs / (1000 * 60 * 60));
             const diferenciaDias = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
 
             let semTono: "ok" | "warn" | "danger" = "ok";
-            let semEtiqueta = tienePlazoValido
-              ? `Quedan ${diferenciaDias} días`
-              : "Sin fecha límite";
+            let semEtiqueta = `Quedan ${diferenciaDias} días`;
 
-            if (tienePlazoValido) {
-              if (diferenciaMs <= 0) {
-                semTono = "danger";
-                semEtiqueta = "¡Plazo Vencido!";
-              } else if (diferenciaHoras <= 48) {
-                semTono = "danger";
-                semEtiqueta = `¡Crítico! Faltan ${diferenciaHoras} horas`;
-              } else if (diferenciaDias <= 5) {
-                semTono = "warn";
-                semEtiqueta = `Atención: Faltan ${diferenciaDias} días`;
-              }
+            if (diferenciaMs <= 0) {
+              semTono = "danger";
+              semEtiqueta = "¡Plazo Vencido!";
+            } else if (diferenciaHoras <= 48) {
+              semTono = "danger";
+              semEtiqueta = `¡Crítico! Faltan ${diferenciaHoras} horas`;
+            } else if (diferenciaDias <= 5) {
+              semTono = "warn";
+              semEtiqueta = `Atención: Faltan ${diferenciaDias} días`;
             }
 
             return (
@@ -414,7 +245,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                   semTono === "warn" && estilos.proyectoTarjetaAdvertencia,
                 ]}
               >
-                {/* Encabezado de la tarjeta */}
+                {/* Header de Tarjeta */}
                 <View style={estilos.tarjetaSuperiorFila}>
                   <View style={estilos.codigoFila}>
                     <Text style={estilos.proyectoCodigo}>{proj.code}</Text>
@@ -423,14 +254,10 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                       tone={proj.kind === "obra" ? "info" : "warn"}
                       size="sm"
                     />
-                    <InsigniaEstado
-                      status={proj.status}
-                      size="sm"
-                      style={{ marginLeft: 6 }}
-                    />
+                    <InsigniaEstado status={proj.status} size="sm" style={{ marginLeft: 6 }} />
                   </View>
 
-                  {/* Semáforo de plazo */}
+                  {/* Semáforo de Plazo */}
                   <Insignia
                     label={semEtiqueta}
                     tone={semTono}
@@ -438,8 +265,8 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                       semTono === "danger"
                         ? "alert-circle"
                         : semTono === "warn"
-                        ? "time-outline"
-                        : "calendar-outline"
+                          ? "time-outline"
+                          : "calendar-outline"
                     }
                     size="sm"
                   />
@@ -449,17 +276,13 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                 <Text style={estilos.proyectoCliente}>Cliente: {proj.client}</Text>
 
                 <View style={estilos.direccionFila}>
-                  <Ionicons
-                    name="location-outline"
-                    size={14}
-                    color={tema.colors.textMuted}
-                  />
+                  <Ionicons name="location-outline" size={14} color={tema.colors.textMuted} />
                   <Text style={estilos.direccionTexto} numberOfLines={1}>
                     {proj.address}
                   </Text>
                 </View>
 
-                {/* Barra de avance físico 0-100% */}
+                {/* Barra de Avance Físico 0-100% */}
                 <View style={estilos.progresoContenedor}>
                   <View style={estilos.progresoEncabezado}>
                     <Text style={estilos.progresoEtiqueta}>Avance físico de la obra</Text>
@@ -473,41 +296,34 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                       semTono === "danger"
                         ? tema.colors.danger
                         : semTono === "warn"
-                        ? tema.colors.warn
-                        : tema.colors.primary
+                          ? tema.colors.warn
+                          : tema.colors.primary
                     }
                   />
                 </View>
 
-                {/* Indicador de disponibilidad en caché local */}
+                {/* Indicador de Disponibilidad Offline */}
                 <View style={estilos.sinConexionSincronizacionAviso}>
-                  <Ionicons
-                    name={operaSinConexion ? "phone-portrait-outline" : "checkmark-circle"}
-                    size={13}
-                    color={operaSinConexion ? tema.colors.warnDark : tema.colors.ok}
-                    style={{ marginRight: 4 }}
-                  />
+                  <Ionicons name="checkmark-circle" size={13} color={tema.colors.ok} style={{ marginRight: 4 }} />
                   <Text style={estilos.sinConexionSincronizacionTexto}>
-                    {operaSinConexion
-                      ? "Disponible sin conexión desde la caché local del dispositivo"
-                      : "Sincronizado y respaldado en caché local del celular"}
+                    {/* CAMBIO: texto que describe lo que realmente ocurre (recarga cada 30 s) */}
+                    {isOffline
+                      ? "Datos guardados en almacenamiento local del celular"
+                      : "Datos de la base central (se actualizan cada 30 s)"}
                   </Text>
                 </View>
 
-                {/* Pie de tarjeta con fecha límite y botones táctiles de acción */}
+                {/* Footer con Fecha Límite y Botones Táctiles de Acción (≥ 44 px) */}
                 <View style={estilos.tarjetaPie}>
                   <View style={estilos.plazoContenedor}>
                     <Text style={estilos.plazoEtiqueta}>Fecha Límite:</Text>
                     <Text
                       style={[
                         estilos.plazoValor,
-                        semTono === "danger" && {
-                          color: tema.colors.danger,
-                          fontWeight: "bold",
-                        },
+                        semTono === "danger" && { color: tema.colors.danger, fontWeight: "bold" },
                       ]}
                     >
-                      {tienePlazoValido ? formatearFecha(proj.deadline) : "Por definir"}
+                      {formatearFecha(proj.deadline)}
                     </Text>
                   </View>
 
@@ -518,9 +334,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                         variant="primary"
                         size="sm"
                         icon="timer"
-                        onPress={() =>
-                          onNavigateTab && onNavigateTab("registrar", proj, "horas")
-                        }
+                        onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "horas")}
                         style={{ marginRight: 6, height: 42 }}
                       />
                     ) : (
@@ -533,9 +347,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                           if (!sesionTrabajoActiva) {
                             iniciarSesionTrabajo(proj.id);
                           }
-                          if (onNavigateTab) {
-                            onNavigateTab("registrar", proj, "horas");
-                          }
+                          onNavigateTab && onNavigateTab("registrar", proj, "horas");
                         }}
                         style={{ marginRight: 6, height: 42 }}
                       />
@@ -545,9 +357,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                       variant="outline"
                       size="sm"
                       icon="trending-up-outline"
-                      onPress={() =>
-                        onNavigateTab && onNavigateTab("registrar", proj, "avance")
-                      }
+                      onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "avance")}
                       style={{ marginRight: 6, height: 42 }}
                     />
                     <Boton

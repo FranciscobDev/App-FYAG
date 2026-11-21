@@ -45,6 +45,10 @@ import {
 } from "@/nucleo/tipos";
 import { estilos } from "./estilos";
 import { SeccionCatalogoCardex, SeccionSolicitudesMaterial, SeccionEgresoBodega, SeccionMermas, SeccionConteoFisico, ModalesInventario } from "./componentes";
+import {
+  esProyectoActivoParaSolicitud,
+  validarFormularioNuevaSolicitudInsumos,
+} from "./solicitudInsumosUtils";
 
 export type PestanaInventario =
   | "catalogo"
@@ -375,32 +379,29 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [rechazarModalSolicitud, establecerRechazarModalSolicitud] = useState<SolicitudMaterial | null>(null);
   const [rechazarMotivo, establecerRechazarMotivo] = useState("");
 
-  const activoProyectos = proyectos.filter((p) => p.status !== "cerrado");
+  const activoProyectos = proyectos.filter((p) => esProyectoActivoParaSolicitud(p));
+  const proyectoSeleccionadoSolicitud =
+    proyectos.find((p) => p.id === seleccionadoProyectoId) || null;
 
-  // Validar faltantes de stock en tiempo real
-  const calcularFaltanteExistencia = (items: { sku: string; quantity: number }[]) => {
-    const faltante: string[] = [];
-    items.forEach((it) => {
-      const p = productos.find((prod) => prod.sku === it.sku);
-      const avail = p ? p.stock : 0;
-      if (avail < it.quantity) {
-        faltante.push(
-          `${p ? p.name : it.sku}: Faltan ${Number((it.quantity - avail).toFixed(3))} ${p?.unit || "un"} (Disp: ${avail}, Solicitado: ${it.quantity})`
-        );
-      }
-    });
-    return faltante;
+  // Validar faltantes de stock y estado del proyecto en tiempo real ([FRONT-1])
+  const calcularFaltanteExistencia = (
+    items: { sku: string; quantity: number }[],
+    proyectoRef = proyectoSeleccionadoSolicitud
+  ) => {
+    const validacion = validarFormularioNuevaSolicitudInsumos(proyectoRef, items, productos);
+    return validacion.faltantesStock;
   };
 
   const manejarAbrirNuevoSolicitud = () => {
-    establecerEditandoSolicitud(null);
-    establecerSeleccionadoProyectoId(activoProyectos[0]?.id || "");
-    const inicialElementos = [{ sku: productos[0]?.sku || "", quantity: 1 }];
+    const proyInicial = activoProyectos[0] || null;
+    establecerSeleccionadoProyectoId(proyInicial?.id || "");
+    const prodInicial = productos.find((p) => !p.disabled && p.stock > 0) || productos[0];
+    const inicialElementos = prodInicial ? [{ sku: prodInicial.sku, quantity: 1 }] : [];
     establecerSolicitudElementos(inicialElementos);
     establecerSolicitudUrgencia("normal");
     establecerSolicitudComentario("");
     establecerSolicitudError("");
-    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(inicialElementos));
+    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(inicialElementos, proyInicial));
     establecerNuevoSolicitudModal(true);
   };
 
@@ -426,43 +427,24 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const manejarSolicitudElementoCambiar = (idx: number, sku: string, quantity: number) => {
     const updated = solicitudElementos.map((it, i) => (i === idx ? { sku, quantity } : it));
     establecerSolicitudElementos(updated);
+    establecerSolicitudError("");
     establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
     if (solicitudError) establecerSolicitudError("");
   };
 
   const manejarEnviarSolicitud = () => {
-    if (!seleccionadoProyectoId) {
-      establecerSolicitudError("Seleccione un proyecto activo.");
-      return;
-    }
-    if (solicitudElementos.length === 0) {
-      establecerSolicitudError("Debe agregar al menos un insumo.");
-      return;
-    }
+    establecerSolicitudError("");
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proyectoSeleccionadoSolicitud,
+      solicitudElementos,
+      productos
+    );
 
-    const skusVistos = new Set<string>();
-    for (const item of solicitudElementos) {
-      if (!item.sku) {
-        establecerSolicitudError("Cada línea debe tener un insumo seleccionado.");
-        return;
-      }
-      if (skusVistos.has(item.sku)) {
-        establecerSolicitudError(
-          `El insumo ${item.sku} está repetido. Ajusta la cantidad en una sola línea.`
-        );
-        return;
-      }
-      skusVistos.add(item.sku);
-      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
-        establecerSolicitudError("Todas las cantidades solicitadas deben ser mayores a 0.");
-        return;
-      }
-    }
-
-    const actualFaltante = calcularFaltanteExistencia(solicitudElementos);
-    if (actualFaltante.length > 0) {
-      establecerFaltanteExistenciaErrores(actualFaltante);
-      establecerSolicitudError("No se puede enviar: hay ítems con stock insuficiente en bodega.");
+    if (!validacion.esValida) {
+      establecerFaltanteExistenciaErrores(validacion.faltantesStock);
+      establecerSolicitudError(
+        validacion.errorGeneral || "No se puede enviar la solicitud: verifique el proyecto y las cantidades."
+      );
       return;
     }
 
@@ -508,7 +490,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       establecerSolicitudError(res.error || "No se pudo crear la solicitud.");
       establecerFaltanteExistenciaErrores(res.missingItems || []);
     } else {
-      mostrarAviso("Solicitud de materiales enviada a bandeja de aprobación.");
+      mostrarAviso(
+        "Solicitud creada en estado Pendiente: el stock solicitado pasó a Comprometido en el catálogo (H6) y se notificó al Administrador."
+      );
       establecerNuevoSolicitudModal(false);
     }
   };
@@ -790,11 +774,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
             {(rolActual === "warehouse"
               ? [
                   { id: "egreso", label: `Egreso (${aprobadoSolicitudes.length})`, icon: "log-out-outline" },
-                  {
-                    id: "solicitudes",
-                    label: `Solicitudes (${solicitudesMaterial.filter((r) => r.status === "pendiente").length})`,
-                    icon: "clipboard-outline",
-                  },
+                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
                   {
                     id: "conteo",
@@ -805,6 +785,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                 ]
               : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
+                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                 ]
             ).map((tab) => {

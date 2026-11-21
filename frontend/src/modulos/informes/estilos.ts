@@ -18,12 +18,12 @@ export const estilos = StyleSheet.create({
   kpiGrilla: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
     marginBottom: tema.spacing.md,
   },
   kpiColumna: {
     flex: 1,
-    minWidth: 220,
+    minWidth: "46%",
   },
 
   // Subcategory Tabs
