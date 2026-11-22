@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
 import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { verificarBloqueoCierreProyectoPorSolicitudesH34 } from './solicitudController';
 
 export interface Proyecto {
     id_proyecto: number;
@@ -289,6 +290,18 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
     } = req.body;
 
     try {
+        const estadoNorm = String(estado_proyecto || '').trim().toLowerCase();
+        if (estadoNorm === 'completado' || estadoNorm === 'cerrado' || estadoNorm === 'finalizado') {
+            const bloqueoH34 = await verificarBloqueoCierreProyectoPorSolicitudesH34(pool, Number(id));
+            if (bloqueoH34.bloqueado) {
+                res.status(409).json({
+                    mensaje: bloqueoH34.motivoBloqueo,
+                    solicitudes_bloqueantes: bloqueoH34.solicitudesBloqueantes,
+                });
+                return;
+            }
+        }
+
         let idClienteValido: number | null = null;
         if (id_cliente) {
             try {
@@ -544,6 +557,52 @@ export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string
     } catch (error) {
         console.error('Error al quitar técnico:', error);
         res.status(500).json({ error: 'Error al quitar el técnico' });
+    }
+};
+
+/**
+ * [H34 / BACK-1] Endpoint para cerrar un proyecto (`POST /api/proyectos/:id/cerrar`),
+ * bloqueando el cierre si existen solicitudes de insumos en estado `Pendiente` o `Aprobada` sin egresar.
+ */
+export const cerrarProyecto = async (
+    req: Request<{ id: string }>,
+    res: Response
+): Promise<void> => {
+    const idProyecto = Number(req.params.id);
+    if (!Number.isInteger(idProyecto) || idProyecto <= 0) {
+        res.status(400).json({ mensaje: 'Identificador de proyecto inválido' });
+        return;
+    }
+
+    try {
+        const bloqueoH34 = await verificarBloqueoCierreProyectoPorSolicitudesH34(pool, idProyecto);
+        if (bloqueoH34.bloqueado) {
+            res.status(409).json({
+                mensaje: bloqueoH34.motivoBloqueo,
+                solicitudes_bloqueantes: bloqueoH34.solicitudesBloqueantes,
+            });
+            return;
+        }
+
+        const result = await pool.query<Proyecto>(
+            `UPDATE proyecto
+             SET estado_proyecto = 'Completado'
+             WHERE id_proyecto = $1
+             RETURNING *`,
+            [idProyecto]
+        );
+        if (result.rows.length === 0) {
+            res.status(404).json({ mensaje: 'Proyecto no encontrado' });
+            return;
+        }
+
+        res.status(200).json({
+            mensaje: 'Proyecto cerrado exitosamente',
+            proyecto: result.rows[0],
+        });
+    } catch (error) {
+        console.error('Error al cerrar proyecto:', error);
+        res.status(500).json({ error: 'Error al cerrar el proyecto' });
     }
 };
 

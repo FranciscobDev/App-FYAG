@@ -455,13 +455,14 @@ CREATE TABLE articulos_stock (
     id_stock SERIAL PRIMARY KEY,
     id_articulo INT NOT NULL,
     id_bodega INT,
-    cantidad_disponible NUMERIC(12,3) DEFAULT 0.000,
-    cantidad_comprometida NUMERIC(12,3) DEFAULT 0.000,
-    cantidad_cuarentena NUMERIC(12,3) DEFAULT 0.000,
-    pmp NUMERIC(12,2) DEFAULT 0.00,
+    cantidad_disponible NUMERIC(12,3) DEFAULT 0.000 CHECK (cantidad_disponible >= 0),
+    cantidad_comprometida NUMERIC(12,3) DEFAULT 0.000 CHECK (cantidad_comprometida >= 0),
+    cantidad_cuarentena NUMERIC(12,3) DEFAULT 0.000 CHECK (cantidad_cuarentena >= 0),
+    pmp NUMERIC(12,2) DEFAULT 0.00 CHECK (pmp >= 0),
     stock_minimo NUMERIC(12,3) DEFAULT 0.000,
     cant_reposicion NUMERIC(12,3) DEFAULT 0.000,
     ubicacion VARCHAR(100),
+    CONSTRAINT chk_articulos_stock_no_negativo CHECK (cantidad_disponible >= 0 AND cantidad_comprometida >= 0),
     CONSTRAINT fk_stock_insumo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo) ON DELETE CASCADE
 );
 
@@ -733,6 +734,77 @@ CREATE TABLE solicitud_lineas (
     CONSTRAINT fk_solicitud_lineas_solicitud FOREIGN KEY (id_solicitud) REFERENCES solicitudes_insumos(id_solicitud) ON DELETE CASCADE,
     CONSTRAINT fk_solicitud_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
 );
+
+-- Tablas Inmutables de Salidas Físicas de Bodega [DB / BACK-1] (`salidas_bodega` y `salida_lineas` con CHECK disponible >= 0 y comprometido >= 0 e inmutabilidad por trigger)
+CREATE TABLE salidas_bodega (
+    id_salida SERIAL PRIMARY KEY,
+    codigo_salida VARCHAR(80) NULL UNIQUE,
+    solicitud_id INT NOT NULL REFERENCES solicitudes_insumos(id_solicitud) ON DELETE RESTRICT,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_retira_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tecnico_retira_rut VARCHAR(20) NULL,
+    tecnico_retira_nombre VARCHAR(150) NULL,
+    bodeguero_id INT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    fecha TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE salida_lineas (
+    id_salida_linea SERIAL PRIMARY KEY,
+    id_salida INT NOT NULL REFERENCES salidas_bodega(id_salida) ON DELETE RESTRICT,
+    id_solicitud_linea INT NULL REFERENCES solicitud_lineas(id_solicitud_linea) ON DELETE RESTRICT,
+    id_articulo INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    cantidad_entregada NUMERIC(12,3) NOT NULL CHECK (cantidad_entregada > 0),
+    disponible NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (disponible >= 0),
+    comprometido NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (comprometido >= 0),
+    saldo_pendiente_resultante NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (saldo_pendiente_resultante >= 0),
+    costo_unitario_pmp NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    CONSTRAINT chk_salida_lineas_saldos_no_negativos CHECK (disponible >= 0 AND comprometido >= 0)
+);
+
+CREATE TABLE egresos_bodega (
+    id_egreso SERIAL PRIMARY KEY,
+    codigo_egreso VARCHAR(80) NOT NULL UNIQUE,
+    id_solicitud INT NOT NULL REFERENCES solicitudes_insumos(id_solicitud) ON DELETE RESTRICT,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_retira_id INT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tecnico_retira_rut VARCHAR(20) NOT NULL,
+    tecnico_retira_nombre VARCHAR(150) NOT NULL,
+    bodeguero_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    fecha_egreso TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE egreso_lineas (
+    id_egreso_linea SERIAL PRIMARY KEY,
+    id_egreso INT NOT NULL REFERENCES egresos_bodega(id_egreso) ON DELETE RESTRICT,
+    id_solicitud_linea INT NOT NULL REFERENCES solicitud_lineas(id_solicitud_linea) ON DELETE RESTRICT,
+    id_articulo INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    cantidad_egresada NUMERIC(12,3) NOT NULL CHECK (cantidad_egresada > 0),
+    saldo_pendiente_resultante NUMERIC(12,3) NOT NULL CHECK (saldo_pendiente_resultante >= 0),
+    costo_unitario_pmp NUMERIC(12,2) NOT NULL DEFAULT 0.00
+);
+
+CREATE OR REPLACE FUNCTION fn_impedir_modificacion_egreso()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'El registro de salida/egreso de bodega es inmutable y está vinculado de forma irreversible al proyecto y al técnico que retira. Las correcciones se realizan mediante un movimiento de ajuste en Cardex, nunca editando ni borrando el registro.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_inmutabilidad_salidas_bodega
+BEFORE UPDATE OR DELETE ON salidas_bodega
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+CREATE TRIGGER trg_inmutabilidad_salida_lineas
+BEFORE UPDATE OR DELETE ON salida_lineas
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+CREATE TRIGGER trg_inmutabilidad_egresos_bodega
+BEFORE UPDATE OR DELETE ON egresos_bodega
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+CREATE TRIGGER trg_inmutabilidad_egreso_lineas
+BEFORE UPDATE OR DELETE ON egreso_lineas
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
 
 -- Tabla: Solicitudes (Compatibilidad)
 CREATE TABLE solicitudes (

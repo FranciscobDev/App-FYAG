@@ -9,6 +9,7 @@ import {
     obtenerTecnicosDeProyecto,
     asignarTecnico,
     quitarTecnico,
+    cerrarProyecto,
 } from '../controllers/proyectoController';
 import { verificarRoles } from '../middleware/authMiddleware';
 
@@ -23,6 +24,8 @@ router.get('/tecnicos', verificarRoles('admin'), listarTecnicos);
 
 router.get('/:id', verificarRoles('admin', 'technician'), obtenerProyectoPorId);
 router.put('/:id', verificarRoles('admin'), actualizarProyecto);
+router.post('/:id/cerrar', verificarRoles('admin'), cerrarProyecto);
+router.patch('/:id/cerrar', verificarRoles('admin'), cerrarProyecto);
 router.delete('/:id', verificarRoles('admin'), eliminarProyecto);
 
 router.get('/:id/tecnicos', verificarRoles('admin'), obtenerTecnicosDeProyecto);

@@ -46,6 +46,7 @@ import {
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
 import {
   esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
   validarFormularioNuevaSolicitudInsumos,
 } from "../solicitudInsumosUtils";
 
@@ -68,6 +69,7 @@ export interface PropiedadesModalesInventario {
   conteoRequiresApproval: any;
   conteoSku: any;
   editandoProducto: any;
+  editandoSolicitud?: SolicitudMaterial | null;
   escanerCallback: any;
   escanerTitulo: any;
   escanerVisible: any;
@@ -174,6 +176,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   conteoRequiresApproval,
   conteoSku,
   editandoProducto,
+  editandoSolicitud = null,
   escanerCallback,
   escanerTitulo,
   escanerVisible,
@@ -478,11 +481,11 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </View>
       </VistaModal>
 
-      {/* MODAL 2: NUEVA SOLICITUD DE INSUMOS (H6 / H36) */}
+      {/* MODAL 2: NUEVA / EDITAR SOLICITUD DE INSUMOS (H6 / H36 / FRONT-2) */}
       <VistaModal
         visible={nuevoSolicitudModal}
         onClose={() => establecerNuevoSolicitudModal(false)}
-        title="Nueva Solicitud de Insumos"
+        title={editandoSolicitud ? `Editar Solicitud ${editandoSolicitud.code}` : "Nueva Solicitud de Insumos"}
         subtitle="Muestra stock disponible en vivo, bloquea si supera disponible o proyecto inactivo y reserva stock en Comprometido (H6)"
       >
         {(() => {
@@ -491,10 +494,14 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
             todosProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
             activoProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
             null;
+          const catalogoEfectivo =
+            editandoSolicitud && editandoSolicitud.status === "pendiente"
+              ? liberarReservaComprometidoEnCatalogoH6(productos, editandoSolicitud.items)
+              : productos;
           const validacionEnVivo = validarFormularioNuevaSolicitudInsumos(
             proyectoSeleccionado,
             solicitudElementos,
-            productos
+            catalogoEfectivo
           );
           const proyectosMostrados =
             todosProyectos.length > 0 ? todosProyectos : activoProyectos;
@@ -711,7 +718,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                   style={{ marginRight: 8 }}
                 />
                 <Boton
-                  title="Crear Solicitud (Reservar Stock)"
+                  title={editandoSolicitud ? "Guardar Cambios en Solicitud" : "Crear Solicitud (Reservar Stock)"}
                   variant="primary"
                   disabled={!validacionEnVivo.esValida}
                   onPress={manejarEnviarSolicitud}

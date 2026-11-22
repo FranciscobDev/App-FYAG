@@ -264,3 +264,681 @@ export const liberarReservaComprometidoEnCatalogoH6 = <T extends ProductoCatalog
         };
     });
 };
+
+export interface EstadoAccionesBodegueroSolicitud {
+    puedeEditar: boolean;
+    puedeAnular: boolean;
+    motivoBloqueo: string | null;
+}
+
+/**
+ * [FRONT-2] Determina si las acciones de "Editar" y "Anular" están activas para el Bodeguero.
+ * Solo están habilitadas cuando el estado de la solicitud es 'pendiente' ('Pendiente').
+ * Solicitudes 'aprobada', 'rechazada', 'anulada' o 'entregada' bloquean ambos botones.
+ */
+export const obtenerEstadoAccionesBodegueroSolicitud = (
+    estadoSolicitud: string
+): EstadoAccionesBodegueroSolicitud => {
+    const estadoNorm = String(estadoSolicitud || '').trim().toLowerCase();
+    if (estadoNorm === 'pendiente') {
+        return {
+            puedeEditar: true,
+            puedeAnular: true,
+            motivoBloqueo: null,
+        };
+    }
+    return {
+        puedeEditar: false,
+        puedeAnular: false,
+        motivoBloqueo: `Acciones Editar y Anular bloqueadas: la solicitud ya se encuentra en estado '${estadoSolicitud.toUpperCase()}'. Solo se pueden editar o anular solicitudes en estado Pendiente.`,
+    };
+};
+
+export interface ComprobanteAprobacionSolicitud {
+    receiptNumber: string;
+    requestId: string;
+    requestCode: string;
+    projectCode: string;
+    projectName: string;
+    requesterName: string;
+    requesterRut: string;
+    approvedBy: string;
+    approvedAt: string;
+    items: {
+        sku: string;
+        name: string;
+        quantity: number;
+        unit: string;
+    }[];
+    totalItemsCount: number;
+    totalUnitsCount: number;
+    notificationToRequester: {
+        recipientName: string;
+        recipientRut: string;
+        title: string;
+        message: string;
+    };
+}
+
+/**
+ * Genera un número de comprobante correlativo con formato `COMP-YYYY-NNN` (p. ej. `COMP-2026-001`)
+ * al aprobar una solicitud de insumos.
+ */
+export const generarNumeroComprobanteSolicitud = (
+    comprobantesExistentes: (string | undefined | null)[],
+    anio = new Date().getFullYear()
+): string => {
+    let maxCorrelativo = 0;
+    for (const comp of comprobantesExistentes) {
+        if (!comp) continue;
+        const match = /^COMP-\d{4}-(\d+)$/i.exec(comp.trim());
+        if (match) {
+            const num = Number(match[1]);
+            if (Number.isFinite(num) && num > maxCorrelativo) {
+                maxCorrelativo = num;
+            }
+        }
+    }
+    return `COMP-${anio}-${String(maxCorrelativo + 1).padStart(3, '0')}`;
+};
+
+/**
+ * [FRONT-1] Procesa la aprobación de una solicitud por parte del Administrador:
+ * - Genera el comprobante numerado (`COMP-YYYY-NNN`) con detalle de proyecto, solicitante, autorizador e ítems.
+ * - Construye la notificación inmediata para el bodeguero/técnico solicitante.
+ */
+export const construirComprobanteYNotificacionAprobacion = (
+    solicitud: {
+        id: string;
+        code: string;
+        projectCode: string;
+        projectName: string;
+        technicianName: string;
+        technicianRut: string;
+        receiptNumber?: string;
+        items: { sku: string; name: string; quantity: number; unit: string }[];
+    },
+    approverName: string,
+    comprobantesExistentes: (string | undefined | null)[] = [],
+    fechaAprobacion = new Date().toISOString().slice(0, 10)
+): ComprobanteAprobacionSolicitud => {
+    const receiptNumber =
+        solicitud.receiptNumber && solicitud.receiptNumber.trim() !== ''
+            ? solicitud.receiptNumber.trim()
+            : generarNumeroComprobanteSolicitud(comprobantesExistentes);
+
+    const totalItemsCount = solicitud.items.length;
+    const totalUnitsCount = Number(
+        solicitud.items.reduce((acc, it) => acc + Number(it.quantity || 0), 0).toFixed(3)
+    );
+    const resumenInsumos = solicitud.items
+        .map((it) => `${it.quantity} ${it.unit} ${it.name}`)
+        .join(', ');
+
+    return {
+        receiptNumber,
+        requestId: solicitud.id,
+        requestCode: solicitud.code,
+        projectCode: solicitud.projectCode,
+        projectName: solicitud.projectName,
+        requesterName: solicitud.technicianName,
+        requesterRut: solicitud.technicianRut,
+        approvedBy: approverName,
+        approvedAt: fechaAprobacion,
+        items: solicitud.items.map((it) => ({
+            sku: it.sku,
+            name: it.name,
+            quantity: it.quantity,
+            unit: it.unit,
+        })),
+        totalItemsCount,
+        totalUnitsCount,
+        notificationToRequester: {
+            recipientName: solicitud.technicianName,
+            recipientRut: solicitud.technicianRut,
+            title: `Solicitud ${solicitud.code} Aprobada — Comprobante N° ${receiptNumber}`,
+            message: `El Administrador (${approverName}) aprobó su solicitud ${solicitud.code} para el proyecto ${solicitud.projectCode} - ${solicitud.projectName} (${resumenInsumos}). Comprobante de autorización N° ${receiptNumber} listo para retiro/egreso en bodega.`,
+        },
+    };
+};
+
+/**
+ * [FRONT-1] Valida el rechazo de una solicitud por parte del Administrador (exige motivo obligatorio)
+ * y construye la notificación inmediata para el bodeguero/técnico solicitante.
+ */
+export const construirNotificacionRechazoSolicitud = (
+    solicitud: {
+        id: string;
+        code: string;
+        projectCode: string;
+        projectName: string;
+        technicianName: string;
+        technicianRut: string;
+    },
+    reason: string,
+    approverName: string
+): {
+    esValido: boolean;
+    error: string | null;
+    motivoLimpio: string;
+    notificationToRequester: {
+        recipientName: string;
+        recipientRut: string;
+        title: string;
+        message: string;
+    } | null;
+} => {
+    const motivoLimpio = String(reason || '').trim();
+    if (!motivoLimpio) {
+        return {
+            esValido: false,
+            error: 'El rechazo exige motivo obligatorio.',
+            motivoLimpio: '',
+            notificationToRequester: null,
+        };
+    }
+
+    return {
+        esValido: true,
+        error: null,
+        motivoLimpio,
+        notificationToRequester: {
+            recipientName: solicitud.technicianName,
+            recipientRut: solicitud.technicianRut,
+            title: `Solicitud ${solicitud.code} Rechazada por Administración`,
+            message: `El Administrador (${approverName}) rechazó su solicitud ${solicitud.code} del proyecto ${solicitud.projectCode} - ${solicitud.projectName}. Motivo: "${motivoLimpio}". El stock comprometido fue liberado en H6.`,
+        },
+    };
+};
+
+export interface ResumenLineaSalidaFisica {
+    sku: string;
+    name: string;
+    unit: string;
+    saldoAutorizado: number;
+    entregadoPrevio: number;
+    saldoPendienteAntes: number;
+    entregandoAhora: number;
+    entregadoAcumulado: number;
+    saldoPendienteRestante: number;
+    porcentajeAvanceEntrega: number;
+    stockDisponibleBodega: number;
+    stockComprometidoBodega: number;
+    stockRespaldoParaEgreso: number;
+    superaSaldoPendiente: boolean;
+    superaStockBodega: boolean;
+    esEntregaValida: boolean;
+    mensajeAlerta: string | null;
+}
+
+export interface ResumenSolicitudSalidaFisica {
+    requestId: string;
+    requestCode: string;
+    receiptNumber: string;
+    projectCode: string;
+    projectName: string;
+    lineas: ResumenLineaSalidaFisica[];
+    totalAutorizadoUnidades: number;
+    totalEntregadoPrevioUnidades: number;
+    totalEntregandoAhoraUnidades: number;
+    totalEntregadoAcumuladoUnidades: number;
+    totalSaldoPendienteRestanteUnidades: number;
+    porcentajeAvanceTotal: number;
+    esEntregaCompleta: boolean;
+    esEntregaParcial: boolean;
+    tieneErroresLinea: boolean;
+    errores: string[];
+}
+
+/**
+ * [FRONT-1] Calcula en tiempo real el saldo autorizado vs. entregado previo, entregando ahora,
+ * entregado acumulado y saldo pendiente resultante para una línea de solicitud aprobada.
+ * Considera tanto el stock disponible (`stock`) como el stock ya reservado (`committed`) para la solicitud.
+ */
+export const calcularResumenLineaSalidaFisica = (
+    itemSolicitud: {
+        sku: string;
+        name: string;
+        quantity: number;
+        deliveredQuantity?: number;
+        unit: string;
+    },
+    cantidadAEntregarAhora: number,
+    productoCatalogo?: {
+        sku: string;
+        name?: string;
+        stock: number;
+        committed?: number;
+    } | null
+): ResumenLineaSalidaFisica => {
+    const saldoAutorizado = Math.max(0, Number(Number(itemSolicitud.quantity || 0).toFixed(3)));
+    const entregadoPrevio = Math.max(0, Number(Number(itemSolicitud.deliveredQuantity || 0).toFixed(3)));
+    const saldoPendienteAntes = Math.max(0, Number((saldoAutorizado - entregadoPrevio).toFixed(3)));
+    const entregandoAhora = Math.max(0, Number(Number(cantidadAEntregarAhora || 0).toFixed(3)));
+    const entregadoAcumulado = Number((entregadoPrevio + entregandoAhora).toFixed(3));
+    const saldoPendienteRestante = Math.max(0, Number((saldoPendienteAntes - entregandoAhora).toFixed(3)));
+    const porcentajeAvanceEntrega =
+        saldoAutorizado > 0
+            ? Math.min(100, Math.round((entregadoAcumulado / saldoAutorizado) * 100))
+            : 100;
+
+    const stockDisponibleBodega = Math.max(0, Number(Number(productoCatalogo?.stock || 0).toFixed(3)));
+    const stockComprometidoBodega = Math.max(0, Number(Number(productoCatalogo?.committed || 0).toFixed(3)));
+    // El stock físico real que respalda el egreso de esta solicitud aprobada incluye
+    // las unidades reservadas en 'committed' (hasta el saldo pendiente de esta solicitud) más el stock libre.
+    const reservaAplicable = Math.min(stockComprometidoBodega, saldoPendienteAntes);
+    const stockRespaldoParaEgreso = Number((stockDisponibleBodega + reservaAplicable).toFixed(3));
+
+    const superaSaldoPendiente = entregandoAhora > saldoPendienteAntes;
+    const superaStockBodega = entregandoAhora > stockRespaldoParaEgreso;
+
+    let mensajeAlerta: string | null = null;
+    if (superaSaldoPendiente) {
+        mensajeAlerta = `La cantidad a entregar de ${itemSolicitud.name} (${entregandoAhora} ${itemSolicitud.unit}) supera el saldo autorizado pendiente (${saldoPendienteAntes} ${itemSolicitud.unit}).`;
+    } else if (superaStockBodega) {
+        mensajeAlerta = `Stock físico insuficiente para ${itemSolicitud.name} (${itemSolicitud.sku}): respaldado en bodega ${stockRespaldoParaEgreso} ${itemSolicitud.unit}, intentando egresar ${entregandoAhora} ${itemSolicitud.unit}.`;
+    }
+
+    return {
+        sku: itemSolicitud.sku,
+        name: itemSolicitud.name,
+        unit: itemSolicitud.unit,
+        saldoAutorizado,
+        entregadoPrevio,
+        saldoPendienteAntes,
+        entregandoAhora,
+        entregadoAcumulado,
+        saldoPendienteRestante,
+        porcentajeAvanceEntrega,
+        stockDisponibleBodega,
+        stockComprometidoBodega,
+        stockRespaldoParaEgreso,
+        superaSaldoPendiente,
+        superaStockBodega,
+        esEntregaValida: !superaSaldoPendiente && !superaStockBodega,
+        mensajeAlerta,
+    };
+};
+
+/**
+ * [FRONT-1] Calcula el resumen completo en tiempo real de una solicitud aprobada en la pantalla
+ * de "Registro de Salida Física" (saldo autorizado vs. entregado en vivo, soporte parcial o total).
+ */
+export const calcularResumenSolicitudSalidaFisica = <
+    TProd extends { sku: string; name?: string; stock: number; committed?: number }
+>(
+    solicitud: {
+        id: string;
+        code: string;
+        receiptNumber?: string;
+        projectCode: string;
+        projectName: string;
+        items: {
+            sku: string;
+            name: string;
+            quantity: number;
+            deliveredQuantity?: number;
+            unit: string;
+        }[];
+    },
+    cantidadesPorSku: Record<string, number>,
+    catalogo: TProd[]
+): ResumenSolicitudSalidaFisica => {
+    const lineas = solicitud.items.map((it) => {
+        const prod = catalogo.find(
+            (p) => p.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+        );
+        const cantAhora = Number(cantidadesPorSku[it.sku] || 0);
+        return calcularResumenLineaSalidaFisica(it, cantAhora, prod);
+    });
+
+    const totalAutorizadoUnidades = Number(
+        lineas.reduce((acc, l) => acc + l.saldoAutorizado, 0).toFixed(3)
+    );
+    const totalEntregadoPrevioUnidades = Number(
+        lineas.reduce((acc, l) => acc + l.entregadoPrevio, 0).toFixed(3)
+    );
+    const totalEntregandoAhoraUnidades = Number(
+        lineas.reduce((acc, l) => acc + l.entregandoAhora, 0).toFixed(3)
+    );
+    const totalEntregadoAcumuladoUnidades = Number(
+        lineas.reduce((acc, l) => acc + l.entregadoAcumulado, 0).toFixed(3)
+    );
+    const totalSaldoPendienteRestanteUnidades = Number(
+        lineas.reduce((acc, l) => acc + l.saldoPendienteRestante, 0).toFixed(3)
+    );
+
+    const porcentajeAvanceTotal =
+        totalAutorizadoUnidades > 0
+            ? Math.min(
+                  100,
+                  Math.round((totalEntregadoAcumuladoUnidades / totalAutorizadoUnidades) * 100)
+              )
+            : 100;
+
+    const errores = lineas
+        .filter((l) => l.mensajeAlerta !== null)
+        .map((l) => l.mensajeAlerta as string);
+
+    const esEntregaCompleta =
+        totalEntregandoAhoraUnidades > 0 &&
+        totalSaldoPendienteRestanteUnidades === 0 &&
+        errores.length === 0;
+    const esEntregaParcial =
+        totalEntregandoAhoraUnidades > 0 &&
+        totalSaldoPendienteRestanteUnidades > 0 &&
+        errores.length === 0;
+
+    return {
+        requestId: solicitud.id,
+        requestCode: solicitud.code,
+        receiptNumber: solicitud.receiptNumber || solicitud.code,
+        projectCode: solicitud.projectCode,
+        projectName: solicitud.projectName,
+        lineas,
+        totalAutorizadoUnidades,
+        totalEntregadoPrevioUnidades,
+        totalEntregandoAhoraUnidades,
+        totalEntregadoAcumuladoUnidades,
+        totalSaldoPendienteRestanteUnidades,
+        porcentajeAvanceTotal,
+        esEntregaCompleta,
+        esEntregaParcial,
+        tieneErroresLinea: errores.length > 0,
+        errores,
+    };
+};
+
+export interface ResultadoEjecucionSalidaFisica<
+    TSolicitud,
+    TProd
+> {
+    success: boolean;
+    error: string | null;
+    dispatchCode: string | null;
+    esEntregaCompleta: boolean;
+    resumen: ResumenSolicitudSalidaFisica | null;
+    solicitudActualizada: TSolicitud | null;
+    catalogoActualizado: TProd[];
+    registroEgresoInmutable: {
+        dispatchCode: string;
+        requestId: string;
+        requestCode: string;
+        receiptNumber: string;
+        projectCode: string;
+        projectName: string;
+        technicianRut: string;
+        technicianName: string;
+        dispatchedBy: string;
+        date: string;
+        immutable: true;
+        correctionPolicy: string;
+        items: {
+            sku: string;
+            name: string;
+            unit: string;
+            quantityDispatched: number;
+            authorizedQuantity: number;
+            accumulatedDelivered: number;
+            remainingBalance: number;
+            unitCost: number;
+        }[];
+    } | null;
+}
+
+/**
+ * [FRONT-1] Ejecuta en una sola transacción en memoria (todo o nada) el registro de salida física:
+ * - Solo opera sobre solicitudes en estado 'aprobada'.
+ * - Exige técnico que retira en bodega (RUT y nombre).
+ * - Admite entrega parcial conservando el saldo pendiente en estado 'aprobada', o entrega total pasando a 'entregada'.
+ * - Consume primero del stock comprometido (`committed`) de la solicitud y el remanente de `stock`, sin doble descuento.
+ * - Genera un registro de egreso vinculado de forma irreversible al proyecto y al técnico que retira.
+ */
+export const ejecutarSalidaFisicaSolicitudEnMemoria = <
+    TSolicitud extends {
+        id: string;
+        code: string;
+        status: string;
+        receiptNumber?: string;
+        projectCode: string;
+        projectName: string;
+        technicianName: string;
+        technicianRut: string;
+        items: {
+            sku: string;
+            name: string;
+            quantity: number;
+            deliveredQuantity?: number;
+            unit: string;
+        }[];
+        timeline?: any[];
+    },
+    TProd extends {
+        sku: string;
+        name: string;
+        stock: number;
+        committed?: number;
+        isBulk?: boolean;
+        pmp?: number;
+        unitCost?: number;
+    }
+>(params: {
+    solicitud: TSolicitud;
+    itemsToDispatch: { sku: string; quantity: number }[];
+    technicianRut: string;
+    technicianName: string;
+    authorName: string;
+    catalogo: TProd[];
+    dispatchCode?: string;
+    dateStr?: string;
+}): ResultadoEjecucionSalidaFisica<TSolicitud, TProd> => {
+    const {
+        solicitud,
+        itemsToDispatch,
+        technicianRut,
+        technicianName,
+        authorName,
+        catalogo,
+    } = params;
+
+    if (!solicitud) {
+        return {
+            success: false,
+            error: 'Solicitud no encontrada.',
+            dispatchCode: null,
+            esEntregaCompleta: false,
+            resumen: null,
+            solicitudActualizada: null,
+            catalogoActualizado: catalogo,
+            registroEgresoInmutable: null,
+        };
+    }
+
+    if (String(solicitud.status || '').trim().toLowerCase() !== 'aprobada') {
+        return {
+            success: false,
+            error: 'Solo se puede registrar la salida física sobre solicitudes Aprobadas.',
+            dispatchCode: null,
+            esEntregaCompleta: false,
+            resumen: null,
+            solicitudActualizada: null,
+            catalogoActualizado: catalogo,
+            registroEgresoInmutable: null,
+        };
+    }
+
+    const rutLimpio = String(technicianRut || '').trim();
+    const nombreTecnicoLimpio = String(technicianName || '').trim();
+    if (!rutLimpio || !nombreTecnicoLimpio) {
+        return {
+            success: false,
+            error: 'Debe seleccionar el técnico que retira en bodega (nombre y RUT obligatorios).',
+            dispatchCode: null,
+            esEntregaCompleta: false,
+            resumen: null,
+            solicitudActualizada: null,
+            catalogoActualizado: catalogo,
+            registroEgresoInmutable: null,
+        };
+    }
+
+    const cantidadesPorSku: Record<string, number> = {};
+    for (const item of itemsToDispatch || []) {
+        const cant = Number(item.quantity || 0);
+        if (cant > 0) {
+            cantidadesPorSku[item.sku] = Number(((cantidadesPorSku[item.sku] || 0) + cant).toFixed(3));
+        }
+    }
+
+    const resumen = calcularResumenSolicitudSalidaFisica(solicitud, cantidadesPorSku, catalogo);
+
+    if (resumen.totalEntregandoAhoraUnidades <= 0) {
+        return {
+            success: false,
+            error: 'Debe ingresar una cantidad a entregar mayor a 0 en al menos un insumo autorizado.',
+            dispatchCode: null,
+            esEntregaCompleta: false,
+            resumen,
+            solicitudActualizada: null,
+            catalogoActualizado: catalogo,
+            registroEgresoInmutable: null,
+        };
+    }
+
+    if (resumen.tieneErroresLinea) {
+        return {
+            success: false,
+            error: resumen.errores[0],
+            dispatchCode: null,
+            esEntregaCompleta: false,
+            resumen,
+            solicitudActualizada: null,
+            catalogoActualizado: catalogo,
+            registroEgresoInmutable: null,
+        };
+    }
+
+    const nowStr = params.dateStr || new Date().toISOString().slice(0, 10);
+    const dispatchCode =
+        params.dispatchCode || `DESP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
+
+    // Descuento atómico (todo o nada): consume primero del stock comprometido (si fue pre-reservado) y luego del disponible
+    const catalogoActualizado = catalogo.map((prod) => {
+        const lineaResumen = resumen.lineas.find(
+            (l) => l.sku.trim().toUpperCase() === prod.sku.trim().toUpperCase()
+        );
+        if (!lineaResumen || lineaResumen.entregandoAhora <= 0) return prod;
+
+        const cantEgreso = lineaResumen.entregandoAhora;
+        const comprometidoActual = Math.max(0, Number(prod.committed || 0));
+        const stockActual = Math.max(0, Number(prod.stock || 0));
+
+        // Si el producto tiene unidades en 'committed' respaldando esta solicitud, las consumimos al salir físicamente;
+        // si no tenía 'committed' (p.ej. solicitud mock precargada sin reserva previa), descontamos de 'stock'.
+        const consumidoDeComprometido = Math.min(
+            comprometidoActual,
+            lineaResumen.saldoPendienteAntes,
+            cantEgreso
+        );
+        const consumidoDeDisponible = Math.max(
+            0,
+            Number((cantEgreso - consumidoDeComprometido).toFixed(3))
+        );
+
+        const nuevoComprometido = Math.max(
+            0,
+            Number((comprometidoActual - consumidoDeComprometido).toFixed(3))
+        );
+        const nuevoDisponible = Math.max(
+            0,
+            Number((stockActual - consumidoDeDisponible).toFixed(3))
+        );
+
+        return {
+            ...prod,
+            stock: prod.isBulk ? nuevoDisponible : Math.round(nuevoDisponible * 1000) / 1000,
+            committed: prod.isBulk
+                ? nuevoComprometido
+                : Math.round(nuevoComprometido * 1000) / 1000,
+        };
+    });
+
+    const updatedItems = solicitud.items.map((it) => {
+        const lineaResumen = resumen.lineas.find(
+            (l) => l.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+        );
+        if (!lineaResumen) return it;
+        return {
+            ...it,
+            deliveredQuantity: lineaResumen.entregadoAcumulado,
+        };
+    });
+
+    const isFullyDelivered = updatedItems.every(
+        (it) => Number(it.deliveredQuantity || 0) >= Number(it.quantity)
+    );
+
+    const currentTimeline = Array.isArray(solicitud.timeline) ? solicitud.timeline : [];
+    const newTimelineStep = {
+        id: `step_${Date.now()}`,
+        title: isFullyDelivered ? 'Egreso Completo en Bodega' : 'Egreso Parcial en Bodega',
+        description: `Despachado a ${nombreTecnicoLimpio} (${rutLimpio}) bajo guía ${dispatchCode} (${resumen.totalEntregandoAhoraUnidades} un. entregadas; saldo pendiente: ${resumen.totalSaldoPendienteRestanteUnidades} un.). Registro irreversible vinculado a ${solicitud.projectCode}.`,
+        date: nowStr,
+        author: authorName,
+        status: 'completado' as const,
+    };
+
+    const solicitudActualizada: TSolicitud = {
+        ...solicitud,
+        status: isFullyDelivered ? 'entregada' : 'aprobada',
+        items: updatedItems,
+        timeline: [...currentTimeline, newTimelineStep],
+    };
+
+    const registroEgresoInmutable = {
+        dispatchCode,
+        requestId: solicitud.id,
+        requestCode: solicitud.code,
+        receiptNumber: solicitud.receiptNumber || solicitud.code,
+        projectCode: solicitud.projectCode,
+        projectName: solicitud.projectName,
+        technicianRut: rutLimpio,
+        technicianName: nombreTecnicoLimpio,
+        dispatchedBy: authorName,
+        date: nowStr,
+        immutable: true as const,
+        correctionPolicy:
+            'El egreso queda vinculado de forma irreversible al proyecto y al técnico que retira. Las correcciones se realizan únicamente mediante un movimiento de ajuste en Cardex, nunca editando el registro.',
+        items: resumen.lineas
+            .filter((l) => l.entregandoAhora > 0)
+            .map((l) => {
+                const prod = catalogo.find(
+                    (p) => p.sku.trim().toUpperCase() === l.sku.trim().toUpperCase()
+                );
+                return {
+                    sku: l.sku,
+                    name: l.name,
+                    unit: l.unit,
+                    quantityDispatched: l.entregandoAhora,
+                    authorizedQuantity: l.saldoAutorizado,
+                    accumulatedDelivered: l.entregadoAcumulado,
+                    remainingBalance: l.saldoPendienteRestante,
+                    unitCost: Number(prod?.pmp ?? prod?.unitCost ?? 0),
+                };
+            }),
+    };
+
+    return {
+        success: true,
+        error: null,
+        dispatchCode,
+        esEntregaCompleta: isFullyDelivered,
+        resumen,
+        solicitudActualizada,
+        catalogoActualizado,
+        registroEgresoInmutable,
+    };
+};
+
+
+

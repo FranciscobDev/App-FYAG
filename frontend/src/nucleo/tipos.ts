@@ -96,7 +96,7 @@ export interface SolicitudMaterial {
   technicianName: string;
   date: string;
   urgency: "normal" | "alta" | "urgente";
-  status: "pendiente" | "aprobada" | "rechazada" | "entregada";
+  status: "pendiente" | "aprobada" | "rechazada" | "anulada" | "entregada";
   items: ItemSolicitudMaterial[];
   comment?: string;
   timeline?: PasoCronologiaSolicitud[];

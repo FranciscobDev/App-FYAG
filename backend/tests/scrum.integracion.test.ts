@@ -1292,4 +1292,84 @@ test('[BACK-1][SCRUM] endpoint POST /api/solicitudes intenta solicitar 1 unidad 
         (err: any) => err?.code === '23503',
         'PostgreSQL debe exigir integridad referencial (23503) e impedir vincular solicitudes_insumos a un proyecto inexistente'
     );
+
+    // [BACK-2][SCRUM] Modificar y luego anular la solicitud pendiente verificando en base de datos
+    // que recalcule la diferencia comprometida, libere el 100% al anular volviendo el stock disponible
+    // al valor original (25) y registre auditoría:
+    const idSolicitudCreada = okRes.json.solicitud.id_solicitud as number;
+
+    // A) Modificar cantidad de 10 a 6 unidades (libera 4 unidades: disponible pasa de 15 a 19, comprometido pasa de 10 a 6)
+    const editSolRes = await api('PUT', `/solicitudes/${idSolicitudCreada}`, {
+        descripcion_solicitud: 'Cantidad reducida de 10 a 6 unidades',
+        items: [{ id_articulo: idArt, cantidad_solicitada: 6 }],
+    }, tokenAdmin);
+    assert.equal(editSolRes.status, 200);
+
+    const stockTrasEditar = await api('GET', `/articulos/${idArt}`, undefined, tokenAdmin);
+    assert.equal(stockTrasEditar.json.cantidad_disponible, 19, 'tras bajar de 10 a 6 un, disponible sube de 15 a 19');
+    assert.equal(stockTrasEditar.json.cantidad_comprometida, 6, 'tras bajar de 10 a 6 un, comprometido queda en 6');
+
+    // B) Anular la solicitud pendiente #idSolicitudCreada -> libera las 6 unidades comprometidas y el disponible vuelve a 25 (valor original)
+    const anularSolRes = await api('POST', `/solicitudes/${idSolicitudCreada}/anular`, {}, tokenAdmin);
+    assert.equal(anularSolRes.status, 200);
+    assert.equal(anularSolRes.json.solicitud.estado, 'Anulada');
+
+    const stockTrasAnular = await api('GET', `/articulos/${idArt}`, undefined, tokenAdmin);
+    assert.equal(stockTrasAnular.json.cantidad_disponible, 25, 'al anular la solicitud pendiente, el stock disponible vuelve exactamente al valor original (25)');
+    assert.equal(stockTrasAnular.json.cantidad_comprometida, 0, 'al anular la solicitud pendiente, el stock comprometido queda en 0');
+
+    // C) Intentar volver a editar una solicitud ya Anulada -> bloqueado con 400
+    const editAnuladaRes = await api('PUT', `/solicitudes/${idSolicitudCreada}`, {
+        items: [{ id_articulo: idArt, cantidad_solicitada: 2 }],
+    }, tokenAdmin);
+    assert.equal(editAnuladaRes.status, 400, 'bloquea edición sobre solicitud que ya no está en estado Pendiente');
+
+    // =========================================================================
+    // [BACK-1][SCRUM] Resolución del Administrador:
+    //   1. Rechazar sin motivo -> falla (400)
+    //   2. Rechazar con motivo -> libera stock comprometido a disponible
+    //   3. Aprobar -> emite comprobante correlativo único (H5) y bloquea cierre de proyecto (H34)
+    // =========================================================================
+    // Crear solicitud #A por 8 unidades (Disponible baja de 25 a 17, Comprometido sube a 8)
+    const solARes = await api('POST', '/solicitudes', {
+        id_proyecto: idProyActivo,
+        items: [{ id_articulo: idArt, cantidad_solicitada: 8 }],
+    }, tokenAdmin);
+    assert.equal(solARes.status, 201);
+    const idSolA = solARes.json.solicitud.id_solicitud as number;
+
+    // 1. Intentar rechazar SIN motivo -> debe fallar con 400
+    const rechazoSinMotivoRes = await api('POST', `/solicitudes/${idSolA}/rechazar`, {
+        motivo_rechazo: '   ',
+    }, tokenAdmin);
+    assert.equal(rechazoSinMotivoRes.status, 400, 'rechazar sin motivo debe fallar con 400');
+
+    // 2. Rechazar CON motivo obligatorio -> libera las 8 unidades comprometidas de vuelta a disponible (25)
+    const rechazoConMotivoRes = await api('POST', `/solicitudes/${idSolA}/rechazar`, {
+        motivo_rechazo: 'Material reemplazado por especificación técnica del cliente',
+    }, tokenAdmin);
+    assert.equal(rechazoConMotivoRes.status, 200);
+    assert.equal(rechazoConMotivoRes.json.solicitud.estado, 'Rechazada');
+
+    const stockTrasRechazo = await api('GET', `/articulos/${idArt}`, undefined, tokenAdmin);
+    assert.equal(stockTrasRechazo.json.cantidad_disponible, 25, 'al rechazar con motivo, disponible vuelve a 25');
+    assert.equal(stockTrasRechazo.json.cantidad_comprometida, 0, 'al rechazar con motivo, comprometido vuelve a 0');
+
+    // 3. Crear solicitud #B por 5 unidades y APROBARLA -> emite comprobante correlativo único y bloquea cierre del proyecto (H34)
+    const solBRes = await api('POST', '/solicitudes', {
+        id_proyecto: idProyActivo,
+        items: [{ id_articulo: idArt, cantidad_solicitada: 5 }],
+    }, tokenAdmin);
+    assert.equal(solBRes.status, 201);
+    const idSolB = solBRes.json.solicitud.id_solicitud as number;
+
+    const aprobarSolBRes = await api('POST', `/solicitudes/${idSolB}/aprobar`, {}, tokenAdmin);
+    assert.equal(aprobarSolBRes.status, 200);
+    assert.equal(aprobarSolBRes.json.solicitud.estado, 'Aprobada');
+    assert.match(String(aprobarSolBRes.json.solicitud.nro_comprobante), /^COMP-\d{4}-\d{3,}$/, 'emite comprobante correlativo único COMP-YYYY-NNN');
+    assert.equal(aprobarSolBRes.json.solicitud.habilita_egreso_h5, true);
+
+    // 4. Intentar cerrar el proyecto #idProyActivo teniendo la solicitud #B Aprobada sin egresar -> bloqueado por H34 (409)
+    const cierreBloqueadoRes = await api('POST', `/proyectos/${idProyActivo}/cerrar`, {}, tokenAdmin);
+    assert.equal(cierreBloqueadoRes.status, 409, 'debe bloquear el cierre del proyecto mientras tenga solicitud Aprobada sin egresar (H34)');
 });

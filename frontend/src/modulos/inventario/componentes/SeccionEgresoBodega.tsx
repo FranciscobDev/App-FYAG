@@ -16,6 +16,10 @@ import {
   EstadoVacio,
   BarraProgreso,
 } from "@/componentes/comunes";
+import {
+  calcularResumenLineaSalidaFisica,
+  calcularResumenSolicitudSalidaFisica,
+} from "@/modulos/inventario/solicitudInsumosUtils";
 import { estilos } from "../estilos";
 
 export interface PropiedadesSeccionEgresoBodega {
@@ -314,205 +318,447 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
         </View>
       )}
 
-      {/* 3. ESTACIÓN DE PREPARACIÓN Y ENTREGA DEL PEDIDO ACTIVO */}
-      {activoDespachoSolicitud && (
-        <View style={[estilos.despachoLayoutContenedor, esDesktop && estilos.despachoLayoutDesktop]}>
-          <Tarjeta
-            variant="elevated"
-            style={[estilos.despachoFormularioTarjeta, esDesktop && estilos.despachoFormularioTarjetaDesktop]}
-          >
-            <View style={estilos.despachoFormularioEncabezado}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={estilos.despachoFormularioTitulo}>
-                  Preparación de Guía: {activoDespachoSolicitud.code}
-                </Text>
-                <Text style={estilos.despachoFormularioSubtitulo}>
-                  Destino: {activoDespachoSolicitud.projectName} ({activoDespachoSolicitud.projectCode})
+      {/* 3. ESTACIÓN DE REGISTRO DE SALIDA FÍSICA DEL PEDIDO ACTIVO */}
+      {activoDespachoSolicitud && (() => {
+        const resumenSolicitudVivo = calcularResumenSolicitudSalidaFisica(
+          activoDespachoSolicitud,
+          despachoQuantities || {},
+          productos || []
+        );
+
+        const aplicarPorcentajeSobrePendiente = (factor: number) => {
+          activoDespachoSolicitud.items.forEach((it: any) => {
+            const prod = productos.find((p: any) => p.sku === it.sku);
+            const resLin = calcularResumenLineaSalidaFisica(it, 0, prod);
+            const maxPosible = Math.min(resLin.saldoPendienteAntes, resLin.stockRespaldoParaEgreso);
+            if (maxPosible <= 0) {
+              manejarDespachoCantidadCambiar(it.sku, "0");
+              return;
+            }
+            const sugerido =
+              factor >= 1
+                ? maxPosible
+                : prod?.isBulk
+                  ? Number((maxPosible * factor).toFixed(2))
+                  : Math.max(1, Math.floor(maxPosible * factor));
+            manejarDespachoCantidadCambiar(it.sku, String(Math.min(maxPosible, sugerido)));
+          });
+        };
+
+        return (
+          <View style={[estilos.despachoLayoutContenedor, esDesktop && estilos.despachoLayoutDesktop]}>
+            <Tarjeta
+              variant="elevated"
+              style={[estilos.despachoFormularioTarjeta, esDesktop && estilos.despachoFormularioTarjetaDesktop]}
+            >
+              <View style={estilos.despachoFormularioEncabezado}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                    <Text style={estilos.despachoFormularioTitulo}>
+                      Registro de Salida Física: {activoDespachoSolicitud.code}
+                    </Text>
+                    {activoDespachoSolicitud.receiptNumber && (
+                      <Insignia label={`Aut. ${activoDespachoSolicitud.receiptNumber}`} tone="ok" size="sm" />
+                    )}
+                  </View>
+                  <Text style={estilos.despachoFormularioSubtitulo}>
+                    Proyecto Destino: {activoDespachoSolicitud.projectName} ({activoDespachoSolicitud.projectCode})
+                  </Text>
+                </View>
+                <Boton
+                  variant="secondary"
+                  size="sm"
+                  title="Verificar SKU"
+                  icon="qr-code-outline"
+                  onPress={() =>
+                    abrirEscaner("Verificar SKU para Despacho", (scannedCode: any) => {
+                      const matchedProducto = productos.find(
+                        (p: any) => p.sku === scannedCode || p.barcode === scannedCode
+                      );
+                      if (matchedProducto) {
+                        mostrarAviso(`SKU verificado: ${matchedProducto.sku} (${matchedProducto.name})`);
+                      } else {
+                        mostrarAviso(`Código leído: ${scannedCode}`);
+                      }
+                    })
+                  }
+                />
+              </View>
+
+              {/* Aviso de trazabilidad e inmutabilidad del registro en Cardex */}
+              <View
+                style={{
+                  backgroundColor: tema.colors.primaryLight,
+                  borderWidth: 1,
+                  borderColor: tema.colors.primaryBorder,
+                  borderRadius: tema.radius.sm,
+                  padding: 10,
+                  marginBottom: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="shield-checkmark-outline" size={18} color={tema.colors.primaryDark} />
+                <Text style={{ flex: 1, fontSize: 11, color: tema.colors.textSecondary, lineHeight: 16 }}>
+                  <Text style={{ fontWeight: "700", color: tema.colors.primaryDark }}>
+                    Trazabilidad irreversible en Cardex:{" "}
+                  </Text>
+                  El egreso queda vinculado de forma permanente al proyecto{" "}
+                  <Text style={{ fontWeight: "700" }}>{activoDespachoSolicitud.projectCode}</Text> y al técnico que
+                  retira. Las correcciones posteriores se realizan mediante un movimiento de ajuste, nunca editando el
+                  registro.
                 </Text>
               </View>
-              <Boton
-                variant="secondary"
-                size="sm"
-                title="Verificar SKU"
-                icon="qr-code-outline"
-                onPress={() =>
-                  abrirEscaner("Verificar SKU para Despacho", (scannedCode: any) => {
-                    const matchedProducto = productos.find(
-                      (p: any) => p.sku === scannedCode || p.barcode === scannedCode
-                    );
-                    if (matchedProducto) {
-                      mostrarAviso(`SKU verificado: ${matchedProducto.sku} (${matchedProducto.name})`);
-                    } else {
-                      mostrarAviso(`Código leído: ${scannedCode}`);
-                    }
-                  })
-                }
-              />
-            </View>
 
-            {/* Selector de Técnico que retira */}
-            <Text style={estilos.formularioSeccionEtiqueta}>2. Técnico que retira en mesón:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-              {tecnicos.map((t: any) => {
-                const esReceptor = despachoTecnicoRut === t.rut;
-                return (
-                  <TouchableOpacity
-                    key={t.rut}
-                    onPress={() => establecerDespachoTecnicoRut(t.rut)}
-                    style={[
-                      estilos.tecnicoSeleccionarChip,
-                      esReceptor && estilos.tecnicoSeleccionarChipActivo,
-                    ]}
-                  >
-                    <Text
+              {/* Selector de Técnico que retira en bodega */}
+              <Text style={estilos.formularioSeccionEtiqueta}>
+                2. Seleccionar Técnico que Retira en Bodega:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                {tecnicos.map((t: any) => {
+                  const esReceptor = despachoTecnicoRut === t.rut;
+                  return (
+                    <TouchableOpacity
+                      key={t.rut}
+                      onPress={() => establecerDespachoTecnicoRut(t.rut)}
                       style={[
-                        estilos.tecnicoSeleccionarNombre,
-                        esReceptor && estilos.tecnicoSeleccionarNombreActivo,
+                        estilos.tecnicoSeleccionarChip,
+                        esReceptor && estilos.tecnicoSeleccionarChipActivo,
                       ]}
                     >
-                      {t.name}
-                    </Text>
-                    <Text style={estilos.tecnicoSeleccionarRut}>RUT: {t.rut}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+                      <Text
+                        style={[
+                          estilos.tecnicoSeleccionarNombre,
+                          esReceptor && estilos.tecnicoSeleccionarNombreActivo,
+                        ]}
+                      >
+                        {t.name}
+                      </Text>
+                      <Text style={estilos.tecnicoSeleccionarRut}>RUT: {t.rut}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-            {/* Tabla de ítems a despachar */}
-            <Text style={estilos.formularioSeccionEtiqueta}>3. Insumos y Cantidades a Entregar:</Text>
-            {activoDespachoSolicitud.items.map((it: any) => {
-              const prod = productos.find((p: any) => p.sku === it.sku);
-              const entregado = it.deliveredQuantity || 0;
-              const pending = Math.max(0, it.quantity - entregado);
-              const actualDespacho = despachoQuantities[it.sku] || 0;
-              const esOverExistencia = prod ? actualDespacho > prod.stock : false;
-              const esOverPendiente = actualDespacho > pending;
+              {/* Controles rápidos de entrega parcial vs completar saldo restante */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginBottom: 10,
+                }}
+              >
+                <Text style={[estilos.formularioSeccionEtiqueta, { marginBottom: 0 }]}>
+                  3. Saldo Autorizado vs. Entregado en Tiempo Real:
+                </Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  <Boton
+                    variant="secondary"
+                    size="sm"
+                    title="Entrega Parcial (50%)"
+                    icon="pie-chart-outline"
+                    onPress={() => aplicarPorcentajeSobrePendiente(0.5)}
+                  />
+                  <Boton
+                    variant="secondary"
+                    size="sm"
+                    title="Completar Saldo Restante"
+                    icon="checkmark-done-outline"
+                    onPress={() => aplicarPorcentajeSobrePendiente(1)}
+                  />
+                </View>
+              </View>
 
-              return (
-                <View key={it.sku} style={estilos.despachoElementoFila}>
-                  <View style={{ flex: 1.5, minWidth: 160, marginRight: 8 }}>
-                    <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
-                    <Text style={estilos.despachoElementoSku}>
-                      SKU: {it.sku} {prod?.location ? `• ${prod.location}` : ""}
-                    </Text>
-                    <Text style={estilos.despachoElementoExistencia}>
-                      Stock bodega: {prod ? prod.stock : 0} {it.unit}
-                    </Text>
+              {/* Tabla de ítems a despachar con comparativa Autorizado vs Entregado en vivo */}
+              {activoDespachoSolicitud.items.map((it: any) => {
+                const prod = productos.find((p: any) => p.sku === it.sku);
+                const actualDespacho = Number(despachoQuantities[it.sku] || 0);
+                const resumenLinea = calcularResumenLineaSalidaFisica(it, actualDespacho, prod);
+                const esOverExistencia = resumenLinea.superaStockBodega;
+                const esOverPendiente = resumenLinea.superaSaldoPendiente;
+
+                return (
+                  <View
+                    key={it.sku}
+                    style={[
+                      estilos.despachoElementoFila,
+                      { flexDirection: "column", alignItems: "stretch", gap: 10 },
+                    ]}
+                  >
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{ flex: 1.5, minWidth: 180, marginRight: 8 }}>
+                        <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                        <Text style={estilos.despachoElementoSku}>
+                          SKU: {it.sku} {prod?.location ? `• ${prod.location}` : ""}
+                        </Text>
+                        <Text style={estilos.despachoElementoExistencia}>
+                          Respaldo en bodega: {resumenLinea.stockRespaldoParaEgreso} {it.unit}{" "}
+                          {resumenLinea.stockComprometidoBodega > 0
+                            ? `(Disp: ${resumenLinea.stockDisponibleBodega} + Comp: ${resumenLinea.stockComprometidoBodega})`
+                            : `(Disp: ${resumenLinea.stockDisponibleBodega})`}
+                        </Text>
+                      </View>
+
+                      <View style={estilos.despachoColumnaStats}>
+                        <Text style={estilos.statLinea}>
+                          Autorizado: <Text style={{ fontWeight: "700" }}>{resumenLinea.saldoAutorizado} {it.unit}</Text>
+                        </Text>
+                        <Text style={estilos.statLinea}>
+                          Entregado previo: <Text style={{ fontWeight: "700" }}>{resumenLinea.entregadoPrevio} {it.unit}</Text>
+                        </Text>
+                        <Text style={[estilos.statLinea, { color: tema.colors.primary, fontWeight: "700" }]}>
+                          Pendiente actual: {resumenLinea.saldoPendienteAntes} {it.unit}
+                        </Text>
+                      </View>
+
+                      <View style={estilos.despachoEntradaCaja}>
+                        <Text style={estilos.despachoEntradaEtiqueta}>Retira ahora:</Text>
+                        <TextInput
+                          value={String(actualDespacho)}
+                          onChangeText={(val: any) => manejarDespachoCantidadCambiar(it.sku, val)}
+                          keyboardType="decimal-pad"
+                          style={[
+                            estilos.despachoCantidadEntrada,
+                            (esOverExistencia || esOverPendiente) && { borderColor: tema.colors.danger },
+                          ]}
+                        />
+                        <Text style={estilos.despachoUnidadEtiqueta}>{it.unit}</Text>
+                      </View>
+                    </View>
+
+                    {/* Barra y franja en vivo de Autorizado vs Entregado resultante */}
+                    <View
+                      style={{
+                        backgroundColor: tema.colors.surfaceAlt,
+                        borderRadius: tema.radius.sm,
+                        padding: 8,
+                        borderWidth: 1,
+                        borderColor:
+                          esOverExistencia || esOverPendiente
+                            ? tema.colors.danger
+                            : tema.colors.borderLight,
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 8,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.text }}>
+                          Entregado acumulado en vivo:{" "}
+                          <Text style={{ color: tema.colors.okDark }}>
+                            {resumenLinea.entregadoAcumulado} / {resumenLinea.saldoAutorizado} {it.unit}
+                          </Text>{" "}
+                          ({resumenLinea.porcentajeAvanceEntrega}%)
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color:
+                              resumenLinea.saldoPendienteRestante === 0
+                                ? tema.colors.okDark
+                                : tema.colors.warnDark,
+                          }}
+                        >
+                          Saldo pendiente resultante: {resumenLinea.saldoPendienteRestante} {it.unit}
+                        </Text>
+                      </View>
+                      <BarraProgreso
+                        value={resumenLinea.entregadoAcumulado}
+                        max={Math.max(1, resumenLinea.saldoAutorizado)}
+                        height={6}
+                      />
+                      {resumenLinea.mensajeAlerta && (
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: tema.colors.danger,
+                            fontWeight: "600",
+                            marginTop: 6,
+                          }}
+                        >
+                          {resumenLinea.mensajeAlerta}
+                        </Text>
+                      )}
+                    </View>
 
                     {prod?.isBulk && prod.containerCapacity && (
-                      <View style={{ marginTop: 6 }}>
+                      <View style={{ marginTop: 2 }}>
                         <BarraProgreso
-                          value={Math.max(0, prod.stock - actualDespacho)}
+                          value={Math.max(0, resumenLinea.stockRespaldoParaEgreso - actualDespacho)}
                           max={prod.containerCapacity}
                           height={5}
                           showPercentage
-                          label={`Contenedor restante: ${Math.max(0, prod.stock - actualDespacho).toFixed(3)} ${it.unit}`}
+                          label={`Contenedor restante: ${Math.max(
+                            0,
+                            resumenLinea.stockRespaldoParaEgreso - actualDespacho
+                          ).toFixed(3)} ${it.unit}`}
                         />
                       </View>
                     )}
                   </View>
+                );
+              })}
+            </Tarjeta>
 
-                  <View style={estilos.despachoColumnaStats}>
-                    <Text style={estilos.statLinea}>Pedido: {it.quantity} {it.unit}</Text>
-                    <Text style={estilos.statLinea}>Previo: {entregado} {it.unit}</Text>
-                    <Text style={[estilos.statLinea, { color: tema.colors.primary, fontWeight: "bold" }]}>
-                      Pend.: {pending} {it.unit}
-                    </Text>
-                  </View>
-
-                  <View style={estilos.despachoEntradaCaja}>
-                    <Text style={estilos.despachoEntradaEtiqueta}>Entregar:</Text>
-                    <TextInput
-                      value={String(actualDespacho)}
-                      onChangeText={(val: any) => manejarDespachoCantidadCambiar(it.sku, val)}
-                      keyboardType="decimal-pad"
-                      style={[
-                        estilos.despachoCantidadEntrada,
-                        (esOverExistencia || esOverPendiente) && { borderColor: tema.colors.danger },
-                      ]}
-                    />
-                    <Text style={estilos.despachoUnidadEtiqueta}>{it.unit}</Text>
-                  </View>
+            {/* Resumen lateral (en desktop) o inferior (en móvil) de Registro de Salida Física */}
+            <Tarjeta
+              variant="outlined"
+              style={[estilos.despachoResumenTarjeta, esDesktop && estilos.despachoResumenTarjetaDesktop]}
+            >
+              <View style={estilos.resumenTarjetaEncabezado}>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Ionicons name="receipt-outline" size={18} color={tema.colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={estilos.resumenTarjetaTitulo}>Guía de Salida Física</Text>
                 </View>
-              );
-            })}
-          </Tarjeta>
-
-          {/* Resumen lateral (en desktop) o inferior (en móvil) de Despacho */}
-          <Tarjeta
-            variant="outlined"
-            style={[estilos.despachoResumenTarjeta, esDesktop && estilos.despachoResumenTarjetaDesktop]}
-          >
-            <View style={estilos.resumenTarjetaEncabezado}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Ionicons name="receipt-outline" size={18} color={tema.colors.primary} style={{ marginRight: 6 }} />
-                <Text style={estilos.resumenTarjetaTitulo}>Guía de Salida</Text>
+                <Insignia
+                  label={
+                    resumenSolicitudVivo.esEntregaCompleta
+                      ? "Entrega Total"
+                      : resumenSolicitudVivo.esEntregaParcial
+                        ? "Entrega Parcial"
+                        : "Sin Cantidad"
+                  }
+                  tone={
+                    resumenSolicitudVivo.esEntregaCompleta
+                      ? "ok"
+                      : resumenSolicitudVivo.esEntregaParcial
+                        ? "warn"
+                        : "mute"
+                  }
+                  size="sm"
+                />
               </View>
-              <Insignia
-                label={esCompletoDespacho ? "Completa" : totalUnidadesHastaDespacho > 0 ? "Parcial" : "Vacía"}
-                tone={esCompletoDespacho ? "ok" : totalUnidadesHastaDespacho > 0 ? "info" : "mute"}
-                size="sm"
+
+              <View style={estilos.resumenTarjetaCuerpo}>
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Comprobante Aut.:</Text>
+                  <Text style={estilos.resumenValor}>
+                    {activoDespachoSolicitud.receiptNumber || activoDespachoSolicitud.code}
+                  </Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Proyecto Destino:</Text>
+                  <Text style={estilos.resumenValor}>
+                    {activoDespachoSolicitud.projectCode} • {activoDespachoSolicitud.projectName}
+                  </Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Solicitado por:</Text>
+                  <Text style={estilos.resumenValor}>{activoDespachoSolicitud.technicianName}</Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Retira en Bodega:</Text>
+                  <Text style={[estilos.resumenValor, { fontWeight: "700", color: tema.colors.primary }]}>
+                    {seleccionadoDespachoTecnico
+                      ? `${seleccionadoDespachoTecnico.name} (${seleccionadoDespachoTecnico.rut})`
+                      : "Seleccionar técnico..."}
+                  </Text>
+                </View>
+                <View style={estilos.resumenDivisor} />
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Total Autorizado:</Text>
+                  <Text style={estilos.resumenValor}>{resumenSolicitudVivo.totalAutorizadoUnidades} un.</Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={estilos.resumenEtiqueta}>Entregado Previo:</Text>
+                  <Text style={estilos.resumenValor}>{resumenSolicitudVivo.totalEntregadoPrevioUnidades} un.</Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={[estilos.resumenEtiqueta, { fontWeight: "700", color: tema.colors.primaryDark }]}>
+                    Entregando Ahora:
+                  </Text>
+                  <Text style={[estilos.resumenValor, { fontWeight: "800", fontSize: 15, color: tema.colors.primary }]}>
+                    {resumenSolicitudVivo.totalEntregandoAhoraUnidades} un.
+                  </Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={[estilos.resumenEtiqueta, { fontWeight: "700", color: tema.colors.okDark }]}>
+                    Total Entregado Final:
+                  </Text>
+                  <Text style={[estilos.resumenValor, { fontWeight: "700", color: tema.colors.okDark }]}>
+                    {resumenSolicitudVivo.totalEntregadoAcumuladoUnidades} / {resumenSolicitudVivo.totalAutorizadoUnidades} un.
+                  </Text>
+                </View>
+                <View style={estilos.resumenFila}>
+                  <Text style={[estilos.resumenEtiqueta, { fontWeight: "700", color: tema.colors.text }]}>
+                    Saldo Pendiente Restante:
+                  </Text>
+                  <Text
+                    style={[
+                      estilos.resumenValor,
+                      {
+                        fontWeight: "800",
+                        color:
+                          resumenSolicitudVivo.totalSaldoPendienteRestanteUnidades === 0
+                            ? tema.colors.okDark
+                            : tema.colors.warnDark,
+                      },
+                    ]}
+                  >
+                    {resumenSolicitudVivo.totalSaldoPendienteRestanteUnidades} un.
+                  </Text>
+                </View>
+                <View style={{ marginTop: 6 }}>
+                  <BarraProgreso
+                    value={resumenSolicitudVivo.totalEntregadoAcumuladoUnidades}
+                    max={Math.max(1, resumenSolicitudVivo.totalAutorizadoUnidades)}
+                    height={7}
+                    showPercentage
+                    label={`Avance de entrega autorizada: ${resumenSolicitudVivo.porcentajeAvanceTotal}%`}
+                  />
+                </View>
+              </View>
+
+              {(Boolean(despachoError) || resumenSolicitudVivo.tieneErroresLinea) && (
+                <View style={estilos.errorAvisoTarjeta}>
+                  <Ionicons name="alert-circle" size={16} color={tema.colors.danger} />
+                  <Text style={estilos.errorAvisoTexto}>
+                    {despachoError || resumenSolicitudVivo.errores[0]}
+                  </Text>
+                </View>
+              )}
+
+              <Boton
+                title={
+                  resumenSolicitudVivo.esEntregaCompleta
+                    ? "Confirmar Salida Total y Emitir Guía"
+                    : "Confirmar Salida Parcial y Conservar Saldo"
+                }
+                variant="primary"
+                icon="checkmark-done-outline"
+                size="md"
+                disabled={
+                  resumenSolicitudVivo.totalEntregandoAhoraUnidades === 0 ||
+                  !despachoTecnicoRut ||
+                  resumenSolicitudVivo.tieneErroresLinea
+                }
+                onPress={manejarInitiateDespacho}
+                style={{ marginTop: 14 }}
+                fullWidth
               />
-            </View>
-
-            <View style={estilos.resumenTarjetaCuerpo}>
-              <View style={estilos.resumenFila}>
-                <Text style={estilos.resumenEtiqueta}>Comprobante:</Text>
-                <Text style={estilos.resumenValor}>
-                  {activoDespachoSolicitud.receiptNumber || activoDespachoSolicitud.code}
-                </Text>
-              </View>
-              <View style={estilos.resumenFila}>
-                <Text style={estilos.resumenEtiqueta}>Proyecto Destino:</Text>
-                <Text style={estilos.resumenValor}>{activoDespachoSolicitud.projectName}</Text>
-              </View>
-              <View style={estilos.resumenFila}>
-                <Text style={estilos.resumenEtiqueta}>Solicitado por:</Text>
-                <Text style={estilos.resumenValor}>{activoDespachoSolicitud.technicianName}</Text>
-              </View>
-              <View style={estilos.resumenFila}>
-                <Text style={estilos.resumenEtiqueta}>Retira en Bodega:</Text>
-                <Text style={[estilos.resumenValor, { fontWeight: "600", color: tema.colors.primary }]}>
-                  {seleccionadoDespachoTecnico?.name || "Seleccionar técnico..."}
-                </Text>
-              </View>
-              <View style={estilos.resumenDivisor} />
-              <View style={estilos.resumenFila}>
-                <Text style={estilos.resumenEtiqueta}>Líneas con entrega:</Text>
-                <Text style={estilos.resumenValor}>
-                  {despachoElementosEntries.length} de {activoDespachoSolicitud.items.length}
-                </Text>
-              </View>
-              <View style={estilos.resumenFila}>
-                <Text style={[estilos.resumenEtiqueta, { fontWeight: "bold", color: tema.colors.text }]}>
-                  Total a Despachar:
-                </Text>
-                <Text style={[estilos.resumenValor, { fontWeight: "bold", fontSize: 16, color: tema.colors.primary }]}>
-                  {totalUnidadesHastaDespacho} un.
-                </Text>
-              </View>
-            </View>
-
-            {Boolean(despachoError) && (
-              <View style={estilos.errorAvisoTarjeta}>
-                <Ionicons name="alert-circle" size={16} color={tema.colors.danger} />
-                <Text style={estilos.errorAvisoTexto}>{despachoError}</Text>
-              </View>
-            )}
-
-            <Boton
-              title="Confirmar y Emitir Guía"
-              variant="primary"
-              icon="checkmark-done-outline"
-              size="md"
-              disabled={totalUnidadesHastaDespacho === 0 || !despachoTecnicoRut}
-              onPress={manejarInitiateDespacho}
-              style={{ marginTop: 14 }}
-              fullWidth
-            />
-          </Tarjeta>
-        </View>
-      )}
+            </Tarjeta>
+          </View>
+        );
+      })()}
 
       {/* 4. HISTORIAL DE ÚLTIMOS DESPACHOS ENTREGADOS */}
       {solicitudesEntregadas.length > 0 && (
