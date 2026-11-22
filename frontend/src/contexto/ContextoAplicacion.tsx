@@ -20,7 +20,11 @@ import {
 } from "@/modulos/compras/ordenesCompraApi";
 import { aplicarEntregaChecklistEnOrden } from "@/modulos/compras/recepcionChecklistUtils";
 import {
+  ComprobanteAprobacionSolicitud,
   aplicarReservaComprometidoEnCatalogoH6,
+  construirComprobanteYNotificacionAprobacion,
+  construirNotificacionRechazoSolicitud,
+  ejecutarSalidaFisicaSolicitudEnMemoria,
   esProyectoActivoParaSolicitud,
   liberarReservaComprometidoEnCatalogoH6,
   validarFormularioNuevaSolicitudInsumos,
@@ -128,17 +132,29 @@ interface TipoContextoAplicacion {
     urgency?: "normal" | "alta" | "urgente",
     comment?: string
   ) => { success: boolean; missingItems?: string[]; error?: string };
-  aprobarSolicitudMaterial: (id: string, authorName: string) => void;
+  aprobarSolicitudMaterial: (
+    id: string,
+    authorName: string
+  ) => { success: boolean; receiptNumber?: string; comprobante?: ComprobanteAprobacionSolicitud; error?: string };
   rechazarSolicitudMaterial: (id: string, reason: string, authorName: string) => { success: boolean; error?: string };
-  modificarSolicitudMaterial: (id: string, items: ItemSolicitudMaterial[]) => void;
-  cancelarSolicitudMaterial: (id: string) => void;
+  modificarSolicitudMaterial: (
+    id: string,
+    items: ItemSolicitudMaterial[],
+    updates?: { projectId?: string; comment?: string; authorName?: string }
+  ) => { success: boolean; missingItems?: string[]; error?: string };
+  cancelarSolicitudMaterial: (id: string, authorName?: string) => { success: boolean; error?: string };
   despacharSolicitudMaterial: (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
     technicianRut: string,
     technicianName: string,
     authorName: string
-  ) => { success: boolean; error?: string };
+  ) => {
+    success: boolean;
+    error?: string;
+    dispatchCode?: string;
+    esEntregaCompleta?: boolean;
+  };
 
   // Purchasing actions
   crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; code?: string; error?: string };
@@ -651,22 +667,40 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const aprobarSolicitudMaterial = (id: string, authorName: string) => {
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (!targetReq) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (targetReq.status !== "pendiente") {
+      return {
+        success: false,
+        error: `Solo se pueden aprobar solicitudes en estado Pendiente (estado actual: ${targetReq.status.toUpperCase()}).`,
+      };
+    }
+
+    const nowStr = new Date().toISOString().slice(0, 10);
+    const comprobante = construirComprobanteYNotificacionAprobacion(
+      targetReq,
+      authorName,
+      solicitudesMaterial.map((r) => r.receiptNumber),
+      nowStr
+    );
+
     setMaterialRequests((prev) =>
       prev.map((req) => {
         if (req.id !== id) return req;
         const timeline = req.timeline || [];
-        const receiptNumber = req.receiptNumber || `COMP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
         return {
           ...req,
           status: "aprobada",
-          receiptNumber,
+          receiptNumber: comprobante.receiptNumber,
           timeline: [
             ...timeline,
             {
               id: `tl_${Date.now()}`,
               title: "Aprobada por Administración",
-              description: `Autorizado para preparación y egreso. Comprobante N° ${receiptNumber}`,
-              date: new Date().toISOString().slice(0, 10),
+              description: `Autorizado para preparación y egreso. Comprobante N° ${comprobante.receiptNumber}`,
+              date: nowStr,
               author: authorName,
               status: "completado",
             },
@@ -674,16 +708,55 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         };
       })
     );
+
+    // [FRONT-1] Notificar el resultado de aprobación y número de comprobante al bodeguero solicitante
+    const notifSolicitante: DetalleNotificacion = {
+      id: `notif_apr_${Date.now()}`,
+      title: comprobante.notificationToRequester.title,
+      message: comprobante.notificationToRequester.message,
+      date: nowStr,
+      type: "solicitud",
+      severity: "ok",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: targetReq.id,
+      relatedEntityLabel: comprobante.receiptNumber,
+    };
+    setNotificationsList((prev) => [notifSolicitante, ...prev]);
+
+    const alertBodeguero: AlertaPanel = {
+      id: `alert_apr_${Date.now()}`,
+      title: comprobante.notificationToRequester.title,
+      description: comprobante.notificationToRequester.message,
+      type: "solicitud",
+      severity: "info",
+      time: "Ahora mismo",
+      actionLabel: "Ver Comprobante",
+    };
+    setAlerts((prev) => [alertBodeguero, ...prev]);
+
+    return {
+      success: true,
+      receiptNumber: comprobante.receiptNumber,
+      comprobante,
+    };
   };
 
   const rechazarSolicitudMaterial = (id: string, reason: string, authorName: string) => {
-    if (!reason || reason.trim().length === 0) {
-      return { success: false, error: "El rechazo exige motivo obligatorio." };
-    }
     const targetReq = solicitudesMaterial.find((r) => r.id === id);
-    if (targetReq && (targetReq.status === "pendiente" || targetReq.status === "aprobada")) {
+    if (!targetReq) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    const evalRechazo = construirNotificacionRechazoSolicitud(targetReq, reason, authorName);
+    if (!evalRechazo.esValido) {
+      return { success: false, error: evalRechazo.error || "El rechazo exige motivo obligatorio." };
+    }
+
+    if (targetReq.status === "pendiente" || targetReq.status === "aprobada") {
       setProducts((prev) => liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items));
     }
+
+    const nowStr = new Date().toISOString().slice(0, 10);
     setMaterialRequests((prev) =>
       prev.map((req) => {
         if (req.id !== id) return req;
@@ -691,14 +764,162 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         return {
           ...req,
           status: "rechazada",
-          rejectionReason: reason,
+          rejectionReason: evalRechazo.motivoLimpio,
           timeline: [
             ...timeline,
             {
               id: `tl_${Date.now()}`,
               title: "Rechazada por Administración",
-              description: `Motivo: ${reason}`,
-              date: new Date().toISOString().slice(0, 10),
+              description: `Motivo: ${evalRechazo.motivoLimpio}`,
+              date: nowStr,
+              author: authorName,
+              status: "completado",
+            },
+          ],
+        };
+      })
+    );
+
+    // [FRONT-1] Notificar el resultado del rechazo y su motivo al bodeguero solicitante
+    if (evalRechazo.notificationToRequester) {
+      const notifRechazo: DetalleNotificacion = {
+        id: `notif_rej_${Date.now()}`,
+        title: evalRechazo.notificationToRequester.title,
+        message: evalRechazo.notificationToRequester.message,
+        date: nowStr,
+        type: "solicitud",
+        severity: "danger",
+        read: false,
+        relatedEntityType: "solicitud",
+        relatedEntityId: targetReq.id,
+        relatedEntityLabel: targetReq.code,
+      };
+      setNotificationsList((prev) => [notifRechazo, ...prev]);
+
+      const alertRechazo: AlertaPanel = {
+        id: `alert_rej_${Date.now()}`,
+        title: evalRechazo.notificationToRequester.title,
+        description: evalRechazo.notificationToRequester.message,
+        type: "solicitud",
+        severity: "amarillo",
+        time: "Ahora mismo",
+        actionLabel: "Ver Solicitud",
+      };
+      setAlerts((prev) => [alertRechazo, ...prev]);
+    }
+
+    return { success: true };
+  };
+
+  const modificarSolicitudMaterial = (
+    id: string,
+    items: ItemSolicitudMaterial[],
+    updates?: { projectId?: string; comment?: string; authorName?: string }
+  ) => {
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (!targetReq) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (targetReq.status !== "pendiente") {
+      return {
+        success: false,
+        error: `No se puede editar la solicitud ${targetReq.code} porque se encuentra en estado '${targetReq.status.toUpperCase()}'. Solo es editable en estado Pendiente.`,
+      };
+    }
+
+    const proyectoIdDestino = updates?.projectId || targetReq.projectId;
+    const proj = proyectos.find((p) => p.id === proyectoIdDestino) || null;
+    if (!proj || !esProyectoActivoParaSolicitud(proj)) {
+      return {
+        success: false,
+        error: "Solo se pueden asignar insumos a proyectos activos.",
+      };
+    }
+
+    // Evaluar contra el catálogo tras liberar temporalmente las unidades que esta misma solicitud tenía comprometidas
+    const catalogoConReservaLiberada = liberarReservaComprometidoEnCatalogoH6(
+      productos,
+      targetReq.items
+    );
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proj,
+      items,
+      catalogoConReservaLiberada
+    );
+    if (!validacion.esValida) {
+      return {
+        success: false,
+        missingItems: validacion.faltantesStock,
+        error:
+          validacion.errorGeneral ||
+          "Stock disponible insuficiente para actualizar la solicitud.",
+      };
+    }
+
+    setProducts((prev) => {
+      const liberado = liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items);
+      return aplicarReservaComprometidoEnCatalogoH6(liberado, items);
+    });
+
+    const nowStr = new Date().toISOString().slice(0, 10);
+    setMaterialRequests((prev) =>
+      prev.map((req) => {
+        if (req.id !== id) return req;
+        const timeline = req.timeline || [];
+        return {
+          ...req,
+          projectId: proj.id,
+          projectCode: proj.code,
+          projectName: proj.name,
+          items,
+          comment: updates?.comment !== undefined ? updates.comment : req.comment,
+          timeline: [
+            ...timeline,
+            {
+              id: `tl_edit_${Date.now()}`,
+              title: "Solicitud Editada por Bodeguero",
+              description: `Cantidades/insumos actualizados en estado Pendiente (${items
+                .map((i) => `${i.quantity} ${i.unit} ${i.name}`)
+                .join(", ")})`,
+              date: nowStr,
+              author: updates?.authorName || "Bodeguero",
+              status: "completado",
+            },
+          ],
+        };
+      })
+    );
+    return { success: true };
+  };
+
+  const cancelarSolicitudMaterial = (id: string, authorName = "Bodeguero") => {
+    const targetReq = solicitudesMaterial.find((r) => r.id === id);
+    if (!targetReq) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (targetReq.status !== "pendiente") {
+      return {
+        success: false,
+        error: `No se puede anular la solicitud ${targetReq.code} porque ya fue ${targetReq.status.toUpperCase()}. Solo se pueden anular solicitudes en estado Pendiente.`,
+      };
+    }
+
+    setProducts((prev) => liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items));
+    const nowStr = new Date().toISOString().slice(0, 10);
+    setMaterialRequests((prev) =>
+      prev.map((r) => {
+        if (r.id !== id) return r;
+        const timeline = r.timeline || [];
+        return {
+          ...r,
+          status: "anulada",
+          timeline: [
+            ...timeline,
+            {
+              id: `tl_anul_${Date.now()}`,
+              title: "Solicitud Anulada por Bodeguero",
+              description: "Reserva de stock comprometido liberada de vuelta a stock disponible (H6).",
+              date: nowStr,
               author: authorName,
               status: "completado",
             },
@@ -709,28 +930,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  const modificarSolicitudMaterial = (id: string, items: ItemSolicitudMaterial[]) => {
-    const targetReq = solicitudesMaterial.find((r) => r.id === id);
-    if (targetReq && targetReq.status === "pendiente") {
-      setProducts((prev) => {
-        const liberado = liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items);
-        return aplicarReservaComprometidoEnCatalogoH6(liberado, items);
-      });
-    }
-    setMaterialRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, items } : req))
-    );
-  };
-
-  const cancelarSolicitudMaterial = (id: string) => {
-    const targetReq = solicitudesMaterial.find((r) => r.id === id);
-    if (targetReq && (targetReq.status === "pendiente" || targetReq.status === "aprobada")) {
-      setProducts((prev) => liberarReservaComprometidoEnCatalogoH6(prev, targetReq.items));
-    }
-    setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
-  };
-
-  // Egreso / Despacho de Materiales (Paso 6)
+  // [FRONT-1] Egreso / Registro de Salida Física de Materiales (Paso 6)
   const despacharSolicitudMaterial = (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
@@ -740,100 +940,100 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   ) => {
     const req = solicitudesMaterial.find((r) => r.id === requestId);
     if (!req) return { success: false, error: "Solicitud no encontrada." };
-    if (req.status !== "aprobada") {
-      return { success: false, error: "Solo se pueden despachar solicitudes aprobadas." };
+
+    const resultado = ejecutarSalidaFisicaSolicitudEnMemoria({
+      solicitud: req,
+      itemsToDispatch,
+      technicianRut,
+      technicianName,
+      authorName,
+      catalogo: productos,
+    });
+
+    if (!resultado.success || !resultado.solicitudActualizada || !resultado.registroEgresoInmutable) {
+      return {
+        success: false,
+        error: resultado.error || "No se pudo registrar la salida física.",
+      };
     }
 
-    // Validar disponibilidad de stock
-    for (const it of itemsToDispatch) {
-      if (it.quantity <= 0) continue;
-      const prod = productos.find((p) => p.sku === it.sku);
-      if (!prod || prod.stock < it.quantity) {
-        return {
-          success: false,
-          error: `Stock insuficiente para ${prod?.name || it.sku}. Disponible: ${prod?.stock || 0}, a despachar: ${it.quantity}`,
-        };
-      }
-    }
+    const nowStr = resultado.registroEgresoInmutable.date;
+    const dispatchCode = resultado.registroEgresoInmutable.dispatchCode;
 
-    const nowStr = new Date().toISOString().slice(0, 10);
-    const dispatchCode = `DESP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
+    // 1. Descontar stock en una sola transacción (consumiendo primero de comprometido y luego de disponible)
+    setProducts(resultado.catalogoActualizado);
 
-    // Descontar stock
-    setProducts((prev) =>
-      prev.map((p) => {
-        const itemD = itemsToDispatch.find((i) => i.sku === p.sku);
-        if (!itemD || itemD.quantity <= 0) return p;
-        const newStock = Math.max(0, p.stock - itemD.quantity);
-        return { ...p, stock: p.isBulk ? Number(newStock.toFixed(3)) : newStock };
-      })
-    );
-
-    // Agregar movimientos al Cardex
-    itemsToDispatch.forEach((itemD) => {
-      if (itemD.quantity <= 0) return;
-      const prod = productos.find((p) => p.sku === itemD.sku);
-      if (!prod) return;
-      const newBalance = Math.max(0, prod.stock - itemD.quantity);
-      const cardexEntry: MovimientoCardex = {
+    // 2. Registrar movimientos irreversibles en el Cardex vinculados al proyecto y al técnico que retira
+    const nuevosMovimientosCardex: MovimientoCardex[] = resultado.registroEgresoInmutable.items.map((itemD) => {
+      const prodActualizado = resultado.catalogoActualizado.find(
+        (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
+      );
+      const newBalance = Number(
+        ((prodActualizado?.stock || 0) + (prodActualizado?.committed || 0)).toFixed(3)
+      );
+      const unitPmp = prodActualizado?.pmp || prodActualizado?.unitCost || itemD.unitCost;
+      return {
         id: `cdx_${Date.now()}_${itemD.sku}`,
         sku: itemD.sku,
-        productName: prod.name,
+        productName: itemD.name,
         date: nowStr,
         type: "salida_obra",
-        typeLabel: "Salida a Obra",
-        reference: `${dispatchCode} / ${req.code}`,
+        typeLabel: `Salida a Obra (Retira: ${technicianName})`,
+        reference: `${dispatchCode} / ${req.receiptNumber || req.code}`,
         projectCode: req.projectCode,
         projectName: req.projectName,
         qtyIn: 0,
-        qtyOut: itemD.quantity,
-        balance: prod.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
-        pmp: prod.pmp || prod.unitCost,
-        totalValue: (prod.pmp || prod.unitCost) * newBalance,
-        userName: "Camila Vera Soto",
+        qtyOut: itemD.quantityDispatched,
+        balance: prodActualizado?.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
+        pmp: unitPmp,
+        totalValue: unitPmp * newBalance,
+        userName: authorName || "Camila Vera Soto",
         userRole: "Bodeguero",
-        userRut: "15.321.654-2",
+        userRut: technicianRut,
       };
-      setCardex((prev) => [cardexEntry, ...prev]);
     });
+    setCardex((prev) => [...nuevosMovimientosCardex, ...prev]);
 
-    // Actualizar cantidades entregadas en la solicitud
-    setMaterialRequests((prev) =>
-      prev.map((r) => {
-        if (r.id !== requestId) return r;
-        const updatedItems = r.items.map((it) => {
-          const itemD = itemsToDispatch.find((d) => d.sku === it.sku);
-          const addQty = itemD ? itemD.quantity : 0;
-          return {
-            ...it,
-            deliveredQuantity: (it.deliveredQuantity || 0) + addQty,
-          };
-        });
-
-        const isFullyDelivered = updatedItems.every(
-          (it) => (it.deliveredQuantity || 0) >= it.quantity
-        );
-
-        const currentTimeline = r.timeline || [];
-        const newTimelineStep = {
-          id: `step_${Date.now()}`,
-          title: isFullyDelivered ? "Egreso Completo en Bodega" : "Egreso Parcial en Bodega",
-          description: `Despachado a ${technicianName} (${technicianRut}) bajo comprobante ${dispatchCode}`,
+    // 3. Vincular el egreso de forma irreversible al proyecto y al técnico que retira
+    const costoEgresoMateriales = resultado.registroEgresoInmutable.items.reduce(
+      (sum, it) => sum + it.quantityDispatched * it.unitCost,
+      0
+    );
+    setProjects((prev) =>
+      prev.map((proj) => {
+        if (proj.id !== req.projectId && proj.code !== req.projectCode) return proj;
+        const nuevosDespachosProyecto = resultado.registroEgresoInmutable!.items.map((it) => ({
+          id: `dsp_${Date.now()}_${it.sku}`,
           date: nowStr,
-          author: authorName,
-          status: "completado" as const,
-        };
-
+          dispatchCode,
+          sku: it.sku,
+          productName: it.name,
+          quantity: it.quantityDispatched,
+          unit: it.unit,
+          unitCost: it.unitCost,
+          totalCost: it.quantityDispatched * it.unitCost,
+          deliveredTo: `${technicianName} (${technicianRut})`,
+        }));
+        const nuevoCostoMateriales = (proj.costRealMaterials || 0) + costoEgresoMateriales;
         return {
-          ...r,
-          status: isFullyDelivered ? ("entregada" as const) : ("aprobada" as const),
-          items: updatedItems,
-          timeline: [...currentTimeline, newTimelineStep],
+          ...proj,
+          costRealMaterials: nuevoCostoMateriales,
+          costReal: (proj.costReal || 0) + costoEgresoMateriales,
+          dispatches: [...nuevosDespachosProyecto, ...(proj.dispatches || [])],
         };
       })
     );
 
-    return { success: true };
+    // 4. Actualizar cantidades entregadas y estado ('aprobada' si parcial, 'entregada' si completa) en la solicitud
+    setMaterialRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? resultado.solicitudActualizada! : r))
+    );
+
+    return {
+      success: true,
+      dispatchCode,
+      esEntregaCompleta: resultado.esEntregaCompleta,
+    };
   };
 
   // 3. PURCHASING

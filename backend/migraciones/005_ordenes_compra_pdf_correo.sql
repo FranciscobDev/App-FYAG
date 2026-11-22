@@ -375,6 +375,119 @@ CREATE TABLE IF NOT EXISTS detalle_solicitudes (
 
 CREATE INDEX IF NOT EXISTS idx_detalle_solicitudes_solicitud ON detalle_solicitudes (id_solicitud);
 
+-- 12. Secuencia correlativa e índice único para comprobante de autorización de solicitud (H5 / BACK-1)
+CREATE SEQUENCE IF NOT EXISTS seq_comprobante_solicitud START WITH 1 INCREMENT BY 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_solicitudes_insumos_nro_comprobante
+    ON solicitudes_insumos (nro_comprobante)
+    WHERE nro_comprobante IS NOT NULL;
+
+-- 13. Tablas Inmutables de Salidas Físicas de Bodega (`salidas_bodega` y `salida_lineas`) y restricciones CHECK (disponible >= 0 y comprometido >= 0) [DB / BACK-1]
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_articulos_stock_disponible_no_negativo'
+    ) THEN
+        ALTER TABLE articulos_stock
+            ADD CONSTRAINT chk_articulos_stock_disponible_no_negativo
+            CHECK (cantidad_disponible >= 0);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_articulos_stock_comprometido_no_negativo'
+    ) THEN
+        ALTER TABLE articulos_stock
+            ADD CONSTRAINT chk_articulos_stock_comprometido_no_negativo
+            CHECK (cantidad_comprometida >= 0);
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS salidas_bodega (
+    id_salida SERIAL PRIMARY KEY,
+    codigo_salida VARCHAR(80) NULL UNIQUE,
+    solicitud_id INT NOT NULL REFERENCES solicitudes_insumos(id_solicitud) ON DELETE RESTRICT,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_retira_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tecnico_retira_rut VARCHAR(20) NULL,
+    tecnico_retira_nombre VARCHAR(150) NULL,
+    bodeguero_id INT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    fecha TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_salidas_bodega_solicitud ON salidas_bodega (solicitud_id);
+CREATE INDEX IF NOT EXISTS idx_salidas_bodega_proyecto ON salidas_bodega (proyecto_id);
+CREATE INDEX IF NOT EXISTS idx_salidas_bodega_tecnico ON salidas_bodega (tecnico_retira_id);
+
+CREATE TABLE IF NOT EXISTS salida_lineas (
+    id_salida_linea SERIAL PRIMARY KEY,
+    id_salida INT NOT NULL REFERENCES salidas_bodega(id_salida) ON DELETE RESTRICT,
+    id_solicitud_linea INT NULL REFERENCES solicitud_lineas(id_solicitud_linea) ON DELETE RESTRICT,
+    id_articulo INT NOT NULL,
+    cantidad_entregada NUMERIC(12,3) NOT NULL CHECK (cantidad_entregada > 0),
+    disponible NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (disponible >= 0),
+    comprometido NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (comprometido >= 0),
+    saldo_pendiente_resultante NUMERIC(12,3) NOT NULL DEFAULT 0.000 CHECK (saldo_pendiente_resultante >= 0),
+    costo_unitario_pmp NUMERIC(12,2) NOT NULL DEFAULT 0.00,
+    CONSTRAINT chk_salida_lineas_saldos_no_negativos CHECK (disponible >= 0 AND comprometido >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_salida_lineas_salida ON salida_lineas (id_salida);
+
+CREATE TABLE IF NOT EXISTS egresos_bodega (
+    id_egreso SERIAL PRIMARY KEY,
+    codigo_egreso VARCHAR(80) NOT NULL UNIQUE,
+    id_solicitud INT NOT NULL REFERENCES solicitudes_insumos(id_solicitud) ON DELETE RESTRICT,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_retira_id INT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tecnico_retira_rut VARCHAR(20) NOT NULL,
+    tecnico_retira_nombre VARCHAR(150) NOT NULL,
+    bodeguero_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    fecha_egreso TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_egresos_bodega_solicitud ON egresos_bodega (id_solicitud);
+CREATE INDEX IF NOT EXISTS idx_egresos_bodega_proyecto ON egresos_bodega (proyecto_id);
+
+CREATE TABLE IF NOT EXISTS egreso_lineas (
+    id_egreso_linea SERIAL PRIMARY KEY,
+    id_egreso INT NOT NULL REFERENCES egresos_bodega(id_egreso) ON DELETE RESTRICT,
+    id_solicitud_linea INT NOT NULL REFERENCES solicitud_lineas(id_solicitud_linea) ON DELETE RESTRICT,
+    id_articulo INT NOT NULL,
+    cantidad_egresada NUMERIC(12,3) NOT NULL CHECK (cantidad_egresada > 0),
+    saldo_pendiente_resultante NUMERIC(12,3) NOT NULL CHECK (saldo_pendiente_resultante >= 0),
+    costo_unitario_pmp NUMERIC(12,2) NOT NULL DEFAULT 0.00
+);
+
+CREATE INDEX IF NOT EXISTS idx_egreso_lineas_egreso ON egreso_lineas (id_egreso);
+
+CREATE OR REPLACE FUNCTION fn_impedir_modificacion_egreso()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'El registro de salida/egreso de bodega es inmutable y está vinculado de forma irreversible al proyecto y al técnico que retira. Las correcciones se realizan mediante un movimiento de ajuste en Cardex, nunca editando ni borrando el registro.';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_inmutabilidad_salidas_bodega ON salidas_bodega;
+CREATE TRIGGER trg_inmutabilidad_salidas_bodega
+BEFORE UPDATE OR DELETE ON salidas_bodega
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+DROP TRIGGER IF EXISTS trg_inmutabilidad_salida_lineas ON salida_lineas;
+CREATE TRIGGER trg_inmutabilidad_salida_lineas
+BEFORE UPDATE OR DELETE ON salida_lineas
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+DROP TRIGGER IF EXISTS trg_inmutabilidad_egresos_bodega ON egresos_bodega;
+CREATE TRIGGER trg_inmutabilidad_egresos_bodega
+BEFORE UPDATE OR DELETE ON egresos_bodega
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+DROP TRIGGER IF EXISTS trg_inmutabilidad_egreso_lineas ON egreso_lineas;
+CREATE TRIGGER trg_inmutabilidad_egreso_lineas
+BEFORE UPDATE OR DELETE ON egreso_lineas
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
+
+
+
 
 
 

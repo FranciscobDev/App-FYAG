@@ -37,14 +37,29 @@ import {
 } from '../services/facturaCalculoService';
 import {
     aplicarReservaComprometidoEnCatalogoH6,
+    calcularResumenLineaSalidaFisica,
+    calcularResumenSolicitudSalidaFisica,
+    construirComprobanteYNotificacionAprobacion,
+    construirNotificacionRechazoSolicitud,
+    ejecutarSalidaFisicaSolicitudEnMemoria,
     esProyectoActivoParaSolicitud,
+    generarNumeroComprobanteSolicitud,
     liberarReservaComprometidoEnCatalogoH6,
+    obtenerEstadoAccionesBodegueroSolicitud,
     validarFormularioNuevaSolicitudInsumos,
 } from '../services/solicitudInsumosService';
 import {
     ESTADOS_SOLICITUD_INSUMOS,
+    anularSolicitudInsumosEnTransaccion,
+    editarSolicitudInsumosEnTransaccion,
     emitirSolicitudInsumosEnTransaccion,
+    insertarSalidaBodegaDbEnTransaccion,
     insertarSolicitudInsumosDbEnTransaccion,
+    intentarEliminarSalidaBodegaEnDb,
+    rechazarModificacionEgresoInmutable,
+    registrarEgresoSolicitudEnTransaccion,
+    resolverSolicitudInsumosEnTransaccion,
+    verificarBloqueoCierreProyectoPorSolicitudesH34,
 } from '../controllers/solicitudController';
 
 const datosEjemplo: DatosPdfOrdenCompra = {
@@ -1903,6 +1918,1214 @@ test('[DB][SCRUM] tablas solicitudes_insumos (proyecto_id, bodeguero_id, estado:
     );
     assert.equal(tablaSolicitudesInsumos.length, 2, 'no debe insertar solicitudes vinculadas a proyectos inexistentes');
 });
+
+test('[FRONT-2][SCRUM] acciones de Editar y Anular en el listado de solicitudes del Bodeguero: activas únicamente cuando el estado es Pendiente y bloqueadas en Aprobada, Rechazada o Anulada', () => {
+    // 1. Estado Pendiente -> Editar y Anular activos
+    const enPendiente = obtenerEstadoAccionesBodegueroSolicitud('pendiente');
+    assert.equal(enPendiente.puedeEditar, true, 'en estado Pendiente el botón Editar está activo');
+    assert.equal(enPendiente.puedeAnular, true, 'en estado Pendiente el botón Anular está activo');
+    assert.equal(enPendiente.motivoBloqueo, null);
+
+    // 2. Estados Aprobada, Rechazada y Anulada -> Editar y Anular bloqueados
+    const enAprobada = obtenerEstadoAccionesBodegueroSolicitud('aprobada');
+    assert.equal(enAprobada.puedeEditar, false, 'solicitud Aprobada bloquea Editar');
+    assert.equal(enAprobada.puedeAnular, false, 'solicitud Aprobada bloquea Anular');
+    assert.ok(enAprobada.motivoBloqueo?.includes('APROBADA'));
+
+    const enRechazada = obtenerEstadoAccionesBodegueroSolicitud('rechazada');
+    assert.equal(enRechazada.puedeEditar, false, 'solicitud Rechazada bloquea Editar');
+    assert.equal(enRechazada.puedeAnular, false, 'solicitud Rechazada bloquea Anular');
+    assert.ok(enRechazada.motivoBloqueo?.includes('RECHAZADA'));
+
+    const enAnulada = obtenerEstadoAccionesBodegueroSolicitud('anulada');
+    assert.equal(enAnulada.puedeEditar, false, 'solicitud Anulada bloquea Editar');
+    assert.equal(enAnulada.puedeAnular, false, 'solicitud Anulada bloquea Anular');
+
+    // 3. [SCRUM] Simular edición y luego anulación desde la interfaz del Bodeguero ajustando el stock comprometido en H6:
+    const catalogoInicial = [
+        {
+            sku: 'CAB-THHN-12',
+            name: 'Cable THHN 12 AWG Rojo',
+            unit: 'm',
+            stock: 30,      // Disponible actual tras haber creado una solicitud pendiente de 20 m
+            committed: 20,  // Comprometido actual por la solicitud pendiente
+            quarantine: 0,
+            minStock: 10,
+        },
+    ];
+    const lineasOriginales = [{ sku: 'CAB-THHN-12', quantity: 20 }];
+
+    // A) El Bodeguero edita la solicitud pendiente cambiando la cantidad de 20 m a 12 m:
+    const trasLiberarOriginal = liberarReservaComprometidoEnCatalogoH6(catalogoInicial, lineasOriginales);
+    assert.equal(trasLiberarOriginal[0].stock, 50);
+    assert.equal(trasLiberarOriginal[0].committed, 0);
+
+    const lineasEditadas = [{ sku: 'CAB-THHN-12', quantity: 12 }];
+    const trasEditarSolicitud = aplicarReservaComprometidoEnCatalogoH6(trasLiberarOriginal, lineasEditadas);
+    assert.equal(trasEditarSolicitud[0].stock, 38, 'tras editar de 20 m a 12 m, el disponible sube de 30 a 38');
+    assert.equal(trasEditarSolicitud[0].committed, 12, 'tras editar de 20 m a 12 m, el comprometido pasa a 12');
+
+    // B) El Bodeguero anula la solicitud pendiente: el stock comprometido (12 m) se libera de vuelta a disponible (50 m)
+    const trasAnularSolicitud = liberarReservaComprometidoEnCatalogoH6(trasEditarSolicitud, lineasEditadas);
+    assert.equal(trasAnularSolicitud[0].stock, 50, 'al anular la solicitud pendiente, el disponible vuelve a 50');
+    assert.equal(trasAnularSolicitud[0].committed, 0, 'al anular la solicitud pendiente, el comprometido queda en 0');
+});
+
+test('[FRONT-1][SCRUM] bandeja de aprobación del Administrador: exige motivo obligatorio al rechazar, genera vista de comprobante numerado al aprobar y notifica el resultado al bodeguero solicitante', () => {
+    const solicitudPendiente = {
+        id: 'sol_2026_105',
+        code: 'SOL-2026-105',
+        projectCode: 'PROY-2026-01',
+        projectName: 'Instalación Eléctrica Bodega Sur',
+        technicianName: 'Camila Vera Soto',
+        technicianRut: '15.321.654-2',
+        items: [
+            { sku: 'CAB-THHN-12', name: 'Cable THHN 12 AWG Rojo', quantity: 25, unit: 'm' },
+            { sku: 'TAB-12P', name: 'Tablero Sobreponer 12 Polos', quantity: 2, unit: 'un' },
+        ],
+    };
+
+    // 1. Intento de rechazo SIN motivo -> bloqueado (exige motivo obligatorio)
+    const rechazoVacio = construirNotificacionRechazoSolicitud(
+        solicitudPendiente,
+        '   ',
+        'Javier Muñoz Contreras'
+    );
+    assert.equal(rechazoVacio.esValido, false, 'debe bloquear rechazo sin motivo');
+    assert.equal(rechazoVacio.error, 'El rechazo exige motivo obligatorio.');
+    assert.equal(rechazoVacio.notificationToRequester, null);
+
+    // 2. Rechazo CON motivo obligatorio -> válido y genera notificación al bodeguero solicitante
+    const rechazoValido = construirNotificacionRechazoSolicitud(
+        solicitudPendiente,
+        'Excede el metraje de la etapa 1; ajustar a plano eléctrico.',
+        'Javier Muñoz Contreras'
+    );
+    assert.equal(rechazoValido.esValido, true);
+    assert.ok(rechazoValido.notificationToRequester);
+    assert.equal(rechazoValido.notificationToRequester?.recipientName, 'Camila Vera Soto');
+    assert.ok(rechazoValido.notificationToRequester?.message.includes('Excede el metraje de la etapa 1'));
+
+    // 3. [SCRUM] Completa el flujo de aprobación y revisa el comprobante numerado generado y la notificación al bodeguero solicitante
+    const numCorrelativo = generarNumeroComprobanteSolicitud(['COMP-2026-001', 'COMP-2026-004'], 2026);
+    assert.equal(numCorrelativo, 'COMP-2026-005', 'genera numeración correlativa COMP-YYYY-NNN');
+
+    const comprobante = construirComprobanteYNotificacionAprobacion(
+        solicitudPendiente,
+        'Javier Muñoz Contreras',
+        ['COMP-2026-001', 'COMP-2026-004'],
+        '2026-11-21'
+    );
+
+    assert.equal(comprobante.receiptNumber, 'COMP-2026-005');
+    assert.equal(comprobante.requestCode, 'SOL-2026-105');
+    assert.equal(comprobante.projectCode, 'PROY-2026-01');
+    assert.equal(comprobante.requesterName, 'Camila Vera Soto');
+    assert.equal(comprobante.approvedBy, 'Javier Muñoz Contreras');
+    assert.equal(comprobante.totalItemsCount, 2);
+    assert.equal(comprobante.totalUnitsCount, 27);
+    assert.equal(comprobante.notificationToRequester.recipientName, 'Camila Vera Soto');
+    assert.equal(comprobante.notificationToRequester.recipientRut, '15.321.654-2');
+    assert.ok(comprobante.notificationToRequester.title.includes('COMP-2026-005'));
+    assert.ok(comprobante.notificationToRequester.message.includes('aprobó su solicitud SOL-2026-105'));
+});
+
+test('[BACK-2][SCRUM] edición y anulación exclusivas en estado Pendiente: modifica y luego anula una solicitud pendiente verificando que recalcule la diferencia comprometida, libere el 100% al anular volviendo el stock disponible a su valor original y registre auditoría', async () => {
+    // Stock original antes de cualquier solicitud:
+    //   INS-201: Disponible = 40, Comprometido = 0
+    //   INS-202: Disponible = 20, Comprometido = 0
+    // Luego se creó la solicitud #801 en estado 'Pendiente' con:
+    //   - INS-201: 15 un solicitadas -> Disponible actual = 25, Comprometido actual = 15
+    //   - INS-202:  8 un solicitadas -> Disponible actual = 12, Comprometido actual =  8
+    let estadoSolicitudActual = 'Pendiente';
+    let lineasSolicitudActual = [
+        { id_articulo: 201, sku: 'INS-201', nombre_articulo: 'Cable UTP Cat6', cantidad_solicitada: 15 },
+        { id_articulo: 202, sku: 'INS-202', nombre_articulo: 'Patch Panel 24P', cantidad_solicitada: 8 },
+    ];
+    const stockBd = new Map<number, { disponible: number; comprometido: number }>([
+        [201, { disponible: 25, comprometido: 15 }],
+        [202, { disponible: 12, comprometido: 8 }],
+    ]);
+    const bitacoraAuditoria: { entidad: string; accion: string; descripcion: string }[] = [];
+
+    const clienteMutacionSolicitud = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+
+            if (q.includes('FROM solicitudes_insumos') && q.includes('FOR UPDATE')) {
+                return {
+                    rows: [
+                        {
+                            id_solicitud: Number(params[0]),
+                            proyecto_id: 10,
+                            bodeguero_id: 2,
+                            estado: estadoSolicitudActual,
+                            descripcion_solicitud: 'Solicitud cableado estructurado',
+                        },
+                    ],
+                };
+            }
+
+            if (q.includes('FROM solicitud_lineas sl') && q.includes('WHERE sl.id_solicitud = $1')) {
+                return {
+                    rows: lineasSolicitudActual.map((l) => ({ ...l })),
+                };
+            }
+
+            if (q.includes('FROM articulo WHERE')) {
+                const p = params[0];
+                if (p === 201 || String(p).toUpperCase() === 'INS-201') {
+                    return {
+                        rows: [{ id_articulo: 201, sku: 'INS-201', nombre_articulo: 'Cable UTP Cat6', activo: true }],
+                    };
+                }
+                if (p === 202 || String(p).toUpperCase() === 'INS-202') {
+                    return {
+                        rows: [{ id_articulo: 202, sku: 'INS-202', nombre_articulo: 'Patch Panel 24P', activo: true }],
+                    };
+                }
+                return { rows: [] };
+            }
+
+            if (q.includes('FROM articulos_stock') && q.includes('FOR UPDATE')) {
+                const idArt = Number(params[0]);
+                const st = stockBd.get(idArt) ?? { disponible: 0, comprometido: 0 };
+                return {
+                    rows: [
+                        {
+                            cantidad_disponible: st.disponible,
+                            cantidad_comprometida: st.comprometido,
+                        },
+                    ],
+                };
+            }
+
+            if (q.startsWith('UPDATE articulos_stock SET cantidad_disponible = $2, cantidad_comprometida = $3')) {
+                const idArt = Number(params[0]);
+                stockBd.set(idArt, {
+                    disponible: Number(params[1]),
+                    comprometido: Number(params[2]),
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('DELETE FROM solicitud_lineas')) {
+                lineasSolicitudActual = [];
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('INSERT INTO solicitud_lineas')) {
+                const idArt = Number(params[1]);
+                const cant = Number(params[2]);
+                lineasSolicitudActual.push({
+                    id_articulo: idArt,
+                    sku: idArt === 201 ? 'INS-201' : 'INS-202',
+                    nombre_articulo: idArt === 201 ? 'Cable UTP Cat6' : 'Patch Panel 24P',
+                    cantidad_solicitada: cant,
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith("UPDATE solicitudes_insumos SET estado = 'Anulada'")) {
+                estadoSolicitudActual = 'Anulada';
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.includes('INSERT INTO bitacora_auditoria')) {
+                bitacoraAuditoria.push({
+                    entidad: String(params[1]),
+                    accion: String(params[2]),
+                    descripcion: String(params[6]),
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    // 1. [SCRUM - Paso A] Modificar la solicitud pendiente #801:
+    //    - INS-201 baja de 15 a 10 (delta = -5 -> libera 5 de comprometido a disponible: Disp 25 -> 30, Comp 15 -> 10)
+    //    - INS-202 sube de  8 a 11 (delta = +3 -> compromete 3 adicionales de disponible: Disp 12 ->  9, Comp  8 -> 11)
+    const editRes = await editarSolicitudInsumosEnTransaccion(clienteMutacionSolicitud, 801, {
+        id_usuario: 2,
+        items: [
+            { sku: 'INS-201', cantidad_solicitada: 10 },
+            { sku: 'INS-202', cantidad_solicitada: 11 },
+        ],
+    });
+
+    assert.equal(editRes.estado, 'Pendiente');
+    assert.equal(stockBd.get(201)?.disponible, 30, 'INS-201 disponible sube de 25 a 30 tras reducir 5 un');
+    assert.equal(stockBd.get(201)?.comprometido, 10, 'INS-201 comprometido baja de 15 a 10');
+    assert.equal(stockBd.get(202)?.disponible, 9, 'INS-202 disponible baja de 12 a 9 tras aumentar 3 un');
+    assert.equal(stockBd.get(202)?.comprometido, 11, 'INS-202 comprometido sube de 8 a 11');
+    assert.equal(bitacoraAuditoria.length, 1, 'registra auditoría al modificar la solicitud pendiente');
+    assert.equal(bitacoraAuditoria[0].accion, 'editar_solicitud_pendiente');
+
+    // 2. [SCRUM - Paso B] Anular la solicitud pendiente #801:
+    //    Libera el 100% del stock comprometido (10 de INS-201 y 11 de INS-202) y verifica que el disponible
+    //    vuelva exactamente al valor original (40 para INS-201 y 20 para INS-202, con comprometido = 0):
+    const anulRes = await anularSolicitudInsumosEnTransaccion(clienteMutacionSolicitud, 801, 2);
+
+    assert.equal(anulRes.estado, 'Anulada');
+    assert.equal(stockBd.get(201)?.disponible, 40, 'INS-201 disponible vuelve exactamente a su valor original (40)');
+    assert.equal(stockBd.get(201)?.comprometido, 0, 'INS-201 comprometido queda en 0 (nunca queda stock bloqueado)');
+    assert.equal(stockBd.get(202)?.disponible, 20, 'INS-202 disponible vuelve exactamente a su valor original (20)');
+    assert.equal(stockBd.get(202)?.comprometido, 0, 'INS-202 comprometido queda en 0 (nunca queda stock bloqueado)');
+    assert.equal(bitacoraAuditoria.length, 2, 'registra auditoría al anular la solicitud pendiente');
+    assert.equal(bitacoraAuditoria[1].accion, 'anular_solicitud_pendiente');
+
+    // 3. Intentar editar o volver a anular una solicitud que ya NO está en estado Pendiente ('Anulada' o 'Aprobada') -> bloqueado con 400
+    await assert.rejects(
+        () =>
+            editarSolicitudInsumosEnTransaccion(clienteMutacionSolicitud, 801, {
+                items: [{ sku: 'INS-201', cantidad_solicitada: 5 }],
+            }),
+        (err: any) => String(err?.message).includes('Solo se pueden editar solicitudes en estado Pendiente'),
+        'bloquea edición sobre solicitudes que no están en estado Pendiente'
+    );
+
+    await assert.rejects(
+        () => anularSolicitudInsumosEnTransaccion(clienteMutacionSolicitud, 801, 2),
+        (err: any) => String(err?.message).includes('Solo se pueden anular solicitudes en estado Pendiente'),
+        'bloquea anulación sobre solicitudes que no están en estado Pendiente'
+    );
+});
+
+test('[BACK-1][SCRUM] endpoint de resolución para el Administrador: prueba rechazar sin motivo (falla), rechazar con motivo (liberando stock comprometido a disponible) y aprobar (emitiendo comprobante correlativo único que habilita egreso H5 y conecta bloqueo de cierre de proyecto H34)', async () => {
+    // 2 solicitudes pendientes del proyecto #10:
+    //  - Solicitud #901: 12 un de INS-301 (Stock disponible actual: 28, Comprometido actual: 12 -> Original: 40)
+    //  - Solicitud #902:  8 un de INS-302 (Stock disponible actual: 12, Comprometido actual:  8 -> Original: 20)
+    const solicitudesBd = new Map<
+        number,
+        {
+            id_solicitud: number;
+            proyecto_id: number;
+            bodeguero_id: number;
+            estado: string;
+            motivo_rechazo: string | null;
+            nro_comprobante: string | null;
+            lineas: { id_articulo: number; sku: string; nombre_articulo: string; cantidad_solicitada: number }[];
+        }
+    >([
+        [
+            901,
+            {
+                id_solicitud: 901,
+                proyecto_id: 10,
+                bodeguero_id: 2,
+                estado: 'Pendiente',
+                motivo_rechazo: null,
+                nro_comprobante: null,
+                lineas: [{ id_articulo: 301, sku: 'INS-301', nombre_articulo: 'Diferencial 2x25A', cantidad_solicitada: 12 }],
+            },
+        ],
+        [
+            902,
+            {
+                id_solicitud: 902,
+                proyecto_id: 10,
+                bodeguero_id: 2,
+                estado: 'Pendiente',
+                motivo_rechazo: null,
+                nro_comprobante: null,
+                lineas: [{ id_articulo: 302, sku: 'INS-302', nombre_articulo: 'Canaleta 40x40', cantidad_solicitada: 8 }],
+            },
+        ],
+    ]);
+
+    const stockBd = new Map<number, { disponible: number; comprometido: number }>([
+        [301, { disponible: 28, comprometido: 12 }],
+        [302, { disponible: 12, comprometido: 8 }],
+    ]);
+    const comprobantesEmitidos: string[] = ['COMP-2026-009'];
+    const notificacionesBodeguero: { titulo: string; descripcion: string }[] = [];
+
+    const clienteResolucionAdmin = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+
+            if (q.includes('FROM solicitudes_insumos') && q.includes('FOR UPDATE')) {
+                const sol = solicitudesBd.get(Number(params[0]));
+                return { rows: sol ? [{ ...sol, descripcion_solicitud: null }] : [] };
+            }
+
+            if (q.includes('FROM solicitud_lineas sl') && q.includes('WHERE sl.id_solicitud = $1')) {
+                const sol = solicitudesBd.get(Number(params[0]));
+                return { rows: sol ? sol.lineas.map((l) => ({ ...l })) : [] };
+            }
+
+            if (q.includes('FROM articulos_stock') && q.includes('FOR UPDATE')) {
+                const st = stockBd.get(Number(params[0])) ?? { disponible: 0, comprometido: 0 };
+                return {
+                    rows: [
+                        {
+                            cantidad_disponible: st.disponible,
+                            cantidad_comprometida: st.comprometido,
+                        },
+                    ],
+                };
+            }
+
+            if (q.startsWith('UPDATE articulos_stock SET cantidad_disponible = $2, cantidad_comprometida = $3')) {
+                stockBd.set(Number(params[0]), {
+                    disponible: Number(params[1]),
+                    comprometido: Number(params[2]),
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.includes("SET estado = 'Rechazada'")) {
+                const sol = solicitudesBd.get(Number(params[0]));
+                if (sol) {
+                    sol.estado = 'Rechazada';
+                    sol.motivo_rechazo = String(params[1]);
+                    sol.nro_comprobante = null;
+                }
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.includes("SET estado = 'Aprobada'")) {
+                const sol = solicitudesBd.get(Number(params[0]));
+                if (sol) {
+                    sol.estado = 'Aprobada';
+                    sol.nro_comprobante = String(params[1]);
+                    sol.motivo_rechazo = null;
+                    if (!comprobantesEmitidos.includes(sol.nro_comprobante)) {
+                        comprobantesEmitidos.push(sol.nro_comprobante);
+                    }
+                }
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('SELECT nro_comprobante FROM solicitudes_insumos')) {
+                return {
+                    rows: comprobantesEmitidos.map((c) => ({ nro_comprobante: c })),
+                };
+            }
+
+            if (q.includes("estado IN ('Pendiente', 'Aprobada')")) {
+                const pid = Number(params[0]);
+                const bloqueantes = Array.from(solicitudesBd.values())
+                    .filter((s) => s.proyecto_id === pid && (s.estado === 'Pendiente' || s.estado === 'Aprobada'))
+                    .map((s) => ({
+                        id_solicitud: s.id_solicitud,
+                        estado: s.estado,
+                        nro_comprobante: s.nro_comprobante,
+                    }));
+                return { rows: bloqueantes };
+            }
+
+            if (q.startsWith('INSERT INTO alertas_sistema')) {
+                const alerta = {
+                    id_alerta: 6000 + notificacionesBodeguero.length + 1,
+                    tipo: 'resolucion_solicitud_bodeguero',
+                    severidad: 'info',
+                    titulo: String(params[0]),
+                    descripcion: String(params[1]),
+                    id_articulo: Number(params[2]),
+                    id_orden_compra: null,
+                    leida: false,
+                    fecha_creacion: new Date().toISOString(),
+                };
+                notificacionesBodeguero.push(alerta);
+                return { rows: [alerta] };
+            }
+
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    // 1. [SCRUM - Paso 1] Intentar RECHAZAR la solicitud #901 SIN motivo -> debe fallar con 400 y no liberar stock
+    await assert.rejects(
+        () =>
+            resolverSolicitudInsumosEnTransaccion(clienteResolucionAdmin, 901, {
+                decision: 'Rechazada',
+                motivo_rechazo: '   ',
+                id_usuario_admin: 1,
+            }),
+        (err: any) => String(err?.message).includes('motivo de rechazo es obligatorio'),
+        'rechazar sin motivo debe fallar'
+    );
+    assert.equal(solicitudesBd.get(901)?.estado, 'Pendiente', 'la solicitud #901 sigue Pendiente');
+    assert.equal(stockBd.get(301)?.disponible, 28, 'el stock de INS-301 no cambió');
+    assert.equal(stockBd.get(301)?.comprometido, 12, 'el comprometido de INS-301 sigue en 12');
+
+    // 2. [SCRUM - Paso 2] RECHAZAR la solicitud #901 CON motivo obligatorio -> libera el stock comprometido a disponible y notifica al bodeguero
+    const resRechazo = await resolverSolicitudInsumosEnTransaccion(clienteResolucionAdmin, 901, {
+        decision: 'Rechazada',
+        motivo_rechazo: 'Diferencial será provisto por el mandante según anexo 3.',
+        id_usuario_admin: 1,
+    });
+
+    assert.equal(resRechazo.estado, 'Rechazada');
+    assert.equal(resRechazo.motivo_rechazo, 'Diferencial será provisto por el mandante según anexo 3.');
+    assert.equal(resRechazo.habilita_egreso_h5, false);
+    assert.equal(stockBd.get(301)?.disponible, 40, 'al rechazar con motivo, libera las 12 un comprometidas de vuelta a disponible (28 + 12 = 40)');
+    assert.equal(stockBd.get(301)?.comprometido, 0, 'el comprometido de INS-301 queda en 0');
+    assert.ok(resRechazo.notificacion_bodeguero?.titulo.includes('Rechazada'));
+
+    // 3. [SCRUM - Paso 3] APROBAR la solicitud #902 -> emite comprobante correlativo único (COMP-2026-010) que habilita el egreso (H5),
+    //    notifica al bodeguero y mantiene activo el bloqueo de cierre del proyecto #10 (H34)
+    const resAprobacion = await resolverSolicitudInsumosEnTransaccion(clienteResolucionAdmin, 902, {
+        decision: 'Aprobada',
+        id_usuario_admin: 1,
+    });
+
+    assert.equal(resAprobacion.estado, 'Aprobada');
+    assert.equal(resAprobacion.nro_comprobante, 'COMP-2026-010', 'emite correlativo único siguiente a COMP-2026-009');
+    assert.equal(resAprobacion.habilita_egreso_h5, true, 'habilita el egreso en bodega (H5)');
+    assert.equal(resAprobacion.bloquea_cierre_proyecto_h34, true);
+    assert.equal(stockBd.get(302)?.disponible, 12, 'mantiene reservado el stock para egreso en H5');
+    assert.equal(stockBd.get(302)?.comprometido, 8);
+    assert.ok(resAprobacion.notificacion_bodeguero?.titulo.includes('COMP-2026-010'));
+
+    // 4. Verificar conexión con el bloqueo de cierre de proyecto (H34):
+    //    El proyecto #10 tiene la solicitud #902 en estado 'Aprobada' sin egresar -> bloquea el cierre
+    const bloqueoH34 = await verificarBloqueoCierreProyectoPorSolicitudesH34(clienteResolucionAdmin, 10);
+    assert.equal(bloqueoH34.bloqueado, true, 'debe bloquear el cierre del proyecto mientras exista solicitud Pendiente o Aprobada sin egresar (H34)');
+    assert.equal(bloqueoH34.solicitudesBloqueantes.length, 1);
+    assert.equal(bloqueoH34.solicitudesBloqueantes[0].id_solicitud, 902);
+    assert.equal(bloqueoH34.solicitudesBloqueantes[0].nro_comprobante, 'COMP-2026-010');
+});
+
+test('[FRONT-1][SCRUM] pantalla de "Registro de Salida Física": selecciona solicitud aprobada y técnico que retira en bodega, muestra saldo autorizado vs. entregado en tiempo real, ejecuta una salida parcial y luego completa el saldo restante', () => {
+    // Catálogo inicial tras la creación y aprobación de la solicitud SOL-2026-025:
+    // - INS-501: tenía 20 disponibles; al pedir 12 quedaron 8 en stock disponible y 12 en comprometido.
+    // - INS-502: tenía 10 disponibles; al pedir 6 quedaron 4 en stock disponible y 6 en comprometido.
+    let catalogoBodega = [
+        {
+            sku: 'INS-501',
+            name: 'Cable Solar 6mm2 Rojo',
+            stock: 8,
+            committed: 12,
+            isBulk: false,
+            pmp: 1450,
+            unitCost: 1450,
+        },
+        {
+            sku: 'INS-502',
+            name: 'Conector MC4 Par',
+            stock: 4,
+            committed: 6,
+            isBulk: false,
+            pmp: 2100,
+            unitCost: 2100,
+        },
+    ];
+
+    let solicitudAprobada = {
+        id: 'req_025',
+        code: 'SOL-2026-025',
+        status: 'aprobada',
+        receiptNumber: 'COMP-2026-025',
+        projectCode: 'PRY-2026-010',
+        projectName: 'Planta Fotovoltaica Curicó',
+        technicianName: 'Matías Rojas',
+        technicianRut: '17.456.789-0',
+        items: [
+            {
+                sku: 'INS-501',
+                name: 'Cable Solar 6mm2 Rojo',
+                quantity: 12,
+                deliveredQuantity: 0,
+                unit: 'm',
+            },
+            {
+                sku: 'INS-502',
+                name: 'Conector MC4 Par',
+                quantity: 6,
+                deliveredQuantity: 0,
+                unit: 'par',
+            },
+        ],
+        timeline: [] as any[],
+    };
+
+    // 0. Validar que bloquea solicitudes no aprobadas o que superen el saldo autorizado/stock
+    const intentoNoAprobada = ejecutarSalidaFisicaSolicitudEnMemoria({
+        solicitud: { ...solicitudAprobada, status: 'pendiente' },
+        itemsToDispatch: [{ sku: 'INS-501', quantity: 5 }],
+        technicianRut: '18.222.333-4',
+        technicianName: 'Pedro Soto',
+        authorName: 'Camila Vera Soto',
+        catalogo: catalogoBodega,
+    });
+    assert.equal(intentoNoAprobada.success, false, 'debe rechazar salida física si la solicitud no está Aprobada');
+
+    // 1. [SCRUM - Paso 1] Simular selección de entrega parcial en pantalla (5 de 12 en INS-501 y 2 de 6 en INS-502)
+    //    y verificar que calcula el saldo autorizado vs. entregado en tiempo real antes de confirmar
+    const resumenTiempoRealParcial = calcularResumenSolicitudSalidaFisica(
+        solicitudAprobada,
+        { 'INS-501': 5, 'INS-502': 2 },
+        catalogoBodega
+    );
+    assert.equal(resumenTiempoRealParcial.totalAutorizadoUnidades, 18, 'total autorizado = 12 + 6 = 18');
+    assert.equal(resumenTiempoRealParcial.totalEntregadoPrevioUnidades, 0);
+    assert.equal(resumenTiempoRealParcial.totalEntregandoAhoraUnidades, 7, 'entregando ahora = 5 + 2 = 7');
+    assert.equal(resumenTiempoRealParcial.totalEntregadoAcumuladoUnidades, 7);
+    assert.equal(resumenTiempoRealParcial.totalSaldoPendienteRestanteUnidades, 11, 'saldo restante = 18 - 7 = 11');
+    assert.equal(resumenTiempoRealParcial.esEntregaParcial, true);
+    assert.equal(resumenTiempoRealParcial.esEntregaCompleta, false);
+    assert.equal(resumenTiempoRealParcial.tieneErroresLinea, false);
+
+    // Ejecutar la primera salida física (PARCIAL) retirando el técnico Pedro Soto (18.222.333-4)
+    const salidaParcial = ejecutarSalidaFisicaSolicitudEnMemoria({
+        solicitud: solicitudAprobada,
+        itemsToDispatch: [
+            { sku: 'INS-501', quantity: 5 },
+            { sku: 'INS-502', quantity: 2 },
+        ],
+        technicianRut: '18.222.333-4',
+        technicianName: 'Pedro Soto',
+        authorName: 'Camila Vera Soto',
+        catalogo: catalogoBodega,
+        dispatchCode: 'DESP-2026-101',
+        dateStr: '2026-11-22',
+    });
+
+    assert.equal(salidaParcial.success, true, 'la salida parcial debe ejecutarse con éxito');
+    assert.equal(salidaParcial.esEntregaCompleta, false, 'debe marcarse como entrega parcial');
+    assert.equal(
+        salidaParcial.solicitudActualizada?.status,
+        'aprobada',
+        'tras un egreso parcial la solicitud permanece en estado aprobada conservando el saldo pendiente'
+    );
+    assert.equal(salidaParcial.solicitudActualizada?.items[0].deliveredQuantity, 5);
+    assert.equal(salidaParcial.solicitudActualizada?.items[1].deliveredQuantity, 2);
+
+    // Verificar descuento inmediato del stock comprometido (sin descontar doblemente del disponible)
+    catalogoBodega = salidaParcial.catalogoActualizado;
+    solicitudAprobada = salidaParcial.solicitudActualizada!;
+    assert.equal(catalogoBodega[0].stock, 8, 'el disponible libre de INS-501 se mantiene en 8');
+    assert.equal(catalogoBodega[0].committed, 7, 'el comprometido de INS-501 baja de 12 a 7');
+    assert.equal(catalogoBodega[1].stock, 4, 'el disponible libre de INS-502 se mantiene en 4');
+    assert.equal(catalogoBodega[1].committed, 4, 'el comprometido de INS-502 baja de 6 a 4');
+
+    // Verificar vínculo irreversible al proyecto y al técnico que retira
+    assert.equal(salidaParcial.registroEgresoInmutable?.immutable, true);
+    assert.equal(salidaParcial.registroEgresoInmutable?.projectCode, 'PRY-2026-010');
+    assert.equal(salidaParcial.registroEgresoInmutable?.technicianRut, '18.222.333-4');
+    assert.equal(salidaParcial.registroEgresoInmutable?.technicianName, 'Pedro Soto');
+
+    // 2. [SCRUM - Paso 2] Completar el saldo restante (7 un. de INS-501 y 4 un. de INS-502)
+    const resumenTiempoRealCompletar = calcularResumenSolicitudSalidaFisica(
+        solicitudAprobada,
+        { 'INS-501': 7, 'INS-502': 4 },
+        catalogoBodega
+    );
+    assert.equal(resumenTiempoRealCompletar.totalAutorizadoUnidades, 18);
+    assert.equal(resumenTiempoRealCompletar.totalEntregadoPrevioUnidades, 7, 'muestra las 7 unidades ya entregadas en la primera salida');
+    assert.equal(resumenTiempoRealCompletar.totalEntregandoAhoraUnidades, 11, 'entregando las 11 unidades restantes');
+    assert.equal(resumenTiempoRealCompletar.totalEntregadoAcumuladoUnidades, 18, 'acumulado llega al 100% autorizado (18/18)');
+    assert.equal(resumenTiempoRealCompletar.totalSaldoPendienteRestanteUnidades, 0, 'saldo pendiente resultante queda en 0');
+    assert.equal(resumenTiempoRealCompletar.porcentajeAvanceTotal, 100);
+    assert.equal(resumenTiempoRealCompletar.esEntregaCompleta, true);
+
+    const salidaFinal = ejecutarSalidaFisicaSolicitudEnMemoria({
+        solicitud: solicitudAprobada,
+        itemsToDispatch: [
+            { sku: 'INS-501', quantity: 7 },
+            { sku: 'INS-502', quantity: 4 },
+        ],
+        technicianRut: '18.222.333-4',
+        technicianName: 'Pedro Soto',
+        authorName: 'Camila Vera Soto',
+        catalogo: catalogoBodega,
+        dispatchCode: 'DESP-2026-102',
+        dateStr: '2026-11-22',
+    });
+
+    assert.equal(salidaFinal.success, true, 'la segunda salida que completa el saldo restante debe ser exitosa');
+    assert.equal(salidaFinal.esEntregaCompleta, true);
+    assert.equal(
+        salidaFinal.solicitudActualizada?.status,
+        'entregada',
+        'al completar el 100% del saldo autorizado la solicitud pasa a estado entregada'
+    );
+    assert.equal(salidaFinal.solicitudActualizada?.items[0].deliveredQuantity, 12, 'INS-501 entregado 12 de 12');
+    assert.equal(salidaFinal.solicitudActualizada?.items[1].deliveredQuantity, 6, 'INS-502 entregado 6 de 6');
+
+    catalogoBodega = salidaFinal.catalogoActualizado;
+    assert.equal(catalogoBodega[0].committed, 0, 'INS-501 comprometido queda en 0 tras completar el egreso');
+    assert.equal(catalogoBodega[1].committed, 0, 'INS-502 comprometido queda en 0 tras completar el egreso');
+});
+
+test('[BACK-1][SCRUM] egreso transaccional (todo o nada) solo sobre solicitudes Aprobadas: si una línea falla revierte toda la transacción; registra un egreso parcial descontando stock comprometido, verifica el saldo pendiente de retiro, genera fila en Cardex vinculada al proyecto y técnico que retira, y prohíbe editar el registro', async () => {
+    const solicitudesBd = new Map<
+        number,
+        {
+            id_solicitud: number;
+            proyecto_id: number;
+            bodeguero_id: number;
+            estado: 'Pendiente' | 'Aprobada' | 'Rechazada' | 'Anulada';
+            nro_comprobante: string | null;
+        }
+    >([
+        [
+            950,
+            {
+                id_solicitud: 950,
+                proyecto_id: 15,
+                bodeguero_id: 2,
+                estado: 'Pendiente',
+                nro_comprobante: null,
+            },
+        ],
+        [
+            951,
+            {
+                id_solicitud: 951,
+                proyecto_id: 15,
+                bodeguero_id: 2,
+                estado: 'Aprobada',
+                nro_comprobante: 'COMP-2026-051',
+            },
+        ],
+    ]);
+
+    const lineasSolicitudBd = new Map<
+        number,
+        {
+            id_solicitud_linea: number;
+            id_solicitud: number;
+            id_articulo: number;
+            sku: string;
+            nombre_articulo: string;
+            precio_unitario: number;
+            cantidad_solicitada: number;
+            cantidad_entregada: number;
+        }[]
+    >([
+        [
+            951,
+            [
+                {
+                    id_solicitud_linea: 1,
+                    id_solicitud: 951,
+                    id_articulo: 601,
+                    sku: 'INS-601',
+                    nombre_articulo: 'Tubo Cobre Tipo L 3/4"',
+                    precio_unitario: 18500,
+                    cantidad_solicitada: 10,
+                    cantidad_entregada: 0,
+                },
+                {
+                    id_solicitud_linea: 2,
+                    id_solicitud: 951,
+                    id_articulo: 602,
+                    sku: 'INS-602',
+                    nombre_articulo: 'Válvula Bola Bronce 3/4"',
+                    precio_unitario: 9200,
+                    cantidad_solicitada: 6,
+                    cantidad_entregada: 0,
+                },
+            ],
+        ],
+    ]);
+
+    // Estado inicial de stock en articulos_stock tras la reserva de la solicitud #951:
+    // - INS-601 (id 601): disponible = 20, comprometido = 10, pmp = 18500
+    // - INS-602 (id 602): disponible = 15, comprometido = 6, pmp = 9200
+    const stockBd = new Map<number, { disponible: number; comprometido: number; pmp: number }>([
+        [601, { disponible: 20, comprometido: 10, pmp: 18500 }],
+        [602, { disponible: 15, comprometido: 6, pmp: 9200 }],
+    ]);
+
+    const egresosBodegaBd: {
+        id_egreso: number;
+        codigo_egreso: string;
+        id_solicitud: number;
+        proyecto_id: number;
+        tecnico_retira_id: number | null;
+        tecnico_retira_rut: string;
+        tecnico_retira_nombre: string;
+        bodeguero_id: number;
+    }[] = [];
+
+    const egresoLineasBd: {
+        id_egreso: number;
+        id_solicitud_linea: number;
+        id_articulo: number;
+        cantidad_egresada: number;
+        saldo_pendiente_resultante: number;
+        costo_unitario_pmp: number;
+    }[] = [];
+
+    const cardexMovimientosBd: {
+        id_movimiento: number;
+        id_insumo: number;
+        tipo_movimiento: string;
+        destino_bolsa: string;
+        cantidad: number;
+        costo_unitario: number;
+        saldo_historico: number;
+        pmp_historico: number;
+        valor_total_historico: number;
+        referencia: string;
+        id_usuario: number;
+    }[] = [];
+
+    const auditoriaEgresos: any[] = [];
+
+    const clienteEgresoTx = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+
+            if (q.startsWith('SELECT id_solicitud, proyecto_id, bodeguero_id, estado::text AS estado, nro_comprobante FROM solicitudes_insumos')) {
+                const idSol = Number(params[0]);
+                const sol = solicitudesBd.get(idSol);
+                return { rows: sol ? [{ ...sol }] : [] };
+            }
+
+            if (q.startsWith('SELECT sl.id_solicitud_linea, sl.id_articulo')) {
+                const idSol = Number(params[0]);
+                return {
+                    rows: (lineasSolicitudBd.get(idSol) ?? []).map((l) => ({ ...l })),
+                };
+            }
+
+            if (q.startsWith('SELECT COALESCE(cantidad_disponible, 0)::float8 AS cantidad_disponible, COALESCE(cantidad_comprometida, 0)::float8 AS cantidad_comprometida, COALESCE(pmp, 0)::float8 AS pmp FROM articulos_stock')) {
+                const idArt = Number(params[0]);
+                const st = stockBd.get(idArt);
+                return {
+                    rows: st
+                        ? [
+                              {
+                                  cantidad_disponible: st.disponible,
+                                  cantidad_comprometida: st.comprometido,
+                                  pmp: st.pmp,
+                              },
+                          ]
+                        : [],
+                };
+            }
+
+            if (q.startsWith('INSERT INTO egresos_bodega')) {
+                const idEg = 500 + egresosBodegaBd.length + 1;
+                egresosBodegaBd.push({
+                    id_egreso: idEg,
+                    codigo_egreso: String(params[0]),
+                    id_solicitud: Number(params[1]),
+                    proyecto_id: Number(params[2]),
+                    tecnico_retira_id: params[3] != null ? Number(params[3]) : null,
+                    tecnico_retira_rut: String(params[4]),
+                    tecnico_retira_nombre: String(params[5]),
+                    bodeguero_id: Number(params[6]),
+                });
+                return { rows: [{ id_egreso: idEg }] };
+            }
+
+            if (q.startsWith('UPDATE articulos_stock SET cantidad_comprometida = $2 WHERE id_articulo = $1')) {
+                const idArt = Number(params[0]);
+                const actual = stockBd.get(idArt);
+                if (actual) {
+                    stockBd.set(idArt, {
+                        ...actual,
+                        comprometido: Number(params[1]),
+                    });
+                }
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('UPDATE solicitud_lineas SET cantidad_entregada = $2 WHERE id_solicitud_linea = $1')) {
+                const idLin = Number(params[0]);
+                const nuevaEntregada = Number(params[1]);
+                for (const [, lineas] of lineasSolicitudBd.entries()) {
+                    for (const l of lineas) {
+                        if (l.id_solicitud_linea === idLin) {
+                            l.cantidad_entregada = nuevaEntregada;
+                        }
+                    }
+                }
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('INSERT INTO egreso_lineas')) {
+                egresoLineasBd.push({
+                    id_egreso: Number(params[0]),
+                    id_solicitud_linea: Number(params[1]),
+                    id_articulo: Number(params[2]),
+                    cantidad_egresada: Number(params[3]),
+                    saldo_pendiente_resultante: Number(params[4]),
+                    costo_unitario_pmp: Number(params[5]),
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('INSERT INTO movimientos_inventario')) {
+                const idMov = 8000 + cardexMovimientosBd.length + 1;
+                cardexMovimientosBd.push({
+                    id_movimiento: idMov,
+                    id_insumo: Number(params[0]),
+                    tipo_movimiento: 'Salida',
+                    destino_bolsa: 'comprometido',
+                    cantidad: Number(params[1]),
+                    costo_unitario: Number(params[2]),
+                    saldo_historico: Number(params[3]),
+                    pmp_historico: Number(params[4]),
+                    valor_total_historico: Number(params[5]),
+                    referencia: String(params[6]),
+                    id_usuario: Number(params[7]),
+                });
+                return { rows: [{ id_movimiento: idMov }] };
+            }
+
+            if (q.startsWith('INSERT INTO movimiento_inventario')) {
+                return { rowCount: 1, rows: [] };
+            }
+
+            if (q.startsWith('INSERT INTO auditoria')) {
+                auditoriaEgresos.push({
+                    entidad: params[0],
+                    accion: params[1],
+                    id_registro: params[2],
+                    descripcion: params[8],
+                });
+                return { rowCount: 1, rows: [] };
+            }
+
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    // 1. Validar que SOLO opera sobre solicitudes Aprobadas (intentar egresar sobre #950 en estado Pendiente debe fallar)
+    await assert.rejects(
+        () =>
+            registrarEgresoSolicitudEnTransaccion(clienteEgresoTx, 950, {
+                bodeguero_id: 2,
+                tecnico_retira_rut: '16.543.210-9',
+                tecnico_retira_nombre: 'Sebastián Mora',
+                items: [{ id_articulo: 601, cantidad_egreso: 2 }],
+            }),
+        (err: any) => String(err?.message).includes('Solo se puede registrar el egreso físico sobre solicitudes Aprobadas'),
+        'debe rechazar egresos sobre solicitudes que no estén Aprobadas'
+    );
+
+    // 2. [Todo o Nada] Intentar un egreso de 2 líneas donde la 1ª línea es válida (4 de 10 de INS-601)
+    //    pero la 2ª línea falla por superar el saldo autorizado/stock comprometido (8 de 6 de INS-602).
+    //    Debe revertir toda la transacción sin descontar stock de la 1ª línea ni crear filas en Cardex.
+    await assert.rejects(
+        () =>
+            registrarEgresoSolicitudEnTransaccion(clienteEgresoTx, 951, {
+                bodeguero_id: 2,
+                tecnico_retira_rut: '16.543.210-9',
+                tecnico_retira_nombre: 'Sebastián Mora',
+                items: [
+                    { id_articulo: 601, cantidad_egreso: 4 },
+                    { id_articulo: 602, cantidad_egreso: 8 }, // Supera las 6 autorizadas y comprometidas
+                ],
+            }),
+        (err: any) => String(err?.message).includes('Egreso revertido por validación transaccional (todo o nada)'),
+        'si una línea falla debe abortar y revertir toda la transacción'
+    );
+
+    assert.equal(stockBd.get(601)?.comprometido, 10, 'INS-601 mantiene intacto su comprometido (10) tras el rollback');
+    assert.equal(stockBd.get(602)?.comprometido, 6, 'INS-602 mantiene intacto su comprometido (6) tras el rollback');
+    assert.equal(cardexMovimientosBd.length, 0, 'no se generó ninguna fila en Cardex tras el fallo de la 2ª línea');
+    assert.equal(egresosBodegaBd.length, 0, 'no se insertó cabecera de egreso');
+
+    // 3. [SCRUM] Registrar un EGRESO PARCIAL válido sobre la solicitud Aprobada #951:
+    //    - Retira 4 de 10 en INS-601 (quedan 6 pendientes de retiro)
+    //    - Retira 2 de 6 en INS-602 (quedan 4 pendientes de retiro)
+    const egresoParcial = await registrarEgresoSolicitudEnTransaccion(clienteEgresoTx, 951, {
+        bodeguero_id: 2,
+        tecnico_retira_id: 7,
+        tecnico_retira_rut: '16.543.210-9',
+        tecnico_retira_nombre: 'Sebastián Mora',
+        codigo_egreso: 'DESP-2026-951-A',
+        items: [
+            { id_articulo: 601, cantidad_egreso: 4 },
+            { id_articulo: 602, cantidad_egreso: 2 },
+        ],
+    });
+
+    assert.equal(egresoParcial.id_egreso, 501);
+    assert.equal(egresoParcial.codigo_egreso, 'DESP-2026-951-A');
+    assert.equal(egresoParcial.es_entrega_parcial, true, 'debe identificar que es un egreso parcial');
+    assert.equal(egresoParcial.es_entrega_completa, false);
+    assert.equal(egresoParcial.proyecto_id, 15, 'queda vinculado irreversiblemente al proyecto #15');
+    assert.equal(egresoParcial.tecnico_retira_rut, '16.543.210-9', 'queda vinculado al RUT del técnico que retira');
+    assert.equal(egresoParcial.tecnico_retira_nombre, 'Sebastián Mora', 'queda vinculado al nombre del técnico que retira');
+    assert.equal(egresoParcial.inmutable, true);
+
+    // 3.1 Verificar el saldo pendiente de retiro por línea y global
+    assert.equal(egresoParcial.total_autorizado_unidades, 16, '10 + 6 = 16 autorizadas');
+    assert.equal(egresoParcial.total_entregado_acumulado_unidades, 6, '4 + 2 = 6 entregadas');
+    assert.equal(egresoParcial.total_saldo_pendiente_retiro_unidades, 10, '6 + 4 = 10 pendientes de retiro');
+    assert.equal(egresoParcial.saldos_lineas_solicitud[0].cantidad_entregada, 4);
+    assert.equal(egresoParcial.saldos_lineas_solicitud[0].saldo_pendiente_retiro, 6, 'INS-601 conserva 6 unidades pendientes de retiro');
+    assert.equal(egresoParcial.saldos_lineas_solicitud[1].cantidad_entregada, 2);
+    assert.equal(egresoParcial.saldos_lineas_solicitud[1].saldo_pendiente_retiro, 4, 'INS-602 conserva 4 unidades pendientes de retiro');
+
+    // 3.2 Verificar descuento de stock comprometido en articulos_stock
+    assert.equal(stockBd.get(601)?.comprometido, 6, 'comprometido de INS-601 baja de 10 a 6');
+    assert.equal(stockBd.get(601)?.disponible, 20, 'disponible libre de INS-601 permanece en 20');
+    assert.equal(stockBd.get(602)?.comprometido, 4, 'comprometido de INS-602 baja de 6 a 4');
+    assert.equal(stockBd.get(602)?.disponible, 15, 'disponible libre de INS-602 permanece en 15');
+
+    // 3.3 Verificar el registro en Cardex (una fila por cada línea de salida con saldo histórico, PMP, proyecto y técnico)
+    assert.equal(cardexMovimientosBd.length, 2, 'cada línea egresada genera su fila en Cardex');
+    assert.equal(cardexMovimientosBd[0].id_insumo, 601);
+    assert.equal(cardexMovimientosBd[0].tipo_movimiento, 'Salida');
+    assert.equal(cardexMovimientosBd[0].destino_bolsa, 'comprometido');
+    assert.equal(cardexMovimientosBd[0].cantidad, 4);
+    assert.equal(cardexMovimientosBd[0].saldo_historico, 26, 'saldo físico en bodega de INS-601 pasa de 30 (20+10) a 26 (20+6)');
+    assert.equal(cardexMovimientosBd[0].pmp_historico, 18500);
+    assert.ok(cardexMovimientosBd[0].referencia.includes('Proyecto #15'));
+    assert.ok(cardexMovimientosBd[0].referencia.includes('Sebastián Mora (16.543.210-9)'));
+
+    assert.equal(cardexMovimientosBd[1].id_insumo, 602);
+    assert.equal(cardexMovimientosBd[1].tipo_movimiento, 'Salida');
+    assert.equal(cardexMovimientosBd[1].cantidad, 2);
+    assert.equal(cardexMovimientosBd[1].saldo_historico, 19, 'saldo físico en bodega de INS-602 pasa de 21 (15+6) a 19 (15+4)');
+    assert.equal(cardexMovimientosBd[1].pmp_historico, 9200);
+
+    // 4. Verificar que prohíbe editar el registro de egreso (las correcciones se hacen solo por movimiento de ajuste)
+    assert.throws(
+        () => rechazarModificacionEgresoInmutable(),
+        (err: any) =>
+            err?.estado === 403 &&
+            String(err?.message).includes('inmutable') &&
+            String(err?.message).includes('movimiento de ajuste'),
+        'cualquier intento de editar un egreso debe rechazarse con 403 indicando que las correcciones son solo por ajuste'
+    );
+});
+
+test('[DB][SCRUM] tablas salidas_bodega (solicitud_id, proyecto_id, tecnico_retira_id, fecha) y salida_lineas con restricción CHECK (disponible >= 0 y comprometido >= 0) e inmutabilidad de registros: verifica restricciones de integridad en motor de base de datos que impiden saldos negativos y borrado de salidas', async () => {
+    const solicitudesExistentes = new Set<number>([951]);
+    const proyectosExistentes = new Set<number>([15]);
+    const tecnicosExistentes = new Set<number>([7]);
+
+    const tablaSalidasBodega: {
+        id_salida: number;
+        solicitud_id: number;
+        proyecto_id: number;
+        tecnico_retira_id: number;
+        fecha: string;
+    }[] = [];
+
+    const tablaSalidaLineas: {
+        id_salida_linea: number;
+        id_salida: number;
+        id_solicitud_linea: number | null;
+        id_articulo: number;
+        cantidad_entregada: number;
+        disponible: number;
+        comprometido: number;
+        saldo_pendiente_resultante: number;
+        costo_unitario_pmp: number;
+    }[] = [];
+
+    const stockInsumosDb = new Map<number, { disponible: number; comprometido: number }>([
+        [601, { disponible: 20, comprometido: 10 }],
+        [602, { disponible: 15, comprometido: 6 }],
+    ]);
+
+    const clienteDbSalidas = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+
+            // 1. Trigger de inmutabilidad en base de datos sobre salidas_bodega y salida_lineas
+            if (
+                q.startsWith('DELETE FROM salidas_bodega') ||
+                q.startsWith('UPDATE salidas_bodega') ||
+                q.startsWith('DELETE FROM salida_lineas') ||
+                q.startsWith('UPDATE salida_lineas')
+            ) {
+                const err: any = new Error(
+                    'El registro de salida/egreso de bodega es inmutable y está vinculado de forma irreversible al proyecto y al técnico que retira. Las correcciones se realizan mediante un movimiento de ajuste en Cardex, nunca editando ni borrando el registro.'
+                );
+                err.code = 'P0001';
+                throw err;
+            }
+
+            // 2. Inserción en salidas_bodega con verificación de claves foráneas (solicitud_id, proyecto_id, tecnico_retira_id)
+            if (q.startsWith('INSERT INTO salidas_bodega')) {
+                const solicitudId = Number(params[0]);
+                const proyectoId = Number(params[1]);
+                const tecnicoId = Number(params[2]);
+                const fecha = String(params[3]);
+
+                if (
+                    !solicitudesExistentes.has(solicitudId) ||
+                    !proyectosExistentes.has(proyectoId) ||
+                    !tecnicosExistentes.has(tecnicoId)
+                ) {
+                    const err: any = new Error(
+                        'insert or update on table "salidas_bodega" violates foreign key constraint'
+                    );
+                    err.code = '23503';
+                    throw err;
+                }
+
+                const idSalida = 700 + tablaSalidasBodega.length + 1;
+                tablaSalidasBodega.push({
+                    id_salida: idSalida,
+                    solicitud_id: solicitudId,
+                    proyecto_id: proyectoId,
+                    tecnico_retira_id: tecnicoId,
+                    fecha,
+                });
+                return { rows: [{ id_salida: idSalida, fecha }] };
+            }
+
+            // 3. Restricción CHECK (disponible >= 0 AND comprometido >= 0) en stock_insumos / articulos_stock
+            if (q.startsWith('UPDATE stock_insumos') || q.startsWith('UPDATE articulos_stock')) {
+                const idArt = Number(params[0]);
+                const disp = Number(params[1]);
+                const comp = Number(params[2]);
+
+                if (disp < 0 || comp < 0) {
+                    const err: any = new Error(
+                        'new row for relation "stock_insumos" violates check constraint "chk_articulos_stock_no_negativo" (disponible >= 0 AND comprometido >= 0)'
+                    );
+                    err.code = '23514';
+                    throw err;
+                }
+
+                stockInsumosDb.set(idArt, { disponible: disp, comprometido: comp });
+                return { rowCount: 1, rows: [] };
+            }
+
+            // 4. Inserción en salida_lineas con restricción CHECK (cantidad_entregada > 0 AND disponible >= 0 AND comprometido >= 0)
+            if (q.startsWith('INSERT INTO salida_lineas')) {
+                const idSalida = Number(params[0]);
+                const idSolLin = params[1] != null ? Number(params[1]) : null;
+                const idArt = Number(params[2]);
+                const cantEntregada = Number(params[3]);
+                const disp = Number(params[4]);
+                const comp = Number(params[5]);
+                const saldoPend = Number(params[6]);
+                const pmp = Number(params[7]);
+
+                if (cantEntregada <= 0 || disp < 0 || comp < 0 || saldoPend < 0) {
+                    const err: any = new Error(
+                        'new row for relation "salida_lineas" violates check constraint "chk_salida_lineas_saldos_no_negativos" (disponible >= 0 AND comprometido >= 0)'
+                    );
+                    err.code = '23514';
+                    throw err;
+                }
+
+                const idLinea = 900 + tablaSalidaLineas.length + 1;
+                tablaSalidaLineas.push({
+                    id_salida_linea: idLinea,
+                    id_salida: idSalida,
+                    id_solicitud_linea: idSolLin,
+                    id_articulo: idArt,
+                    cantidad_entregada: cantEntregada,
+                    disponible: disp,
+                    comprometido: comp,
+                    saldo_pendiente_resultante: saldoPend,
+                    costo_unitario_pmp: pmp,
+                });
+                return { rows: [{ id_salida_linea: idLinea }] };
+            }
+
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    // 1. Insertar una salida física válida en salidas_bodega y salida_lineas
+    const salidaValida = await insertarSalidaBodegaDbEnTransaccion(clienteDbSalidas, {
+        solicitud_id: 951,
+        proyecto_id: 15,
+        tecnico_retira_id: 7,
+        fecha: '2026-11-22T12:00:00Z',
+        lineas: [
+            {
+                id_articulo: 601,
+                id_solicitud_linea: 1,
+                cantidad_entregada: 4,
+                disponible: 20,
+                comprometido: 6,
+                saldo_pendiente_resultante: 6,
+                costo_unitario_pmp: 18500,
+            },
+            {
+                id_articulo: 602,
+                id_solicitud_linea: 2,
+                cantidad_entregada: 2,
+                disponible: 15,
+                comprometido: 4,
+                saldo_pendiente_resultante: 4,
+                costo_unitario_pmp: 9200,
+            },
+        ],
+    });
+
+    assert.equal(salidaValida.id_salida, 701);
+    assert.equal(salidaValida.solicitud_id, 951);
+    assert.equal(salidaValida.proyecto_id, 15);
+    assert.equal(salidaValida.tecnico_retira_id, 7);
+    assert.equal(salidaValida.fecha, '2026-11-22T12:00:00Z');
+    assert.equal(salidaValida.inmutable, true);
+    assert.equal(salidaValida.lineas.length, 2);
+    assert.equal(stockInsumosDb.get(601)?.comprometido, 6);
+    assert.equal(stockInsumosDb.get(602)?.comprometido, 4);
+
+    // 2. [SCRUM - Restricción CHECK comprometido >= 0] Intentar registrar una salida que deje comprometido negativo (-2) -> PostgreSQL 23514
+    await assert.rejects(
+        () =>
+            insertarSalidaBodegaDbEnTransaccion(clienteDbSalidas, {
+                solicitud_id: 951,
+                proyecto_id: 15,
+                tecnico_retira_id: 7,
+                lineas: [
+                    {
+                        id_articulo: 601,
+                        cantidad_entregada: 8,
+                        disponible: 20,
+                        comprometido: -2, // Violación de CHECK (comprometido >= 0)
+                    },
+                ],
+            }),
+        (err: any) =>
+            err?.estado === 400 &&
+            String(err?.message).includes('23514') &&
+            String(err?.message).includes('disponible >= 0 y comprometido >= 0'),
+        'la base de datos debe impedir saldos negativos en comprometido (CHECK 23514)'
+    );
+
+    // 3. [SCRUM - Restricción CHECK disponible >= 0] Intentar registrar una salida que deje disponible negativo (-1) -> PostgreSQL 23514
+    await assert.rejects(
+        () =>
+            insertarSalidaBodegaDbEnTransaccion(clienteDbSalidas, {
+                solicitud_id: 951,
+                proyecto_id: 15,
+                tecnico_retira_id: 7,
+                lineas: [
+                    {
+                        id_articulo: 602,
+                        cantidad_entregada: 1,
+                        disponible: -1, // Violación de CHECK (disponible >= 0)
+                        comprometido: 4,
+                    },
+                ],
+            }),
+        (err: any) =>
+            err?.estado === 400 &&
+            String(err?.message).includes('23514') &&
+            String(err?.message).includes('impide saldos negativos'),
+        'la base de datos debe impedir saldos negativos en disponible (CHECK 23514)'
+    );
+
+    // 4. [SCRUM - Inmutabilidad / Prohibición de borrado de salidas] Intentar borrar la salida #701 en base de datos -> bloqueado por trigger
+    await assert.rejects(
+        () => intentarEliminarSalidaBodegaEnDb(clienteDbSalidas, 701),
+        (err: any) =>
+            err?.estado === 403 &&
+            String(err?.message).includes('inmutable') &&
+            String(err?.message).includes('movimiento de ajuste'),
+        'el motor de base de datos debe impedir el borrado de salidas en salidas_bodega'
+    );
+    assert.equal(tablaSalidasBodega[0].id_salida, 701, 'la salida #701 permanece intacta en salidas_bodega');
+});
+
+
+
+
 
 
 
