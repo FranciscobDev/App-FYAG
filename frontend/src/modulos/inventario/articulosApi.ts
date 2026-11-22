@@ -11,6 +11,9 @@ export interface ArticuloApi {
   id_proveedor: number | null;
   activo: boolean;
   cantidad_disponible: number | null;
+  cantidad_comprometida?: number | null;
+  cantidad_cuarentena?: number | null;
+  pmp?: number | null;
   stock_minimo: number | null;
   ubicacion: string | null;
 }
@@ -72,6 +75,9 @@ export const articuloAProducto = (a: ArticuloApi): Producto => ({
   category: a.categoria,
   unit: "un",
   stock: Number(a.cantidad_disponible ?? 0),
+  committed: Number(a.cantidad_comprometida ?? 0),
+  quarantine: Number(a.cantidad_cuarentena ?? 0),
+  pmp: Number(a.pmp ?? a.precio_unitario ?? 0),
   minStock: Number(a.stock_minimo ?? 0),
   unitCost: a.precio_unitario,
   location: a.ubicacion ?? "",

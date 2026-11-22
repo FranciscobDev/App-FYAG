@@ -18,6 +18,7 @@ import {
   CampoBusqueda,
 } from "@/componentes/comunes";
 import { estilos } from "../estilos";
+import { obtenerEstadoAccionesBodegueroSolicitud } from "../solicitudInsumosUtils";
 
 export type FiltroPestanaSolicitud =
   | "todas"
@@ -169,7 +170,26 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
           />
 
           <View style={estilos.solicitudSuperiorBarra}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.solicitudPestanasScroll}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.textSecondary }}>
+                Filtrar por estado ({filtradoSolicitudes.length})
+              </Text>
+              <Boton
+                title="+ Nueva Solicitud"
+                variant="primary"
+                size="sm"
+                icon="add-outline"
+                onPress={manejarAbrirNuevoSolicitud}
+                style={{ minHeight: 38 }}
+              />
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ width: "100%" }}
+              contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+            >
               {(["pendiente", "aprobada", "rechazada", "anulada", "todas"] as const).map((t) => (
                 <TouchableOpacity
                   key={t}
@@ -190,14 +210,6 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            <Boton
-              title="Nueva Solicitud"
-              variant="primary"
-              size="sm"
-              icon="add-outline"
-              onPress={manejarAbrirNuevoSolicitud}
-            />
           </View>
 
           {filtradoSolicitudes.length === 0 ? (
@@ -264,11 +276,16 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                         size="sm"
                       />
                       {req.receiptNumber && (
-                        <Insignia
-                          label={`N° ${req.receiptNumber}`}
-                          tone="primary"
-                          size="sm"
-                        />
+                        <TouchableOpacity
+                          onPress={() => establecerSeleccionadoComprobanteSolicitud(req)}
+                          activeOpacity={0.75}
+                        >
+                          <Insignia
+                            label={`N° ${req.receiptNumber}`}
+                            tone="primary"
+                            size="sm"
+                          />
+                        </TouchableOpacity>
                       )}
                     </View>
                     <Text style={estilos.solicitudProyectoNombre}>
@@ -363,8 +380,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                           establecerRechazarMotivo("");
                         }}
                         style={[
-                          { borderColor: tema.colors.danger },
-                          esMovil && { flexGrow: 1 },
+                          { borderColor: tema.colors.danger, minHeight: 42 },
+                          esMovil && { flex: 1 },
                         ]}
                         textStyle={{ color: tema.colors.danger }}
                       />
@@ -374,7 +391,7 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                         size="sm"
                         icon="checkmark-done-outline"
                         onPress={() => manejarAprobarSolicitud(req)}
-                        style={esMovil ? { flexGrow: 1 } : undefined}
+                        style={[{ minHeight: 42 }, esMovil && { flex: 1.6 }]}
                       />
                     </>
                   )}
@@ -391,54 +408,59 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                   )}
 
                   {/* Bodeguero: acciones Editar y Anular activas únicamente cuando el estado es Pendiente */}
-                  {rolActual === "warehouse" && (
-                    <>
-                      {!esPendiente && (
-                        <View style={estilos.bloqueadoAccionAviso}>
-                          <Ionicons
-                            name="lock-closed-outline"
-                            size={13}
-                            color={tema.colors.textMuted}
-                          />
-                          <Text style={estilos.bloqueadoAccionTexto}>
-                            Acciones bloqueadas ({req.status})
-                          </Text>
-                        </View>
-                      )}
-                      <Boton
-                        title="Editar"
-                        variant="secondary"
-                        size="sm"
-                        icon={esPendiente ? "create-outline" : "lock-closed-outline"}
-                        disabled={!esPendiente}
-                        accessibilityHint={
-                          esPendiente
-                            ? "Editar proyecto, insumos o cantidades de esta solicitud pendiente"
-                            : "Bloqueado: solo se pueden editar solicitudes en estado Pendiente"
-                        }
-                        onPress={() => manejarAbrirEditarSolicitud(req)}
-                        style={esMovil ? { flexGrow: 1 } : undefined}
-                      />
-                      <Boton
-                        title="Anular"
-                        variant={esPendiente ? "danger" : "outline"}
-                        size="sm"
-                        icon={esPendiente ? "ban-outline" : "lock-closed-outline"}
-                        disabled={!esPendiente}
-                        accessibilityHint={
-                          esPendiente
-                            ? "Anular esta solicitud pendiente"
-                            : "Bloqueado: solo se pueden anular solicitudes en estado Pendiente"
-                        }
-                        onPress={() => establecerAnularConfirmarSolicitud(req)}
-                        style={[
-                          !esPendiente && { borderColor: tema.colors.borderDark },
-                          esMovil && { flexGrow: 1 },
-                        ]}
-                        textStyle={!esPendiente ? { color: tema.colors.textMuted } : undefined}
-                      />
-                    </>
-                  )}
+                  {rolActual === "warehouse" && (() => {
+                    const estadoAcciones = obtenerEstadoAccionesBodegueroSolicitud(req.status);
+                    return (
+                      <>
+                        {!estadoAcciones.puedeEditar && (
+                          <View style={estilos.bloqueadoAccionAviso}>
+                            <Ionicons
+                              name="lock-closed-outline"
+                              size={13}
+                              color={tema.colors.textMuted}
+                            />
+                            <Text style={estilos.bloqueadoAccionTexto}>
+                              {estadoAcciones.motivoBloqueo || `Acciones bloqueadas (${req.status})`}
+                            </Text>
+                          </View>
+                        )}
+                        <Boton
+                          title="Editar"
+                          variant="secondary"
+                          size="sm"
+                          icon={estadoAcciones.puedeEditar ? "create-outline" : "lock-closed-outline"}
+                          disabled={!estadoAcciones.puedeEditar}
+                          accessibilityHint={
+                            estadoAcciones.puedeEditar
+                              ? "Editar proyecto, insumos o cantidades de esta solicitud pendiente"
+                              : "Bloqueado: solo se pueden editar solicitudes en estado Pendiente"
+                          }
+                          onPress={() => manejarAbrirEditarSolicitud(req)}
+                          style={esMovil ? { flexGrow: 1 } : undefined}
+                        />
+                        <Boton
+                          title="Anular"
+                          variant={estadoAcciones.puedeAnular ? "danger" : "outline"}
+                          size="sm"
+                          icon={estadoAcciones.puedeAnular ? "ban-outline" : "lock-closed-outline"}
+                          disabled={!estadoAcciones.puedeAnular}
+                          accessibilityHint={
+                            estadoAcciones.puedeAnular
+                              ? "Anular esta solicitud pendiente"
+                              : "Bloqueado: solo se pueden anular solicitudes en estado Pendiente"
+                          }
+                          onPress={() => establecerAnularConfirmarSolicitud(req)}
+                          style={[
+                            !estadoAcciones.puedeAnular && { borderColor: tema.colors.borderDark },
+                            esMovil && { flexGrow: 1 },
+                          ]}
+                          textStyle={
+                            !estadoAcciones.puedeAnular ? { color: tema.colors.textMuted } : undefined
+                          }
+                        />
+                      </>
+                    );
+                  })()}
                 </View>
               </Tarjeta>
               );

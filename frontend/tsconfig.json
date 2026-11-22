@@ -3,9 +3,20 @@
   "compilerOptions": {
     "strict": false,
     "ignoreDeprecations": "6.0",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
     "paths": {
-      "@/*": ["./src/*"]
-    },
-    "skipLibCheck": true
-  }
+      "@/*": [
+        "./src/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "src/declaraciones.d.ts"
+  ]
 }

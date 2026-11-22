@@ -43,8 +43,17 @@ import {
   Producto,
   RegistroMerma,
 } from "@/nucleo/tipos";
+import {
+  calcularResumenLineaSalidaFisica,
+  calcularResumenSolicitudSalidaFisica,
+} from "@/modulos/inventario/solicitudInsumosUtils";
 import { estilos } from "./estilos";
 import { SeccionCatalogoCardex, SeccionSolicitudesMaterial, SeccionEgresoBodega, SeccionMermas, SeccionConteoFisico, ModalesInventario } from "./componentes";
+import {
+  esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
+  validarFormularioNuevaSolicitudInsumos,
+} from "./solicitudInsumosUtils";
 
 export type PestanaInventario =
   | "catalogo"
@@ -375,94 +384,83 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [rechazarModalSolicitud, establecerRechazarModalSolicitud] = useState<SolicitudMaterial | null>(null);
   const [rechazarMotivo, establecerRechazarMotivo] = useState("");
 
-  const activoProyectos = proyectos.filter((p) => p.status !== "cerrado");
+  const activoProyectos = proyectos.filter((p) => esProyectoActivoParaSolicitud(p));
+  const proyectoSeleccionadoSolicitud =
+    proyectos.find((p) => p.id === seleccionadoProyectoId) || null;
 
-  // Validar faltantes de stock en tiempo real
-  const calcularFaltanteExistencia = (items: { sku: string; quantity: number }[]) => {
-    const faltante: string[] = [];
-    items.forEach((it) => {
-      const p = productos.find((prod) => prod.sku === it.sku);
-      const avail = p ? p.stock : 0;
-      if (avail < it.quantity) {
-        faltante.push(
-          `${p ? p.name : it.sku}: Faltan ${Number((it.quantity - avail).toFixed(3))} ${p?.unit || "un"} (Disp: ${avail}, Solicitado: ${it.quantity})`
-        );
-      }
-    });
-    return faltante;
+  const obtenerCatalogoParaValidarSolicitud = (solEditando = editandoSolicitud) =>
+    solEditando && solEditando.status === "pendiente"
+      ? liberarReservaComprometidoEnCatalogoH6(productos, solEditando.items)
+      : productos;
+
+  // Validar faltantes de stock y estado del proyecto en tiempo real ([FRONT-1 / FRONT-2])
+  const calcularFaltanteExistencia = (
+    items: { sku: string; quantity: number }[],
+    proyectoRef = proyectoSeleccionadoSolicitud,
+    solEditando = editandoSolicitud
+  ) => {
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proyectoRef,
+      items,
+      obtenerCatalogoParaValidarSolicitud(solEditando)
+    );
+    return validacion.faltantesStock;
   };
 
   const manejarAbrirNuevoSolicitud = () => {
     establecerEditandoSolicitud(null);
-    establecerSeleccionadoProyectoId(activoProyectos[0]?.id || "");
-    const inicialElementos = [{ sku: productos[0]?.sku || "", quantity: 1 }];
+    const proyInicial = activoProyectos[0] || null;
+    establecerSeleccionadoProyectoId(proyInicial?.id || "");
+    const prodInicial = productos.find((p) => !p.disabled && p.stock > 0) || productos[0];
+    const inicialElementos = prodInicial ? [{ sku: prodInicial.sku, quantity: 1 }] : [];
     establecerSolicitudElementos(inicialElementos);
     establecerSolicitudUrgencia("normal");
     establecerSolicitudComentario("");
     establecerSolicitudError("");
-    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(inicialElementos));
+    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(inicialElementos, proyInicial, null));
     establecerNuevoSolicitudModal(true);
   };
 
   const manejarAbrirEditarSolicitud = (req: SolicitudMaterial) => {
     if (req.status !== "pendiente") {
-      mostrarAviso("Solo se pueden editar solicitudes en estado Pendiente.");
+      mostrarAviso(
+        `La solicitud ${req.code} está en estado ${req.status.toUpperCase()} y ya no puede ser editada.`
+      );
       return;
     }
-    const elementosIniciales = req.items.map((it) => ({
-      sku: it.sku,
-      quantity: it.quantity,
-    }));
     establecerEditandoSolicitud(req);
-    establecerSeleccionadoProyectoId(req.projectId);
-    establecerSolicitudElementos(elementosIniciales);
-    establecerSolicitudUrgencia(req.urgency);
+    const proyRef = proyectos.find((p) => p.id === req.projectId) || activoProyectos[0] || null;
+    establecerSeleccionadoProyectoId(proyRef?.id || req.projectId);
+    const itemsActuales = req.items.map((it) => ({ sku: it.sku, quantity: it.quantity }));
+    establecerSolicitudElementos(itemsActuales);
+    establecerSolicitudUrgencia(req.urgency || "normal");
     establecerSolicitudComentario(req.comment || "");
     establecerSolicitudError("");
-    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(elementosIniciales));
+    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(itemsActuales, proyRef, req));
     establecerNuevoSolicitudModal(true);
   };
 
   const manejarSolicitudElementoCambiar = (idx: number, sku: string, quantity: number) => {
     const updated = solicitudElementos.map((it, i) => (i === idx ? { sku, quantity } : it));
     establecerSolicitudElementos(updated);
+    establecerSolicitudError("");
     establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
     if (solicitudError) establecerSolicitudError("");
   };
 
   const manejarEnviarSolicitud = () => {
-    if (!seleccionadoProyectoId) {
-      establecerSolicitudError("Seleccione un proyecto activo.");
-      return;
-    }
-    if (solicitudElementos.length === 0) {
-      establecerSolicitudError("Debe agregar al menos un insumo.");
-      return;
-    }
+    establecerSolicitudError("");
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proyectoSeleccionadoSolicitud,
+      solicitudElementos,
+      obtenerCatalogoParaValidarSolicitud(editandoSolicitud)
+    );
 
-    const skusVistos = new Set<string>();
-    for (const item of solicitudElementos) {
-      if (!item.sku) {
-        establecerSolicitudError("Cada línea debe tener un insumo seleccionado.");
-        return;
-      }
-      if (skusVistos.has(item.sku)) {
-        establecerSolicitudError(
-          `El insumo ${item.sku} está repetido. Ajusta la cantidad en una sola línea.`
-        );
-        return;
-      }
-      skusVistos.add(item.sku);
-      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
-        establecerSolicitudError("Todas las cantidades solicitadas deben ser mayores a 0.");
-        return;
-      }
-    }
-
-    const actualFaltante = calcularFaltanteExistencia(solicitudElementos);
-    if (actualFaltante.length > 0) {
-      establecerFaltanteExistenciaErrores(actualFaltante);
-      establecerSolicitudError("No se puede enviar: hay ítems con stock insuficiente en bodega.");
+    if (!validacion.esValida) {
+      establecerFaltanteExistenciaErrores(validacion.faltantesStock);
+      establecerSolicitudError(
+        validacion.errorGeneral || "No se puede guardar la solicitud: verifique el proyecto y las cantidades."
+      );
       return;
     }
 
@@ -477,20 +475,21 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     });
 
     if (editandoSolicitud) {
-      const resEdicion = modificarSolicitudMaterial(editandoSolicitud.id, {
+      const resEdit = modificarSolicitudMaterial(editandoSolicitud.id, elementosHastaEnviar, {
         projectId: seleccionadoProyectoId,
-        items: elementosHastaEnviar,
         urgency: solicitudUrgencia,
         comment: solicitudComentario.trim(),
-        editorName: usuario.name,
+        authorName: usuario.name,
       });
-
-      if (!resEdicion.success) {
-        establecerSolicitudError(resEdicion.error || "No se pudo actualizar la solicitud.");
+      if (!resEdit.success) {
+        establecerSolicitudError(resEdit.error || "No se pudo actualizar la solicitud.");
+        establecerFaltanteExistenciaErrores(resEdit.missingItems || []);
       } else {
-        mostrarAviso(`Solicitud ${editandoSolicitud.code} editada correctamente.`);
-        establecerNuevoSolicitudModal(false);
+        mostrarAviso(
+          `Solicitud ${editandoSolicitud.code} editada exitosamente. La reserva de stock comprometido en H6 fue actualizada.`
+        );
         establecerEditandoSolicitud(null);
+        establecerNuevoSolicitudModal(false);
       }
       return;
     }
@@ -508,7 +507,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       establecerSolicitudError(res.error || "No se pudo crear la solicitud.");
       establecerFaltanteExistenciaErrores(res.missingItems || []);
     } else {
-      mostrarAviso("Solicitud de materiales enviada a bandeja de aprobación.");
+      mostrarAviso(
+        "Solicitud creada en estado Pendiente: el stock solicitado pasó a Comprometido en el catálogo (H6) y se notificó al Administrador."
+      );
       establecerNuevoSolicitudModal(false);
     }
   };
@@ -560,9 +561,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const totalUnidadesHastaDespacho = despachoElementosEntries.reduce((sum, [_, qty]) => sum + qty, 0);
   const pendienteUnidadesInSolicitud = activoDespachoSolicitud
     ? activoDespachoSolicitud.items.reduce(
-        (sum, it) => sum + Math.max(0, it.quantity - (it.deliveredQuantity || 0)),
-        0
-      )
+      (sum, it) => sum + Math.max(0, it.quantity - (it.deliveredQuantity || 0)),
+      0
+    )
     : 0;
   const esCompletoDespacho = totalUnidadesHastaDespacho >= pendienteUnidadesInSolicitud && totalUnidadesHastaDespacho > 0;
 
@@ -570,14 +571,15 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerSeleccionadoDespachoSolicitudId(reqId);
     const solicitud = solicitudesMaterial.find((r) => r.id === reqId);
     if (solicitud) {
-      // Por defecto sugerir la cantidad pendiente
+      // Por defecto sugerir la cantidad pendiente respaldada en bodega (stock disponible + comprometido para esta solicitud)
       const inicialQtys: { [sku: string]: number } = {};
       solicitud.items.forEach((it) => {
-        const pendiente = Math.max(0, it.quantity - (it.deliveredQuantity || 0));
         const producto = productos.find((p) => p.sku === it.sku);
-        const maximoAvail = producto ? producto.stock : 0;
-        // Sugerir lo pendiente, pero sin sobrepasar el stock físico
-        inicialQtys[it.sku] = Math.min(pendiente, maximoAvail);
+        const resumenLinea = calcularResumenLineaSalidaFisica(it, 0, producto);
+        inicialQtys[it.sku] = Math.min(
+          resumenLinea.saldoPendienteAntes,
+          resumenLinea.stockRespaldoParaEgreso
+        );
       });
       establecerDespachoQuantities(inicialQtys);
       if (solicitud.technicianRut) establecerDespachoTecnicoRut(solicitud.technicianRut);
@@ -586,41 +588,35 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   const manejarDespachoCantidadCambiar = (sku: string, val: string) => {
-    const numero = parseFloat(val) || 0;
+    const normalizado = String(val || "").replace(",", ".");
+    const numero = Math.max(0, parseFloat(normalizado) || 0);
     establecerDespachoQuantities((prev) => ({ ...prev, [sku]: numero }));
+    if (despachoError) establecerDespachoError("");
   };
 
   const manejarInitiateDespacho = () => {
     if (!activoDespachoSolicitud) return;
     establecerDespachoError("");
 
-    // Validar que al menos un item tenga cantidad > 0
-    const tieneElementos = Object.values(despachoQuantities).some((qty) => qty > 0);
-    if (!tieneElementos) {
-      establecerDespachoError("Debe indicar una cantidad mayor a 0 para al menos un insumo.");
+    if (!despachoTecnicoRut) {
+      establecerDespachoError("Debe seleccionar el técnico que retira en bodega.");
       return;
     }
 
-    // Validar stock disponible y que no supere lo pendiente
-    for (const it of activoDespachoSolicitud.items) {
-      const cantidadHastaDespacho = despachoQuantities[it.sku] || 0;
-      if (cantidadHastaDespacho <= 0) continue;
+    const resumenVivo = calcularResumenSolicitudSalidaFisica(
+      activoDespachoSolicitud,
+      despachoQuantities,
+      productos
+    );
 
-      const prod = productos.find((p) => p.sku === it.sku);
-      if (!prod || prod.stock < cantidadHastaDespacho) {
-        establecerDespachoError(
-          `Stock insuficiente para ${prod?.name || it.sku}. Disponible: ${prod?.stock || 0}, a despachar: ${cantidadHastaDespacho}`
-        );
-        return;
-      }
+    if (resumenVivo.totalEntregandoAhoraUnidades <= 0) {
+      establecerDespachoError("Debe indicar una cantidad mayor a 0 para al menos un insumo autorizado.");
+      return;
+    }
 
-      const pendiente = Math.max(0, it.quantity - (it.deliveredQuantity || 0));
-      if (cantidadHastaDespacho > pendiente) {
-        establecerDespachoError(
-          `La cantidad a despachar de ${prod?.name || it.sku} (${cantidadHastaDespacho}) excede la pendiente (${pendiente}).`
-        );
-        return;
-      }
+    if (resumenVivo.tieneErroresLinea) {
+      establecerDespachoError(resumenVivo.errores[0]);
+      return;
     }
 
     establecerConfirmarDespachoVisible(true);
@@ -638,16 +634,33 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       activoDespachoSolicitud.id,
       elementosHastaDespacho,
       despachoTecnicoRut,
-      tecnico ? tecnico.name : "Técnico",
+      tecnico ? tecnico.name : activoDespachoSolicitud.technicianName || "Técnico",
       usuario.name
     );
 
     establecerConfirmarDespachoVisible(false);
 
     if (res.success) {
-      mostrarAviso("Egreso registrado con éxito en bodega y Cardex.");
-      establecerSeleccionadoDespachoSolicitudId("");
-      establecerDespachoQuantities({});
+      if (res.esEntregaCompleta) {
+        mostrarAviso(
+          `Salida física completa registrada (${res.dispatchCode || "Guía emitida"}). Cardex actualizado en tiempo real.`
+        );
+        establecerSeleccionadoDespachoSolicitudId("");
+        establecerDespachoQuantities({});
+      } else {
+        // Entrega parcial: mantener seleccionada la solicitud y precargar el nuevo saldo restante
+        const nuevasCantidadesRestantes: { [sku: string]: number } = {};
+        activoDespachoSolicitud.items.forEach((it) => {
+          const despachadoAhora = Number(despachoQuantities[it.sku] || 0);
+          const nuevoEntregado = Number(((it.deliveredQuantity || 0) + despachadoAhora).toFixed(3));
+          const nuevoPendiente = Math.max(0, Number((it.quantity - nuevoEntregado).toFixed(3)));
+          nuevasCantidadesRestantes[it.sku] = nuevoPendiente;
+        });
+        establecerDespachoQuantities(nuevasCantidadesRestantes);
+        mostrarAviso(
+          `Salida parcial registrada (${res.dispatchCode || "Guía emitida"}). El saldo restante quedó listo para completar la entrega.`
+        );
+      }
     } else {
       establecerDespachoError(res.error || "No se pudo registrar el egreso.");
     }
@@ -769,26 +782,26 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // =========================================================================
   return (
     <ContenedorEstadoPantalla screenTitle="Inventario y Bodega" skeletonType="table">
-    <View style={estilos.contenedor}>
-      {/* Toast Notification */}
-      <NotificacionFlotante
-        visible={Boolean(avisoMensaje)}
-        message={avisoMensaje || ""}
-        onDismiss={() => establecerAvisoMensaje(null)}
-      />
+      <View style={estilos.contenedor}>
+        {/* Toast Notification */}
+        <NotificacionFlotante
+          visible={Boolean(avisoMensaje)}
+          message={avisoMensaje || ""}
+          onDismiss={() => establecerAvisoMensaje(null)}
+        />
 
-      {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
-      <EncabezadoPagina
-        title={obtenerEncabezadoTitulo()}
-        subtitle={obtenerEncabezadoSubtitulo()}
-      />
+        {/* ENCABEZADO Y ACCIÓN PRINCIPAL */}
+        <EncabezadoPagina
+          title={obtenerEncabezadoTitulo()}
+          subtitle={obtenerEncabezadoSubtitulo()}
+        />
 
-      {/* TOP NAVIGATION TABS (Oculta en bodeguero egreso porque se accede por el menú principal) */}
-      {!hideTabBar && !(rolActual === "warehouse" && activoPestana === "egreso") && (
-        <View style={estilos.pestanaBarraContenedor}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.pestanaScrollContenido}>
-            {(rolActual === "warehouse"
-              ? [
+        {/* TOP NAVIGATION TABS (Oculta en bodeguero egreso porque se accede por el menú principal) */}
+        {!hideTabBar && !(rolActual === "warehouse" && activoPestana === "egreso") && (
+          <View style={estilos.pestanaBarraContenedor}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={estilos.pestanaScrollContenido}>
+              {(rolActual === "warehouse"
+                ? [
                   { id: "egreso", label: `Egreso (${aprobadoSolicitudes.length})`, icon: "log-out-outline" },
                   {
                     id: "solicitudes",
@@ -803,270 +816,271 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                   },
                   { id: "mermas", label: `Mermas (${registrosMerma.length})`, icon: "trash-outline" },
                 ]
-              : [
+                : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
+                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                 ]
-            ).map((tab) => {
-              const esActivo = activoPestana === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  onPress={() => establecerActivoPestana(tab.id as PestanaInventario)}
-                  style={[estilos.pestanaElemento, esActivo && estilos.pestanaElementoActivo]}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: esActivo }}
-                >
-                  <Ionicons
-                    name={tab.icon as any}
-                    size={18}
-                    color={esActivo ? "#f59e0b" : "#a8a29e"}
-                  />
-                  <Text style={[estilos.pestanaEtiqueta, esActivo && estilos.pestanaEtiquetaActivo]}>
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+              ).map((tab) => {
+                const esActivo = activoPestana === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    onPress={() => establecerActivoPestana(tab.id as PestanaInventario)}
+                    style={[estilos.pestanaElemento, esActivo && estilos.pestanaElementoActivo]}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: esActivo }}
+                  >
+                    <Ionicons
+                      name={tab.icon as any}
+                      size={18}
+                      color={esActivo ? "#f59e0b" : "#a8a29e"}
+                    />
+                    <Text style={[estilos.pestanaEtiqueta, esActivo && estilos.pestanaEtiquetaActivo]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
-      <SeccionCatalogoCardex
-        abrirEscaner={abrirEscaner}
-        activoPestana={activoPestana}
-        alternarProductoDeshabilitado={alternarProductoDeshabilitado}
-        buscarQuery={buscarQuery}
-        establecerBuscarQuery={establecerBuscarQuery}
-        establecerKardexFiltrarProyecto={establecerKardexFiltrarProyecto}
-        establecerKardexFiltrarSku={establecerKardexFiltrarSku}
-        establecerKardexFiltrarTipo={establecerKardexFiltrarTipo}
-        filtradoCardex={filtradoCardex}
-        filtradoProductos={filtradoProductos}
-        kardexFiltrarProyecto={kardexFiltrarProyecto}
-        kardexFiltrarSku={kardexFiltrarSku}
-        kardexFiltrarTipo={kardexFiltrarTipo}
-        manejarAbrirCardexProducto={manejarAbrirCardexProducto}
-        manejarAbrirEditarProducto={manejarAbrirEditarProducto}
-        manejarAbrirNuevoProducto={manejarAbrirNuevoProducto}
-        manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
-        manejarExportarCardex={manejarExportarCardex}
-        mostrarAviso={mostrarAviso}
-        proyectos={proyectos}
-        rolActual={rolActual}
-      />
+        <SeccionCatalogoCardex
+          abrirEscaner={abrirEscaner}
+          activoPestana={activoPestana}
+          alternarProductoDeshabilitado={alternarProductoDeshabilitado}
+          buscarQuery={buscarQuery}
+          establecerBuscarQuery={establecerBuscarQuery}
+          establecerKardexFiltrarProyecto={establecerKardexFiltrarProyecto}
+          establecerKardexFiltrarSku={establecerKardexFiltrarSku}
+          establecerKardexFiltrarTipo={establecerKardexFiltrarTipo}
+          filtradoCardex={filtradoCardex}
+          filtradoProductos={filtradoProductos}
+          kardexFiltrarProyecto={kardexFiltrarProyecto}
+          kardexFiltrarSku={kardexFiltrarSku}
+          kardexFiltrarTipo={kardexFiltrarTipo}
+          manejarAbrirCardexProducto={manejarAbrirCardexProducto}
+          manejarAbrirEditarProducto={manejarAbrirEditarProducto}
+          manejarAbrirNuevoProducto={manejarAbrirNuevoProducto}
+          manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
+          manejarExportarCardex={manejarExportarCardex}
+          mostrarAviso={mostrarAviso}
+          proyectos={proyectos}
+          rolActual={rolActual}
+        />
 
-      <SeccionSolicitudesMaterial
-        activoPestana={activoPestana}
-        aprobarSolicitudMaterial={aprobarSolicitudMaterial}
-        establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
-        establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
-        establecerRechazarMotivo={establecerRechazarMotivo}
-        establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
-        establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
-        establecerSolicitudBusqueda={establecerSolicitudBusqueda}
-        establecerSolicitudPestana={establecerSolicitudPestana}
-        filtradoSolicitudes={filtradoSolicitudes}
-        manejarAbrirEditarSolicitud={manejarAbrirEditarSolicitud}
-        manejarAbrirNuevoSolicitud={manejarAbrirNuevoSolicitud}
-        mostrarAviso={mostrarAviso}
-        rolActual={rolActual}
-        solicitudBusqueda={solicitudBusqueda}
-        solicitudPestana={solicitudPestana}
-        todasSolicitudes={solicitudesMaterial}
-        usuario={usuario}
-      />
+        <SeccionSolicitudesMaterial
+          activoPestana={activoPestana}
+          aprobarSolicitudMaterial={aprobarSolicitudMaterial}
+          establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
+          establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
+          establecerRechazarMotivo={establecerRechazarMotivo}
+          establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
+          establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
+          establecerSolicitudBusqueda={establecerSolicitudBusqueda}
+          establecerSolicitudPestana={establecerSolicitudPestana}
+          filtradoSolicitudes={filtradoSolicitudes}
+          manejarAbrirEditarSolicitud={manejarAbrirEditarSolicitud}
+          manejarAbrirNuevoSolicitud={manejarAbrirNuevoSolicitud}
+          mostrarAviso={mostrarAviso}
+          rolActual={rolActual}
+          solicitudBusqueda={solicitudBusqueda}
+          solicitudPestana={solicitudPestana}
+          todasSolicitudes={solicitudesMaterial}
+          usuario={usuario}
+        />
 
-      <SeccionEgresoBodega
-        abrirEscaner={abrirEscaner}
-        activoDespachoSolicitud={activoDespachoSolicitud}
-        activoPestana={activoPestana}
-        aprobadoSolicitudes={aprobadoSolicitudes}
-        despachoElementosEntries={despachoElementosEntries}
-        despachoError={despachoError}
-        despachoQuantities={despachoQuantities}
-        despachoTecnicoRut={despachoTecnicoRut}
-        esCompletoDespacho={esCompletoDespacho}
-        esDesktop={esDesktop}
-        establecerDespachoTecnicoRut={establecerDespachoTecnicoRut}
-        manejarDespachoCantidadCambiar={manejarDespachoCantidadCambiar}
-        manejarInitiateDespacho={manejarInitiateDespacho}
-        manejarSeleccionarDespachoSolicitud={manejarSeleccionarDespachoSolicitud}
-        mostrarAviso={mostrarAviso}
-        productos={productos}
-        seleccionadoDespachoSolicitudId={seleccionadoDespachoSolicitudId}
-        seleccionadoDespachoTecnico={seleccionadoDespachoTecnico}
-        tecnicos={tecnicos}
-        totalUnidadesHastaDespacho={totalUnidadesHastaDespacho}
-      />
+        <SeccionEgresoBodega
+          abrirEscaner={abrirEscaner}
+          activoDespachoSolicitud={activoDespachoSolicitud}
+          activoPestana={activoPestana}
+          aprobadoSolicitudes={aprobadoSolicitudes}
+          despachoElementosEntries={despachoElementosEntries}
+          despachoError={despachoError}
+          despachoQuantities={despachoQuantities}
+          despachoTecnicoRut={despachoTecnicoRut}
+          esCompletoDespacho={esCompletoDespacho}
+          esDesktop={esDesktop}
+          establecerDespachoTecnicoRut={establecerDespachoTecnicoRut}
+          manejarDespachoCantidadCambiar={manejarDespachoCantidadCambiar}
+          manejarInitiateDespacho={manejarInitiateDespacho}
+          manejarSeleccionarDespachoSolicitud={manejarSeleccionarDespachoSolicitud}
+          mostrarAviso={mostrarAviso}
+          productos={productos}
+          seleccionadoDespachoSolicitudId={seleccionadoDespachoSolicitudId}
+          seleccionadoDespachoTecnico={seleccionadoDespachoTecnico}
+          tecnicos={tecnicos}
+          totalUnidadesHastaDespacho={totalUnidadesHastaDespacho}
+        />
 
-      <SeccionMermas
-        activoPestana={activoPestana}
-        manejarAbrirMermaModal={manejarAbrirMermaModal}
-        mermaSku={mermaSku}
-        registrosMerma={registrosMerma}
-        width={width}
-      />
+        <SeccionMermas
+          activoPestana={activoPestana}
+          manejarAbrirMermaModal={manejarAbrirMermaModal}
+          mermaSku={mermaSku}
+          registrosMerma={registrosMerma}
+          width={width}
+        />
 
-      <SeccionConteoFisico
-        activoPestana={activoPestana}
-        aprobarConteoFisico={aprobarConteoFisico}
-        conteosFisicos={conteosFisicos}
-        manejarAbrirConteoModal={manejarAbrirConteoModal}
-        mermaSku={mermaSku}
-        mostrarAviso={mostrarAviso}
-        productos={productos}
-        rechazarConteoFisico={rechazarConteoFisico}
-        rolActual={rolActual}
-        usuario={usuario}
-        width={width}
-      />
+        <SeccionConteoFisico
+          activoPestana={activoPestana}
+          aprobarConteoFisico={aprobarConteoFisico}
+          conteosFisicos={conteosFisicos}
+          manejarAbrirConteoModal={manejarAbrirConteoModal}
+          mermaSku={mermaSku}
+          mostrarAviso={mostrarAviso}
+          productos={productos}
+          rechazarConteoFisico={rechazarConteoFisico}
+          rolActual={rolActual}
+          usuario={usuario}
+          width={width}
+        />
 
 
-      {/* MODAL INSUMO FORM (Validación Unicidad SKU y Magnitudes con Decimales) */}
-      <Modal
-        visible={registroInsumoFormVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => establecerRegistroInsumoFormVisible(false)}
-      >
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: 16,
-          }}
-          onPress={() => establecerRegistroInsumoFormVisible(false)}
+        {/* MODAL INSUMO FORM (Validación Unicidad SKU y Magnitudes con Decimales) */}
+        <Modal
+          visible={registroInsumoFormVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => establecerRegistroInsumoFormVisible(false)}
         >
-          <Pressable style={{ width: "100%", maxWidth: 520 }} onPress={(e) => e.stopPropagation()}>
-            <InsumoForm
-              onCancel={() => establecerRegistroInsumoFormVisible(false)}
-              onSubmit={(datos) => {
-                mostrarAviso(`Insumo ${datos.sku} (${datos.nombre}) registrado exitosamente.`);
-                establecerRegistroInsumoFormVisible(false);
-              }}
-            />
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: "rgba(15, 23, 42, 0.6)",
+              justifyContent: "center",
+              alignItems: "center",
+              padding: 16,
+            }}
+            onPress={() => establecerRegistroInsumoFormVisible(false)}
+          >
+            <Pressable style={{ width: "100%", maxWidth: 520 }} onPress={(e) => e.stopPropagation()}>
+              <InsumoForm
+                onCancel={() => establecerRegistroInsumoFormVisible(false)}
+                onSubmit={(datos) => {
+                  mostrarAviso(`Insumo ${datos.sku} (${datos.nombre}) registrado exitosamente.`);
+                  establecerRegistroInsumoFormVisible(false);
+                }}
+              />
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
 
-      <ModalesInventario
-        abrirEscaner={abrirEscaner}
-        activoDespachoSolicitud={activoDespachoSolicitud}
-        activoProyectos={activoProyectos}
-        anularConfirmarSolicitud={anularConfirmarSolicitud}
-        calcularFaltanteExistencia={calcularFaltanteExistencia}
-        cancelarSolicitudMaterial={cancelarSolicitudMaterial}
-        cardex={cardex}
-        productoCardexSeleccionado={productoCardexSeleccionado}
-        establecerProductoCardexSeleccionado={establecerProductoCardexSeleccionado}
-        confirmarDespachoVisible={confirmarDespachoVisible}
-        conteoDiferencia={conteoDiferencia}
-        conteoDiferenciaPorcentaje={conteoDiferenciaPorcentaje}
-        conteoDiferenciaValor={conteoDiferenciaValor}
-        conteoError={conteoError}
-        conteoModalVisible={conteoModalVisible}
-        conteoNotas={conteoNotas}
-        conteoPhysicalCantidad={conteoPhysicalCantidad}
-        conteoRequiresApproval={conteoRequiresApproval}
-        conteoSku={conteoSku}
-        editandoProducto={editandoProducto}
-        editandoSolicitud={editandoSolicitud}
-        escanerCallback={escanerCallback}
-        escanerTitulo={escanerTitulo}
-        escanerVisible={escanerVisible}
-        establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
-        establecerConfirmarDespachoVisible={establecerConfirmarDespachoVisible}
-        establecerEditandoSolicitud={establecerEditandoSolicitud}
-        establecerConteoModalVisible={establecerConteoModalVisible}
-        establecerConteoNotas={establecerConteoNotas}
-        establecerConteoPhysicalCantidad={establecerConteoPhysicalCantidad}
-        establecerConteoSku={establecerConteoSku}
-        establecerEscanerVisible={establecerEscanerVisible}
-        establecerFaltanteExistenciaErrores={establecerFaltanteExistenciaErrores}
-        establecerFormularioBarcode={establecerFormularioBarcode}
-        establecerFormularioCategoria={establecerFormularioCategoria}
-        establecerFormularioContenedorCapacity={establecerFormularioContenedorCapacity}
-        establecerFormularioEsBulk={establecerFormularioEsBulk}
-        establecerFormularioExistencia={establecerFormularioExistencia}
-        establecerFormularioMinimoExistencia={establecerFormularioMinimoExistencia}
-        establecerFormularioNombre={establecerFormularioNombre}
-        establecerFormularioNombreError={establecerFormularioNombreError}
-        establecerFormularioProveedor={establecerFormularioProveedor}
-        establecerFormularioRestock={establecerFormularioRestock}
-        establecerFormularioSku={establecerFormularioSku}
-        establecerFormularioSkuError={establecerFormularioSkuError}
-        establecerFormularioUnidad={establecerFormularioUnidad}
-        establecerMermaCantidad={establecerMermaCantidad}
-        establecerMermaModalVisible={establecerMermaModalVisible}
-        establecerMermaMotivo={establecerMermaMotivo}
-        establecerMermaObs={establecerMermaObs}
-        establecerMermaSku={establecerMermaSku}
-        establecerMostrarAdvancedProductoOpciones={establecerMostrarAdvancedProductoOpciones}
-        establecerNuevoProductoModal={establecerNuevoProductoModal}
-        establecerNuevoSolicitudModal={establecerNuevoSolicitudModal}
-        establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
-        establecerRechazarMotivo={establecerRechazarMotivo}
-        establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
-        establecerSeleccionadoProyectoId={establecerSeleccionadoProyectoId}
-        establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
-        establecerSolicitudComentario={establecerSolicitudComentario}
-        establecerSolicitudElementos={establecerSolicitudElementos}
-        establecerSolicitudUrgencia={establecerSolicitudUrgencia}
-        faltanteExistenciaErrores={faltanteExistenciaErrores}
-        formularioBarcode={formularioBarcode}
-        formularioCategoria={formularioCategoria}
-        formularioContenedorCapacity={formularioContenedorCapacity}
-        formularioError={formularioError}
-        formularioEsBulk={formularioEsBulk}
-        formularioExistencia={formularioExistencia}
-        formularioMinimoExistencia={formularioMinimoExistencia}
-        formularioNombre={formularioNombre}
-        formularioNombreError={formularioNombreError}
-        formularioProveedor={formularioProveedor}
-        formularioRestock={formularioRestock}
-        formularioSku={formularioSku}
-        formularioSkuError={formularioSkuError}
-        formularioUnidad={formularioUnidad}
-        manejarEnviarSolicitud={manejarEnviarSolicitud}
-        manejarExecuteDespacho={manejarExecuteDespacho}
-        manejarGuardarProducto={manejarGuardarProducto}
-        manejarRegisterConteo={manejarRegisterConteo}
-        manejarRegisterMerma={manejarRegisterMerma}
-        manejarSolicitudElementoCambiar={manejarSolicitudElementoCambiar}
-        mermaCantidad={mermaCantidad}
-        mermaCantidadNumero={mermaCantidadNumero}
-        mermaError={mermaError}
-        mermaModalVisible={mermaModalVisible}
-        mermaMotivo={mermaMotivo}
-        mermaObs={mermaObs}
-        mermaSku={mermaSku}
-        mermaTotalPerdida={mermaTotalPerdida}
-        mostrarAdvancedProductoOpciones={mostrarAdvancedProductoOpciones}
-        mostrarAviso={mostrarAviso}
-        nombreEntradaReferencia={nombreEntradaReferencia}
-        nuevoProductoModal={nuevoProductoModal}
-        nuevoSolicitudModal={nuevoSolicitudModal}
-        productos={productos}
-        rechazarModalSolicitud={rechazarModalSolicitud}
-        rechazarMotivo={rechazarMotivo}
-        rechazarSolicitudMaterial={rechazarSolicitudMaterial}
-        seleccionadoConteoProducto={seleccionadoConteoProducto}
-        seleccionadoComprobanteSolicitud={seleccionadoComprobanteSolicitud}
-        seleccionadoMermaProducto={seleccionadoMermaProducto}
-        seleccionadoProyectoId={seleccionadoProyectoId}
-        seleccionadoTimelineSolicitud={seleccionadoTimelineSolicitud}
-        skuEntradaReferencia={skuEntradaReferencia}
-        solicitudComentario={solicitudComentario}
-        solicitudElementos={solicitudElementos}
-        solicitudError={solicitudError}
-        solicitudUrgencia={solicitudUrgencia}
-        totalUnidadesHastaDespacho={totalUnidadesHastaDespacho}
-        usuario={usuario}
-      />
-    </View>
+        <ModalesInventario
+          abrirEscaner={abrirEscaner}
+          activoDespachoSolicitud={activoDespachoSolicitud}
+          activoProyectos={activoProyectos}
+          anularConfirmarSolicitud={anularConfirmarSolicitud}
+          calcularFaltanteExistencia={calcularFaltanteExistencia}
+          cancelarSolicitudMaterial={cancelarSolicitudMaterial}
+          cardex={cardex}
+          productoCardexSeleccionado={productoCardexSeleccionado}
+          establecerProductoCardexSeleccionado={establecerProductoCardexSeleccionado}
+          confirmarDespachoVisible={confirmarDespachoVisible}
+          conteoDiferencia={conteoDiferencia}
+          conteoDiferenciaPorcentaje={conteoDiferenciaPorcentaje}
+          conteoDiferenciaValor={conteoDiferenciaValor}
+          conteoError={conteoError}
+          conteoModalVisible={conteoModalVisible}
+          conteoNotas={conteoNotas}
+          conteoPhysicalCantidad={conteoPhysicalCantidad}
+          conteoRequiresApproval={conteoRequiresApproval}
+          conteoSku={conteoSku}
+          editandoProducto={editandoProducto}
+          editandoSolicitud={editandoSolicitud}
+          escanerCallback={escanerCallback}
+          escanerTitulo={escanerTitulo}
+          escanerVisible={escanerVisible}
+          establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
+          establecerConfirmarDespachoVisible={establecerConfirmarDespachoVisible}
+          establecerEditandoSolicitud={establecerEditandoSolicitud}
+          establecerConteoModalVisible={establecerConteoModalVisible}
+          establecerConteoNotas={establecerConteoNotas}
+          establecerConteoPhysicalCantidad={establecerConteoPhysicalCantidad}
+          establecerConteoSku={establecerConteoSku}
+          establecerEscanerVisible={establecerEscanerVisible}
+          establecerFaltanteExistenciaErrores={establecerFaltanteExistenciaErrores}
+          establecerFormularioBarcode={establecerFormularioBarcode}
+          establecerFormularioCategoria={establecerFormularioCategoria}
+          establecerFormularioContenedorCapacity={establecerFormularioContenedorCapacity}
+          establecerFormularioEsBulk={establecerFormularioEsBulk}
+          establecerFormularioExistencia={establecerFormularioExistencia}
+          establecerFormularioMinimoExistencia={establecerFormularioMinimoExistencia}
+          establecerFormularioNombre={establecerFormularioNombre}
+          establecerFormularioNombreError={establecerFormularioNombreError}
+          establecerFormularioProveedor={establecerFormularioProveedor}
+          establecerFormularioRestock={establecerFormularioRestock}
+          establecerFormularioSku={establecerFormularioSku}
+          establecerFormularioSkuError={establecerFormularioSkuError}
+          establecerFormularioUnidad={establecerFormularioUnidad}
+          establecerMermaCantidad={establecerMermaCantidad}
+          establecerMermaModalVisible={establecerMermaModalVisible}
+          establecerMermaMotivo={establecerMermaMotivo}
+          establecerMermaObs={establecerMermaObs}
+          establecerMermaSku={establecerMermaSku}
+          establecerMostrarAdvancedProductoOpciones={establecerMostrarAdvancedProductoOpciones}
+          establecerNuevoProductoModal={establecerNuevoProductoModal}
+          establecerNuevoSolicitudModal={establecerNuevoSolicitudModal}
+          establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
+          establecerRechazarMotivo={establecerRechazarMotivo}
+          establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
+          establecerSeleccionadoProyectoId={establecerSeleccionadoProyectoId}
+          establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
+          establecerSolicitudComentario={establecerSolicitudComentario}
+          establecerSolicitudElementos={establecerSolicitudElementos}
+          establecerSolicitudUrgencia={establecerSolicitudUrgencia}
+          faltanteExistenciaErrores={faltanteExistenciaErrores}
+          formularioBarcode={formularioBarcode}
+          formularioCategoria={formularioCategoria}
+          formularioContenedorCapacity={formularioContenedorCapacity}
+          formularioError={formularioError}
+          formularioEsBulk={formularioEsBulk}
+          formularioExistencia={formularioExistencia}
+          formularioMinimoExistencia={formularioMinimoExistencia}
+          formularioNombre={formularioNombre}
+          formularioNombreError={formularioNombreError}
+          formularioProveedor={formularioProveedor}
+          formularioRestock={formularioRestock}
+          formularioSku={formularioSku}
+          formularioSkuError={formularioSkuError}
+          formularioUnidad={formularioUnidad}
+          manejarEnviarSolicitud={manejarEnviarSolicitud}
+          manejarExecuteDespacho={manejarExecuteDespacho}
+          manejarGuardarProducto={manejarGuardarProducto}
+          manejarRegisterConteo={manejarRegisterConteo}
+          manejarRegisterMerma={manejarRegisterMerma}
+          manejarSolicitudElementoCambiar={manejarSolicitudElementoCambiar}
+          mermaCantidad={mermaCantidad}
+          mermaCantidadNumero={mermaCantidadNumero}
+          mermaError={mermaError}
+          mermaModalVisible={mermaModalVisible}
+          mermaMotivo={mermaMotivo}
+          mermaObs={mermaObs}
+          mermaSku={mermaSku}
+          mermaTotalPerdida={mermaTotalPerdida}
+          mostrarAdvancedProductoOpciones={mostrarAdvancedProductoOpciones}
+          mostrarAviso={mostrarAviso}
+          nombreEntradaReferencia={nombreEntradaReferencia}
+          nuevoProductoModal={nuevoProductoModal}
+          nuevoSolicitudModal={nuevoSolicitudModal}
+          productos={productos}
+          rechazarModalSolicitud={rechazarModalSolicitud}
+          rechazarMotivo={rechazarMotivo}
+          rechazarSolicitudMaterial={rechazarSolicitudMaterial}
+          seleccionadoConteoProducto={seleccionadoConteoProducto}
+          seleccionadoComprobanteSolicitud={seleccionadoComprobanteSolicitud}
+          seleccionadoMermaProducto={seleccionadoMermaProducto}
+          seleccionadoProyectoId={seleccionadoProyectoId}
+          seleccionadoTimelineSolicitud={seleccionadoTimelineSolicitud}
+          skuEntradaReferencia={skuEntradaReferencia}
+          solicitudComentario={solicitudComentario}
+          solicitudElementos={solicitudElementos}
+          solicitudError={solicitudError}
+          solicitudUrgencia={solicitudUrgencia}
+          totalUnidadesHastaDespacho={totalUnidadesHastaDespacho}
+          usuario={usuario}
+        />
+      </View>
     </ContenedorEstadoPantalla>
   );
 };

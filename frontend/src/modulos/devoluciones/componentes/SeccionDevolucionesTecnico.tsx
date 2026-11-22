@@ -69,7 +69,7 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <Tarjeta variant="elevated">
             <View style={estilos.tarjetaEncabezadoFila}>
-              <View>
+              <View style={{ flex: 1, marginRight: 8 }}>
                 <View style={estilos.tecnicoInsigniaFila}>
                   <Insignia label="Terreno" tone="primary" size="sm" />
                   <Text style={estilos.tecnicoInsigniaHint}>Declaración de Sobrante</Text>
@@ -80,14 +80,14 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                 </Text>
               </View>
               <View style={estilos.formulaInsignia}>
-                <Ionicons name="calculator-outline" size={16} color={tema.colors.primary} />
+                <Ionicons name="calculator-outline" size={14} color={tema.colors.primary} />
                 <Text style={estilos.formulaTexto}>Máx = Retirado − Usado</Text>
               </View>
             </View>
 
             {/* Selector de Proyecto Activo */}
             <Text style={estilos.campoEtiqueta}>1. Seleccione Proyecto / Faena de Origen:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll} contentContainerStyle={{ paddingRight: 12 }}>
               {activoProyectos.map((p: any) => {
                 const esSeleccionado = seleccionadoProyectoId === p.id;
                 return (
@@ -100,7 +100,7 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                       name="business-outline"
                       size={14}
                       color={esSeleccionado ? "#ffffff" : tema.colors.textMuted}
-                      style={{ marginRight: 4 }}
+                      style={{ marginRight: 6 }}
                     />
                     <Text style={[estilos.chipTexto, esSeleccionado && estilos.chipTextoActivo]}>
                       {p.code} - {p.name}
@@ -115,7 +115,7 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
               <Text style={estilos.campoEtiqueta}>2. Insumos y Cuadratura de Material:</Text>
               <TouchableOpacity onPress={manejarAgregarDevolucionElemento} style={estilos.agregarPequenoBoton}>
                 <Ionicons name="add" size={14} color={tema.colors.primary} />
-                <Text style={estilos.agregarPequenoTexto}>+ Agregar Insumo</Text>
+                <Text style={estilos.agregarPequenoTexto}>Agregar Insumo</Text>
               </TouchableOpacity>
             </View>
 
@@ -142,66 +142,116 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                   </View>
 
                   {/* Cuadratura: Retirado - Usado = Máx */}
-                  <View style={estilos.cantidadInputsFila}>
-                    <View style={estilos.cantidadColumna}>
-                      <Text style={estilos.cantidadEtiqueta}>1. Retirado</Text>
-                      <TextInput
-                        value={String(item.quantityRetrieved)}
-                        onChangeText={(v: any) => {
-                          const valor = Number(v) || 0;
-                          establecerRetElementos((prev: any) =>
-                            prev.map((it: any, i: any) => (i === idx ? { ...it, quantityRetrieved: valor } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={estilos.cantidadEntrada}
-                      />
-                    </View>
+                  <View style={estilos.cuadraturaContenedor}>
+                    <View style={estilos.cuadraturaMetricasFila}>
+                      <View style={estilos.cuadraturaColumna}>
+                        <Text style={estilos.cuadraturaEtiqueta}>1. Retirado</Text>
+                        <TextInput
+                          value={String(item.quantityRetrieved)}
+                          onChangeText={(v: any) => {
+                            const valor = Number(v) || 0;
+                            establecerRetElementos((prev: any) =>
+                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityRetrieved: valor } : it))
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={estilos.cuadraturaEntrada}
+                        />
+                      </View>
 
-                    <Text style={estilos.operatorSign}>−</Text>
+                      <Text style={estilos.operatorSign}>−</Text>
 
-                    <View style={estilos.cantidadColumna}>
-                      <Text style={estilos.cantidadEtiqueta}>2. Usado</Text>
-                      <TextInput
-                        value={String(item.quantityUsed)}
-                        onChangeText={(v: any) => {
-                          const valor = Number(v) || 0;
-                          establecerRetElementos((prev: any) =>
-                            prev.map((it: any, i: any) => (i === idx ? { ...it, quantityUsed: valor } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={estilos.cantidadEntrada}
-                      />
-                    </View>
+                      <View style={estilos.cuadraturaColumna}>
+                        <Text style={estilos.cuadraturaEtiqueta}>2. Usado</Text>
+                        <TextInput
+                          value={String(item.quantityUsed)}
+                          onChangeText={(v: any) => {
+                            const valor = Number(v) || 0;
+                            establecerRetElementos((prev: any) =>
+                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityUsed: valor } : it))
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={estilos.cuadraturaEntrada}
+                        />
+                      </View>
 
-                    <Text style={estilos.operatorSign}>=</Text>
+                      <Text style={estilos.operatorSign}>=</Text>
 
-                    <View style={estilos.cantidadColumna}>
-                      <Text style={estilos.cantidadEtiqueta}>Máx Sobrante</Text>
-                      <View style={[estilos.maximoCaja, maxAllowed === 0 && { backgroundColor: tema.colors.dangerLight }]}>
-                        <Text style={[estilos.maximoTexto, maxAllowed === 0 && { color: tema.colors.danger }]}>
-                          {maxAllowed} {producto ? producto.unit : "un"}
-                        </Text>
+                      <View style={estilos.cuadraturaColumna}>
+                        <Text style={estilos.cuadraturaEtiqueta}>Máx Sobrante</Text>
+                        <View style={[estilos.maximoCaja, maxAllowed === 0 && { backgroundColor: tema.colors.dangerLight }]}>
+                          <Text style={[estilos.maximoTexto, maxAllowed === 0 && { color: tema.colors.danger }]}>
+                            {maxAllowed} {producto ? producto.unit : "un"}
+                          </Text>
+                        </View>
                       </View>
                     </View>
 
-                    <View style={estilos.cantidadColumnaDestacado}>
-                      <Text style={estilos.cantidadEtiquetaDestacado}>Devuelve a Bodega</Text>
-                      <TextInput
-                        value={String(item.quantityReturned)}
-                        onChangeText={(v: any) => {
-                          const val = Number(v) || 0;
-                          establecerRetElementos((prev: any) =>
-                            prev.map((it: any, i: any) => (i === idx ? { ...it, quantityReturned: val } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={[
-                          estilos.cantidadEntradaDestacado,
-                          (exceedsMaximo || esInvalidoZero) && estilos.cantidadEntradaError,
-                        ]}
-                      />
+                    {/* Fila Destacada: Cantidad a devolver a bodega */}
+                    <View style={estilos.retornoFila}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={estilos.retornoEtiqueta}>Devuelve a Bodega:</Text>
+                        <Text style={estilos.retornoPista}>
+                          {exceedsMaximo ? `Máximo permitido: ${maxAllowed}` : `Reingreso físico a Cardex`}
+                        </Text>
+                      </View>
+
+                      <View style={estilos.stepperRetornoContenedor}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            const actual = Number(item.quantityReturned) || 0;
+                            const nuevo = Math.max(0, actual - 1);
+                            establecerRetElementos((prev: any) =>
+                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityReturned: nuevo } : it))
+                            );
+                          }}
+                          style={estilos.stepperBoton}
+                        >
+                          <Ionicons name="remove" size={14} color={tema.colors.text} />
+                        </TouchableOpacity>
+
+                        <TextInput
+                          value={String(item.quantityReturned)}
+                          onChangeText={(v: any) => {
+                            const val = Number(v) || 0;
+                            establecerRetElementos((prev: any) =>
+                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityReturned: val } : it))
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={[
+                            estilos.stepperEntradaRetorno,
+                            (exceedsMaximo || esInvalidoZero) && estilos.cantidadEntradaError,
+                          ]}
+                        />
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            const actual = Number(item.quantityReturned) || 0;
+                            const nuevo = actual + 1;
+                            establecerRetElementos((prev: any) =>
+                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityReturned: nuevo } : it))
+                            );
+                          }}
+                          style={estilos.stepperBoton}
+                        >
+                          <Ionicons name="add" size={14} color={tema.colors.text} />
+                        </TouchableOpacity>
+
+                        {maxAllowed > 0 && item.quantityReturned !== maxAllowed && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              establecerRetElementos((prev: any) =>
+                                prev.map((it: any, i: any) => (i === idx ? { ...it, quantityReturned: maxAllowed } : it))
+                              );
+                            }}
+                            style={estilos.todoSobranteBoton}
+                          >
+                            <Text style={estilos.todoSobranteBotonTexto}>Todo ({maxAllowed})</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     </View>
                   </View>
 
@@ -260,90 +310,90 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
           ) : (
             ordenesDevolucion.map((ret: any) => {
               const esTransit = ret.status === "en_transito";
-            return (
-              <Tarjeta key={ret.id} variant="default" style={estilos.historialTarjeta}>
-                <View style={estilos.historialSuperior}>
-                  <View style={{ flex: 1 }}>
-                    <View style={estilos.codigoFila}>
-                      <Text style={estilos.historialCodigo}>{ret.code}</Text>
-                      <InsigniaEstado status={ret.status} size="sm" />
-                    </View>
-                    <Text style={estilos.historialProyecto}>{ret.projectName} ({ret.projectCode})</Text>
-                    <Text style={estilos.historialTecnico}>
-                      Técnico: {ret.technicianName} • Fecha: {formatearFecha(ret.date)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* STEPPER VISUAL: EN TRÁNSITO → RECIBIDA */}
-                <View style={estilos.timelineAjustador}>
-                  <View style={estilos.pasoElemento}>
-                    <View style={[estilos.pasoCirculo, estilos.pasoCirculoDone]}>
-                      <Ionicons name="checkmark" size={12} color="#ffffff" />
-                    </View>
-                    <Text style={estilos.pasoEtiqueta}>1. Obra</Text>
-                  </View>
-
-                  <View style={[estilos.pasoLinea, esTransit ? estilos.pasoLineaActivo : estilos.pasoLineaDone]} />
-
-                  <View style={estilos.pasoElemento}>
-                    <View style={[estilos.pasoCirculo, esTransit ? estilos.pasoCirculoActivo : estilos.pasoCirculoDone]}>
-                      <Ionicons name={esTransit ? "car" : "checkmark"} size={12} color="#ffffff" />
-                    </View>
-                    <Text style={[estilos.pasoEtiqueta, esTransit && estilos.pasoEtiquetaActivoTexto]}>
-                      2. En tránsito
-                    </Text>
-                  </View>
-
-                  <View style={[estilos.pasoLinea, !esTransit && estilos.pasoLineaDone]} />
-
-                  <View style={estilos.pasoElemento}>
-                    <View style={[estilos.pasoCirculo, !esTransit ? estilos.pasoCirculoDone : estilos.pasoCirculoPendiente]}>
-                      <Ionicons name={!esTransit ? "cube" : "time-outline"} size={12} color={!esTransit ? "#ffffff" : tema.colors.textMuted} />
-                    </View>
-                    <Text style={[estilos.pasoEtiqueta, !esTransit && estilos.pasoEtiquetaDoneTexto]}>
-                      3. Recibida
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Insumos detallados */}
-                <View style={estilos.historialElementosLista}>
-                  {ret.items?.map((it: any, idx: any) => (
-                    <View key={idx} style={estilos.historialElementoLinea}>
-                      <Text style={estilos.historialElementoNombre}>• {it.name}:</Text>
-                      <Text style={estilos.historialElementoCantidad}>
-                        Declarado: {it.quantityReturned} {it.unit}
-                        {it.quantityReceivedReal !== undefined && (
-                          <Text style={{ color: tema.colors.ok, fontWeight: "bold" }}>
-                            {" "}→ Físico Real: {it.quantityReceivedReal} {it.unit}
-                          </Text>
-                        )}
+              return (
+                <Tarjeta key={ret.id} variant="default" style={estilos.historialTarjeta}>
+                  <View style={estilos.historialSuperior}>
+                    <View style={{ flex: 1 }}>
+                      <View style={estilos.codigoFila}>
+                        <Text style={estilos.historialCodigo}>{ret.code}</Text>
+                        <InsigniaEstado status={ret.status} size="sm" />
+                      </View>
+                      <Text style={estilos.historialProyecto}>{ret.projectName} ({ret.projectCode})</Text>
+                      <Text style={estilos.historialTecnico}>
+                        Técnico: {ret.technicianName} • Fecha: {formatearFecha(ret.date)}
                       </Text>
                     </View>
-                  ))}
-                </View>
+                  </View>
 
-                {/* Si hubo discrepancia informada por bodega */}
-                {ret.discrepancyNote && (
-                  <View style={estilos.discrepancyAlerta}>
-                    <Ionicons name="alert-circle" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={estilos.discrepancyTitulo}>Observación de Bodeguero:</Text>
-                      <Text style={estilos.discrepancyTexto}>"{ret.discrepancyNote}"</Text>
+                  {/* STEPPER VISUAL: EN TRÁNSITO → RECIBIDA */}
+                  <View style={estilos.timelineAjustador}>
+                    <View style={estilos.pasoElemento}>
+                      <View style={[estilos.pasoCirculo, estilos.pasoCirculoDone]}>
+                        <Ionicons name="checkmark" size={12} color="#ffffff" />
+                      </View>
+                      <Text style={estilos.pasoEtiqueta}>1. Obra</Text>
+                    </View>
+
+                    <View style={[estilos.pasoLinea, esTransit ? estilos.pasoLineaActivo : estilos.pasoLineaDone]} />
+
+                    <View style={estilos.pasoElemento}>
+                      <View style={[estilos.pasoCirculo, esTransit ? estilos.pasoCirculoActivo : estilos.pasoCirculoDone]}>
+                        <Ionicons name={esTransit ? "car" : "checkmark"} size={12} color="#ffffff" />
+                      </View>
+                      <Text style={[estilos.pasoEtiqueta, esTransit && estilos.pasoEtiquetaActivoTexto]}>
+                        2. En tránsito
+                      </Text>
+                    </View>
+
+                    <View style={[estilos.pasoLinea, !esTransit && estilos.pasoLineaDone]} />
+
+                    <View style={estilos.pasoElemento}>
+                      <View style={[estilos.pasoCirculo, !esTransit ? estilos.pasoCirculoDone : estilos.pasoCirculoPendiente]}>
+                        <Ionicons name={!esTransit ? "cube" : "time-outline"} size={12} color={!esTransit ? "#ffffff" : tema.colors.textMuted} />
+                      </View>
+                      <Text style={[estilos.pasoEtiqueta, !esTransit && estilos.pasoEtiquetaDoneTexto]}>
+                        3. Recibida
+                      </Text>
                     </View>
                   </View>
-                )}
 
-                {!esTransit && ret.receivedBy && (
-                  <Text style={estilos.recibidoPieTexto}>
-                    ✓ Recibido en bodega por {ret.receivedBy} el {formatearFecha(ret.receivedAt || ret.date)}
-                  </Text>
-                )}
-              </Tarjeta>
-            );
-          })
-        )}
+                  {/* Insumos detallados */}
+                  <View style={estilos.historialElementosLista}>
+                    {ret.items?.map((it: any, idx: any) => (
+                      <View key={idx} style={estilos.historialElementoLinea}>
+                        <Text style={estilos.historialElementoNombre}>• {it.name}:</Text>
+                        <Text style={estilos.historialElementoCantidad}>
+                          Declarado: {it.quantityReturned} {it.unit}
+                          {it.quantityReceivedReal !== undefined && (
+                            <Text style={{ color: tema.colors.ok, fontWeight: "bold" }}>
+                              {" "}→ Físico Real: {it.quantityReceivedReal} {it.unit}
+                            </Text>
+                          )}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Si hubo discrepancia informada por bodega */}
+                  {ret.discrepancyNote && (
+                    <View style={estilos.discrepancyAlerta}>
+                      <Ionicons name="alert-circle" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={estilos.discrepancyTitulo}>Observación de Bodeguero:</Text>
+                        <Text style={estilos.discrepancyTexto}>"{ret.discrepancyNote}"</Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {!esTransit && ret.receivedBy && (
+                    <Text style={estilos.recibidoPieTexto}>
+                      ✓ Recibido en bodega por {ret.receivedBy} el {formatearFecha(ret.receivedAt || ret.date)}
+                    </Text>
+                  )}
+                </Tarjeta>
+              );
+            })
+          )}
         </ScrollView>
       )}
     </>

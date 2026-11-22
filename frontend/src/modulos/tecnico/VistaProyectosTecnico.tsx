@@ -10,7 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
-import { formatearFecha } from "@/nucleo/formato";
+// CAMBIO: parsearFechaLocal evita el desfase de un día por UTC
+import { formatearFecha, parsearFechaLocal } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import { Insignia } from "@/componentes/base/Insignia";
 import { Boton } from "@/componentes/base/Boton";
@@ -60,7 +61,7 @@ const formatearMarcaCache = (iso: string | null): string => {
  */
 const obtenerTiempoPlazo = (plazo?: string | null): number => {
   if (!plazo || !plazo.trim()) return Number.MAX_SAFE_INTEGER;
-  const ms = new Date(plazo).getTime();
+  const ms = parsearFechaLocal(plazo).getTime();
   return Number.isNaN(ms) ? Number.MAX_SAFE_INTEGER : ms;
 };
 

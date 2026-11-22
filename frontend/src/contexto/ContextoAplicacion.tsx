@@ -7,6 +7,28 @@ import {
   articuloAProducto,
   productoACuerpoArticulo,
 } from "@/modulos/inventario/articulosApi";
+import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
+import {
+  aprobarOrdenCompraApi,
+  actualizarOrdenCompraApi,
+  cambiarEstadoOrdenCompraApi,
+  crearOrdenCompraApi,
+  listarOrdenesCompraApi,
+  mapearEstadoHaciaBd,
+  ordenCompraDesdeApi,
+  registrarRecepcionOrdenCompraApi,
+} from "@/modulos/compras/ordenesCompraApi";
+import { aplicarEntregaChecklistEnOrden } from "@/modulos/compras/recepcionChecklistUtils";
+import {
+  ComprobanteAprobacionSolicitud,
+  aplicarReservaComprometidoEnCatalogoH6,
+  construirComprobanteYNotificacionAprobacion,
+  construirNotificacionRechazoSolicitud,
+  ejecutarSalidaFisicaSolicitudEnMemoria,
+  esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
+  validarFormularioNuevaSolicitudInsumos,
+} from "@/modulos/inventario/solicitudInsumosUtils";
 import {
   MovimientoCardex,
   Cliente,
@@ -53,7 +75,6 @@ import {
   RECEPCIONES_PENDIENTES,
   CONTEOS_FISICOS,
   PRODUCTOS,
-  PROYECTOS,
   FACTURAS_COMPRA,
   ORDENES_COMPRA,
   ORDENES_DEVOLUCION,
@@ -121,25 +142,17 @@ interface TipoContextoAplicacion {
     solicitud?: SolicitudMaterial;
     error?: string;
   };
-  rechazarSolicitudMaterial: (
-    id: string,
-    reason: string,
-    authorName: string
-  ) => {
-    success: boolean;
-    solicitud?: SolicitudMaterial;
-    error?: string;
-  };
+  rechazarSolicitudMaterial: (id: string, reason: string, authorName: string) => { success: boolean; error?: string };
   modificarSolicitudMaterial: (
     id: string,
-    updates: {
+    items: ItemSolicitudMaterial[],
+    opciones?: {
       projectId?: string;
-      items: ItemSolicitudMaterial[];
-      urgency?: "normal" | "alta" | "urgente";
+      urgency?: SolicitudMaterial["urgency"];
       comment?: string;
-      editorName?: string;
+      authorName?: string;
     }
-  ) => { success: boolean; error?: string };
+  ) => { success: boolean; error?: string; missingItems?: string[] };
   cancelarSolicitudMaterial: (
     id: string,
     authorName?: string
@@ -150,12 +163,26 @@ interface TipoContextoAplicacion {
     technicianRut: string,
     technicianName: string,
     authorName: string
-  ) => { success: boolean; error?: string };
+  ) => {
+    success: boolean;
+    error?: string;
+    dispatchCode?: string;
+    esEntregaCompleta?: boolean;
+  };
 
-  // Acciones de compras y órdenes de compra
-  crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; error?: string };
-  actualizarOrdenCompra: (orderId: string, updates: Partial<OrdenCompra>) => { success: boolean; error?: string };
+  // Acciones de compras y órdenes
+  crearOrdenCompra: (order: Partial<OrdenCompra>) => {
+    success: boolean;
+    orderId?: string;
+    code?: string;
+    error?: string;
+  };
+  actualizarOrdenCompra: (
+    orderId: string,
+    updates: Partial<OrdenCompra>
+  ) => { success: boolean; error?: string };
   aprobarYEnviarOrden: (orderId: string) => void;
+  anularOrdenCompra: (orderId: string) => { success: boolean; error?: string };
   calificarProveedor: (orderId: string, rating: CalificacionProveedor) => void;
   crearFactura: (invoice: FacturaCompra) => { success: boolean; error?: string };
   confirmarRecepcionOrden: (
@@ -256,7 +283,7 @@ const ContextoAplicacion = createContext<TipoContextoAplicacion | null>(null);
 
 export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [productos, setProducts] = useState<Producto[]>(PRODUCTOS);
-  const [proyectos, setProjects] = useState<Proyecto[]>(PROYECTOS);
+  const [proyectos, setProjects] = useState<Proyecto[]>([]);
   const [solicitudesMaterial, setMaterialRequests] = useState<SolicitudMaterial[]>(SOLICITUDES_MATERIALES);
   const [ordenesCompra, setPurchaseOrders] = useState<OrdenCompra[]>(ORDENES_COMPRA);
   const [facturasCompra, setPurchaseInvoices] = useState<FacturaCompra[]>(FACTURAS_COMPRA);
@@ -302,13 +329,44 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
+  // Proyectos desde la API. Para técnicos, el backend devuelve solo sus asignaciones activas.
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    const cargar = () => {
+      listarProyectos().then((r) => {
+        if (!r.ok || !r.data || cancelado) return;
+        setProjects(r.data.map(proyectoDesdeApi));
+      });
+    };
+    cargar();
+    const intervalo = setInterval(cargar, 30000);
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
+    };
+  }, [haySesion]);
+
+  // Órdenes de Compra desde la API al iniciar sesión
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    listarOrdenesCompraApi().then((r) => {
+      if (!r.ok || !r.data || cancelado || r.data.length === 0) return;
+      setPurchaseOrders(r.data.map(ordenCompraDesdeApi));
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [haySesion]);
+
   const agregarProducto = async (product: Producto): Promise<{ success: boolean; error?: string }> => {
     if (productos.some((p) => p.sku.trim().toUpperCase() === product.sku.trim().toUpperCase())) {
       return { success: false, error: `El SKU ${product.sku} ya está registrado.` };
     }
     const respuesta = await crearArticuloApi(productoACuerpoArticulo(product));
     if (respuesta.ok === false) {
-      return { success: false, error: respuesta.mensaje };
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     const { articulo } = respuesta;
     setProducts((prev) => [
@@ -323,11 +381,39 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
+  /** Registra alerta automática cuando un insumo alcanza o baja de su stock mínimo. */
+  const verificarYGenerarOcAutomaticaPorStockMinimo = (productoEvaluado: Producto) => {
+    if (productoEvaluado.disabled || productoEvaluado.stock > productoEvaluado.minStock) {
+      return;
+    }
+    setAlerts((prev) => {
+      const yaExiste = prev.some((a) => a.id === `al_min_${productoEvaluado.sku}`);
+      if (yaExiste) return prev;
+      return [
+        {
+          id: `al_min_${productoEvaluado.sku}`,
+          title: `Stock Mínimo Alcanzado: ${productoEvaluado.sku}`,
+          description: `${productoEvaluado.name} quedó en ${productoEvaluado.stock} ${productoEvaluado.unit} (mínimo: ${productoEvaluado.minStock}).`,
+          type: "stock",
+          severity: "rojo",
+          time: new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ];
+    });
+  };
+
   const actualizarProducto = async (
     sku: string,
     updates: Partial<Producto>
   ): Promise<{ success: boolean; error?: string }> => {
     const previo = productos.find((p) => p.sku === sku);
+    if (previo) {
+      const candidato = { ...previo, ...updates };
+      if (candidato.stock <= candidato.minStock) {
+        verificarYGenerarOcAutomaticaPorStockMinimo(candidato);
+      }
+    }
     // Cambio optimista en pantalla; si el servidor lo rechaza, se revierte
     setProducts((prev) => prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p)));
 
@@ -339,7 +425,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const respuesta = await actualizarArticuloApi(previo.id, cuerpo);
     if (respuesta.ok === false) {
       setProducts((prev) => prev.map((p) => (p.sku === sku ? previo : p)));
-      return { success: false, error: respuesta.mensaje };
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     return { success: true };
   };
@@ -393,6 +479,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           : p
       )
     );
+    verificarYGenerarOcAutomaticaPorStockMinimo({
+      ...prod,
+      stock: prod.isBulk ? Number(newStock.toFixed(3)) : newStock,
+    });
 
     // Movimiento en Cardex
     const cardexEntry: MovimientoCardex = {
@@ -539,13 +629,13 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     comment?: string,
     requesterInfo?: { name?: string; role?: Rol }
   ) => {
-    const proj = proyectos.find((p) => p.id === projectId);
+    const proj = proyectos.find((p) => p.id === projectId) || null;
     if (!proj) return { success: false, error: "Proyecto no encontrado." };
     if (proj.status === "cerrado") {
       return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
     }
 
-    // Validar disponibilidad de stock
+    // Check stock
     const missing: string[] = [];
     items.forEach((item) => {
       const prod = productos.find((p) => p.sku === item.sku);
@@ -564,25 +654,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }
 
-    const tech = tecnicos.find((t) => t.rut === technicianRut);
-    const usuarioRegistrado = usuariosSistema.find((u) => u.rut === technicianRut);
-    const nombreSolicitante =
-      requesterInfo?.name?.trim() ||
-      usuarioRegistrado?.name ||
-      tech?.name ||
-      "Bodeguero Solicitante";
-    const rolSolicitante: Rol =
-      requesterInfo?.role || usuarioRegistrado?.role || (tech ? "technician" : "warehouse");
-
-    const anioActual = new Date().getFullYear();
-    const ultimoCorrelativoSol = solicitudesMaterial.reduce((max, s) => {
-      const partes = s.code.split("-");
-      const numero = Number(partes[partes.length - 1]);
-      return Number.isFinite(numero) && numero > max ? numero : max;
-    }, 412);
-    const newCode = `SOL-${anioActual}-${String(ultimoCorrelativoSol + 1).padStart(4, "0")}`;
     const ahoraFecha = new Date().toISOString().slice(0, 10);
-
+    const tech = tecnicos.find((t) => t.rut === technicianRut);
+    const newCode = `SOL-2026-${String(solicitudesMaterial.length + 101).padStart(3, "0")}`;
     const newReq: SolicitudMaterial = {
       id: `sol_${Date.now()}`,
       code: newCode,
@@ -590,8 +664,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       projectCode: proj.code,
       projectName: proj.name,
       technicianRut: technicianRut,
-      technicianName: nombreSolicitante,
-      requesterRole: rolSolicitante,
+      technicianName: tech ? tech.name : "Técnico de Terreno",
       date: ahoraFecha,
       urgency,
       status: "pendiente",
@@ -601,12 +674,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         {
           id: `step_${Date.now()}`,
           title: "Solicitud Creada",
-          description:
-            rolSolicitante === "warehouse"
-              ? "Ingresada por Bodega Central"
-              : "Ingresada por solicitante para aprobación",
+          description: "Ingresada por técnico en terreno",
           date: ahoraFecha,
-          author: nombreSolicitante,
+          author: tech ? tech.name : "Técnico",
           status: "completado",
         },
         {
@@ -620,330 +690,225 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       ],
     };
 
+    // [FRONT-1 / H6] El stock solicitado pasa inmediatamente de Disponible a Comprometido
+    setProducts((prev) => aplicarReservaComprometidoEnCatalogoH6(prev, items));
     setMaterialRequests((prev) => [newReq, ...prev]);
-
-    const notifNuevaSol: DetalleNotificacion = {
-      id: `notif_sol_new_${Date.now()}`,
-      title: `Nueva Solicitud ${newCode} (${urgency.toUpperCase()})`,
-      message: `${nombreSolicitante} solicitó ${items.length} ítem(s) para ${proj.name}. Pendiente de aprobación.`,
-      date: ahoraFecha,
-      type: "solicitud",
-      severity: urgency === "urgente" ? "danger" : "warn",
-      read: false,
-      relatedEntityType: "solicitud",
-      relatedEntityId: newReq.id,
-      relatedEntityLabel: `Revisar ${newCode}`,
-    };
-    setNotificationsList((prev) => [notifNuevaSol, ...prev]);
-
     return { success: true };
   };
 
   const aprobarSolicitudMaterial = (id: string, authorName: string) => {
-    const req = solicitudesMaterial.find((r) => r.id === id);
-    if (!req) {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
       return { success: false, error: "Solicitud no encontrada." };
     }
-    if (req.status !== "pendiente") {
-      return { success: false, error: "Solo se pueden aprobar solicitudes en estado pendiente." };
+    if (actual.status !== "pendiente") {
+      return {
+        success: false,
+        error: `La solicitud ${actual.code} ya fue procesada (${actual.status.toUpperCase()}).`,
+      };
     }
 
-    const anioActual = new Date().getFullYear();
-    const ultimoComprobante = solicitudesMaterial.reduce((max, s) => {
-      if (!s.receiptNumber) return max;
-      const partes = s.receiptNumber.split("-");
-      const numero = Number(partes[partes.length - 1]);
-      return Number.isFinite(numero) && numero > max ? numero : max;
-    }, 407);
+    const ahoraFecha = new Date().toISOString().slice(0, 10);
     const receiptNumber =
-      req.receiptNumber || `COMP-${anioActual}-${String(ultimoComprobante + 1).padStart(4, "0")}`;
+      actual.receiptNumber ||
+      `COMP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
 
-    const ahora = new Date();
-    const fechaDia = ahora.toISOString().slice(0, 10);
-    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
-    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
-
-    const timeline = (req.timeline || []).map((paso) =>
-      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
-    );
-
-    const solicitudActualizada: SolicitudMaterial = {
-      ...req,
+    const solicitudAprobada: SolicitudMaterial = {
+      ...actual,
       status: "aprobada",
       receiptNumber,
       approvedBy: authorName,
-      approvedAt: fechaHoraTexto,
+      approvedAt: ahoraFecha,
       timeline: [
-        ...timeline,
+        ...(actual.timeline || []),
         {
           id: `tl_${Date.now()}`,
           title: "Aprobada por Administración",
-          description: `Autorizada para preparación y egreso. Comprobante N° ${receiptNumber}. Notificado a ${req.technicianName}.`,
-          date: fechaHoraTexto,
+          description: `Autorizado para preparación y egreso. Comprobante N° ${receiptNumber}`,
+          date: ahoraFecha,
           author: authorName,
           status: "completado",
-        },
-        {
-          id: `tl_bod_${Date.now() + 1}`,
-          title: "Lista para Egreso en Bodega",
-          description: `Comprobante ${receiptNumber} disponible para entrega física en bodega.`,
-          date: "-",
-          author: "Bodega Central",
-          status: "actual",
         },
       ],
     };
 
     setMaterialRequests((prev) =>
-      prev.map((item) => (item.id === id ? solicitudActualizada : item))
+      prev.map((req) => (req.id === id ? solicitudAprobada : req))
     );
 
-    // Notificar el resultado aprobado al bodeguero / solicitante con su número de comprobante
-    const notifAprobada: DetalleNotificacion = {
-      id: `notif_sol_apr_${Date.now()}`,
-      title: `Solicitud ${req.code} Aprobada • ${receiptNumber}`,
-      message: `Resultado para ${req.technicianName}: aprobada por ${authorName} para ${req.projectName}. Comprobante numerado N° ${receiptNumber} listo para retiro.`,
-      date: `Hoy ${horaTexto}`,
-      type: "solicitud",
-      severity: "ok",
-      read: false,
-      relatedEntityType: "solicitud",
-      relatedEntityId: req.id,
-      relatedEntityLabel: `Comprobante ${receiptNumber}`,
-    };
-    setNotificationsList((prev) => [notifAprobada, ...prev]);
+    setNotificationsList((prev) => [
+      {
+        id: `notif_apr_${Date.now()}`,
+        title: `Solicitud Aprobada: ${actual.code}`,
+        message: `Aprobada por ${authorName}. Comprobante N° ${receiptNumber} listo para egreso en bodega.`,
+        date: ahoraFecha,
+        type: "solicitud",
+        severity: "ok",
+        read: false,
+        relatedEntityType: "solicitud",
+        relatedEntityId: actual.id,
+        relatedEntityLabel: actual.code,
+      },
+      ...prev,
+    ]);
 
     return {
       success: true,
       receiptNumber,
-      solicitud: solicitudActualizada,
+      solicitud: solicitudAprobada,
     };
   };
 
   const rechazarSolicitudMaterial = (id: string, reason: string, authorName: string) => {
-    const motivoLimpio = reason.trim();
-    if (motivoLimpio.length < 5) {
-      return {
-        success: false,
-        error: "El rechazo exige motivo obligatorio (mínimo 5 caracteres).",
-      };
+    if (!reason || reason.trim().length === 0) {
+      return { success: false, error: "El rechazo exige motivo obligatorio." };
     }
-
-    const req = solicitudesMaterial.find((r) => r.id === id);
-    if (!req) {
-      return { success: false, error: "Solicitud no encontrada." };
-    }
-    if (req.status !== "pendiente") {
-      return { success: false, error: "Solo se pueden rechazar solicitudes en estado pendiente." };
-    }
-
-    const ahora = new Date();
-    const fechaDia = ahora.toISOString().slice(0, 10);
-    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
-    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
-
-    const timeline = (req.timeline || []).map((paso) =>
-      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
-    );
-
-    const solicitudActualizada: SolicitudMaterial = {
-      ...req,
-      status: "rechazada",
-      rejectionReason: motivoLimpio,
-      rejectedBy: authorName,
-      rejectedAt: fechaHoraTexto,
-      timeline: [
-        ...timeline,
-        {
-          id: `tl_${Date.now()}`,
-          title: "Rechazada por Administración",
-          description: `Motivo informado: ${motivoLimpio}`,
-          date: fechaHoraTexto,
-          author: authorName,
-          status: "completado",
-        },
-      ],
-    };
-
     setMaterialRequests((prev) =>
-      prev.map((item) => (item.id === id ? solicitudActualizada : item))
+      prev.map((req) => {
+        if (req.id !== id) return req;
+        const timeline = req.timeline || [];
+        return {
+          ...req,
+          status: "rechazada",
+          rejectionReason: reason,
+          timeline: [
+            ...timeline,
+            {
+              id: `tl_${Date.now()}`,
+              title: "Rechazada por Administración",
+              description: `Motivo: ${reason}`,
+              date: new Date().toISOString().slice(0, 10),
+              author: authorName,
+              status: "completado",
+            },
+          ],
+        };
+      })
     );
-
-    // Notificar el resultado rechazado y su motivo obligatorio al bodeguero / solicitante
-    const notifRechazada: DetalleNotificacion = {
-      id: `notif_sol_rec_${Date.now()}`,
-      title: `Solicitud ${req.code} Rechazada`,
-      message: `Resultado para ${req.technicianName}: rechazada por ${authorName} (${req.projectName}). Motivo: ${motivoLimpio}`,
-      date: `Hoy ${horaTexto}`,
-      type: "solicitud",
-      severity: "danger",
-      read: false,
-      relatedEntityType: "solicitud",
-      relatedEntityId: req.id,
-      relatedEntityLabel: `Ver motivo (${req.code})`,
-    };
-    setNotificationsList((prev) => [notifRechazada, ...prev]);
-
-    return {
-      success: true,
-      solicitud: solicitudActualizada,
-    };
+    return { success: true };
   };
 
   const modificarSolicitudMaterial = (
     id: string,
-    updates: {
+    items: ItemSolicitudMaterial[],
+    opciones?: {
       projectId?: string;
-      items: ItemSolicitudMaterial[];
-      urgency?: "normal" | "alta" | "urgente";
+      urgency?: SolicitudMaterial["urgency"];
       comment?: string;
-      editorName?: string;
+      authorName?: string;
     }
   ) => {
-    const req = solicitudesMaterial.find((r) => r.id === id);
-    if (!req) {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
       return { success: false, error: "Solicitud no encontrada." };
     }
-    if (req.status !== "pendiente") {
+    if (actual.status !== "pendiente") {
       return {
         success: false,
-        error: "Solo se pueden editar solicitudes en estado Pendiente.",
+        error: `No es posible editar la solicitud ${actual.code} porque se encuentra en estado ${actual.status.toUpperCase()}.`,
       };
     }
-    if (!updates.items || updates.items.length === 0) {
-      return { success: false, error: "Debe incluir al menos un insumo válido." };
+
+    const proyectoIdDestino = opciones?.projectId || actual.projectId;
+    const proyectoDestino = proyectos.find((p) => p.id === proyectoIdDestino) || null;
+    const catalogoLiberado = liberarReservaComprometidoEnCatalogoH6(productos, actual.items);
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proyectoDestino,
+      items.map((it) => ({ sku: it.sku, quantity: it.quantity })),
+      catalogoLiberado
+    );
+
+    if (!validacion.esValida) {
+      return {
+        success: false,
+        error: validacion.errorGeneral || "No se pudo actualizar la solicitud.",
+        missingItems: validacion.faltantesStock,
+      };
     }
 
-    // Validar cantidades positivas, ausencia de duplicados y disponibilidad de stock
-    const skusVistos = new Set<string>();
-    for (const item of updates.items) {
-      if (!item.sku || item.quantity <= 0) {
-        return { success: false, error: "Cada línea debe tener un insumo y cantidad mayor a 0." };
-      }
-      if (skusVistos.has(item.sku)) {
-        return {
-          success: false,
-          error: `El insumo ${item.sku} está duplicado en la solicitud.`,
-        };
-      }
-      skusVistos.add(item.sku);
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (!prod || prod.stock < item.quantity) {
-        return {
-          success: false,
-          error: `Stock insuficiente para ${item.name || item.sku} (Disponible: ${prod ? prod.stock : 0}).`,
-        };
-      }
-    }
+    const catalogoReservado = aplicarReservaComprometidoEnCatalogoH6(catalogoLiberado, items);
+    setProducts(catalogoReservado);
 
-    let proj = proyectos.find((p) => p.id === (updates.projectId || req.projectId));
-    if (!proj) {
-      return { success: false, error: "El proyecto seleccionado no existe." };
-    }
-    if (proj.status === "cerrado") {
-      return { success: false, error: "No se puede asignar a un proyecto cerrado." };
-    }
-
-    const ahora = new Date();
-    const fechaDia = ahora.toISOString().slice(0, 10);
-    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
-    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
+    const ahoraStr = new Date().toLocaleString("es-CL", { hour12: false });
+    const editor = opciones?.authorName || "Bodeguero";
+    const totalEstimado = items.reduce((acc, it) => {
+      const prod = productos.find((p) => p.sku === it.sku);
+      return acc + (prod ? prod.unitCost * it.quantity : 0);
+    }, 0);
 
     setMaterialRequests((prev) =>
-      prev.map((item) =>
-        item.id === id
+      prev.map((req) =>
+        req.id === id
           ? {
-              ...item,
-              projectId: proj.id,
-              projectCode: proj.code,
-              projectName: proj.name,
-              items: updates.items,
-              urgency: updates.urgency ?? item.urgency,
-              comment: updates.comment !== undefined ? updates.comment : item.comment,
-              updatedAt: fechaHoraTexto,
+              ...req,
+              projectId: proyectoIdDestino,
+              projectCode: proyectoDestino?.code || req.projectCode,
+              projectName: proyectoDestino?.name || req.projectName,
+              items,
+              urgency: opciones?.urgency || req.urgency,
+              comment: opciones?.comment !== undefined ? opciones.comment : req.comment,
+              totalEstimatedValue: totalEstimado,
               timeline: [
-                ...(item.timeline || []),
+                ...(req.timeline || []),
                 {
                   id: `tl_edit_${Date.now()}`,
-                  title: "Solicitud Modificada",
-                  description: `Actualizada por ${updates.editorName || "Bodeguero"} (${updates.items.length} ítem(s)) mientras sigue en Pendiente.`,
-                  date: fechaHoraTexto,
-                  author: updates.editorName || item.technicianName,
+                  title: "Solicitud Editada (Pendiente)",
+                  description: "Ítems y reserva de stock comprometido actualizados por el bodeguero.",
+                  date: ahoraStr,
+                  author: editor,
                   status: "completado",
                 },
               ],
             }
-          : item
+          : req
       )
     );
-
     return { success: true };
   };
 
   const cancelarSolicitudMaterial = (id: string, authorName?: string) => {
-    const req = solicitudesMaterial.find((r) => r.id === id);
-    if (!req) {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
       return { success: false, error: "Solicitud no encontrada." };
     }
-    if (req.status !== "pendiente") {
+    if (actual.status !== "pendiente") {
       return {
         success: false,
-        error: "Solo se pueden anular solicitudes en estado Pendiente.",
+        error: `No es posible anular la solicitud ${actual.code} porque se encuentra en estado ${actual.status.toUpperCase()}.`,
       };
     }
 
-    const ahora = new Date();
-    const fechaDia = ahora.toISOString().slice(0, 10);
-    const horaTexto = `${String(ahora.getHours()).padStart(2, "0")}:${String(ahora.getMinutes()).padStart(2, "0")} h`;
-    const fechaHoraTexto = `${fechaDia} ${horaTexto}`;
-    const responsable = authorName?.trim() || "Bodeguero Central";
+    const catalogoLiberado = liberarReservaComprometidoEnCatalogoH6(productos, actual.items);
+    setProducts(catalogoLiberado);
 
-    const timeline = (req.timeline || []).map((paso) =>
-      paso.status === "actual" ? { ...paso, status: "completado" as const } : paso
-    );
+    const ahoraStr = new Date().toLocaleString("es-CL", { hour12: false });
+    const responsable = authorName || "Bodeguero";
 
     setMaterialRequests((prev) =>
-      prev.map((r) =>
-        r.id === id
+      prev.map((req) =>
+        req.id === id
           ? {
-              ...r,
+              ...req,
               status: "anulada",
-              cancelledBy: responsable,
-              cancelledAt: fechaHoraTexto,
               timeline: [
-                ...timeline,
+                ...(req.timeline || []),
                 {
                   id: `tl_anul_${Date.now()}`,
-                  title: "Anulada por Bodega",
-                  description: `Solicitud anulada por ${responsable} antes de revisión administrativa.`,
-                  date: fechaHoraTexto,
+                  title: "Solicitud Anulada por Bodeguero",
+                  description: "Stock reservado liberado al inventario disponible.",
+                  date: ahoraStr,
                   author: responsable,
                   status: "completado",
                 },
               ],
             }
-          : r
+          : req
       )
     );
-
-    const notifAnulada: DetalleNotificacion = {
-      id: `notif_sol_anul_${Date.now()}`,
-      title: `Solicitud ${req.code} Anulada`,
-      message: `${responsable} anuló la solicitud ${req.code} (${req.projectName}) mientras estaba pendiente.`,
-      date: `Hoy ${horaTexto}`,
-      type: "solicitud",
-      severity: "warn",
-      read: false,
-      relatedEntityType: "solicitud",
-      relatedEntityId: req.id,
-      relatedEntityLabel: `Revisar ${req.code}`,
-    };
-    setNotificationsList((prev) => [notifAnulada, ...prev]);
-
     return { success: true };
   };
 
-  // Egreso / Despacho de Materiales (Paso 6)
+  // [FRONT-1] Egreso / Registro de Salida Física de Materiales (Paso 6)
   const despacharSolicitudMaterial = (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
@@ -953,62 +918,59 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   ) => {
     const req = solicitudesMaterial.find((r) => r.id === requestId);
     if (!req) return { success: false, error: "Solicitud no encontrada." };
-    if (req.status !== "aprobada") {
-      return { success: false, error: "Solo se pueden despachar solicitudes aprobadas." };
+
+    const resultado = ejecutarSalidaFisicaSolicitudEnMemoria({
+      solicitud: req,
+      itemsToDispatch,
+      technicianRut,
+      technicianName,
+      authorName,
+      catalogo: productos,
+    });
+
+    if (!resultado.success || !resultado.solicitudActualizada || !resultado.registroEgresoInmutable) {
+      return {
+        success: false,
+        error: resultado.error || "No se pudo registrar la salida física.",
+      };
     }
 
-    // Validar disponibilidad de stock
-    for (const it of itemsToDispatch) {
-      if (it.quantity <= 0) continue;
-      const prod = productos.find((p) => p.sku === it.sku);
-      if (!prod || prod.stock < it.quantity) {
-        return {
-          success: false,
-          error: `Stock insuficiente para ${prod?.name || it.sku}. Disponible: ${prod?.stock || 0}, a despachar: ${it.quantity}`,
-        };
-      }
-    }
+    const nowStr = resultado.registroEgresoInmutable.date;
+    const dispatchCode = resultado.registroEgresoInmutable.dispatchCode;
 
-    const nowStr = new Date().toISOString().slice(0, 10);
-    const dispatchCode = `DESP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
+    // 1. Descontar stock en una sola transacción (consumiendo primero de comprometido y luego de disponible)
+    setProducts(resultado.catalogoActualizado);
 
-    // Descontar stock
-    setProducts((prev) =>
-      prev.map((p) => {
-        const itemD = itemsToDispatch.find((i) => i.sku === p.sku);
-        if (!itemD || itemD.quantity <= 0) return p;
-        const newStock = Math.max(0, p.stock - itemD.quantity);
-        return { ...p, stock: p.isBulk ? Number(newStock.toFixed(3)) : newStock };
-      })
-    );
-
-    // Agregar movimientos al Cardex
-    itemsToDispatch.forEach((itemD) => {
-      if (itemD.quantity <= 0) return;
-      const prod = productos.find((p) => p.sku === itemD.sku);
-      if (!prod) return;
-      const newBalance = Math.max(0, prod.stock - itemD.quantity);
-      const cardexEntry: MovimientoCardex = {
+    // 2. Registrar movimientos irreversibles en el Cardex vinculados al proyecto y al técnico que retira
+    const nuevosMovimientosCardex: MovimientoCardex[] = resultado.registroEgresoInmutable.items.map((itemD) => {
+      const prodActualizado = resultado.catalogoActualizado.find(
+        (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
+      );
+      const newBalance = Number(
+        ((prodActualizado?.stock || 0) + (prodActualizado?.committed || 0)).toFixed(3)
+      );
+      const unitPmp = prodActualizado?.pmp || prodActualizado?.unitCost || itemD.unitCost;
+      return {
         id: `cdx_${Date.now()}_${itemD.sku}`,
         sku: itemD.sku,
-        productName: prod.name,
+        productName: itemD.name,
         date: nowStr,
         type: "salida_obra",
-        typeLabel: "Salida a Obra",
-        reference: `${dispatchCode} / ${req.code}`,
+        typeLabel: `Salida a Obra (Retira: ${technicianName})`,
+        reference: `${dispatchCode} / ${req.receiptNumber || req.code}`,
         projectCode: req.projectCode,
         projectName: req.projectName,
         qtyIn: 0,
-        qtyOut: itemD.quantity,
-        balance: prod.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
-        pmp: prod.pmp || prod.unitCost,
-        totalValue: (prod.pmp || prod.unitCost) * newBalance,
-        userName: "Camila Vera Soto",
+        qtyOut: itemD.quantityDispatched,
+        balance: prodActualizado?.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
+        pmp: unitPmp,
+        totalValue: unitPmp * newBalance,
+        userName: authorName || "Camila Vera Soto",
         userRole: "Bodeguero",
-        userRut: "15.321.654-2",
+        userRut: technicianRut,
       };
-      setCardex((prev) => [cardexEntry, ...prev]);
     });
+    setCardex((prev) => [...nuevosMovimientosCardex, ...prev]);
 
     // Actualizar cantidades entregadas en la solicitud
     setMaterialRequests((prev) =>
@@ -1049,8 +1011,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  // 3. GESTIÓN DE COMPRAS Y ÓRDENES DE COMPRA
-  const calcularTotalesOrden = (items: OrdenCompra["items"]) => {
+  // 3. COMPRAS Y ÓRDENES DE COMPRA
+  const calcularTotalesOrden = (items: ItemOrdenCompra[]) => {
     const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
     const iva = Math.round(subtotal * 0.19);
     const total = subtotal + iva;
@@ -1073,8 +1035,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     const { subtotal, iva, total } = calcularTotalesOrden(items);
 
+    const tempId = `oc_${Date.now()}`;
     const newOrder: OrdenCompra = {
-      id: `oc_${Date.now()}`,
+      id: tempId,
       code,
       supplierId: orderData.supplierId || "sup1",
       supplier: orderData.supplier || "Proveedor Principal",
@@ -1094,60 +1057,121 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     setPurchaseOrders((prev) => [newOrder, ...prev]);
-    return { success: true, orderId: newOrder.id };
+
+    // Sincronizar con backend (genera numeración correlativa en BD y si se aprueba envía PDF por correo)
+    const idProvNum = Number(String(newOrder.supplierId).replace(/\D/g, "")) || 1;
+    void crearOrdenCompraApi({
+      proveedor_id: idProvNum,
+      origen: newOrder.isAutoMinStock ? "Stock Critico" : "Manual",
+      fecha_estimada_oc: newOrder.expectedDate,
+      observaciones: newOrder.notes,
+      aprobar_inmediatamente: newOrder.status === "enviada",
+      lineas: items.map((it) => ({
+        sku: it.sku,
+        cantidad_orden: it.quantity,
+        precio_unitario: it.unitPrice,
+      })),
+    }).then((res) => {
+      if (res.ok && res.data?.orden_compra) {
+        const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+        setPurchaseOrders((prev) =>
+          prev.map((o) => (o.id === tempId ? desdeBd : o))
+        );
+      }
+    });
+
+    return { success: true, orderId: newOrder.id, code: newOrder.code };
   };
 
   const actualizarOrdenCompra = (orderId: string, updates: Partial<OrdenCompra>) => {
-    const existente = ordenesCompra.find((o) => o.id === orderId);
-    if (!existente) {
-      return { success: false, error: "No se encontró la orden de compra." };
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) {
+      return { success: false, error: "Orden de compra no encontrada." };
     }
-    if (existente.status !== "borrador") {
-      return { success: false, error: "Solo se pueden editar órdenes en estado Borrador." };
+    if (actual.status !== "borrador") {
+      return {
+        success: false,
+        error: "Solo se pueden editar órdenes de compra mientras estén en estado Borrador.",
+      };
     }
 
-    const items = updates.items ?? existente.items;
+    const items = updates.items ?? actual.items;
     if (items.length === 0) {
-      return { success: false, error: "La orden debe contener al menos una línea de compra." };
+      return { success: false, error: "La orden de compra debe tener al menos un insumo." };
     }
 
-    const { subtotal, iva, total } = calcularTotalesOrden(items);
+    const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
+    const iva = Math.round(subtotal * 0.19);
+    const total = subtotal + iva;
+
+    const actualizada: OrdenCompra = {
+      ...actual,
+      ...updates,
+      items,
+      subtotal,
+      iva,
+      total,
+      itemsCount: items.length,
+    };
 
     setPurchaseOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? {
-              ...o,
-              supplierId: updates.supplierId ?? o.supplierId,
-              supplier: updates.supplier ?? o.supplier,
-              supplierRut:
-                updates.supplierRut !== undefined ? updates.supplierRut : o.supplierRut,
-              status: updates.status ?? o.status,
-              isAutoMinStock:
-                updates.isAutoMinStock !== undefined
-                  ? Boolean(updates.isAutoMinStock)
-                  : o.isAutoMinStock,
-              items,
-              subtotal,
-              iva,
-              total,
-              itemsCount: items.length,
-              expectedDate: updates.expectedDate ?? o.expectedDate,
-              notes: updates.notes !== undefined ? updates.notes : o.notes,
-            }
-          : o
-      )
+      prev.map((o) => (o.id === orderId ? actualizada : o))
     );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      const idProvNum = Number(String(actualizada.supplierId).replace(/\D/g, "")) || 1;
+      void actualizarOrdenCompraApi(idOrdenNum, {
+        proveedor_id: idProvNum,
+        origen: actualizada.isAutoMinStock ? "Stock Critico" : "Manual",
+        fecha_estimada_oc: actualizada.expectedDate,
+        observaciones: actualizada.notes,
+        lineas: items.map((it) => ({
+          sku: it.sku,
+          cantidad_orden: it.quantity,
+          precio_unitario: it.unitPrice,
+        })),
+      });
+    }
 
     return { success: true };
   };
 
   const aprobarYEnviarOrden = (orderId: string) => {
     setPurchaseOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId && o.status === "borrador" ? { ...o, status: "enviada" } : o
-      )
+      prev.map((o) => (o.id === orderId ? { ...o, status: "enviada" } : o))
     );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void aprobarOrdenCompraApi(idOrdenNum).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? desdeBd : o))
+          );
+        }
+      });
+    }
+  };
+
+  const anularOrdenCompra = (orderId: string) => {
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) return { success: false, error: "Orden no encontrada." };
+    if (actual.status === "cerrada" || actual.status === "recibida") {
+      return { success: false, error: "No se puede anular una orden ya recibida o cerrada." };
+    }
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "anulada" } : o))
+    );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void cambiarEstadoOrdenCompraApi(idOrdenNum, mapearEstadoHaciaBd("anulada"));
+    }
+
+    return { success: true };
   };
 
   const calificarProveedor = (orderId: string, rating: CalificacionProveedor) => {
@@ -1185,25 +1209,68 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }
 
-    setPurchaseInvoices((prev) => [invoice, ...prev]);
+    const linkedOrder = invoice.orderCode
+      ? ordenesCompra.find((o) => o.code.trim().toUpperCase() === invoice.orderCode!.trim().toUpperCase())
+      : undefined;
 
-    // Recalculate PMP and update products
-    invoice.items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (prod) {
-        const currentStock = prod.stock || 0;
-        const currentPmp = prod.pmp || prod.unitCost || 0;
-        const incomingQty = item.quantity;
-        const incomingCost = item.netUnitPrice;
-        const totalQty = currentStock + incomingQty;
-        const newPmp =
-          totalQty > 0
-            ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
-            : incomingCost;
+    const yaTieneRecepcion =
+      !linkedOrder ||
+      linkedOrder.status === "recibida" ||
+      linkedOrder.status === "recibida_parcial" ||
+      linkedOrder.status === "cerrada" ||
+      linkedOrder.items.some((it) => Number(it.receivedQuantity || 0) > 0);
 
-        actualizarProducto(item.sku, { pmp: newPmp });
-      }
-    });
+    const facturaFinal: FacturaCompra = {
+      ...invoice,
+      status: yaTieneRecepcion && linkedOrder ? "recepcion_conforme" : invoice.status,
+    };
+
+    setPurchaseInvoices((prev) => [facturaFinal, ...prev]);
+
+    if (linkedOrder) {
+      setPurchaseOrders((prev) =>
+        prev.map((o) => (o.code === linkedOrder.code ? { ...o, invoiceNumber: invoice.number } : o))
+      );
+    }
+
+    // Si la recepción ya ocurrió (o es factura directa sin OC pendiente), consolida el PMP con el costo neto de la factura.
+    // Si la OC aún está en estado Enviada/Borrador sin recepción, el PMP y el stock se actualizan al confirmar la recepción conforme (H33).
+    if (yaTieneRecepcion) {
+      invoice.items.forEach((item) => {
+        const prod = productos.find((p) => p.sku === item.sku);
+        if (prod) {
+          const poItem = linkedOrder?.items.find((i) => i.sku === item.sku);
+          const receivedQty =
+            poItem && Number(poItem.receivedQuantity || 0) > 0
+              ? Number(poItem.receivedQuantity)
+              : item.quantity;
+          const currentStock = prod.stock || 0;
+          const currentPmp = prod.pmp || prod.unitCost || 0;
+          const incomingQty = receivedQty;
+          const incomingCost = item.netUnitPrice;
+          const totalQty = currentStock + incomingQty;
+          const newPmp =
+            totalQty > 0
+              ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
+              : incomingCost;
+
+          actualizarProducto(item.sku, { pmp: newPmp });
+        }
+      });
+    }
+
+    if (invoice.hasReceptionDiscrepancy && invoice.discrepancyNotes && invoice.discrepancyNotes.length > 0) {
+      const nuevaAlerta: AlertaPanel = {
+        id: `alt_fac_${Date.now()}`,
+        title: `Discrepancia Factura ${invoice.number} vs Recepción ${invoice.orderCode || ""}`.trim(),
+        description: `${invoice.supplierName}: ${invoice.discrepancyNotes.join(" | ")}`,
+        type: "costo",
+        severity: "rojo",
+        time: "Ahora",
+        actionLabel: "Revisar Factura y Recepción",
+      };
+      setAlerts((prev) => [nuevaAlerta, ...prev]);
+    }
 
     return { success: true };
   };
@@ -1280,49 +1347,54 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
-    // Update OC items with cumulative received quantities
-    let allCompleted = true;
-    setPurchaseOrders((prev) =>
-      prev.map((o) => {
-        if (o.code !== ocCode) return o;
-        const updatedItems = o.items.map((it) => {
-          const check = checklist.find((c) => c.sku === it.sku);
-          if (!check) return it;
-          const recTotal = Number(((it.receivedQuantity || 0) + check.received).toFixed(3));
-          const defTotal = Number(((it.defectiveQuantity || 0) + check.defective).toFixed(3));
-          const rem = Math.max(0, it.quantity - recTotal);
-          if (rem > 0) {
-            allCompleted = false;
-          }
-          return {
-            ...it,
-            receivedQuantity: recTotal,
-            defectiveQuantity: defTotal,
-            missingQuantity: rem,
-          };
-        });
+    if (!activePo) return;
 
-        const newStatus = allCompleted ? ("recibida" as const) : ("recibida_parcial" as const);
-        return {
-          ...o,
-          status: newStatus,
-          items: updatedItems,
-          invoiceNumber: invoiceNumber || linkedInvoice?.number || o.invoiceNumber,
-        };
-      })
+    const resumenEntrega = aplicarEntregaChecklistEnOrden(
+      activePo,
+      checklist,
+      linkedInvoice ?? null,
+      invoiceNumber
     );
+    const allCompleted = resumenEntrega.esRecepcionCompleta;
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.code === ocCode ? resumenEntrega.ordenActualizada : o))
+    );
+
+    // Persistir recepción parcial o completa en el backend si tiene ID numérico
+    const idOrdenNum = Number(activePo.id);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void registrarRecepcionOrdenCompraApi(
+        idOrdenNum,
+        checklist.map((c) => ({
+          sku: c.sku,
+          cantidad_recibida: c.received,
+          cantidad_defectuosa: c.defective,
+          cantidad_faltante: c.missing,
+        })),
+        invoiceNumber || linkedInvoice?.number
+      ).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.code === ocCode ? { ...desdeBd, invoiceNumber: resumenEntrega.ordenActualizada.invoiceNumber } : o))
+          );
+        }
+      });
+    }
 
     // Remove from pending receipts only if all items have arrived
     if (allCompleted) {
       setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
     }
 
-    // Discrepancy notification & alert to Administrator
-    if (discrepancyDetails.length > 0) {
+    // Discrepancy notification & alert to Administrator (incluye diferencia con lo facturado)
+    const todasDiscrepancias = Array.from(new Set([...discrepancyDetails, ...resumenEntrega.discrepancias]));
+    if (todasDiscrepancias.length > 0) {
       const alert: AlertaPanel = {
         id: `alert_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        description: `Recepción física difiere de lo ordenado/facturado: ${discrepancyDetails.join(", ")}.`,
+        description: `Recepción física difiere de lo ordenado/facturado: ${todasDiscrepancias.join(", ")}.`,
         type: "stock",
         severity: "rojo",
         time: "Ahora mismo",
@@ -1333,7 +1405,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       const notif: DetalleNotificacion = {
         id: `notif_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${discrepancyDetails.join(", ")}.`,
+        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${todasDiscrepancias.join(", ")}.`,
         date: new Date().toISOString().slice(0, 10),
         type: "stock",
         severity: "warn",
@@ -2410,6 +2482,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         crearOrdenCompra,
         actualizarOrdenCompra,
         aprobarYEnviarOrden,
+        anularOrdenCompra,
         calificarProveedor,
         crearFactura,
         confirmarRecepcionOrden,

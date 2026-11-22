@@ -97,7 +97,7 @@ export interface SolicitudMaterial {
   requesterRole?: Rol;
   date: string;
   urgency: "normal" | "alta" | "urgente";
-  status: "pendiente" | "aprobada" | "rechazada" | "entregada" | "anulada";
+  status: "pendiente" | "aprobada" | "rechazada" | "anulada" | "entregada";
   items: ItemSolicitudMaterial[];
   comment?: string;
   timeline?: PasoCronologiaSolicitud[];
@@ -168,6 +168,14 @@ export interface ItemFacturaCompra {
   discount1Pct: number; // 0-100
   discount2Pct: number; // 0-100
   discount3Pct: number; // 0-100
+  priceAfterDisc1?: number;
+  discount1UnitAmount?: number;
+  priceAfterDisc2?: number;
+  discount2UnitAmount?: number;
+  discount3UnitAmount?: number;
+  effectiveDiscountPct?: number;
+  subtotalGross?: number;
+  totalDiscountLine?: number;
   netUnitPrice: number;
   subtotalNet: number;
   unit: string;
@@ -182,11 +190,14 @@ export interface FacturaCompra {
   orderCode?: string; // OC opcional
   date: string;
   items: ItemFacturaCompra[];
+  subtotalGross?: number;
   subtotalNet: number;
   totalDiscounts: number;
   iva: number; // 19%
   total: number;
   status: "registrada" | "recepcion_conforme";
+  hasReceptionDiscrepancy?: boolean;
+  discrepancyNotes?: string[];
 }
 
 export interface DatosBancarios {

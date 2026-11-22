@@ -48,6 +48,11 @@ import {
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
 import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
 import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
+import {
+  esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
+  validarFormularioNuevaSolicitudInsumos,
+} from "../solicitudInsumosUtils";
 
 export interface PropiedadesModalesInventario {
   abrirEscaner: any;
@@ -285,6 +290,8 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   totalUnidadesHastaDespacho,
   usuario,
 }) => {
+  const { proyectos: todosProyectos = [] } = usarAplicacion();
+
   const opcionesProductosSolicitud: OpcionSelectorBuscable<string>[] = productos
     .filter((p: Producto) => !p.disabled)
     .map((p: Producto) => ({
@@ -513,7 +520,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </View>
       </VistaModal>
 
-      {/* MODAL 2: CREAR O EDITAR SOLICITUD DE MATERIALES (SOLO PENDIENTE) */}
+      {/* MODAL 2: CREAR O EDITAR SOLICITUD DE INSUMOS (H6 / H36 / FRONT-2) */}
       <VistaModal
         visible={nuevoSolicitudModal}
         onClose={() => {
@@ -523,199 +530,268 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         title={
           editandoSolicitud
             ? `Editar Solicitud: ${editandoSolicitud.code}`
-            : "Crear Solicitud de Material"
+            : "Nueva Solicitud de Insumos"
         }
         subtitle={
           editandoSolicitud
-            ? "Editable únicamente mientras permanezca en estado Pendiente"
-            : "Validada contra stock disponible en bodega"
+            ? "Editable únicamente mientras permanezca en estado Pendiente • Valida stock disponible en vivo (H6)"
+            : "Muestra stock disponible en vivo, bloquea si supera disponible o proyecto inactivo y reserva stock en Comprometido (H6)"
         }
       >
-        <Text style={estilos.formularioSeccionEtiqueta}>Seleccionar Proyecto Activo:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          {activoProyectos.map((p: any) => (
-            <TouchableOpacity
-              key={p.id}
-              onPress={() => establecerSeleccionadoProyectoId(p.id)}
-              style={[
-                estilos.proyectoChip,
-                seleccionadoProyectoId === p.id && estilos.proyectoChipActivo,
-              ]}
-            >
-              <Text
-                style={[
-                  estilos.proyectoChipTexto,
-                  seleccionadoProyectoId === p.id && estilos.proyectoChipTextoActivo,
-                ]}
-              >
-                {p.code} - {p.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={estilos.formularioSeccionEtiqueta}>Insumos Solicitados:</Text>
-        {solicitudElementos.map((item: any, idx: number) => {
-          const prod = productos.find((p: any) => p.sku === item.sku);
-          const avail = prod ? prod.stock : 0;
-          const esLacking = avail < item.quantity;
-          const opcionesDisponibles = opcionesProductosSolicitud.filter(
-            (op) =>
-              op.value === item.sku ||
-              !solicitudElementos.some((el: any) => el.sku === op.value)
+        {(() => {
+          const proyectoSeleccionado =
+            todosProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
+            activoProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
+            null;
+          const catalogoEfectivo =
+            editandoSolicitud && editandoSolicitud.status === "pendiente"
+              ? liberarReservaComprometidoEnCatalogoH6(productos, editandoSolicitud.items)
+              : productos;
+          const validacionEnVivo = validarFormularioNuevaSolicitudInsumos(
+            proyectoSeleccionado,
+            solicitudElementos,
+            catalogoEfectivo
           );
+          const proyectosMostrados =
+            todosProyectos.length > 0 ? todosProyectos : activoProyectos;
 
           return (
-            <View
-              key={`${item.sku}_${idx}`}
-              style={[
-                estilos.solicitudLineaTarjeta,
-                esLacking && estilos.lackingExistenciaFormularioFila,
-              ]}
-            >
-              <View style={estilos.solicitudLineaCabecera}>
-                <Text style={estilos.solicitudLineaTitulo}>Línea #{idx + 1}</Text>
-                <Pressable
-                  onPress={() => {
-                    const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
-                    establecerSolicitudElementos(updated);
-                    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
-                  }}
-                  style={{ padding: 4 }}
-                  accessibilityLabel={`Eliminar insumo línea ${idx + 1}`}
-                >
-                  <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
-                </Pressable>
-              </View>
+            <>
+              <Text style={estilos.formularioSeccionEtiqueta}>
+                1. Proyecto Destino (Obligatorio — Solo Proyectos Activos):
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
+                {proyectosMostrados.map((p: any) => {
+                  const esActivoProy = esProyectoActivoParaSolicitud(p);
+                  const esSeleccionado = seleccionadoProyectoId === p.id;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      onPress={() => establecerSeleccionadoProyectoId(p.id)}
+                      style={[
+                        estilos.proyectoChip,
+                        esSeleccionado && estilos.proyectoChipActivo,
+                        !esActivoProy && {
+                          borderColor: tema.colors.danger,
+                          opacity: 0.75,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          estilos.proyectoChipTexto,
+                          esSeleccionado && estilos.proyectoChipTextoActivo,
+                        ]}
+                      >
+                        {p.code} - {p.name} ({String(p.status || "").toUpperCase()})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
-              <SelectorBuscable<string>
-                label="Insumo / Material"
-                options={opcionesDisponibles}
-                value={item.sku}
-                onChange={(nuevoSku) =>
-                  manejarSolicitudElementoCambiar(idx, nuevoSku, Math.max(1, item.quantity || 1))
-                }
-                placeholder="Seleccionar insumo..."
-                searchPlaceholder="Buscar por nombre o SKU..."
+              {validacionEnVivo.errorProyecto && (
+                <View style={[estilos.faltanteAlertaTarjeta, { marginBottom: 10 }]}>
+                  <View style={estilos.tituloWithIcono}>
+                    <Ionicons name="lock-closed" size={18} color={tema.colors.danger} />
+                    <Text style={estilos.faltanteAlertaTitulo}>Proyecto Inactivo o No Seleccionado</Text>
+                  </View>
+                  <Text style={estilos.faltanteAlertaLinea}>{validacionEnVivo.errorProyecto}</Text>
+                </View>
+              )}
+
+              <Text style={estilos.formularioSeccionEtiqueta}>
+                2. Insumos y Cantidades Solicitadas (Stock Disponible en Vivo):
+              </Text>
+              {solicitudElementos.map((item: any, idx: number) => {
+                const evalLinea = validacionEnVivo.lineasEvaluadas[idx];
+                const prod = productos.find((p: any) => p.sku === item.sku);
+                const avail = evalLinea ? evalLinea.stockDisponibleActual : prod ? prod.stock : 0;
+                const comprometidoActual = evalLinea
+                  ? evalLinea.stockComprometidoActual
+                  : prod?.committed || 0;
+                const superaDisp = Boolean(evalLinea?.superaDisponible);
+                const invalida = Boolean(evalLinea?.cantidadInvalida || evalLinea?.insumoInactivo);
+                const opcionesDisponibles = opcionesProductosSolicitud.filter(
+                  (op) =>
+                    op.value === item.sku ||
+                    !solicitudElementos.some((el: any) => el.sku === op.value)
+                );
+
+                return (
+                  <View
+                    key={`${item.sku}_${idx}`}
+                    style={[
+                      estilos.solicitudLineaTarjeta,
+                      (superaDisp || invalida) && estilos.lackingExistenciaFormularioFila,
+                    ]}
+                  >
+                    <View style={estilos.solicitudLineaCabecera}>
+                      <Text style={estilos.solicitudLineaTitulo}>Línea #{idx + 1}</Text>
+                      <Pressable
+                        onPress={() => {
+                          const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
+                          establecerSolicitudElementos(updated);
+                          establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                        }}
+                        style={{ padding: 4 }}
+                        accessibilityLabel={`Eliminar insumo línea ${idx + 1}`}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
+                      </Pressable>
+                    </View>
+
+                    <SelectorBuscable<string>
+                      label="Insumo / Material"
+                      options={opcionesDisponibles}
+                      value={item.sku}
+                      onChange={(nuevoSku) =>
+                        manejarSolicitudElementoCambiar(idx, nuevoSku, Math.max(1, item.quantity || 1))
+                      }
+                      placeholder="Seleccionar insumo..."
+                      searchPlaceholder="Buscar por nombre o SKU..."
+                    />
+
+                    <View style={estilos.solicitudLineaCantidadFila}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text
+                          style={[
+                            estilos.elementoExistenciaDisponible,
+                            superaDisp && { color: tema.colors.danger, fontWeight: "bold" },
+                          ]}
+                        >
+                          Stock Disponible en Vivo: {avail} {prod?.unit || "un"} • Comprometido: {comprometidoActual} {prod?.unit || "un"}
+                        </Text>
+                        {!superaDisp && !invalida && evalLinea && (
+                          <Text style={{ fontSize: 11, color: tema.colors.okDark, marginTop: 2 }}>
+                            Reserva H6 tras confirmar → Disponible: {evalLinea.stockDisponibleRestanteH6} {evalLinea.unit} | Comprometido:{" "}
+                            <Text style={{ fontWeight: "bold" }}>
+                              {evalLinea.stockComprometidoNuevoH6} {evalLinea.unit}
+                            </Text>
+                          </Text>
+                        )}
+                        {evalLinea?.mensajeAlerta && (
+                          <Text style={{ fontSize: 11, color: tema.colors.danger, fontWeight: "600", marginTop: 2 }}>
+                            ⚠ {evalLinea.mensajeAlerta}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                          Cant. ({prod?.unit || "un"}):
+                        </Text>
+                        <TextInput
+                          value={item.quantity === 0 ? "" : String(item.quantity)}
+                          onChangeText={(val: string) => {
+                            const limpia = val.replace(/[^0-9]/g, "");
+                            const numero = limpia === "" ? 0 : Number(limpia);
+                            manejarSolicitudElementoCambiar(idx, item.sku, numero);
+                          }}
+                          keyboardType="numeric"
+                          style={[
+                            estilos.cantidadEntrada,
+                            (superaDisp || invalida) && { borderColor: tema.colors.danger, borderWidth: 1.5 },
+                          ]}
+                          placeholder="0"
+                        />
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+
+              <Boton
+                title="+ Agregar otro insumo"
+                variant="outline"
+                size="sm"
+                onPress={() => {
+                  const siguienteProducto = productos.find(
+                    (p: any) => !p.disabled && !solicitudElementos.some((i: any) => i.sku === p.sku)
+                  );
+                  if (!siguienteProducto) {
+                    mostrarAviso("Todos los insumos disponibles ya están agregados en esta solicitud.");
+                    return;
+                  }
+                  const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
+                  establecerSolicitudElementos(updated);
+                  establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                }}
+                style={{ marginVertical: 8 }}
               />
 
-              <View style={estilos.solicitudLineaCantidadFila}>
-                <View style={{ flex: 1 }}>
-                  <Text
-                    style={[
-                      estilos.elementoExistenciaDisponible,
-                      esLacking && { color: tema.colors.danger, fontWeight: "bold" },
-                    ]}
-                  >
-                    Disponible en bodega: {avail} {prod?.unit || "un"}
-                  </Text>
+              {establecerSolicitudUrgencia && (
+                <>
+                  <Text style={estilos.formularioSeccionEtiqueta}>Nivel de Prioridad:</Text>
+                  <View style={estilos.motivoPastillasFila}>
+                    {(["normal", "alta", "urgente"] as const).map((nivel) => (
+                      <TouchableOpacity
+                        key={nivel}
+                        onPress={() => establecerSolicitudUrgencia(nivel)}
+                        style={[
+                          estilos.motivoPastilla,
+                          solicitudUrgencia === nivel && estilos.motivoPastillaActivo,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            estilos.motivoPastillaTexto,
+                            solicitudUrgencia === nivel && estilos.motivoPastillaTextoActivo,
+                          ]}
+                        >
+                          {nivel.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              <CampoTexto
+                label="Nota o justificación (opcional)"
+                value={solicitudComentario}
+                onChangeText={establecerSolicitudComentario}
+                placeholder="Ej: Material reservado para montaje de tablero en faena"
+              />
+
+              {/* Alerta en vivo si alguna cantidad supera el stock disponible */}
+              {validacionEnVivo.faltantesStock.length > 0 && (
+                <View style={estilos.faltanteAlertaTarjeta}>
+                  <View style={estilos.tituloWithIcono}>
+                    <Ionicons name="alert-circle" size={18} color={tema.colors.danger} />
+                    <Text style={estilos.faltanteAlertaTitulo}>
+                      Alerta: Cantidad Supera el Stock Disponible en Bodega
+                    </Text>
+                  </View>
+                  {validacionEnVivo.faltantesStock.map((m: string, i: number) => (
+                    <Text key={i} style={estilos.faltanteAlertaLinea}>
+                      • {m}
+                    </Text>
+                  ))}
                 </View>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
-                    Cant. ({prod?.unit || "un"}):
-                  </Text>
-                  <TextInput
-                    value={item.quantity === 0 ? "" : String(item.quantity)}
-                    onChangeText={(val: string) => {
-                      const limpia = val.replace(/[^0-9]/g, "");
-                      const numero = limpia === "" ? 0 : Number(limpia);
-                      manejarSolicitudElementoCambiar(idx, item.sku, numero);
-                    }}
-                    keyboardType="numeric"
-                    style={[estilos.cantidadEntrada, esLacking && { borderColor: tema.colors.danger }]}
-                    placeholder="0"
-                  />
-                </View>
+              )}
+
+              {Boolean(solicitudError) && <Text style={estilos.errorTexto}>{solicitudError}</Text>}
+
+              <View style={estilos.modalBotonesFila}>
+                <Boton
+                  title="Cancelar"
+                  variant="ghost"
+                  onPress={() => {
+                    establecerNuevoSolicitudModal(false);
+                    establecerEditandoSolicitud?.(null);
+                  }}
+                  style={{ marginRight: 8 }}
+                />
+                <Boton
+                  title={editandoSolicitud ? "Guardar Cambios en Solicitud" : "Crear Solicitud (Reservar Stock)"}
+                  variant="primary"
+                  disabled={!validacionEnVivo.esValida}
+                  onPress={manejarEnviarSolicitud}
+                />
               </View>
-            </View>
+            </>
           );
-        })}
-
-        <Boton
-          title="+ Agregar otro insumo"
-          variant="outline"
-          size="sm"
-          onPress={() => {
-            const siguienteProducto = productos.find(
-              (p: any) => !p.disabled && !solicitudElementos.some((i: any) => i.sku === p.sku)
-            );
-            if (!siguienteProducto) {
-              mostrarAviso("Todos los insumos disponibles ya están agregados en esta solicitud.");
-              return;
-            }
-            const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
-            establecerSolicitudElementos(updated);
-            establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
-          }}
-          style={{ marginVertical: 8 }}
-        />
-
-        {establecerSolicitudUrgencia && (
-          <>
-            <Text style={estilos.formularioSeccionEtiqueta}>Nivel de Prioridad:</Text>
-            <View style={estilos.motivoPastillasFila}>
-              {(["normal", "alta", "urgente"] as const).map((nivel) => (
-                <TouchableOpacity
-                  key={nivel}
-                  onPress={() => establecerSolicitudUrgencia(nivel)}
-                  style={[
-                    estilos.motivoPastilla,
-                    solicitudUrgencia === nivel && estilos.motivoPastillaActivo,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      estilos.motivoPastillaTexto,
-                      solicitudUrgencia === nivel && estilos.motivoPastillaTextoActivo,
-                    ]}
-                  >
-                    {nivel.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </>
-        )}
-
-        <CampoTexto
-          label="Nota o justificación (opcional)"
-          value={solicitudComentario}
-          onChangeText={establecerSolicitudComentario}
-          placeholder="Ej: Material para partida de iluminación piso 2"
-        />
-
-        {/* Bloqueo si falta stock */}
-        {faltanteExistenciaErrores.length > 0 && (
-          <View style={estilos.faltanteAlertaTarjeta}>
-            <View style={estilos.tituloWithIcono}>
-              <Ionicons name="alert-circle" size={18} color={tema.colors.danger} />
-              <Text style={estilos.faltanteAlertaTitulo}>Bloqueo: Stock Insuficiente en Bodega</Text>
-            </View>
-            {faltanteExistenciaErrores.map((m: any, i: any) => (
-              <Text key={i} style={estilos.faltanteAlertaLinea}>• {m}</Text>
-            ))}
-          </View>
-        )}
-
-        {Boolean(solicitudError) && <Text style={estilos.errorTexto}>{solicitudError}</Text>}
-
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => {
-              establecerNuevoSolicitudModal(false);
-              establecerEditandoSolicitud?.(null);
-            }}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title={editandoSolicitud ? "Guardar Cambios" : "Enviar Solicitud"}
-            variant="primary"
-            disabled={faltanteExistenciaErrores.length > 0}
-            onPress={manejarEnviarSolicitud}
-          />
-        </View>
+        })()}
       </VistaModal>
 
       {/* MODAL 3: LINEA DE TIEMPO */}
