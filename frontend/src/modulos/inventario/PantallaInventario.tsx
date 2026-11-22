@@ -324,12 +324,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   // =========================================================================
-  // 2. CARDEX STATE
+  // 2. ESTADO DEL CARDEX (SOLO LECTURA)
   // =========================================================================
   const [kardexFiltrarSku, establecerKardexFiltrarSku] = useState("");
   const [kardexFiltrarTipo, establecerKardexFiltrarTipo] = useState<string>("todos");
   const [kardexFiltrarProyecto, establecerKardexFiltrarProyecto] = useState<string>("todos");
-  const [kardexFechaRango, establecerKardexFechaRango] = useState<"todos" | "7d" | "30d">("todos");
+  const [kardexFechaRango, establecerKardexFechaRango] = useState<"todos" | "7d" | "30d" | "mes_actual">("todos");
   const [productoCardexSeleccionado, establecerProductoCardexSeleccionado] = useState<Producto | null>(null);
 
   const manejarAbrirCardexProducto = (prod: Producto) => {
@@ -809,6 +809,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                     icon: "clipboard-outline",
                   },
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
+                  { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                   {
                     id: "conteo",
                     label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
@@ -851,12 +852,15 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           activoPestana={activoPestana}
           alternarProductoDeshabilitado={alternarProductoDeshabilitado}
           buscarQuery={buscarQuery}
+          cardexCompleto={cardex}
           establecerBuscarQuery={establecerBuscarQuery}
+          establecerKardexFechaRango={establecerKardexFechaRango}
           establecerKardexFiltrarProyecto={establecerKardexFiltrarProyecto}
           establecerKardexFiltrarSku={establecerKardexFiltrarSku}
           establecerKardexFiltrarTipo={establecerKardexFiltrarTipo}
           filtradoCardex={filtradoCardex}
           filtradoProductos={filtradoProductos}
+          kardexFechaRango={kardexFechaRango}
           kardexFiltrarProyecto={kardexFiltrarProyecto}
           kardexFiltrarSku={kardexFiltrarSku}
           kardexFiltrarTipo={kardexFiltrarTipo}
@@ -866,6 +870,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
           manejarExportarCardex={manejarExportarCardex}
           mostrarAviso={mostrarAviso}
+          productos={productos}
           proyectos={proyectos}
           rolActual={rolActual}
         />
