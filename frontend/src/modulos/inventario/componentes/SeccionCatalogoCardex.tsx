@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { Selector } from "@/componentes/formularios/Selector";
 import {
   FlatList,
   Modal,
@@ -41,6 +42,7 @@ import {
   Producto,
   RegistroMerma,
 } from "@/nucleo/tipos";
+import { contrastarSaldoInsumoConUltimaLineaCardex } from "../solicitudInsumosUtils";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
 
 export interface PropiedadesSeccionCatalogoCardex {
@@ -48,22 +50,25 @@ export interface PropiedadesSeccionCatalogoCardex {
   activoPestana: any;
   alternarProductoDeshabilitado: any;
   buscarQuery: any;
+  cardexCompleto?: any;
   establecerBuscarQuery: any;
-  establecerKardexFiltrarProyecto: any;
+  establecerKardexFechaRango?: any;
+  establecerKardexFiltrarProyecto?: any;
   establecerKardexFiltrarSku: any;
   establecerKardexFiltrarTipo: any;
   filtradoCardex: any;
   filtradoProductos: any;
-  kardexFiltrarProyecto: any;
+  kardexFechaRango?: any;
+  kardexFiltrarProyecto?: any;
   kardexFiltrarSku: any;
   kardexFiltrarTipo: any;
   manejarAbrirCardexProducto?: any;
   manejarAbrirEditarProducto: any;
   manejarAbrirNuevoProducto: any;
-  manejarAbrirInsumoForm?: any;
   manejarExportarCardex: any;
   mostrarAviso: any;
-  proyectos: any;
+  productos?: any;
+  proyectos?: any;
   rolActual: any;
 }
 
@@ -72,21 +77,24 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
   activoPestana,
   alternarProductoDeshabilitado,
   buscarQuery,
+  cardexCompleto,
   establecerBuscarQuery,
+  establecerKardexFechaRango,
   establecerKardexFiltrarProyecto,
   establecerKardexFiltrarSku,
   establecerKardexFiltrarTipo,
   filtradoCardex,
   filtradoProductos,
+  kardexFechaRango = "todos",
   kardexFiltrarProyecto,
   kardexFiltrarSku,
   kardexFiltrarTipo,
   manejarAbrirCardexProducto,
   manejarAbrirEditarProducto,
   manejarAbrirNuevoProducto,
-  manejarAbrirInsumoForm,
   manejarExportarCardex,
   mostrarAviso,
+  productos = [],
   proyectos,
   rolActual,
 }) => {
@@ -128,9 +136,9 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
               </TouchableOpacity>
             </View>
 
-            {/* Botón «Nuevo insumo» y «Registro Rápido» SOLO Admin */}
+            {/* Botón «Nuevo insumo» SOLO Admin */}
             {rolActual === "admin" && (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexGrow: 1, minWidth: 260 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexGrow: 1, minWidth: 160 }}>
                 <Boton
                   title="Nuevo insumo"
                   variant="primary"
@@ -139,16 +147,6 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                   onPress={manejarAbrirNuevoProducto}
                   style={{ flex: 1, minHeight: 40 }}
                 />
-                {Boolean(manejarAbrirInsumoForm) && (
-                  <Boton
-                    title="Registro Rápido"
-                    variant="outline"
-                    size="sm"
-                    icon="document-text-outline"
-                    onPress={manejarAbrirInsumoForm}
-                    style={{ flex: 1, minHeight: 40 }}
-                  />
-                )}
               </View>
             )}
           </View>
@@ -298,178 +296,429 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
       )}
 
       {/* =====================================================================
-          2. TAB CARDEX (Solo lectura con exportar Excel)
+          2. TAB CARDEX (Vista de solo lectura, tabla cronológica de saldos/PMP y exportar Excel)
           ===================================================================== */}
-      {activoPestana === "cardex" && (
-        <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          <View style={estilos.filtrarSeccion}>
-            <View style={estilos.filtrarEncabezadoFila}>
-              <View style={{ flex: 1, minWidth: 200, marginRight: 8 }}>
-                <TextInput
-                  value={kardexFiltrarSku}
-                  onChangeText={establecerKardexFiltrarSku}
-                  placeholder="Filtrar por SKU o nombre..."
-                  placeholderTextColor={tema.colors.textLight}
-                  style={estilos.cardexBuscarEntrada}
-                />
-              </View>
-              {(Boolean(kardexFiltrarSku) || kardexFiltrarTipo !== "todos" || kardexFiltrarProyecto !== "todos") && (
-                <Boton
-                  title="Limpiar filtros"
-                  variant="ghost"
-                  size="sm"
-                  icon="close-circle-outline"
-                  onPress={() => {
-                    establecerKardexFiltrarSku("");
-                    establecerKardexFiltrarTipo("todos");
-                    establecerKardexFiltrarProyecto("todos");
-                  }}
-                  style={{ marginRight: 8 }}
-                />
-              )}
-              <BotonExportar onExport={manejarExportarCardex} title="Excel" size="sm" />
-            </View>
+      {activoPestana === "cardex" && (() => {
+        const skusEnVista: string[] = Array.from(
+          new Set(filtradoCardex.map((m: any) => String(m.sku || "")))
+        );
+        const insumoUnicoSeleccionado =
+          skusEnVista.length === 1
+            ? productos.find(
+              (p: any) => p.sku.trim().toUpperCase() === skusEnVista[0].trim().toUpperCase()
+            )
+            : kardexFiltrarSku
+              ? productos.find(
+                (p: any) =>
+                  p.sku.trim().toUpperCase() === String(kardexFiltrarSku).trim().toUpperCase()
+              )
+              : null;
 
-            {/* Filtro por tipo de movimiento */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.tipoFiltrarScroll}>
-              {[
-                { id: "todos", label: "Todos los movimientos" },
-                { id: "entrada_compra", label: "Entradas Compra" },
-                { id: "salida_obra", label: "Salidas a Obra" },
-                { id: "devolucion", label: "Devoluciones" },
-                { id: "merma", label: "Mermas" },
-                { id: "ajuste_conteo", label: "Ajustes Conteo" },
-              ].map((tf: any) => (
-                <TouchableOpacity
-                  key={tf.id}
-                  onPress={() => establecerKardexFiltrarTipo(tf.id)}
-                  style={[estilos.tipoChip, kardexFiltrarTipo === tf.id && estilos.tipoChipActivo]}
-                >
-                  <Text style={[estilos.tipoChipEtiqueta, kardexFiltrarTipo === tf.id && estilos.tipoChipEtiquetaActivo]}>
-                    {tf.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+        const contrasteInsumo = insumoUnicoSeleccionado
+          ? contrastarSaldoInsumoConUltimaLineaCardex(
+            insumoUnicoSeleccionado,
+            cardexCompleto || filtradoCardex
+          )
+          : null;
 
-            {/* Filtro por proyecto */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[estilos.tipoFiltrarScroll, { marginTop: 4 }]}>
-              <TouchableOpacity
-                onPress={() => establecerKardexFiltrarProyecto("todos")}
-                style={[estilos.tipoChip, kardexFiltrarProyecto === "todos" && estilos.tipoChipActivo]}
+        return (
+          <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
+            <View style={estilos.filtrarSeccion}>
+              {/* FILA 1: Buscador libre + Selector desplegable de Insumo + Selector desplegable de Período + Exportar */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  alignItems: "flex-end",
+                  gap: 10,
+                  marginBottom: 12,
+                }}
               >
-                <Text style={[estilos.tipoChipEtiqueta, kardexFiltrarProyecto === "todos" && estilos.tipoChipEtiquetaActivo]}>
-                  Todos los proyectos
-                </Text>
-              </TouchableOpacity>
-              {proyectos.map((pr: any) => (
-                <TouchableOpacity
-                  key={pr.id}
-                  onPress={() => establecerKardexFiltrarProyecto(pr.code)}
-                  style={[estilos.tipoChip, kardexFiltrarProyecto === pr.code && estilos.tipoChipActivo]}
-                >
-                  <Text style={[estilos.tipoChipEtiqueta, kardexFiltrarProyecto === pr.code && estilos.tipoChipEtiquetaActivo]}>
-                    {pr.code} ({pr.name})
+                <View style={{ flex: 1.4, minWidth: 210 }}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "600",
+                      color: tema.colors.textSecondary,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Buscar movimiento
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {filtradoCardex.length === 0 ? (
-            <EstadoVacio
-              icon="swap-horizontal-outline"
-              title="Sin movimientos registrados"
-              description="No se registran movimientos de cardex para los filtros seleccionados."
-              containerStyle={{ marginVertical: 20 }}
-            />
-          ) : (
-            filtradoCardex.map((item: any) => (
-              <Tarjeta key={item.id} variant="outlined" style={estilos.cardexTarjeta}>
-                <View style={estilos.cardexSuperior}>
-                  <View>
-                    <Text style={estilos.cardexSku}>{item.sku}</Text>
-                    <Text style={estilos.cardexNombre}>{item.productName}</Text>
-                  </View>
-                  <Insignia
-                    label={item.typeLabel}
-                    tone={
-                      item.type === "entrada_compra" || item.type === "devolucion"
-                        ? "ok"
-                        : item.type === "merma"
-                          ? "danger"
-                          : item.type === "ajuste_conteo"
-                            ? "warn"
-                            : "info"
-                    }
-                    size="sm"
+                  <TextInput
+                    value={kardexFiltrarSku}
+                    onChangeText={establecerKardexFiltrarSku}
+                    placeholder="SKU, nombre de insumo o referencia..."
+                    placeholderTextColor={tema.colors.textLight}
+                    style={[estilos.cardexBuscarEntrada, { minHeight: 44 }]}
                   />
                 </View>
 
-                <View style={estilos.cardexDetallesGrilla}>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>Fecha</Text>
-                    <Text style={estilos.detalleValor}>{formatearFecha(item.date)}</Text>
+                {productos.length > 0 && (
+                  <View style={{ flex: 1.4, minWidth: 220 }}>
+                    <Selector
+                      label="Insumo"
+                      value={
+                        productos.some(
+                          (p: any) =>
+                            p.sku.trim().toUpperCase() ===
+                            String(kardexFiltrarSku || "").trim().toUpperCase()
+                        )
+                          ? productos.find(
+                            (p: any) =>
+                              p.sku.trim().toUpperCase() ===
+                              String(kardexFiltrarSku || "").trim().toUpperCase()
+                          ).sku
+                          : ""
+                      }
+                      onChange={(val) => establecerKardexFiltrarSku(String(val))}
+                      options={[
+                        {
+                          label: `Todos los insumos (${productos.length})`,
+                          value: "",
+                          hint: "Ver movimientos de todo el catálogo",
+                          icon: "cube-outline",
+                        },
+                        ...productos.map((prod: any) => ({
+                          label: `${prod.sku} — ${prod.name}`,
+                          value: prod.sku,
+                          hint: `Saldo actual: ${prod.stock} ${prod.unit} • PMP: ${formatearCLP(
+                            prod.pmp || prod.unitCost
+                          )}`,
+                          icon: "pricetag-outline" as const,
+                        })),
+                      ]}
+                      placeholder="Todos los insumos"
+                      containerStyle={{ marginBottom: 0 }}
+                    />
                   </View>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>Referencia</Text>
-                    <Text style={estilos.detalleValor}>{item.reference}</Text>
+                )}
+
+                {establecerKardexFechaRango && (
+                  <View style={{ flex: 0.9, minWidth: 165 }}>
+                    <Selector
+                      label="Período"
+                      value={kardexFechaRango}
+                      onChange={(val) => establecerKardexFechaRango(val)}
+                      options={[
+                        {
+                          label: "Todo el período",
+                          value: "todos",
+                          hint: "Historial completo de movimientos",
+                          icon: "calendar-outline",
+                        },
+                        {
+                          label: "Últimos 30 días",
+                          value: "30d",
+                          hint: "Movimientos del último mes",
+                          icon: "time-outline",
+                        },
+                        {
+                          label: "Últimos 7 días",
+                          value: "7d",
+                          hint: "Movimientos de la última semana",
+                          icon: "today-outline",
+                        },
+                      ]}
+                      placeholder="Todo el período"
+                      containerStyle={{ marginBottom: 0 }}
+                    />
                   </View>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>Proyecto</Text>
-                    <Text style={estilos.detalleValor}>{item.projectName || item.projectCode || "Bodega Central"}</Text>
-                  </View>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>Entrada / Salida</Text>
+                )}
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingBottom: 2,
+                  }}
+                >
+                  {(Boolean(kardexFiltrarSku) ||
+                    kardexFiltrarTipo !== "todos" ||
+                    kardexFechaRango !== "todos") && (
+                      <Boton
+                        title="Limpiar"
+                        variant="ghost"
+                        size="sm"
+                        icon="close-circle-outline"
+                        onPress={() => {
+                          establecerKardexFiltrarSku("");
+                          establecerKardexFiltrarTipo("todos");
+                          if (establecerKardexFechaRango) establecerKardexFechaRango("todos");
+                          if (establecerKardexFiltrarProyecto) establecerKardexFiltrarProyecto("todos");
+                        }}
+                      />
+                    )}
+                  <BotonExportar
+                    onExport={manejarExportarCardex}
+                    title="Exportar a Excel"
+                    size="sm"
+                  />
+                </View>
+              </View>
+
+              {/* FILA 2 (100% del ancho, sin cortarse): Chips de Tipo de movimiento */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={estilos.tipoFiltrarScroll}
+              >
+                {[
+                  { id: "todos", label: "Todos los movimientos" },
+                  { id: "entrada_compra", label: "Entradas Compra" },
+                  { id: "salida_obra", label: "Salidas a Obra" },
+                  { id: "devolucion", label: "Devoluciones" },
+                  { id: "merma", label: "Mermas" },
+                  { id: "ajuste_conteo", label: "Ajustes Conteo" },
+                ].map((tf: any) => (
+                  <TouchableOpacity
+                    key={tf.id}
+                    onPress={() => establecerKardexFiltrarTipo(tf.id)}
+                    style={[estilos.tipoChip, kardexFiltrarTipo === tf.id && estilos.tipoChipActivo]}
+                  >
                     <Text
                       style={[
-                        estilos.detalleValor,
-                        item.qtyIn > 0 && { color: tema.colors.ok, fontWeight: "bold" },
-                        item.qtyOut > 0 && { color: tema.colors.danger, fontWeight: "bold" },
+                        estilos.tipoChipEtiqueta,
+                        kardexFiltrarTipo === tf.id && estilos.tipoChipEtiquetaActivo,
                       ]}
                     >
-                      {item.qtyIn > 0 ? `+${item.qtyIn}` : `-${item.qtyOut}`}
+                      {tf.label}
                     </Text>
-                  </View>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>Saldo Posterior</Text>
-                    <Text style={[estilos.detalleValor, { fontWeight: "bold" }]}>{item.balance}</Text>
-                  </View>
-                  <View style={estilos.detalleElemento}>
-                    <Text style={estilos.detalleLbl}>PMP Posterior</Text>
-                    <Text style={estilos.detalleValor}>{formatearCLP(item.pmp)}</Text>
-                  </View>
-                </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
 
-                {/* Trazabilidad: Quién realizó el movimiento */}
-                <View style={estilos.cardexUsuarioFila}>
-                  <Ionicons name="person-circle-outline" size={16} color={tema.colors.primary} />
-                  <Text style={estilos.cardexUsuarioTexto}>
-                    Registrado por:{" "}
-                    <Text style={{ fontWeight: "bold", color: tema.colors.text }}>
-                      {item.userName || "Camila Vera Soto"}
+            {/* [SCRUM] Panel de contraste entre el saldo actual del insumo y la última línea del Cardex */}
+            {contrasteInsumo && (
+              <Tarjeta
+                variant="outlined"
+                style={{
+                  marginBottom: 14,
+                  padding: 12,
+                  borderColor: contrasteInsumo.coincideSaldoConUltimaLinea
+                    ? tema.colors.ok
+                    : tema.colors.warn,
+                  backgroundColor: contrasteInsumo.coincideSaldoConUltimaLinea
+                    ? tema.colors.okLight
+                    : tema.colors.warnLight,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name={
+                        contrasteInsumo.coincideSaldoConUltimaLinea
+                          ? "checkmark-circle"
+                          : "alert-circle"
+                      }
+                      size={18}
+                      color={
+                        contrasteInsumo.coincideSaldoConUltimaLinea
+                          ? tema.colors.okDark
+                          : tema.colors.warnDark
+                      }
+                    />
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "800",
+                        color: tema.colors.text,
+                      }}
+                    >
+                      Contraste de Saldo Actual vs. Última Línea del Cardex ({contrasteInsumo.sku})
                     </Text>
-                  </Text>
+                  </View>
                   <Insignia
-                    label={item.userRole || "Bodeguero"}
-                    tone={
-                      item.userRole === "Administrador"
-                        ? "primary"
-                        : item.userRole === "Tecnico"
-                          ? "ok"
-                          : "warn"
+                    label={
+                      contrasteInsumo.coincideSaldoConUltimaLinea
+                        ? "Saldo Conciliado ✓"
+                        : "Revisar Diferencia"
                     }
+                    tone={contrasteInsumo.coincideSaldoConUltimaLinea ? "ok" : "warn"}
                     size="sm"
                   />
-                  {item.userRut && (
-                    <Text style={estilos.cardexUsuarioRut}>• RUT: {item.userRut}</Text>
-                  )}
                 </View>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 16,
+                    marginBottom: 6,
+                  }}
+                >
+                  <View>
+                    <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
+                      Saldo Actual del Insumo (Catálogo)
+                    </Text>
+                    <Text style={{ fontSize: 15, fontWeight: "800", color: tema.colors.text }}>
+                      {contrasteInsumo.saldoActualInsumo} {contrasteInsumo.unit} • PMP:{" "}
+                      {formatearCLP(contrasteInsumo.pmpActualInsumo)}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
+                      Última Línea del Cardex (
+                      {contrasteInsumo.ultimaLineaCardex
+                        ? `${contrasteInsumo.ultimaLineaCardex.reference} • ${contrasteInsumo.ultimaLineaCardex.date}`
+                        : "Sin movimientos"}
+                      )
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: "800",
+                        color: tema.colors.primaryDark,
+                      }}
+                    >
+                      {contrasteInsumo.saldoUltimaLineaCardex !== null
+                        ? `${contrasteInsumo.saldoUltimaLineaCardex} ${contrasteInsumo.unit} • PMP: ${formatearCLP(
+                          contrasteInsumo.pmpUltimaLineaCardex || 0
+                        )}`
+                        : "N/A"}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                  {contrasteInsumo.mensajeVerificacion}
+                </Text>
               </Tarjeta>
-            ))
-          )}
-        </ScrollView>
-      )}
+            )}
+
+            {filtradoCardex.length === 0 ? (
+              <EstadoVacio
+                icon="swap-horizontal-outline"
+                title="Sin movimientos registrados"
+                description="No se registran movimientos de cardex para los filtros seleccionados."
+                containerStyle={{ marginVertical: 20 }}
+              />
+            ) : (
+              filtradoCardex.map((item: any, idx: number) => {
+                const esUltimaLineaCronologica = idx === filtradoCardex.length - 1;
+                return (
+                  <Tarjeta
+                    key={item.id}
+                    variant="outlined"
+                    style={[
+                      estilos.cardexTarjeta,
+                      esUltimaLineaCronologica && {
+                        borderColor: tema.colors.primary,
+                        borderWidth: 1.5,
+                      },
+                    ]}
+                  >
+                    <View style={estilos.cardexSuperior}>
+                      <View>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={estilos.cardexSku}>
+                            #{idx + 1} • {item.sku}
+                          </Text>
+                          {esUltimaLineaCronologica && (
+                            <Insignia label="Última línea Cardex" tone="primary" size="sm" />
+                          )}
+                        </View>
+                        <Text style={estilos.cardexNombre}>{item.productName}</Text>
+                      </View>
+                      <Insignia
+                        label={item.typeLabel}
+                        tone={
+                          item.type === "entrada_compra" || item.type === "devolucion"
+                            ? "ok"
+                            : item.type === "merma"
+                              ? "danger"
+                              : item.type === "ajuste_conteo"
+                                ? "warn"
+                                : "info"
+                        }
+                        size="sm"
+                      />
+                    </View>
+
+                    <View style={estilos.cardexDetallesGrilla}>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>Fecha</Text>
+                        <Text style={estilos.detalleValor}>{formatearFecha(item.date)}</Text>
+                      </View>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>Referencia</Text>
+                        <Text style={estilos.detalleValor}>{item.reference}</Text>
+                      </View>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>Proyecto / Destino</Text>
+                        <Text style={estilos.detalleValor}>
+                          {item.projectName || item.projectCode || "Bodega Central"}
+                        </Text>
+                      </View>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>Entrada / Salida</Text>
+                        <Text
+                          style={[
+                            estilos.detalleValor,
+                            item.qtyIn > 0 && { color: tema.colors.ok, fontWeight: "bold" },
+                            item.qtyOut > 0 && { color: tema.colors.danger, fontWeight: "bold" },
+                          ]}
+                        >
+                          {item.qtyIn > 0
+                            ? `+${item.qtyIn}`
+                            : item.qtyOut > 0
+                              ? `-${item.qtyOut}`
+                              : "0"}
+                        </Text>
+                      </View>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>Saldo Posterior</Text>
+                        <Text style={[estilos.detalleValor, { fontWeight: "bold" }]}>
+                          {item.balance}
+                        </Text>
+                      </View>
+                      <View style={estilos.detalleElemento}>
+                        <Text style={estilos.detalleLbl}>PMP Posterior</Text>
+                        <Text style={estilos.detalleValor}>{formatearCLP(item.pmp)}</Text>
+                      </View>
+                    </View>
+
+                    {/* Trazabilidad: Quién realizó el movimiento (Solo lectura) */}
+                    <View style={estilos.cardexUsuarioFila}>
+                      <Ionicons name="person-circle-outline" size={16} color={tema.colors.primary} />
+                      <Text style={estilos.cardexUsuarioTexto}>
+                        Registrado por:{" "}
+                        <Text style={{ fontWeight: "bold", color: tema.colors.text }}>
+                          {item.userName || "Camila Vera Soto"}
+                        </Text>
+                      </Text>
+                      <Insignia
+                        label={item.userRole || "Bodeguero"}
+                        tone={
+                          item.userRole === "Administrador"
+                            ? "primary"
+                            : item.userRole === "Tecnico"
+                              ? "ok"
+                              : "warn"
+                        }
+                        size="sm"
+                      />
+                      {item.userRut && (
+                        <Text style={estilos.cardexUsuarioRut}>• RUT: {item.userRut}</Text>
+                      )}
+                    </View>
+                  </Tarjeta>
+                );
+              })
+            )}
+          </ScrollView>
+        );
+      })()}
     </>
   );
 };

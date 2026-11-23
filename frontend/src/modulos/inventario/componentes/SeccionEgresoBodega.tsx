@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -19,6 +19,8 @@ import {
 import {
   calcularResumenLineaSalidaFisica,
   calcularResumenSolicitudSalidaFisica,
+  formatearCantidadMovimientoBodega,
+  sanitizarEntradaCantidadBodega,
 } from "@/modulos/inventario/solicitudInsumosUtils";
 import { estilos } from "../estilos";
 
@@ -68,6 +70,12 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
   totalUnidadesHastaDespacho,
 }) => {
   const { solicitudesMaterial } = usarAplicacion();
+  const [entradasTextoDespacho, establecerEntradasTextoDespacho] = useState<Record<string, string>>({});
+
+  // Sincronizar borradores de texto al cambiar la solicitud activa
+  useEffect(() => {
+    establecerEntradasTextoDespacho({});
+  }, [seleccionadoDespachoSolicitudId]);
 
   // Auto-seleccionar la primera solicitud pendiente de despacho para no dejar la pantalla vacía
   useEffect(() => {
@@ -327,6 +335,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
         );
 
         const aplicarPorcentajeSobrePendiente = (factor: number) => {
+          establecerEntradasTextoDespacho({});
           activoDespachoSolicitud.items.forEach((it: any) => {
             const prod = productos.find((p: any) => p.sku === it.sku);
             const resLin = calcularResumenLineaSalidaFisica(it, 0, prod);
@@ -339,7 +348,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
               factor >= 1
                 ? maxPosible
                 : prod?.isBulk
-                  ? Number((maxPosible * factor).toFixed(2))
+                  ? Number((maxPosible * factor).toFixed(3))
                   : Math.max(1, Math.floor(maxPosible * factor));
             manejarDespachoCantidadCambiar(it.sku, String(Math.min(maxPosible, sugerido)));
           });
@@ -476,10 +485,15 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
               {/* Tabla de ítems a despachar con comparativa Autorizado vs Entregado en vivo */}
               {activoDespachoSolicitud.items.map((it: any) => {
                 const prod = productos.find((p: any) => p.sku === it.sku);
+                const esGranel = Boolean(prod?.isBulk);
                 const actualDespacho = Number(despachoQuantities[it.sku] || 0);
                 const resumenLinea = calcularResumenLineaSalidaFisica(it, actualDespacho, prod);
                 const esOverExistencia = resumenLinea.superaStockBodega;
                 const esOverPendiente = resumenLinea.superaSaldoPendiente;
+                const textoInputActual =
+                  entradasTextoDespacho[it.sku] !== undefined
+                    ? entradasTextoDespacho[it.sku]
+                    : String(actualDespacho);
 
                 return (
                   <View
@@ -499,35 +513,72 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                       }}
                     >
                       <View style={{ flex: 1.5, minWidth: 180, marginRight: 8 }}>
-                        <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                          <Insignia label={`UM: ${it.unit.toUpperCase()}`} tone="mute" size="sm" />
+                          {esGranel && (
+                            <Insignia label="Granel • Hasta 3 dec." tone="info" size="sm" />
+                          )}
+                        </View>
                         <Text style={estilos.despachoElementoSku}>
                           SKU: {it.sku} {prod?.location ? `• ${prod.location}` : ""}
                         </Text>
                         <Text style={estilos.despachoElementoExistencia}>
-                          Respaldo en bodega: {resumenLinea.stockRespaldoParaEgreso} {it.unit}{" "}
+                          Respaldo en bodega:{" "}
+                          {formatearCantidadMovimientoBodega(
+                            resumenLinea.stockRespaldoParaEgreso,
+                            esGranel,
+                            it.unit
+                          )}{" "}
                           {resumenLinea.stockComprometidoBodega > 0
-                            ? `(Disp: ${resumenLinea.stockDisponibleBodega} + Comp: ${resumenLinea.stockComprometidoBodega})`
-                            : `(Disp: ${resumenLinea.stockDisponibleBodega})`}
+                            ? `(Disp: ${formatearCantidadMovimientoBodega(
+                                resumenLinea.stockDisponibleBodega,
+                                esGranel
+                              )} + Comp: ${formatearCantidadMovimientoBodega(
+                                resumenLinea.stockComprometidoBodega,
+                                esGranel
+                              )})`
+                            : `(Disp: ${formatearCantidadMovimientoBodega(
+                                resumenLinea.stockDisponibleBodega,
+                                esGranel
+                              )})`}
                         </Text>
                       </View>
 
                       <View style={estilos.despachoColumnaStats}>
                         <Text style={estilos.statLinea}>
-                          Autorizado: <Text style={{ fontWeight: "700" }}>{resumenLinea.saldoAutorizado} {it.unit}</Text>
+                          Autorizado:{" "}
+                          <Text style={{ fontWeight: "700" }}>
+                            {formatearCantidadMovimientoBodega(resumenLinea.saldoAutorizado, esGranel, it.unit)}
+                          </Text>
                         </Text>
                         <Text style={estilos.statLinea}>
-                          Entregado previo: <Text style={{ fontWeight: "700" }}>{resumenLinea.entregadoPrevio} {it.unit}</Text>
+                          Entregado previo:{" "}
+                          <Text style={{ fontWeight: "700" }}>
+                            {formatearCantidadMovimientoBodega(resumenLinea.entregadoPrevio, esGranel, it.unit)}
+                          </Text>
                         </Text>
                         <Text style={[estilos.statLinea, { color: tema.colors.primary, fontWeight: "700" }]}>
-                          Pendiente actual: {resumenLinea.saldoPendienteAntes} {it.unit}
+                          Pendiente actual:{" "}
+                          {formatearCantidadMovimientoBodega(resumenLinea.saldoPendienteAntes, esGranel, it.unit)}
                         </Text>
                       </View>
 
                       <View style={estilos.despachoEntradaCaja}>
-                        <Text style={estilos.despachoEntradaEtiqueta}>Retira ahora:</Text>
+                        <Text style={estilos.despachoEntradaEtiqueta}>
+                          {esGranel ? "Retira (máx 3 dec.):" : "Retira ahora:"}
+                        </Text>
                         <TextInput
-                          value={String(actualDespacho)}
-                          onChangeText={(val: any) => manejarDespachoCantidadCambiar(it.sku, val)}
+                          value={textoInputActual}
+                          onChangeText={(val: any) => {
+                            const san = sanitizarEntradaCantidadBodega(val, esGranel, 3);
+                            establecerEntradasTextoDespacho((prev) => ({
+                              ...prev,
+                              [it.sku]: san.textoSanitizado,
+                            }));
+                            manejarDespachoCantidadCambiar(it.sku, san.textoSanitizado || "0");
+                          }}
+                          placeholder={esGranel ? "0.000" : "0"}
                           keyboardType="decimal-pad"
                           style={[
                             estilos.despachoCantidadEntrada,
@@ -538,7 +589,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                       </View>
                     </View>
 
-                    {/* Barra y franja en vivo de Autorizado vs Entregado resultante */}
+                    {/* Barra y franja en vivo de Autorizado vs Entregado resultante + Remanente exacto en pantalla */}
                     <View
                       style={{
                         backgroundColor: tema.colors.surfaceAlt,
@@ -564,7 +615,8 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                         <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.text }}>
                           Entregado acumulado en vivo:{" "}
                           <Text style={{ color: tema.colors.okDark }}>
-                            {resumenLinea.entregadoAcumulado} / {resumenLinea.saldoAutorizado} {it.unit}
+                            {formatearCantidadMovimientoBodega(resumenLinea.entregadoAcumulado, esGranel)} /{" "}
+                            {formatearCantidadMovimientoBodega(resumenLinea.saldoAutorizado, esGranel, it.unit)}
                           </Text>{" "}
                           ({resumenLinea.porcentajeAvanceEntrega}%)
                         </Text>
@@ -578,7 +630,21 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                                 : tema.colors.warnDark,
                           }}
                         >
-                          Saldo pendiente resultante: {resumenLinea.saldoPendienteRestante} {it.unit}
+                          Saldo pendiente solicitud:{" "}
+                          {formatearCantidadMovimientoBodega(
+                            resumenLinea.saldoPendienteRestante,
+                            esGranel,
+                            it.unit
+                          )}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: tema.colors.primaryDark,
+                          }}
+                        >
+                          {resumenLinea.etiquetaUnidadYRemanente}
                         </Text>
                       </View>
                       <BarraProgreso
@@ -600,17 +666,29 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                       )}
                     </View>
 
-                    {prod?.isBulk && prod.containerCapacity && (
-                      <View style={{ marginTop: 2 }}>
+                    {esGranel && prod?.containerCapacity && (
+                      <View
+                        style={{
+                          marginTop: 2,
+                          backgroundColor: tema.colors.primaryLight,
+                          borderRadius: tema.radius.sm,
+                          padding: 8,
+                          borderWidth: 1,
+                          borderColor: tema.colors.primaryBorder,
+                        }}
+                      >
                         <BarraProgreso
-                          value={Math.max(0, resumenLinea.stockRespaldoParaEgreso - actualDespacho)}
+                          value={resumenLinea.remanenteEnContenedorActual}
                           max={prod.containerCapacity}
-                          height={5}
+                          height={6}
                           showPercentage
-                          label={`Contenedor restante: ${Math.max(
-                            0,
-                            resumenLinea.stockRespaldoParaEgreso - actualDespacho
-                          ).toFixed(3)} ${it.unit}`}
+                          semaforo
+                          label={
+                            resumenLinea.etiquetaCapacidadContenedor ||
+                            `Capacidad restante del contenedor: ${resumenLinea.remanenteEnContenedorActual.toFixed(
+                              3
+                            )} / ${prod.containerCapacity} ${it.unit}`
+                          }
                         />
                       </View>
                     )}
