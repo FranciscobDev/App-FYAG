@@ -154,6 +154,7 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
   const [confirmarDevolucionModal, establecerConfirmarDevolucionModal] = useState<OrdenDevolucion | null>(null);
   const [verificadoLista, establecerVerificadoLista] = useState<{ sku: string; quantityReceivedReal: number }[]>([]);
   const [discrepancyNota, establecerDiscrepancyNota] = useState("");
+  const [avisoBodega, establecerAvisoBodega] = useState("");
 
   const manejarAbrirConfirmarDevolucion = (ret: OrdenDevolucion) => {
     establecerConfirmarDevolucionModal(ret);
@@ -174,6 +175,8 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
 
   const manejarConfirmarBodegaRecepcion = () => {
     if (!confirmarDevolucionModal) return;
+    const codigoConfirmado = confirmarDevolucionModal.code;
+    const tecnicoConfirmado = confirmarDevolucionModal.technicianName;
     confirmarDevolucionBodega(
       confirmarDevolucionModal.id,
       verificadoLista,
@@ -181,6 +184,9 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
       usuario.name
     );
     establecerConfirmarDevolucionModal(null);
+    establecerAvisoBodega(
+      `Devolución ${codigoConfirmado} marcada como Recibida. Stock y Cardex actualizados, y estado reflejado en el móvil de ${tecnicoConfirmado}.`
+    );
   };
 
   // -------------------------------------------------------------
@@ -358,10 +364,12 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
 
         <SeccionDevolucionesBodega
           activoPestana={activoPestana}
+          avisoBodega={avisoBodega}
           establecerTransitBuscar={establecerTransitBuscar}
           filtradoTransitDevoluciones={filtradoTransitDevoluciones}
           inTransitConteo={inTransitConteo}
           manejarAbrirConfirmarDevolucion={manejarAbrirConfirmarDevolucion}
+          onCerrarAvisoBodega={() => establecerAvisoBodega("")}
           transitBuscar={transitBuscar}
         />
 
