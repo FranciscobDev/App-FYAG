@@ -1,45 +1,7 @@
-import React, { useEffect, useState } from "react";
-import {
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import { ScrollView } from "react-native";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
-import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
-import { formatearCLP, formatearFecha, esRutValido } from "@/nucleo/formato";
-import { tema } from "@/nucleo/tema";
-import {
-  Insignia,
-  Boton,
-  Tarjeta,
-  DialogoConfirmacion,
-  EstadoVacio,
-  BotonExportar,
-  CampoTexto,
-  VistaModal,
-  CampoNumero,
-  EncabezadoPagina,
-  ModalEscanerQr,
-  CalificacionEstrellas,
-  ContenedorEstadoPantalla,
-  NotificacionFlotante,
-} from "@/componentes/comunes";
-import {
-  Cliente,
-  FacturaCompra,
-  ItemFacturaCompra,
-  OrdenCompra,
-  ItemOrdenCompra,
-  Proveedor,
-  CalificacionProveedor,
-} from "@/nucleo/tipos";
+import { BandejaOrdenesCompra } from "@/componentes/BandejaOrdenesCompra";
 import { estilos } from "../estilos";
 
 export interface PropiedadesSeccionOrdenesCompra {
@@ -70,13 +32,42 @@ export const SeccionOrdenesCompra: React.FC<PropiedadesSeccionOrdenesCompra> = (
   establecerPdfVistaPreviaOrden,
   establecerPoFiltrarEstado,
   establecerTarifaModalOrden,
-  filtradoOrdenes,
   manejarAbrirEditarOrden,
   manejarAbrirNuevoOrden,
   mostrarAviso,
   poFiltrarEstado,
   rolActual,
 }) => {
+<<<<<<< HEAD
+  const { ordenesCompra } = usarAplicacion();
+
+  if (activoPestana !== "ordenes") {
+    return null;
+  }
+
+  return (
+    <ScrollView
+      style={estilos.pestanaContenido}
+      contentContainerStyle={estilos.scrollCuerpo}
+    >
+      <BandejaOrdenesCompra
+        ordenes={ordenesCompra}
+        poFiltrarEstado={poFiltrarEstado}
+        establecerPoFiltrarEstado={establecerPoFiltrarEstado}
+        aprobarYEnviarOrden={aprobarYEnviarOrden}
+        manejarAbrirNuevoOrden={manejarAbrirNuevoOrden}
+        manejarAbrirEditarOrden={manejarAbrirEditarOrden}
+        establecerPdfVistaPreviaOrden={establecerPdfVistaPreviaOrden}
+        establecerTarifaModalOrden={establecerTarifaModalOrden}
+        establecerCalificacionTiempo={establecerCalificacionTiempo}
+        establecerCalificacionQuality={establecerCalificacionQuality}
+        establecerCalificacionPrecio={establecerCalificacionPrecio}
+        establecerCalificacionComentario={establecerCalificacionComentario}
+        mostrarAviso={mostrarAviso}
+        rolActual={rolActual}
+      />
+    </ScrollView>
+=======
   const { proveedores, anularOrdenCompra } = usarAplicacion();
   return (
     <>
@@ -323,5 +314,6 @@ export const SeccionOrdenesCompra: React.FC<PropiedadesSeccionOrdenesCompra> = (
         </ScrollView>
       )}
     </>
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
   );
 };
