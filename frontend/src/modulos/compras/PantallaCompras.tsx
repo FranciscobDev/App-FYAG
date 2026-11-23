@@ -159,14 +159,43 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
   };
 
   const manejarGuardarCompraOrden = (asDraft = true) => {
+    if (editandoPo && editandoPo.status !== "borrador") {
+      establecerPoError("Solo se pueden editar órdenes en estado Borrador.");
+      return;
+    }
+
     const sup = proveedores.find((s) => s.id === seleccionadoProveedorId);
     if (!sup) {
       establecerPoError("Seleccione un proveedor válido.");
       return;
     }
     if (poElementos.length === 0) {
-      establecerPoError("Debe incluir al menos un insumo en la orden.");
+      establecerPoError("Debe incluir al menos una línea de compra en la orden.");
       return;
+    }
+
+    const skusRegistrados = new Set<string>();
+    for (const item of poElementos) {
+      if (!item.sku) {
+        establecerPoError("Cada línea debe tener un insumo seleccionado.");
+        return;
+      }
+      if (skusRegistrados.has(item.sku)) {
+        establecerPoError(
+          `El insumo ${item.sku} está repetido en las líneas. Ajusta la cantidad en una sola fila.`
+        );
+        return;
+      }
+      skusRegistrados.add(item.sku);
+
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        establecerPoError(`La cantidad para ${item.sku} debe ser mayor a 0.`);
+        return;
+      }
+      if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+        establecerPoError(`El precio unitario para ${item.sku} no puede ser negativo.`);
+        return;
+      }
     }
 
     const elementosHastaEnviar: ItemOrdenCompra[] = poElementos.map((it) => {
@@ -174,60 +203,49 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       return {
         sku: it.sku,
         name: p ? p.name : it.sku,
-        quantity: it.quantity,
-        unitPrice: it.unitPrice,
+        quantity: Math.round(it.quantity),
+        unitPrice: Math.round(it.unitPrice),
         unit: p ? p.unit : "un",
       };
     });
 
-    if (editandoPo) {
-      const resEdit = actualizarOrdenCompra(editandoPo.id, {
-        supplierId: sup.id,
-        supplier: sup.businessName,
-        supplierRut: sup.rut,
-        isAutoMinStock: poEsAutomaticoMinimo,
-        items: elementosHastaEnviar,
-        expectedDate: poEsperadoFecha,
-        notes: poNotas,
-      });
-
-      if (!resEdit.success) {
-        establecerPoError(resEdit.error || "Error al actualizar la orden en borrador.");
-        return;
-      }
-
-      if (!asDraft) {
-        aprobarYEnviarOrden(editandoPo.id);
-        mostrarAviso(
-          `Orden ${editandoPo.code} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
-        );
-      } else {
-        mostrarAviso(`Borrador ${editandoPo.code} actualizado correctamente.`);
-      }
-      establecerPoModal(false);
-      return;
-    }
-
-    const resultado = crearOrdenCompra({
+    const estadoDestino = asDraft ? ("borrador" as const) : ("enviada" as const);
+    const datosOrden = {
       supplierId: sup.id,
       supplier: sup.businessName,
       supplierRut: sup.rut,
-      status: asDraft ? "borrador" : "enviada",
+      status: estadoDestino,
       isAutoMinStock: poEsAutomaticoMinimo,
       items: elementosHastaEnviar,
       expectedDate: poEsperadoFecha,
-      notes: poNotas,
-    });
+      notes: poNotas.trim(),
+    };
 
-    if (resultado.success) {
+    if (editandoPo) {
+      const resultadoEdicion = actualizarOrdenCompra(editandoPo.id, datosOrden);
+      if (resultadoEdicion.success) {
+        mostrarAviso(
+          asDraft
+            ? `Borrador ${editandoPo.code} actualizado correctamente.`
+            : `Orden ${editandoPo.code} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+        );
+        establecerPoModal(false);
+      } else {
+        establecerPoError(resultadoEdicion.error || "Error al actualizar la orden de compra.");
+      }
+      return;
+    }
+
+    const resultadoCreacion = crearOrdenCompra(datosOrden);
+    if (resultadoCreacion.success) {
       mostrarAviso(
         asDraft
-          ? `Orden ${resultado.code || ""} guardada en estado Borrador.`
-          : `Orden ${resultado.code || ""} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+          ? `Orden ${resultadoCreacion.code || ""} guardada en estado Borrador.`
+          : `Orden ${resultadoCreacion.code || ""} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
       );
       establecerPoModal(false);
     } else {
-      establecerPoError(resultado.error || "Error al crear la orden de compra.");
+      establecerPoError(resultadoCreacion.error || "Error al crear la orden de compra.");
     }
   };
 
@@ -907,6 +925,7 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           poEsperadoFecha={poEsperadoFecha}
           poModal={poModal}
           poNotas={poNotas}
+          aprobarYEnviarOrden={aprobarYEnviarOrden}
           productos={productos}
           proveedores={proveedores}
           scanningTargetSku={scanningTargetSku}

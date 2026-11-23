@@ -83,6 +83,10 @@ const obtenerEstiloEstado = (estado: string) => {
   return { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8", dot: "#3b82f6" };
 };
 
+/** Determina si un estado de proyecto corresponde a un cierre definitivo (solo lectura). */
+const esEstadoCerrado = (estado?: string | null): boolean =>
+  estado === "Completado" || estado === "Cancelado";
+
 export const PantallaProyectos: React.FC = () => {
   const { usuario, idUsuario } = usarAutenticacion();
 
@@ -202,6 +206,21 @@ export const PantallaProyectos: React.FC = () => {
       return;
     }
 
+    // Regla de negocio: si el proyecto ya estaba cerrado, no se puede alterar el presupuesto
+    if (esEstadoCerrado(editando?.estado_proyecto)) {
+      const presupuestoOriginal = Number(editando.presupuesto_inicial) || 0;
+      const horasOriginal = Number(editando.presupuesto_horas) || 0;
+      const presupuestoNuevo = Number(formulario.presupuesto_inicial) || 0;
+      const horasNuevas = Number(formulario.presupuesto_horas) || 0;
+
+      if (presupuestoNuevo !== presupuestoOriginal || horasNuevas !== horasOriginal) {
+        establecerErrorFormulario(
+          "No se puede modificar el presupuesto de un proyecto que ya está cerrado."
+        );
+        return;
+      }
+    }
+
     if (
       formulario.fecha_inicio &&
       formulario.fecha_fin &&
@@ -276,6 +295,7 @@ export const PantallaProyectos: React.FC = () => {
       <ModalFormulario
         visible={modalVisible}
         editando={Boolean(editando)}
+        proyectoOriginal={editando}
         formulario={formulario}
         kits={kits}
         clientes={clientesLista}
@@ -382,10 +402,23 @@ export const PantallaProyectos: React.FC = () => {
 
             <View style={estilos.detalleAccionesFila}>
               <TouchableOpacity
-                style={styles.boton}
+                style={[styles.boton, esEstadoCerrado(seleccionado.estado_proyecto) && styles.botonSecundario]}
                 onPress={() => abrirEditar(seleccionado)}
               >
-                <Text style={styles.botonTexto}>Editar</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  {esEstadoCerrado(seleccionado.estado_proyecto) && (
+                    <Ionicons name="lock-closed" size={16} color={tema.colors.text} />
+                  )}
+                  <Text
+                    style={
+                      esEstadoCerrado(seleccionado.estado_proyecto)
+                        ? styles.botonTextoOscuro
+                        : styles.botonTexto
+                    }
+                  >
+                    {esEstadoCerrado(seleccionado.estado_proyecto) ? "Ver (Cerrado)" : "Editar"}
+                  </Text>
+                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.boton, styles.botonPeligro]}
@@ -606,12 +639,16 @@ export const PantallaProyectos: React.FC = () => {
             proyectosFiltrados.map((p) => {
               const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
               const color = colorAvance(porcentaje);
+              const esCerrado = esEstadoCerrado(p.estado_proyecto);
               const estEstado = obtenerEstiloEstado(p.estado_proyecto);
               const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
               return (
                 <Pressable
                   key={p.id_proyecto}
-                  style={styles.tarjetaProyectoModerna}
+                  style={[
+                    styles.tarjetaProyectoModerna,
+                    esCerrado && { opacity: 0.85, backgroundColor: "#f9fafb" },
+                  ]}
                   onPress={() => establecerSeleccionado(p)}
                 >
                   {/* Fila superior de insignias: Tipo + Estado */}
@@ -700,7 +737,11 @@ export const PantallaProyectos: React.FC = () => {
                     </View>
 
                     <View style={styles.flechaDetalleCaja}>
-                      <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                      <Ionicons
+                        name={esCerrado ? "lock-closed" : "chevron-forward"}
+                        size={16}
+                        color={esCerrado ? "#b91c1c" : "#9ca3af"}
+                      />
                     </View>
                   </View>
                 </Pressable>
@@ -723,15 +764,10 @@ const Metrica: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valo
   </View>
 );
 
-type CampoNumerico =
-  | "presupuesto_inicial"
-  | "presupuesto_horas"
-  | "valor_venta"
-  | "porcentaje_avance";
-
 type ModalProps = {
   visible: boolean;
   editando: boolean;
+  proyectoOriginal: Proyecto | null;
   formulario: FormularioProyecto;
   kits: KitProyecto[];
   clientes: ClienteProyecto[];
@@ -746,6 +782,7 @@ type ModalProps = {
 const ModalFormulario: React.FC<ModalProps> = ({
   visible,
   editando,
+  proyectoOriginal,
   formulario,
   kits,
   clientes,
@@ -756,6 +793,9 @@ const ModalFormulario: React.FC<ModalProps> = ({
   onCancelar,
   onGuardar,
 }) => {
+  const esCerrado = esEstadoCerrado(formulario.estado_proyecto);
+  const yaEstabaCerrado = Boolean(proyectoOriginal && esEstadoCerrado(proyectoOriginal.estado_proyecto));
+
   const [desplegableClientesAbierto, setDesplegableClientesAbierto] = useState(false);
   const [busquedaCliente, setBusquedaCliente] = useState("");
 
@@ -765,7 +805,6 @@ const ModalFormulario: React.FC<ModalProps> = ({
       setBusquedaCliente("");
     }
   }, [visible]);
-
   const kitSeleccionado = kits.find((k) => k.id_kit_proyecto === formulario.id_kit_proyecto);
 
   const clienteSeleccionado = useMemo(() => {
@@ -798,20 +837,30 @@ const ModalFormulario: React.FC<ModalProps> = ({
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancelar}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
-          {/* HEADER MODAL */}
+          {/* Encabezado del modal */}
           <View style={styles.modalHeader}>
             <View style={{ flex: 1 }}>
               <View style={styles.modalHeaderTag}>
                 <Ionicons name="briefcase-outline" size={13} color={tema.colors.primary} />
                 <Text style={styles.modalHeaderTagTexto}>
-                  {editando ? "EDICIÓN DE PROYECTO" : "GESTIÓN DE OBRAS"}
+                  {yaEstabaCerrado
+                    ? "PROYECTO CERRADO (SOLO LECTURA)"
+                    : editando
+                    ? "EDICIÓN DE PROYECTO"
+                    : "GESTIÓN DE OBRAS"}
                 </Text>
               </View>
               <Text style={styles.modalTitulo}>
-                {editando ? `Editar Proyecto: ${formulario.nombre_proyecto || "Sin nombre"}` : "Crear Nuevo Proyecto"}
+                {yaEstabaCerrado
+                  ? `Ver Proyecto: ${formulario.nombre_proyecto || "Cerrado"}`
+                  : editando
+                  ? `Editar Proyecto: ${formulario.nombre_proyecto || "Sin nombre"}`
+                  : "Crear Nuevo Proyecto"}
               </Text>
               <Text style={styles.modalSubtitulo}>
-                Define la información técnica, plazos, kit de insumos y presupuestos asignados.
+                {esCerrado
+                  ? "Proyecto en modo solo lectura. Los campos se encuentran bloqueados."
+                  : "Define la información técnica, plazos, kit de insumos y presupuestos asignados."}
               </Text>
             </View>
 
@@ -824,13 +873,39 @@ const ModalFormulario: React.FC<ModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* CUERPO CON SCROLL */}
+          {/* Cuerpo con desplazamiento */}
           <ScrollView
             style={styles.modalScrollCuerpo}
             contentContainerStyle={{ padding: 18, paddingBottom: 28 }}
             showsVerticalScrollIndicator={true}
           >
-            {/* SECCIÓN 1: INFORMACIÓN GENERAL */}
+            {/* Guía visual de control de estados de proyecto */}
+            <View style={styles.scrumBanner}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Ionicons name="information-circle" size={16} color="#92400e" />
+                <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
+              </View>
+              <Text style={styles.scrumBannerTexto}>
+                Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.
+              </Text>
+            </View>
+
+            {/* Aviso de bloqueo cuando está en estado Cerrado */}
+            {esCerrado && (
+              <View style={styles.bannerCerrado}>
+                <Ionicons name="lock-closed" size={18} color="#b91c1c" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bannerCerradoTitulo}>
+                    {yaEstabaCerrado ? "Proyecto Cerrado — Solo Lectura" : "Cambio de Estado: Cerrado"}
+                  </Text>
+                  <Text style={styles.bannerCerradoTexto}>
+                    Los campos se bloquean visualmente. No se permite la alteración del presupuesto inicial ni horas.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Sección 1: Información general */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="business-outline" size={16} color={tema.colors.primary} />
@@ -838,9 +913,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
 
               <Text style={styles.campoEtiqueta}>Nombre del Proyecto *</Text>
-              <View style={styles.inputContenedorConIcono}>
+              <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                 <Ionicons name="document-text-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                 <TextInput
+                  editable={!esCerrado}
                   style={styles.inputConIcono}
                   placeholder="Ej: Montaje Tableros Centro Logístico Quilicura"
                   placeholderTextColor={tema.colors.textMuted}
@@ -1001,9 +1077,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Cliente / Empresa</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="person-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       placeholder="Ej: Retail & Logística S.A."
                       placeholderTextColor={tema.colors.textMuted}
@@ -1015,9 +1092,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Dirección de la Faena</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="location-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       placeholder="Ej: Camino El Alba 1200, Quilicura"
                       placeholderTextColor={tema.colors.textMuted}
@@ -1029,7 +1107,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 2: CLASIFICACIÓN Y ESTADO */}
+            {/* Sección 2: Clasificación y estado */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="options-outline" size={16} color={tema.colors.primary} />
@@ -1037,7 +1115,6 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
 
               <View style={styles.dosColumnasFila}>
-                {/* Tipo de proyecto */}
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Tipo de Proyecto</Text>
                   <View style={styles.segmentedRow}>
@@ -1047,8 +1124,13 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       return (
                         <TouchableOpacity
                           key={o}
-                          style={[styles.segmentBtn, activo && styles.segmentBtnActivo]}
-                          onPress={() => onCambiar("tipo_proyecto", o)}
+                          disabled={esCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            esCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !esCerrado && onCambiar("tipo_proyecto", o)}
                         >
                           <Ionicons
                             name={iconName}
@@ -1064,17 +1146,21 @@ const ModalFormulario: React.FC<ModalProps> = ({
                   </View>
                 </View>
 
-                {/* Estado inicial */}
                 <View style={{ flex: 1, minWidth: 200 }}>
-                  <Text style={styles.campoEtiqueta}>Estado Inicial</Text>
+                  <Text style={styles.campoEtiqueta}>Estado</Text>
                   <View style={styles.segmentedRow}>
                     {ESTADOS_PROYECTO.map((o) => {
                       const activo = formulario.estado_proyecto === o;
                       return (
                         <TouchableOpacity
                           key={o}
-                          style={[styles.segmentBtn, activo && styles.segmentBtnActivo]}
-                          onPress={() => onCambiar("estado_proyecto", o)}
+                          disabled={yaEstabaCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            yaEstabaCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !yaEstabaCerrado && onCambiar("estado_proyecto", o)}
                         >
                           <Text style={[styles.segmentBtnTexto, activo && styles.segmentBtnTextoActivo]}>
                             {o}
@@ -1087,7 +1173,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 3: PLAZOS Y FECHAS */}
+            {/* Sección 3: Plazos y fechas */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="calendar-outline" size={16} color={tema.colors.primary} />
@@ -1099,6 +1185,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
                   <SelectorFecha
                     label="Fecha de Inicio"
                     required
+                    disabled={esCerrado}
                     value={formulario.fecha_inicio ?? ""}
                     onChangeDate={(date) => {
                       onCambiar("fecha_inicio", date);
@@ -1113,12 +1200,15 @@ const ModalFormulario: React.FC<ModalProps> = ({
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <SelectorFecha
                     label="Fecha de Fin"
+                    disabled={esCerrado}
                     value={formulario.fecha_fin ?? ""}
                     onChangeDate={(date) => onCambiar("fecha_fin", date)}
                     onClear={() => onCambiar("fecha_fin", null)}
                     minDate={formulario.fecha_inicio ?? undefined}
                     error={
-                      formulario.fecha_inicio && formulario.fecha_fin && formulario.fecha_fin < formulario.fecha_inicio
+                      formulario.fecha_inicio &&
+                      formulario.fecha_fin &&
+                      formulario.fecha_fin < formulario.fecha_inicio
                         ? "La fecha de fin no puede ser anterior al inicio"
                         : undefined
                     }
@@ -1129,18 +1219,24 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 4: ASIGNACIÓN DE KIT PREDETERMINADO */}
+            {/* Sección 4: Asignación de kit predeterminado al crear */}
             {!editando && (
               <View style={[styles.cardSeccion, styles.cardSeccionKit]}>
                 <View style={[styles.kitSeccionHeader, !kitSeleccionado && { marginBottom: 0 }]}>
                   <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="cube-outline" size={16} color="#065f46" />
-                    <Text style={[styles.cardSeccionTitulo, { color: "#065f46", borderBottomWidth: 0, paddingBottom: 0, marginBottom: 0 }]}>
+                    <Text
+                      style={[
+                        styles.cardSeccionTitulo,
+                        { color: "#065f46", borderBottomWidth: 0, paddingBottom: 0, marginBottom: 0 },
+                      ]}
+                    >
                       4. Asignar Kit Predeterminado (Opcional)
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.btnGestionarKitsMini}
+                    disabled={esCerrado}
+                    style={[styles.btnGestionarKitsMini, esCerrado && styles.opcionDeshabilitada]}
                     onPress={onAbrirGestionKits}
                   >
                     <Ionicons name="settings-outline" size={13} color={tema.colors.primary} />
@@ -1171,7 +1267,8 @@ const ModalFormulario: React.FC<ModalProps> = ({
                     <View style={styles.kitItemsPreview}>
                       {kitSeleccionado.items.slice(0, 4).map((it, idx) => (
                         <Text key={idx} style={styles.kitItemPreviewTexto}>
-                          • {it.cantidad_requerida_kit}x {it.nombre_articulo} ({formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
+                          • {it.cantidad_requerida_kit}x {it.nombre_articulo} (
+                          {formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
                         </Text>
                       ))}
                       {kitSeleccionado.items.length > 4 && (
@@ -1185,30 +1282,32 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       <Text style={styles.kitAutoPresupuestoNota}>
                         ✓ Presupuesto asignado automáticamente.
                       </Text>
-                      <TouchableOpacity
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 4,
-                          paddingVertical: 4,
-                          paddingHorizontal: 8,
-                          borderRadius: 6,
-                          backgroundColor: "#fef2f2",
-                          borderWidth: 1,
-                          borderColor: "#fecaca",
-                        }}
-                        onPress={() => onCambiar("id_kit_proyecto", null)}
-                      >
-                        <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
-                        <Text style={{ fontSize: 11, fontWeight: "600", color: "#dc2626" }}>Quitar kit</Text>
-                      </TouchableOpacity>
+                      {!esCerrado && (
+                        <TouchableOpacity
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 4,
+                            paddingVertical: 4,
+                            paddingHorizontal: 8,
+                            borderRadius: 6,
+                            backgroundColor: "#fef2f2",
+                            borderWidth: 1,
+                            borderColor: "#fecaca",
+                          }}
+                          onPress={() => onCambiar("id_kit_proyecto", null)}
+                        >
+                          <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
+                          <Text style={{ fontSize: 11, fontWeight: "600", color: "#dc2626" }}>Quitar kit</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 )}
               </View>
             )}
 
-            {/* SECCIÓN 5: PRESUPUESTOS Y VALOR DE VENTA */}
+            {/* Sección 5: Presupuestos y avance */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="cash-outline" size={16} color={tema.colors.primary} />
@@ -1220,9 +1319,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Presupuesto Materiales ($ CLP)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="cash-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1235,9 +1335,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Presupuesto Horas (HH)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="time-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1251,10 +1352,11 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
-                  <Text style={styles.campoEtiqueta}>Valor de Venta ($ CLP)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <Text style={styles.campoEtiqueta}>Presupuesto Usado / Valor Venta ($ CLP)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="pricetag-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1267,9 +1369,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Porcentaje de Avance (%)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="stats-chart-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1282,7 +1385,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* ERROR */}
+            {/* Mensaje de error del formulario */}
             {Boolean(error) && (
               <View style={styles.errorBannerModal}>
                 <Ionicons name="alert-circle" size={18} color="#dc2626" />
@@ -1291,32 +1394,40 @@ const ModalFormulario: React.FC<ModalProps> = ({
             )}
           </ScrollView>
 
-          {/* FOOTER ACCIONES */}
+          {/* Pie del modal con botones de acción */}
           <View style={styles.modalFooter}>
             <TouchableOpacity
               style={styles.btnModalCancelar}
               onPress={onCancelar}
               disabled={guardando}
             >
-              <Text style={styles.btnModalCancelarTexto}>Cancelar</Text>
+              <Text style={styles.btnModalCancelarTexto}>
+                {yaEstabaCerrado ? "Cerrar" : "Cancelar"}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.btnModalGuardar, guardando && { opacity: 0.7 }]}
-              onPress={onGuardar}
-              disabled={guardando}
-            >
-              {guardando ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="save-outline" size={18} color="#ffffff" />
-                  <Text style={styles.btnModalGuardarTexto}>
-                    {editando ? "Guardar Cambios" : "Crear Proyecto"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {!yaEstabaCerrado && (
+              <TouchableOpacity
+                style={[styles.btnModalGuardar, guardando && { opacity: 0.7 }]}
+                onPress={onGuardar}
+                disabled={guardando}
+              >
+                {guardando ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={18} color="#ffffff" />
+                    <Text style={styles.btnModalGuardarTexto}>
+                      {editando
+                        ? esCerrado
+                          ? "Guardar y Cerrar"
+                          : "Guardar Cambios"
+                        : "Crear Proyecto"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -1327,22 +1438,49 @@ const ModalFormulario: React.FC<ModalProps> = ({
 // ---------- Estilos locales ----------
 
 const styles = StyleSheet.create({
-  campoEtiqueta: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 6,
-  },
-  input: {
-    height: 44,
+  bannerCerrado: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fee2e2",
     borderWidth: 1,
-    borderColor: tema.colors.borderDark,
+    borderColor: "#fecaca",
     borderRadius: tema.radius.md,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 10,
+  },
+  bannerCerradoTitulo: {
     fontSize: tema.fontSize.sm,
-    color: tema.colors.text,
-    backgroundColor: tema.colors.card,
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#b91c1c",
+  },
+  bannerCerradoTexto: {
+    fontSize: tema.fontSize.xs,
+    color: "#7f1d1d",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  scrumBanner: {
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: tema.radius.md,
+    padding: 10,
+    marginBottom: 12,
+  },
+  scrumBannerTitulo: {
+    fontSize: tema.fontSize.xs,
+    fontWeight: "700",
+    color: "#92400e",
+  },
+  scrumBannerTexto: {
+    fontSize: tema.fontSize.xs,
+    color: "#92400e",
+    lineHeight: 16,
+  },
+  opcionDeshabilitada: {
+    opacity: 0.5,
   },
   barra: {
     height: 6,
@@ -1805,6 +1943,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: tema.fontSize.sm,
   },
+  campoEtiqueta: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
+  },
   tituloEncabezadoBloque: {
     flexGrow: 1,
     flexShrink: 0,
@@ -1851,16 +1995,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
-  kitSeccionTitulo: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  kitSeccionSub: {
-    fontSize: 11,
-    color: "#6b7280",
-    marginTop: 1,
-  },
   btnGestionarKitsMini: {
     flexDirection: "row",
     alignItems: "center",
@@ -1876,29 +2010,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: tema.colors.primary,
-  },
-  kitChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    marginRight: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  kitChipActivo: {
-    backgroundColor: tema.colors.primary,
-    borderColor: tema.colors.primary,
-  },
-  kitChipTexto: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  kitChipTextoActivo: {
-    color: "#fff",
   },
   kitResumenCaja: {
     marginTop: 10,
@@ -2071,6 +2182,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     paddingHorizontal: 10,
     marginBottom: 8,
+  },
+  inputContenedorBloqueado: {
+    backgroundColor: tema.colors.surfaceAlt,
+    borderColor: tema.colors.border,
+    opacity: 0.8,
   },
   inputIcono: {
     marginRight: 8,

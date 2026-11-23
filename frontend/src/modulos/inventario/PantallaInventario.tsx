@@ -126,7 +126,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     if (propTitle && hideTabBar) return propTitle;
     switch (activoPestana) {
       case "solicitudes":
-        return "Aprobación de Solicitudes";
+        return rolActual === "warehouse"
+          ? "Solicitudes de Material"
+          : "Bandeja de Aprobación de Solicitudes";
       case "mermas":
         return rolActual === "warehouse" ? "Registro de Mermas" : "Control de Mermas";
       case "conteo":
@@ -145,7 +147,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     if (propSubtitle && hideTabBar) return propSubtitle;
     switch (activoPestana) {
       case "solicitudes":
-        return "Aprobar, rechazar o ajustar pedidos de materiales en faena";
+        return rolActual === "warehouse"
+          ? "Enviar pedidos a Administración, ver comprobantes numerados y rechazos"
+          : "Aprobar solicitudes con comprobante numerado o rechazar con motivo obligatorio";
       case "mermas":
         return rolActual === "warehouse"
           ? "Reportar insumos dañados, caducados o pérdidas para baja"
@@ -320,12 +324,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   // =========================================================================
-  // 2. CARDEX STATE
+  // 2. ESTADO DEL CARDEX (SOLO LECTURA)
   // =========================================================================
   const [kardexFiltrarSku, establecerKardexFiltrarSku] = useState("");
   const [kardexFiltrarTipo, establecerKardexFiltrarTipo] = useState<string>("todos");
   const [kardexFiltrarProyecto, establecerKardexFiltrarProyecto] = useState<string>("todos");
-  const [kardexFechaRango, establecerKardexFechaRango] = useState<"todos" | "7d" | "30d">("todos");
+  const [kardexFechaRango, establecerKardexFechaRango] = useState<"todos" | "7d" | "30d" | "mes_actual">("todos");
   const [productoCardexSeleccionado, establecerProductoCardexSeleccionado] = useState<Producto | null>(null);
 
   const manejarAbrirCardexProducto = (prod: Producto) => {
@@ -353,11 +357,16 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   // =========================================================================
-  // 3. SOLICITUDES STATE
+  // 3. ESTADO DE SOLICITUDES Y BANDEJA DE APROBACIÓN
   // =========================================================================
-  const [solicitudPestana, establecerSolicitudPestana] = useState<"todas" | "pendiente" | "aprobada" | "rechazada" | "anulada">("todas");
+  const [solicitudPestana, establecerSolicitudPestana] = useState<
+    "todas" | "pendiente" | "aprobada" | "rechazada" | "anulada"
+  >(rolActual === "admin" ? "pendiente" : "todas");
+  const [solicitudBusqueda, establecerSolicitudBusqueda] = useState("");
   const [nuevoSolicitudModal, establecerNuevoSolicitudModal] = useState(false);
   const [editandoSolicitud, establecerEditandoSolicitud] = useState<SolicitudMaterial | null>(null);
+  const [anularConfirmarSolicitud, establecerAnularConfirmarSolicitud] =
+    useState<SolicitudMaterial | null>(null);
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState(proyectos[0]?.id || "");
   const [solicitudElementos, establecerSolicitudElementos] = useState<{ sku: string; quantity: number }[]>([]);
   const [solicitudUrgencia, establecerSolicitudUrgencia] = useState<"normal" | "alta" | "urgente">("normal");
@@ -365,10 +374,13 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [solicitudError, establecerSolicitudError] = useState("");
   const [faltanteExistenciaErrores, establecerFaltanteExistenciaErrores] = useState<string[]>([]);
 
-  // Timeline modal
+  // Modal de línea de tiempo
   const [seleccionadoTimelineSolicitud, establecerSeleccionadoTimelineSolicitud] = useState<SolicitudMaterial | null>(null);
 
-  // Rejection modal
+  // Modal de comprobante numerado al aprobar
+  const [seleccionadoComprobanteSolicitud, establecerSeleccionadoComprobanteSolicitud] = useState<SolicitudMaterial | null>(null);
+
+  // Modal de rechazo con motivo obligatorio
   const [rechazarModalSolicitud, establecerRechazarModalSolicitud] = useState<SolicitudMaterial | null>(null);
   const [rechazarMotivo, establecerRechazarMotivo] = useState("");
 
@@ -433,6 +445,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerSolicitudElementos(updated);
     establecerSolicitudError("");
     establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+    if (solicitudError) establecerSolicitudError("");
   };
 
   const manejarEnviarSolicitud = () => {
@@ -464,7 +477,8 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     if (editandoSolicitud) {
       const resEdit = modificarSolicitudMaterial(editandoSolicitud.id, elementosHastaEnviar, {
         projectId: seleccionadoProyectoId,
-        comment: solicitudComentario,
+        urgency: solicitudUrgencia,
+        comment: solicitudComentario.trim(),
         authorName: usuario.name,
       });
       if (!resEdit.success) {
@@ -485,7 +499,8 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       usuario.rut,
       elementosHastaEnviar,
       solicitudUrgencia,
-      solicitudComentario
+      solicitudComentario.trim(),
+      { name: usuario.name, role: rolActual }
     );
 
     if (!res.success) {
@@ -499,10 +514,30 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     }
   };
 
-  const filtradoSolicitudes = solicitudesMaterial.filter((r) => {
-    if (solicitudPestana === "todas") return true;
-    return r.status === solicitudPestana;
-  });
+  const PRIORIDAD_URGENCIA: Record<SolicitudMaterial["urgency"], number> = {
+    urgente: 0,
+    alta: 1,
+    normal: 2,
+  };
+
+  const filtradoSolicitudes = solicitudesMaterial
+    .filter((r) => {
+      if (solicitudPestana !== "todas" && r.status !== solicitudPestana) return false;
+      const q = solicitudBusqueda.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        r.code.toLowerCase().includes(q) ||
+        r.projectName.toLowerCase().includes(q) ||
+        r.projectCode.toLowerCase().includes(q) ||
+        r.technicianName.toLowerCase().includes(q) ||
+        (r.receiptNumber && r.receiptNumber.toLowerCase().includes(q))
+      );
+    })
+    .sort((a, b) => {
+      if (a.status === "pendiente" && b.status !== "pendiente") return -1;
+      if (a.status !== "pendiente" && b.status === "pendiente") return 1;
+      return PRIORIDAD_URGENCIA[a.urgency] - PRIORIDAD_URGENCIA[b.urgency];
+    });
 
   // =========================================================================
   // 4. EGRESO (DESPACHO) STATE
@@ -768,8 +803,13 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
               {(rolActual === "warehouse"
                 ? [
                   { id: "egreso", label: `Egreso (${aprobadoSolicitudes.length})`, icon: "log-out-outline" },
-                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
+                  {
+                    id: "solicitudes",
+                    label: `Solicitudes (${solicitudesMaterial.filter((r) => r.status === "pendiente").length})`,
+                    icon: "clipboard-outline",
+                  },
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
+                  { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                   {
                     id: "conteo",
                     label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
@@ -811,12 +851,15 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           activoPestana={activoPestana}
           alternarProductoDeshabilitado={alternarProductoDeshabilitado}
           buscarQuery={buscarQuery}
+          cardexCompleto={cardex}
           establecerBuscarQuery={establecerBuscarQuery}
+          establecerKardexFechaRango={establecerKardexFechaRango}
           establecerKardexFiltrarProyecto={establecerKardexFiltrarProyecto}
           establecerKardexFiltrarSku={establecerKardexFiltrarSku}
           establecerKardexFiltrarTipo={establecerKardexFiltrarTipo}
           filtradoCardex={filtradoCardex}
           filtradoProductos={filtradoProductos}
+          kardexFechaRango={kardexFechaRango}
           kardexFiltrarProyecto={kardexFiltrarProyecto}
           kardexFiltrarSku={kardexFiltrarSku}
           kardexFiltrarTipo={kardexFiltrarTipo}
@@ -826,6 +869,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
           manejarExportarCardex={manejarExportarCardex}
           mostrarAviso={mostrarAviso}
+          productos={productos}
           proyectos={proyectos}
           rolActual={rolActual}
         />
@@ -833,18 +877,21 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         <SeccionSolicitudesMaterial
           activoPestana={activoPestana}
           aprobarSolicitudMaterial={aprobarSolicitudMaterial}
-          cancelarSolicitudMaterial={cancelarSolicitudMaterial}
+          establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
           establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
           establecerRechazarMotivo={establecerRechazarMotivo}
+          establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
           establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
+          establecerSolicitudBusqueda={establecerSolicitudBusqueda}
           establecerSolicitudPestana={establecerSolicitudPestana}
           filtradoSolicitudes={filtradoSolicitudes}
           manejarAbrirEditarSolicitud={manejarAbrirEditarSolicitud}
           manejarAbrirNuevoSolicitud={manejarAbrirNuevoSolicitud}
-          modificarSolicitudMaterial={modificarSolicitudMaterial}
           mostrarAviso={mostrarAviso}
           rolActual={rolActual}
+          solicitudBusqueda={solicitudBusqueda}
           solicitudPestana={solicitudPestana}
+          todasSolicitudes={solicitudesMaterial}
           usuario={usuario}
         />
 
@@ -927,7 +974,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           abrirEscaner={abrirEscaner}
           activoDespachoSolicitud={activoDespachoSolicitud}
           activoProyectos={activoProyectos}
+          anularConfirmarSolicitud={anularConfirmarSolicitud}
           calcularFaltanteExistencia={calcularFaltanteExistencia}
+          cancelarSolicitudMaterial={cancelarSolicitudMaterial}
           cardex={cardex}
           productoCardexSeleccionado={productoCardexSeleccionado}
           establecerProductoCardexSeleccionado={establecerProductoCardexSeleccionado}
@@ -946,7 +995,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           escanerCallback={escanerCallback}
           escanerTitulo={escanerTitulo}
           escanerVisible={escanerVisible}
+          establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
           establecerConfirmarDespachoVisible={establecerConfirmarDespachoVisible}
+          establecerEditandoSolicitud={establecerEditandoSolicitud}
           establecerConteoModalVisible={establecerConteoModalVisible}
           establecerConteoNotas={establecerConteoNotas}
           establecerConteoPhysicalCantidad={establecerConteoPhysicalCantidad}
@@ -976,10 +1027,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           establecerNuevoSolicitudModal={establecerNuevoSolicitudModal}
           establecerRechazarModalSolicitud={establecerRechazarModalSolicitud}
           establecerRechazarMotivo={establecerRechazarMotivo}
+          establecerSeleccionadoComprobanteSolicitud={establecerSeleccionadoComprobanteSolicitud}
           establecerSeleccionadoProyectoId={establecerSeleccionadoProyectoId}
           establecerSeleccionadoTimelineSolicitud={establecerSeleccionadoTimelineSolicitud}
           establecerSolicitudComentario={establecerSolicitudComentario}
           establecerSolicitudElementos={establecerSolicitudElementos}
+          establecerSolicitudUrgencia={establecerSolicitudUrgencia}
           faltanteExistenciaErrores={faltanteExistenciaErrores}
           formularioBarcode={formularioBarcode}
           formularioCategoria={formularioCategoria}
@@ -1019,6 +1072,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           rechazarMotivo={rechazarMotivo}
           rechazarSolicitudMaterial={rechazarSolicitudMaterial}
           seleccionadoConteoProducto={seleccionadoConteoProducto}
+          seleccionadoComprobanteSolicitud={seleccionadoComprobanteSolicitud}
           seleccionadoMermaProducto={seleccionadoMermaProducto}
           seleccionadoProyectoId={seleccionadoProyectoId}
           seleccionadoTimelineSolicitud={seleccionadoTimelineSolicitud}
@@ -1026,6 +1080,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           solicitudComentario={solicitudComentario}
           solicitudElementos={solicitudElementos}
           solicitudError={solicitudError}
+          solicitudUrgencia={solicitudUrgencia}
           totalUnidadesHastaDespacho={totalUnidadesHastaDespacho}
           usuario={usuario}
         />

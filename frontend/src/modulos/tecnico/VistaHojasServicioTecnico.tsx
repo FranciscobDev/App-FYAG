@@ -290,8 +290,26 @@ export const VistaHojasServicioTecnico: React.FC<TechnicianServiceSheetsViewProp
           <View style={estilos.alertaEncabezado}>
             <Text style={estilos.alertaCodigo}>{req.code}</Text>
             <Insignia
-              label={req.status === "aprobada" ? "Aprobada" : req.status === "rechazada" ? "Rechazada" : "Pendiente"}
-              tone={req.status === "aprobada" ? "ok" : req.status === "rechazada" ? "danger" : "warn"}
+              label={
+                req.status === "aprobada"
+                  ? "Aprobada"
+                  : req.status === "rechazada"
+                  ? "Rechazada"
+                  : req.status === "anulada"
+                  ? "Anulada"
+                  : req.status === "entregada"
+                  ? "Entregada"
+                  : "Pendiente"
+              }
+              tone={
+                req.status === "aprobada" || req.status === "entregada"
+                  ? "ok"
+                  : req.status === "rechazada"
+                  ? "danger"
+                  : req.status === "anulada"
+                  ? "mute"
+                  : "warn"
+              }
               size="sm"
             />
           </View>

@@ -51,13 +51,16 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
   const [seleccionadoProyectoForPestana, establecerSeleccionadoProyectoForPestana] = useState<Proyecto | null>(null);
   const [registerInicialSubPestana, establecerRegisterInicialSubPestana] = useState<"avance" | "horas" | "sobrante">("avance");
   const [esSinConexion, establecerEsSinConexion] = useState(false);
+  const [sinConexionRed, establecerSinConexionRed] = useState(false);
   const [pendienteSincronizacionConteo, establecerPendienteSincronizacionConteo] = useState(0);
+
+  const sinConexionEfectiva = esSinConexion || sinConexionRed;
 
   // Modales
   const [usuarioMenuAbrir, establecerUsuarioMenuAbrir] = useState(false);
 
 
-  // Toast
+  // Notificación flotante
   const [avisoVisible, establecerAvisoVisible] = useState(false);
   const [avisoMensaje, establecerAvisoMensaje] = useState("");
   const [avisoTipo, establecerAvisoTipo] = useState<TipoNotificacionFlotante>("ok");
@@ -78,6 +81,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         return (
           <VistaProyectosTecnico
             isOffline={esSinConexion}
+            onCambioConexion={establecerSinConexionRed}
             onNavigateTab={(tab, proj, subTab) => {
               if (proj) establecerSeleccionadoProyectoForPestana(proj);
               if (tab === "registrar") {
@@ -148,14 +152,14 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         <View style={estilos.superiorDerecha}>
           <ChipSincronizacion
             variant="dark"
-            status={esSinConexion || pendienteSincronizacionConteo > 0 ? "pendiente" : "sincronizado"}
+            status={sinConexionEfectiva || pendienteSincronizacionConteo > 0 ? "pendiente" : "sincronizado"}
             pendingCount={pendienteSincronizacionConteo}
             onPress={() => {
               if (pendienteSincronizacionConteo > 0) {
                 mostrarAviso("Sincronizando operaciones pendientes con el servidor...", "ok");
                 establecerPendienteSincronizacionConteo(0);
               } else {
-                mostrarAviso(esSinConexion ? "Operando en modo sin conexión" : "Todos los datos sincronizados", "info");
+                mostrarAviso(sinConexionEfectiva ? "Operando en modo sin conexión (caché local)" : "Todos los datos sincronizados", "info");
               }
             }}
           />

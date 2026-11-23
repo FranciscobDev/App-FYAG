@@ -34,6 +34,8 @@ import {
   CeldaStock,
   ContenedorEstadoPantalla,
   NotificacionFlotante,
+  SelectorBuscable,
+  OpcionSelectorBuscable,
 } from "@/componentes/comunes";
 import {
   MovimientoCardex,
@@ -44,6 +46,8 @@ import {
   RegistroMerma,
 } from "@/nucleo/tipos";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
+import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
+import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
 import {
   esProyectoActivoParaSolicitud,
   liberarReservaComprometidoEnCatalogoH6,
@@ -54,7 +58,12 @@ export interface PropiedadesModalesInventario {
   abrirEscaner: any;
   activoDespachoSolicitud: any;
   activoProyectos: any;
+  anularConfirmarSolicitud?: SolicitudMaterial | null;
   calcularFaltanteExistencia: any;
+  cancelarSolicitudMaterial?: (
+    id: string,
+    authorName?: string
+  ) => { success: boolean; error?: string };
   cardex?: any;
   productoCardexSeleccionado?: any;
   establecerProductoCardexSeleccionado?: any;
@@ -73,7 +82,11 @@ export interface PropiedadesModalesInventario {
   escanerCallback: any;
   escanerTitulo: any;
   escanerVisible: any;
+  establecerAnularConfirmarSolicitud?: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
   establecerConfirmarDespachoVisible: any;
+  establecerEditandoSolicitud?: React.Dispatch<React.SetStateAction<SolicitudMaterial | null>>;
   establecerConteoModalVisible: any;
   establecerConteoNotas: any;
   establecerConteoPhysicalCantidad: any;
@@ -103,10 +116,14 @@ export interface PropiedadesModalesInventario {
   establecerNuevoSolicitudModal: any;
   establecerRechazarModalSolicitud: any;
   establecerRechazarMotivo: any;
+  establecerSeleccionadoComprobanteSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
   establecerSeleccionadoProyectoId: any;
   establecerSeleccionadoTimelineSolicitud: any;
   establecerSolicitudComentario: any;
   establecerSolicitudElementos: any;
+  establecerSolicitudUrgencia?: React.Dispatch<React.SetStateAction<"normal" | "alta" | "urgente">>;
   faltanteExistenciaErrores: any;
   formularioBarcode: any;
   formularioCategoria: any;
@@ -146,6 +163,7 @@ export interface PropiedadesModalesInventario {
   rechazarMotivo: any;
   rechazarSolicitudMaterial: any;
   seleccionadoConteoProducto: any;
+  seleccionadoComprobanteSolicitud: SolicitudMaterial | null;
   seleccionadoMermaProducto: any;
   seleccionadoProyectoId: any;
   seleccionadoTimelineSolicitud: any;
@@ -153,6 +171,7 @@ export interface PropiedadesModalesInventario {
   solicitudComentario: any;
   solicitudElementos: any;
   solicitudError: any;
+  solicitudUrgencia?: "normal" | "alta" | "urgente";
   totalUnidadesHastaDespacho: any;
   usuario: any;
 }
@@ -161,7 +180,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   abrirEscaner,
   activoDespachoSolicitud,
   activoProyectos,
+  anularConfirmarSolicitud = null,
   calcularFaltanteExistencia,
+  cancelarSolicitudMaterial,
   cardex = [],
   productoCardexSeleccionado = null,
   establecerProductoCardexSeleccionado,
@@ -180,7 +201,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   escanerCallback,
   escanerTitulo,
   escanerVisible,
+  establecerAnularConfirmarSolicitud,
   establecerConfirmarDespachoVisible,
+  establecerEditandoSolicitud,
   establecerConteoModalVisible,
   establecerConteoNotas,
   establecerConteoPhysicalCantidad,
@@ -210,10 +233,12 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   establecerNuevoSolicitudModal,
   establecerRechazarModalSolicitud,
   establecerRechazarMotivo,
+  establecerSeleccionadoComprobanteSolicitud,
   establecerSeleccionadoProyectoId,
   establecerSeleccionadoTimelineSolicitud,
   establecerSolicitudComentario,
   establecerSolicitudElementos,
+  establecerSolicitudUrgencia,
   faltanteExistenciaErrores,
   formularioBarcode,
   formularioCategoria,
@@ -253,6 +278,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   rechazarMotivo,
   rechazarSolicitudMaterial,
   seleccionadoConteoProducto,
+  seleccionadoComprobanteSolicitud,
   seleccionadoMermaProducto,
   seleccionadoProyectoId,
   seleccionadoTimelineSolicitud,
@@ -260,9 +286,22 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   solicitudComentario,
   solicitudElementos,
   solicitudError,
+  solicitudUrgencia = "normal",
   totalUnidadesHastaDespacho,
   usuario,
 }) => {
+  const { proyectos: todosProyectos = [] } = usarAplicacion();
+
+  const opcionesProductosSolicitud: OpcionSelectorBuscable<string>[] = productos
+    .filter((p: Producto) => !p.disabled)
+    .map((p: Producto) => ({
+      label: p.name,
+      value: p.sku,
+      hint: `SKU: ${p.sku} • Stock disponible: ${p.stock} ${p.unit}`,
+      badge: `${p.stock} ${p.unit}`,
+      icon: "cube-outline",
+    }));
+
   return (
     <>
       {/* =====================================================================
@@ -481,15 +520,25 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </View>
       </VistaModal>
 
-      {/* MODAL 2: NUEVA / EDITAR SOLICITUD DE INSUMOS (H6 / H36 / FRONT-2) */}
+      {/* MODAL 2: CREAR O EDITAR SOLICITUD DE INSUMOS (H6 / H36 / FRONT-2) */}
       <VistaModal
         visible={nuevoSolicitudModal}
-        onClose={() => establecerNuevoSolicitudModal(false)}
-        title={editandoSolicitud ? `Editar Solicitud ${editandoSolicitud.code}` : "Nueva Solicitud de Insumos"}
-        subtitle="Muestra stock disponible en vivo, bloquea si supera disponible o proyecto inactivo y reserva stock en Comprometido (H6)"
+        onClose={() => {
+          establecerNuevoSolicitudModal(false);
+          establecerEditandoSolicitud?.(null);
+        }}
+        title={
+          editandoSolicitud
+            ? `Editar Solicitud: ${editandoSolicitud.code}`
+            : "Nueva Solicitud de Insumos"
+        }
+        subtitle={
+          editandoSolicitud
+            ? "Editable únicamente mientras permanezca en estado Pendiente • Valida stock disponible en vivo (H6)"
+            : "Muestra stock disponible en vivo, bloquea si supera disponible o proyecto inactivo y reserva stock en Comprometido (H6)"
+        }
       >
         {(() => {
-          const { proyectos: todosProyectos = [] } = usarAplicacion();
           const proyectoSeleccionado =
             todosProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
             activoProyectos.find((p: any) => p.id === seleccionadoProyectoId) ||
@@ -563,66 +612,55 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                   : prod?.committed || 0;
                 const superaDisp = Boolean(evalLinea?.superaDisponible);
                 const invalida = Boolean(evalLinea?.cantidadInvalida || evalLinea?.insumoInactivo);
+                const opcionesDisponibles = opcionesProductosSolicitud.filter(
+                  (op) =>
+                    op.value === item.sku ||
+                    !solicitudElementos.some((el: any) => el.sku === op.value)
+                );
 
                 return (
                   <View
-                    key={idx}
+                    key={`${item.sku}_${idx}`}
                     style={[
-                      estilos.solicitudElementoFormularioFila,
-                      { flexDirection: "column", alignItems: "stretch", padding: 10 },
+                      estilos.solicitudLineaTarjeta,
                       (superaDisp || invalida) && estilos.lackingExistenciaFormularioFila,
                     ]}
                   >
-                    {/* Selector de Insumo del Catálogo con Stock Disponible en Vivo */}
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={{ marginBottom: 8 }}
-                    >
-                      {productos
-                        .filter((p: any) => !p.disabled)
-                        .map((p: any) => {
-                          const activoSku = p.sku === item.sku;
-                          return (
-                            <TouchableOpacity
-                              key={p.sku}
-                              onPress={() =>
-                                manejarSolicitudElementoCambiar(idx, p.sku, item.quantity)
-                              }
-                              style={[
-                                estilos.productoSeleccionarChip,
-                                activoSku && estilos.productoSeleccionarChipActivo,
-                                { paddingVertical: 4, paddingHorizontal: 10, marginRight: 6 },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  estilos.productoSeleccionarSku,
-                                  activoSku && { color: tema.colors.primary },
-                                ]}
-                              >
-                                {p.sku} • {p.name}
-                              </Text>
-                              <Text style={estilos.productoSeleccionarExistencia}>
-                                Disp: {p.stock} {p.unit} | Comp: {p.committed || 0} {p.unit}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                    </ScrollView>
+                    <View style={estilos.solicitudLineaCabecera}>
+                      <Text style={estilos.solicitudLineaTitulo}>Línea #{idx + 1}</Text>
+                      <Pressable
+                        onPress={() => {
+                          const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
+                          establecerSolicitudElementos(updated);
+                          establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                        }}
+                        style={{ padding: 4 }}
+                        accessibilityLabel={`Eliminar insumo línea ${idx + 1}`}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
+                      </Pressable>
+                    </View>
 
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                      <View style={{ flex: 2, marginRight: 8 }}>
-                        <Text style={estilos.elementoSkuEtiqueta}>
-                          {prod ? `${prod.name} (${prod.sku})` : item.sku}
-                        </Text>
+                    <SelectorBuscable<string>
+                      label="Insumo / Material"
+                      options={opcionesDisponibles}
+                      value={item.sku}
+                      onChange={(nuevoSku) =>
+                        manejarSolicitudElementoCambiar(idx, nuevoSku, Math.max(1, item.quantity || 1))
+                      }
+                      placeholder="Seleccionar insumo..."
+                      searchPlaceholder="Buscar por nombre o SKU..."
+                    />
+
+                    <View style={estilos.solicitudLineaCantidadFila}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
                         <Text
                           style={[
                             estilos.elementoExistenciaDisponible,
                             superaDisp && { color: tema.colors.danger, fontWeight: "bold" },
                           ]}
                         >
-                          Stock Disponible en Vivo: {avail} {prod?.unit || "un"} • Comprometido Actual: {comprometidoActual} {prod?.unit || "un"}
+                          Stock Disponible en Vivo: {avail} {prod?.unit || "un"} • Comprometido: {comprometidoActual} {prod?.unit || "un"}
                         </Text>
                         {!superaDisp && !invalida && evalLinea && (
                           <Text style={{ fontSize: 11, color: tema.colors.okDark, marginTop: 2 }}>
@@ -638,30 +676,25 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                           </Text>
                         )}
                       </View>
-
-                      <TextInput
-                        value={String(item.quantity)}
-                        onChangeText={(val: any) => {
-                          const numero = Number(val) || 0;
-                          manejarSolicitudElementoCambiar(idx, item.sku, numero);
-                        }}
-                        keyboardType="numeric"
-                        style={[
-                          estilos.cantidadEntrada,
-                          (superaDisp || invalida) && { borderColor: tema.colors.danger, borderWidth: 1.5 },
-                        ]}
-                      />
-
-                      <Pressable
-                        onPress={() => {
-                          const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
-                          establecerSolicitudElementos(updated);
-                          establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
-                        }}
-                        style={{ padding: 4, marginLeft: 6 }}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
-                      </Pressable>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
+                          Cant. ({prod?.unit || "un"}):
+                        </Text>
+                        <TextInput
+                          value={item.quantity === 0 ? "" : String(item.quantity)}
+                          onChangeText={(val: string) => {
+                            const limpia = val.replace(/[^0-9]/g, "");
+                            const numero = limpia === "" ? 0 : Number(limpia);
+                            manejarSolicitudElementoCambiar(idx, item.sku, numero);
+                          }}
+                          keyboardType="numeric"
+                          style={[
+                            estilos.cantidadEntrada,
+                            (superaDisp || invalida) && { borderColor: tema.colors.danger, borderWidth: 1.5 },
+                          ]}
+                          placeholder="0"
+                        />
+                      </View>
                     </View>
                   </View>
                 );
@@ -675,14 +708,43 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                   const siguienteProducto = productos.find(
                     (p: any) => !p.disabled && !solicitudElementos.some((i: any) => i.sku === p.sku)
                   );
-                  if (siguienteProducto) {
-                    const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
-                    establecerSolicitudElementos(updated);
-                    establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                  if (!siguienteProducto) {
+                    mostrarAviso("Todos los insumos disponibles ya están agregados en esta solicitud.");
+                    return;
                   }
+                  const updated = [...solicitudElementos, { sku: siguienteProducto.sku, quantity: 1 }];
+                  establecerSolicitudElementos(updated);
+                  establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
                 }}
                 style={{ marginVertical: 8 }}
               />
+
+              {establecerSolicitudUrgencia && (
+                <>
+                  <Text style={estilos.formularioSeccionEtiqueta}>Nivel de Prioridad:</Text>
+                  <View style={estilos.motivoPastillasFila}>
+                    {(["normal", "alta", "urgente"] as const).map((nivel) => (
+                      <TouchableOpacity
+                        key={nivel}
+                        onPress={() => establecerSolicitudUrgencia(nivel)}
+                        style={[
+                          estilos.motivoPastilla,
+                          solicitudUrgencia === nivel && estilos.motivoPastillaActivo,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            estilos.motivoPastillaTexto,
+                            solicitudUrgencia === nivel && estilos.motivoPastillaTextoActivo,
+                          ]}
+                        >
+                          {nivel.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
 
               <CampoTexto
                 label="Nota o justificación (opcional)"
@@ -714,7 +776,10 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                 <Boton
                   title="Cancelar"
                   variant="ghost"
-                  onPress={() => establecerNuevoSolicitudModal(false)}
+                  onPress={() => {
+                    establecerNuevoSolicitudModal(false);
+                    establecerEditandoSolicitud?.(null);
+                  }}
                   style={{ marginRight: 8 }}
                 />
                 <Boton
@@ -751,46 +816,56 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         ))}
       </VistaModal>
 
-      {/* MODAL 4: MOTIVO DE RECHAZO DE SOLICITUD */}
-      <VistaModal
-        visible={Boolean(rechazarModalSolicitud)}
+      {/* MODAL 4: MOTIVO OBLIGATORIO DE RECHAZO DE SOLICITUD */}
+      <ModalRechazoSolicitud
+        solicitud={rechazarModalSolicitud}
+        motivoInicial={rechazarMotivo}
         onClose={() => establecerRechazarModalSolicitud(null)}
-        title="Rechazar Solicitud de Material"
-        subtitle={rechazarModalSolicitud ? `${rechazarModalSolicitud.code}` : ""}
-      >
-        <Text style={estilos.modalInstruction}>
-          El rechazo exige motivo obligatorio:
-        </Text>
-        <TextInput
-          value={rechazarMotivo}
-          onChangeText={establecerRechazarMotivo}
-          placeholder="Ingrese motivo de rechazo detallado..."
-          placeholderTextColor={tema.colors.textLight}
-          multiline
-          numberOfLines={3}
-          style={estilos.motivoEntrada}
-        />
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerRechazarModalSolicitud(null)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Confirmar Rechazo"
-            variant="danger"
-            disabled={!rechazarMotivo.trim()}
-            onPress={() => {
-              if (rechazarModalSolicitud && rechazarMotivo.trim()) {
-                rechazarSolicitudMaterial(rechazarModalSolicitud.id, rechazarMotivo.trim(), usuario.name);
-                mostrarAviso(`Solicitud ${rechazarModalSolicitud.code} rechazada.`);
-                establecerRechazarModalSolicitud(null);
-              }
-            }}
-          />
-        </View>
-      </VistaModal>
+        onConfirmarRechazo={(solicitud, motivo) => {
+          const resultado = rechazarSolicitudMaterial(solicitud.id, motivo, usuario.name);
+          if (resultado?.success) {
+            mostrarAviso(
+              `Solicitud ${solicitud.code} rechazada. Motivo informado al bodeguero solicitante.`
+            );
+            return { success: true };
+          }
+          return {
+            success: false,
+            error: resultado?.error || "Debe ingresar un motivo obligatorio.",
+          };
+        }}
+      />
+
+      {/* MODAL 11: VISTA DE COMPROBANTE NUMERADO AL APROBAR */}
+      <ModalComprobanteSolicitud
+        solicitud={seleccionadoComprobanteSolicitud}
+        onClose={() => establecerSeleccionadoComprobanteSolicitud(null)}
+        onNotify={mostrarAviso}
+      />
+
+      {/* MODAL 12: CONFIRMACIÓN PARA ANULAR SOLICITUD PENDIENTE */}
+      <DialogoConfirmacion
+        visible={Boolean(anularConfirmarSolicitud)}
+        title={`Anular Solicitud ${anularConfirmarSolicitud?.code || ""}`}
+        message={`¿Confirmas anular la solicitud ${anularConfirmarSolicitud?.code || ""} para el proyecto ${anularConfirmarSolicitud?.projectName || ""}? Pasará a estado Anulada y sus acciones quedarán bloqueadas.`}
+        confirmLabel="Sí, Anular Solicitud"
+        cancelLabel="Volver"
+        variant="danger"
+        onConfirm={() => {
+          if (anularConfirmarSolicitud && cancelarSolicitudMaterial) {
+            const res = cancelarSolicitudMaterial(anularConfirmarSolicitud.id, usuario.name);
+            if (res.success) {
+              mostrarAviso(
+                `Solicitud ${anularConfirmarSolicitud.code} anulada correctamente.`
+              );
+            } else {
+              mostrarAviso(res.error || "No fue posible anular la solicitud.");
+            }
+          }
+          establecerAnularConfirmarSolicitud?.(null);
+        }}
+        onCancel={() => establecerAnularConfirmarSolicitud?.(null)}
+      />
 
       {/* MODAL 5: REGISTRAR MERMA */}
       <VistaModal

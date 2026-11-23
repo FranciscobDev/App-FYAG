@@ -9,81 +9,166 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
+import { Rol, SolicitudMaterial, Usuario } from "@/nucleo/tipos";
 import {
   Insignia,
   Boton,
   Tarjeta,
   EstadoVacio,
-  VistaModal,
+  CampoBusqueda,
 } from "@/componentes/comunes";
 import { estilos } from "../estilos";
-import {
-  ComprobanteAprobacionSolicitud,
-  construirComprobanteYNotificacionAprobacion,
-  obtenerEstadoAccionesBodegueroSolicitud,
-} from "../solicitudInsumosUtils";
+import { obtenerEstadoAccionesBodegueroSolicitud } from "../solicitudInsumosUtils";
+
+export type FiltroPestanaSolicitud =
+  | "todas"
+  | "pendiente"
+  | "aprobada"
+  | "rechazada"
+  | "anulada";
 
 export interface PropiedadesSeccionSolicitudesMaterial {
-  activoPestana: any;
-  aprobarSolicitudMaterial: any;
-  cancelarSolicitudMaterial: any;
-  establecerRechazarModalSolicitud: any;
-  establecerRechazarMotivo: any;
-  establecerSeleccionadoTimelineSolicitud: any;
-  establecerSolicitudPestana: any;
-  filtradoSolicitudes: any;
-  manejarAbrirEditarSolicitud?: any;
-  manejarAbrirNuevoSolicitud: any;
-  modificarSolicitudMaterial: any;
-  mostrarAviso: any;
-  rolActual: any;
-  solicitudPestana: any;
-  usuario: any;
+  activoPestana: string;
+  aprobarSolicitudMaterial: (
+    id: string,
+    authorName: string
+  ) => {
+    success: boolean;
+    receiptNumber?: string;
+    solicitud?: SolicitudMaterial;
+    error?: string;
+  };
+  establecerAnularConfirmarSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
+  establecerRechazarModalSolicitud: React.Dispatch<React.SetStateAction<SolicitudMaterial | null>>;
+  establecerRechazarMotivo: React.Dispatch<React.SetStateAction<string>>;
+  establecerSeleccionadoComprobanteSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
+  establecerSeleccionadoTimelineSolicitud: React.Dispatch<
+    React.SetStateAction<SolicitudMaterial | null>
+  >;
+  establecerSolicitudBusqueda: React.Dispatch<React.SetStateAction<string>>;
+  establecerSolicitudPestana: React.Dispatch<React.SetStateAction<FiltroPestanaSolicitud>>;
+  filtradoSolicitudes: SolicitudMaterial[];
+  manejarAbrirEditarSolicitud: (req: SolicitudMaterial) => void;
+  manejarAbrirNuevoSolicitud: () => void;
+  mostrarAviso: (mensaje: string) => void;
+  rolActual: Rol;
+  solicitudBusqueda: string;
+  solicitudPestana: FiltroPestanaSolicitud;
+  todasSolicitudes: SolicitudMaterial[];
+  usuario: Usuario;
 }
 
 export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesMaterial> = ({
   activoPestana,
   aprobarSolicitudMaterial,
-  cancelarSolicitudMaterial,
+  establecerAnularConfirmarSolicitud,
   establecerRechazarModalSolicitud,
   establecerRechazarMotivo,
+  establecerSeleccionadoComprobanteSolicitud,
   establecerSeleccionadoTimelineSolicitud,
+  establecerSolicitudBusqueda,
   establecerSolicitudPestana,
   filtradoSolicitudes,
   manejarAbrirEditarSolicitud,
   manejarAbrirNuevoSolicitud,
-  modificarSolicitudMaterial,
   mostrarAviso,
   rolActual,
+  solicitudBusqueda,
   solicitudPestana,
+  todasSolicitudes,
   usuario,
 }) => {
   const { width } = useWindowDimensions();
   const esMovil = width < 480;
-  const [comprobanteSeleccionado, establecerComprobanteSeleccionado] =
-    React.useState<ComprobanteAprobacionSolicitud | null>(null);
 
-  const abrirVistaComprobante = (req: any, comprobanteDirecto?: ComprobanteAprobacionSolicitud) => {
-    if (comprobanteDirecto) {
-      establecerComprobanteSeleccionado(comprobanteDirecto);
+  const conteos = {
+    todas: todasSolicitudes.length,
+    pendiente: todasSolicitudes.filter((r) => r.status === "pendiente").length,
+    aprobada: todasSolicitudes.filter((r) => r.status === "aprobada").length,
+    rechazada: todasSolicitudes.filter((r) => r.status === "rechazada").length,
+    anulada: todasSolicitudes.filter((r) => r.status === "anulada").length,
+  };
+
+  const manejarAprobarSolicitud = (req: SolicitudMaterial) => {
+    const resultado = aprobarSolicitudMaterial(req.id, usuario.name);
+    if (!resultado.success) {
+      mostrarAviso(resultado.error || "No fue posible aprobar la solicitud.");
       return;
     }
-    const comp = construirComprobanteYNotificacionAprobacion(
-      req,
-      usuario?.name || "Administrador",
-      [],
-      req.date
+    if (resultado.solicitud) {
+      establecerSeleccionadoComprobanteSolicitud(resultado.solicitud);
+    }
+    mostrarAviso(
+      `Solicitud ${req.code} aprobada (${resultado.receiptNumber}). Resultado notificado al bodeguero solicitante.`
     );
-    establecerComprobanteSeleccionado(comp);
   };
 
   return (
     <>
       {/* =====================================================================
-          3. TAB SOLICITUDES
+          3. BANDEJA DE APROBACIÓN Y SOLICITUDES DE MATERIALES
           ===================================================================== */}
       {activoPestana === "solicitudes" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
+          {/* Guía visual del flujo SCRUM según el rol activo */}
+          {rolActual === "admin" ? (
+            <View style={estilos.scrumBandejaBanner}>
+              <Insignia label="SCRUM" tone="warn" size="sm" />
+              <Text style={estilos.scrumBandejaTexto}>
+                Bandeja de Aprobación: revisa las solicitudes pendientes, exige motivo obligatorio al rechazar o aprueba para visualizar el comprobante numerado y notificar al bodeguero solicitante.
+              </Text>
+            </View>
+          ) : rolActual === "warehouse" ? (
+            <View style={estilos.scrumBandejaBanner}>
+              <Insignia label="SCRUM" tone="warn" size="sm" />
+              <Text style={estilos.scrumBandejaTexto}>
+                Solicitudes del Bodeguero: las acciones &ldquo;Editar&rdquo; y &ldquo;Anular&rdquo; están activas únicamente cuando el estado es Pendiente; en solicitudes Aprobadas, Rechazadas o Anuladas aparecen bloqueadas.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Contadores rápidos interactivos por estado */}
+          <View style={estilos.solicitudContadoresFila}>
+            {(
+              [
+                { id: "pendiente", label: "Pendientes", count: conteos.pendiente, color: tema.colors.warnDark },
+                { id: "aprobada", label: "Aprobadas", count: conteos.aprobada, color: tema.colors.okDark },
+                { id: "rechazada", label: "Rechazadas", count: conteos.rechazada, color: tema.colors.danger },
+                { id: "todas", label: "Totales", count: conteos.todas, color: tema.colors.text },
+              ] as const
+            ).map((kpi) => {
+              const activa = solicitudPestana === kpi.id;
+              return (
+                <TouchableOpacity
+                  key={kpi.id}
+                  onPress={() => establecerSolicitudPestana(kpi.id)}
+                  style={[
+                    estilos.solicitudContadorTarjeta,
+                    activa && estilos.solicitudContadorTarjetaActiva,
+                  ]}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[estilos.solicitudContadorValor, { color: kpi.color }]}>
+                    {kpi.count}
+                  </Text>
+                  <Text style={estilos.solicitudContadorEtiqueta}>{kpi.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Barra de búsqueda por código, proyecto, solicitante o comprobante */}
+          <CampoBusqueda
+            value={solicitudBusqueda}
+            onChangeText={establecerSolicitudBusqueda}
+            placeholder="Buscar por código SOL, comprobante COMP, proyecto o solicitante..."
+            containerStyle={{ marginBottom: 12 }}
+          />
+
           <View style={estilos.solicitudSuperiorBarra}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", width: "100%", marginBottom: 4 }}>
               <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.textSecondary }}>
@@ -105,14 +190,22 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
               style={{ width: "100%" }}
               contentContainerStyle={{ gap: 6, paddingRight: 8 }}
             >
-              {(["todas", "pendiente", "aprobada", "rechazada", "anulada"] as const).map((t: any) => (
+              {(["pendiente", "aprobada", "rechazada", "anulada", "todas"] as const).map((t) => (
                 <TouchableOpacity
                   key={t}
                   onPress={() => establecerSolicitudPestana(t)}
-                  style={[estilos.solicitudPestanaBoton, solicitudPestana === t && estilos.solicitudPestanaBotonActivo]}
+                  style={[
+                    estilos.solicitudPestanaBoton,
+                    solicitudPestana === t && estilos.solicitudPestanaBotonActivo,
+                  ]}
                 >
-                  <Text style={[estilos.solicitudPestanaTexto, solicitudPestana === t && estilos.solicitudPestanaTextoActivo]}>
-                    {t.toUpperCase()}
+                  <Text
+                    style={[
+                      estilos.solicitudPestanaTexto,
+                      solicitudPestana === t && estilos.solicitudPestanaTextoActivo,
+                    ]}
+                  >
+                    {t.toUpperCase()} ({conteos[t]})
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -122,18 +215,37 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
           {filtradoSolicitudes.length === 0 ? (
             <EstadoVacio
               icon="document-text-outline"
-              title="Sin solicitudes"
+              title="Sin solicitudes en esta vista"
               description={
-                solicitudPestana === "todas"
-                  ? "No se registran solicitudes de materiales en el sistema."
+                solicitudBusqueda.trim()
+                  ? `No se encontraron resultados para "${solicitudBusqueda.trim()}".`
+                  : solicitudPestana === "pendiente"
+                  ? "No hay solicitudes pendientes de aprobación en este momento."
                   : `No hay solicitudes con estado "${solicitudPestana}".`
               }
-              actionTitle="Nueva Solicitud de Insumos"
-              onAction={manejarAbrirNuevoSolicitud}
+              actionTitle={
+                solicitudPestana !== "todas"
+                  ? "Ver Todas"
+                  : rolActual !== "admin"
+                  ? "Nueva Solicitud"
+                  : undefined
+              }
+              onAction={
+                solicitudPestana !== "todas"
+                  ? () => {
+                      establecerSolicitudPestana("todas");
+                      establecerSolicitudBusqueda("");
+                    }
+                  : rolActual !== "admin"
+                  ? manejarAbrirNuevoSolicitud
+                  : undefined
+              }
               containerStyle={{ marginVertical: 32 }}
             />
           ) : (
-            filtradoSolicitudes.map((req: any) => (
+            filtradoSolicitudes.map((req) => {
+              const esPendiente = req.status === "pendiente";
+              return (
               <Tarjeta key={req.id} variant="elevated" style={estilos.solicitudElementoTarjeta}>
                 <View style={estilos.solicitudElementoSuperior}>
                   <View style={{ flex: 1, minWidth: 180 }}>
@@ -142,32 +254,47 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                       <Insignia
                         label={req.status.toUpperCase()}
                         tone={
-                          req.status === "aprobada"
+                          req.status === "aprobada" || req.status === "entregada"
                             ? "ok"
                             : req.status === "rechazada"
-                              ? "danger"
-                              : req.status === "anulada"
-                                ? "mute"
-                                : "warn"
+                            ? "danger"
+                            : req.status === "anulada"
+                            ? "mute"
+                            : "warn"
+                        }
+                        size="sm"
+                      />
+                      <Insignia
+                        label={req.urgency.toUpperCase()}
+                        tone={
+                          req.urgency === "urgente"
+                            ? "danger"
+                            : req.urgency === "alta"
+                            ? "warn"
+                            : "info"
                         }
                         size="sm"
                       />
                       {req.receiptNumber && (
                         <TouchableOpacity
-                          onPress={() => abrirVistaComprobante(req)}
+                          onPress={() => establecerSeleccionadoComprobanteSolicitud(req)}
                           activeOpacity={0.75}
                         >
                           <Insignia
-                            label={`Comprobante N° ${req.receiptNumber}`}
-                            tone="info"
+                            label={`N° ${req.receiptNumber}`}
+                            tone="primary"
                             size="sm"
                           />
                         </TouchableOpacity>
                       )}
                     </View>
-                    <Text style={estilos.solicitudProyectoNombre}>{req.projectName}</Text>
+                    <Text style={estilos.solicitudProyectoNombre}>
+                      {req.projectCode} • {req.projectName}
+                    </Text>
                     <Text style={estilos.solicitudTecnicoInfo}>
-                      Por: {req.technicianName} • {formatearFecha(req.date)}
+                      Solicitante: {req.technicianName}
+                      {req.requesterRole === "warehouse" ? " (Bodeguero)" : ""} •{" "}
+                      {formatearFecha(req.date)}
                     </Text>
                   </View>
 
@@ -182,8 +309,8 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
 
                 <View style={estilos.solicitudElementosCaja}>
                   <Text style={estilos.elementosCajaTitulo}>Ítems Solicitados:</Text>
-                  {req.items.map((it: any, idx: any) => (
-                    <View key={idx} style={estilos.solicitudElementoResumenFila}>
+                  {req.items.map((it, idx) => (
+                    <View key={`${it.sku}_${idx}`} style={estilos.solicitudElementoResumenFila}>
                       <Text style={estilos.solicitudElementoFila}>
                         • {it.quantity} {it.unit} de {it.name}
                       </Text>
@@ -194,18 +321,54 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                       )}
                     </View>
                   ))}
+
+                  {Boolean(req.comment) && (
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontStyle: "italic",
+                        color: tema.colors.textMuted,
+                        marginTop: 6,
+                      }}
+                    >
+                      Observación: &ldquo;{req.comment}&rdquo;
+                    </Text>
+                  )}
+
+                  {(req.status === "aprobada" || req.status === "entregada") && req.receiptNumber && (
+                    <View style={estilos.aprobadaAviso}>
+                      <Ionicons name="checkmark-circle" size={16} color={tema.colors.okDark} />
+                      <Text style={estilos.aprobadaAvisoTexto}>
+                        Comprobante N° {req.receiptNumber} emitido y notificado al bodeguero solicitante
+                        {req.approvedBy ? ` (Aprobó: ${req.approvedBy})` : ""}.
+                      </Text>
+                    </View>
+                  )}
+
                   {req.rejectionReason && (
                     <View style={estilos.rechazarAviso}>
-                      <Text style={estilos.rechazarAvisoTitulo}>Motivo de rechazo:</Text>
+                      <Text style={estilos.rechazarAvisoTitulo}>
+                        Motivo de rechazo obligatorio
+                        {req.rejectedBy ? ` (${req.rejectedBy})` : ""}:
+                      </Text>
                       <Text style={estilos.rechazarAvisoTexto}>{req.rejectionReason}</Text>
+                    </View>
+                  )}
+
+                  {req.status === "anulada" && (
+                    <View style={estilos.anuladaAviso}>
+                      <Ionicons name="ban-outline" size={16} color={tema.colors.textSecondary} />
+                      <Text style={estilos.anuladaAvisoTexto}>
+                        Solicitud anulada{req.cancelledBy ? ` por ${req.cancelledBy}` : ""}
+                        {req.cancelledAt ? ` (${req.cancelledAt})` : ""}. No puede editarse ni enviarse a despacho.
+                      </Text>
                     </View>
                   )}
                 </View>
 
-                {/* Botones de acción según rol */}
+                {/* Botones de acción según rol y estado de la solicitud */}
                 <View style={estilos.solicitudBotonesFila}>
-                  {/* Admin aprueba o rechaza (con motivo obligatorio) */}
-                  {req.status === "pendiente" && rolActual === "admin" && (
+                  {esPendiente && rolActual === "admin" && (
                     <>
                       <Boton
                         title="Rechazar"
@@ -223,220 +386,86 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
                         textStyle={{ color: tema.colors.danger }}
                       />
                       <Boton
-                        title="Aprobar y Generar Comprobante"
+                        title="Aprobar y Ver Comprobante"
                         variant="success"
                         size="sm"
-                        icon="checkmark-outline"
-                        onPress={() => {
-                          const resultado = aprobarSolicitudMaterial(req.id, usuario.name);
-                          const numComp = resultado?.receiptNumber || req.receiptNumber || "";
-                          mostrarAviso(
-                            `Solicitud ${req.code} aprobada. Comprobante N° ${numComp} generado y notificado a ${req.technicianName}.`
-                          );
-                          abrirVistaComprobante(
-                            { ...req, status: "aprobada", receiptNumber: numComp },
-                            resultado?.comprobante
-                          );
-                        }}
+                        icon="checkmark-done-outline"
+                        onPress={() => manejarAprobarSolicitud(req)}
                         style={[{ minHeight: 42 }, esMovil && { flex: 1.6 }]}
                       />
                     </>
                   )}
 
-                  {/* Vista de comprobante numerado disponible para solicitudes aprobadas */}
-                  {req.status === "aprobada" && req.receiptNumber && (
+                  {(req.status === "aprobada" || req.status === "entregada") && req.receiptNumber && (
                     <Boton
-                      title={`Ver Comprobante Numerado (${req.receiptNumber})`}
+                      title={`Ver Comprobante (${req.receiptNumber})`}
                       variant="outline"
                       size="sm"
                       icon="receipt-outline"
-                      onPress={() => abrirVistaComprobante(req)}
+                      onPress={() => establecerSeleccionadoComprobanteSolicitud(req)}
                       style={esMovil ? { flexGrow: 1 } : undefined}
                     />
                   )}
 
-                  {/* [FRONT-2] Bodeguero: acciones "Editar" y "Anular" en el listado de solicitudes,
-                      activas únicamente cuando el estado es Pendiente y bloqueadas en Aprobada / Rechazada / Anulada */}
+                  {/* Bodeguero: acciones Editar y Anular activas únicamente cuando el estado es Pendiente */}
                   {rolActual === "warehouse" && (() => {
                     const estadoAcciones = obtenerEstadoAccionesBodegueroSolicitud(req.status);
                     return (
-                      <View style={{ width: "100%" }}>
-                        <View style={[estilos.solicitudBotonesFila, { marginTop: 4 }]}>
-                          <Boton
-                            title="Editar"
-                            variant="secondary"
-                            size="sm"
-                            icon="create-outline"
-                            disabled={!estadoAcciones.puedeEditar}
-                            onPress={() => {
-                              if (!estadoAcciones.puedeEditar) return;
-                              if (manejarAbrirEditarSolicitud) {
-                                manejarAbrirEditarSolicitud(req);
-                              } else {
-                                const updated = req.items.map((i: any) => ({
-                                  ...i,
-                                  quantity: Math.max(1, i.quantity - 1),
-                                }));
-                                modificarSolicitudMaterial(req.id, updated);
-                                mostrarAviso(`Cantidades de solicitud ${req.code} modificadas.`);
-                              }
-                            }}
-                            style={esMovil ? { flexGrow: 1 } : undefined}
-                          />
-                          <Boton
-                            title="Anular"
-                            variant="danger"
-                            size="sm"
-                            icon="trash-outline"
-                            disabled={!estadoAcciones.puedeAnular}
-                            onPress={() => {
-                              if (!estadoAcciones.puedeAnular) return;
-                              const res = cancelarSolicitudMaterial(req.id, usuario?.name);
-                              if (res && res.success === false) {
-                                mostrarAviso(res.error || "No se pudo anular la solicitud.");
-                              } else {
-                                mostrarAviso(
-                                  `Solicitud ${req.code} anulada. El stock comprometido regresó a disponible en H6.`
-                                );
-                              }
-                            }}
-                            style={esMovil ? { flexGrow: 1 } : undefined}
-                          />
-                        </View>
-                        {!estadoAcciones.puedeEditar && estadoAcciones.motivoBloqueo && (
-                          <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginTop: 6 }}>
-                            🔒 {estadoAcciones.motivoBloqueo}
-                          </Text>
+                      <>
+                        {!estadoAcciones.puedeEditar && (
+                          <View style={estilos.bloqueadoAccionAviso}>
+                            <Ionicons
+                              name="lock-closed-outline"
+                              size={13}
+                              color={tema.colors.textMuted}
+                            />
+                            <Text style={estilos.bloqueadoAccionTexto}>
+                              {estadoAcciones.motivoBloqueo || `Acciones bloqueadas (${req.status})`}
+                            </Text>
+                          </View>
                         )}
-                      </View>
+                        <Boton
+                          title="Editar"
+                          variant="secondary"
+                          size="sm"
+                          icon={estadoAcciones.puedeEditar ? "create-outline" : "lock-closed-outline"}
+                          disabled={!estadoAcciones.puedeEditar}
+                          accessibilityHint={
+                            estadoAcciones.puedeEditar
+                              ? "Editar proyecto, insumos o cantidades de esta solicitud pendiente"
+                              : "Bloqueado: solo se pueden editar solicitudes en estado Pendiente"
+                          }
+                          onPress={() => manejarAbrirEditarSolicitud(req)}
+                          style={esMovil ? { flexGrow: 1 } : undefined}
+                        />
+                        <Boton
+                          title="Anular"
+                          variant={estadoAcciones.puedeAnular ? "danger" : "outline"}
+                          size="sm"
+                          icon={estadoAcciones.puedeAnular ? "ban-outline" : "lock-closed-outline"}
+                          disabled={!estadoAcciones.puedeAnular}
+                          accessibilityHint={
+                            estadoAcciones.puedeAnular
+                              ? "Anular esta solicitud pendiente"
+                              : "Bloqueado: solo se pueden anular solicitudes en estado Pendiente"
+                          }
+                          onPress={() => establecerAnularConfirmarSolicitud(req)}
+                          style={[
+                            !estadoAcciones.puedeAnular && { borderColor: tema.colors.borderDark },
+                            esMovil && { flexGrow: 1 },
+                          ]}
+                          textStyle={
+                            !estadoAcciones.puedeAnular ? { color: tema.colors.textMuted } : undefined
+                          }
+                        />
+                      </>
                     );
                   })()}
                 </View>
               </Tarjeta>
-            ))
+              );
+            })
           )}
-
-          {/* MODAL DE VISTA DE COMPROBANTE NUMERADO AL APROBAR ([FRONT-1]) */}
-          <VistaModal
-            visible={Boolean(comprobanteSeleccionado)}
-            onClose={() => establecerComprobanteSeleccionado(null)}
-            title={
-              comprobanteSeleccionado
-                ? `Comprobante de Autorización N° ${comprobanteSeleccionado.receiptNumber}`
-                : "Comprobante de Autorización"
-            }
-            subtitle="Documento oficial de aprobación de solicitud de insumos para retiro/egreso en bodega"
-          >
-            {comprobanteSeleccionado && (
-              <View style={{ gap: 10 }}>
-                <View
-                  style={{
-                    backgroundColor: "#ECFDF5",
-                    borderColor: "#10B981",
-                    borderWidth: 1,
-                    borderRadius: tema.radius.md,
-                    padding: 12,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={{ fontSize: 14, fontWeight: "bold", color: "#065F46" }}>
-                      N° {comprobanteSeleccionado.receiptNumber}
-                    </Text>
-                    <Insignia label="APROBADA" tone="ok" size="sm" />
-                  </View>
-                  <Text style={{ fontSize: 12, color: "#047857", marginTop: 4 }}>
-                    Solicitud: {comprobanteSeleccionado.requestCode} • Fecha de aprobación:{" "}
-                    {formatearFecha(comprobanteSeleccionado.approvedAt)}
-                  </Text>
-                </View>
-
-                <View
-                  style={{
-                    backgroundColor: tema.colors.surfaceAlt,
-                    borderRadius: tema.radius.md,
-                    padding: 12,
-                    gap: 4,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, color: tema.colors.text }}>
-                    <Text style={{ fontWeight: "bold" }}>Proyecto Destino:</Text>{" "}
-                    {comprobanteSeleccionado.projectCode} - {comprobanteSeleccionado.projectName}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: tema.colors.text }}>
-                    <Text style={{ fontWeight: "bold" }}>Solicitante Notificado:</Text>{" "}
-                    {comprobanteSeleccionado.requesterName} ({comprobanteSeleccionado.requesterRut})
-                  </Text>
-                  <Text style={{ fontSize: 12, color: tema.colors.text }}>
-                    <Text style={{ fontWeight: "bold" }}>Autorizado por Administrador:</Text>{" "}
-                    {comprobanteSeleccionado.approvedBy}
-                  </Text>
-                </View>
-
-                <View
-                  style={{
-                    borderWidth: 1,
-                    borderColor: tema.colors.border,
-                    borderRadius: tema.radius.md,
-                    padding: 12,
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "bold", color: tema.colors.text, marginBottom: 6 }}>
-                    Insumos Autorizados ({comprobanteSeleccionado.totalItemsCount} ítem(s) /{" "}
-                    {comprobanteSeleccionado.totalUnitsCount} un totales):
-                  </Text>
-                  {comprobanteSeleccionado.items.map((it, idx) => (
-                    <View
-                      key={idx}
-                      style={{
-                        flexDirection: "row",
-                        justifyContent: "space-between",
-                        paddingVertical: 4,
-                        borderTopWidth: idx > 0 ? 1 : 0,
-                        borderTopColor: tema.colors.borderLight,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, color: tema.colors.text, flex: 1 }}>
-                        {it.sku} • {it.name}
-                      </Text>
-                      <Text style={{ fontSize: 12, fontWeight: "bold", color: tema.colors.primaryDark }}>
-                        {it.quantity} {it.unit}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    backgroundColor: tema.colors.primaryLight,
-                    borderRadius: tema.radius.sm,
-                    padding: 10,
-                  }}
-                >
-                  <Ionicons
-                    name="notifications-outline"
-                    size={18}
-                    color={tema.colors.primaryDark}
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={{ fontSize: 11, color: tema.colors.primaryDark, flex: 1 }}>
-                    Notificación enviada a {comprobanteSeleccionado.notificationToRequester.recipientName}:{" "}
-                    {comprobanteSeleccionado.notificationToRequester.title}
-                  </Text>
-                </View>
-
-                <View style={{ flexDirection: "row", justifyContent: "flex-end", marginTop: 4 }}>
-                  <Boton
-                    title="Cerrar Vista de Comprobante"
-                    variant="primary"
-                    size="sm"
-                    onPress={() => establecerComprobanteSeleccionado(null)}
-                  />
-                </View>
-              </View>
-            )}
-          </VistaModal>
         </ScrollView>
       )}
     </>

@@ -290,6 +290,29 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
     } = req.body;
 
     try {
+        const proyectoPrevio = await pool.query<Proyecto>('SELECT * FROM proyecto WHERE id_proyecto = $1', [id]);
+        if (proyectoPrevio.rows.length === 0) {
+            res.status(404).json({ mensaje: 'Proyecto no encontrado para actualizar' });
+            return;
+        }
+
+        const proyectoExistente = proyectoPrevio.rows[0];
+        // Bloqueo de solo lectura para proyectos cerrados/completados/cancelados: no se permite modificar presupuesto
+        const estadoExistenteNorm = String(proyectoExistente.estado_proyecto || '').trim().toLowerCase();
+        if (estadoExistenteNorm === 'cerrado' || estadoExistenteNorm === 'completado' || estadoExistenteNorm === 'cancelado') {
+            const intentoModificarPresupuesto =
+                presupuesto_inicial !== undefined && Number(presupuesto_inicial) !== Number(proyectoExistente.presupuesto_inicial);
+            const intentoModificarHoras =
+                presupuesto_horas !== undefined && Number(presupuesto_horas) !== Number(proyectoExistente.presupuesto_horas);
+
+            if (intentoModificarPresupuesto || intentoModificarHoras) {
+                res.status(400).json({
+                    mensaje: 'No se puede modificar el presupuesto de un proyecto que ya está cerrado.'
+                });
+                return;
+            }
+        }
+
         const estadoNorm = String(estado_proyecto || '').trim().toLowerCase();
         if (estadoNorm === 'completado' || estadoNorm === 'cerrado' || estadoNorm === 'finalizado') {
             const bloqueoH34 = await verificarBloqueoCierreProyectoPorSolicitudesH34(pool, Number(id));
@@ -331,7 +354,6 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
                 // Silencioso
             }
         }
-
         const query = `
       UPDATE proyecto
       SET nombre_proyecto = $1, tipo_proyecto = $2, cliente = $3,

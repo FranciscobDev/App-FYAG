@@ -94,6 +94,7 @@ export interface SolicitudMaterial {
   projectName: string;
   technicianRut: string;
   technicianName: string;
+  requesterRole?: Rol;
   date: string;
   urgency: "normal" | "alta" | "urgente";
   status: "pendiente" | "aprobada" | "rechazada" | "anulada" | "entregada";
@@ -101,7 +102,14 @@ export interface SolicitudMaterial {
   comment?: string;
   timeline?: PasoCronologiaSolicitud[];
   receiptNumber?: string;
+  approvedBy?: string;
+  approvedAt?: string;
   rejectionReason?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  updatedAt?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
 }
 
 export type EstadoOrdenCompra =
