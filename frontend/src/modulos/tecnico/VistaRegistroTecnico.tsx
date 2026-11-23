@@ -22,6 +22,7 @@ import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevoluciones";
 import { HoraTrabajoTecnico } from "@/nucleo/tipos";
+import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
 
 interface TechnicianRegisterViewProps {
   initialSubTab?: "avance" | "horas" | "sobrante";
@@ -57,6 +58,18 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState<string>(
     initialProjectId || activoProyectos[0]?.id || ""
   );
+
+  useEffect(() => {
+    if (initialSubTab) {
+      establecerActivoSubPestana(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    if (initialProjectId) {
+      establecerSeleccionadoProyectoId(initialProjectId);
+    }
+  }, [initialProjectId]);
 
   const actualProyecto = activoProyectos.find((p) => p.id === seleccionadoProyectoId) || activoProyectos[0];
 
@@ -260,203 +273,10 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
       {/* 1. REGISTRAR AVANCE                                                       */}
       {/* ========================================================================= */}
       {activoSubPestana === "avance" && (
-        <ScrollView style={estilos.cuerpoScroll} contentContainerStyle={estilos.cuerpoContenido}>
-          {/* Selector de Proyecto */}
-          <Text style={estilos.campoEtiqueta}>Proyecto / Faena a reportar:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-            {activoProyectos.map((p) => {
-              const esSeleccionado = p.id === actualProyecto?.id;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  onPress={() => {
-                    establecerSeleccionadoProyectoId(p.id);
-                    establecerAvancePorcentaje(p.progress);
-                  }}
-                  style={[estilos.chipBoton, esSeleccionado && estilos.chipBotonActivo]}
-                >
-                  <Text style={[estilos.chipTexto, esSeleccionado && estilos.chipTextoActivo]}>
-                    {p.code} - {p.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {activoProyectos.length === 0 ? (
-            <EstadoVacio
-              icon="folder-open-outline"
-              title="Sin proyectos activos"
-              description="No tienes proyectos asignados actualmente para registrar avance de obra."
-              containerStyle={{ marginVertical: 32 }}
-            />
-          ) : actualProyecto ? (
-            <Tarjeta variant="elevated">
-              <View style={estilos.avanceEncabezadoFila}>
-                <View style={{ flex: 1, marginRight: 8 }}>
-                  <Text style={estilos.tarjetaEncabezado}>Reporte de Avance Físico</Text>
-                  <Text style={estilos.tarjetaSub}>
-                    Porcentaje de avance en obra (Avance previo: {actualProyecto.progress}%)
-                  </Text>
-                </View>
-                <Insignia
-                  label={`${avancePorcentaje}%`}
-                  tone={avancePorcentaje >= 80 ? "ok" : avancePorcentaje >= 50 ? "info" : "warn"}
-                  size="lg"
-                />
-              </View>
-
-              {/* Slider / Stepper Táctil y Chips Rápidos 0-100% */}
-              <View style={estilos.deslizadorCaja}>
-                {/* Chips rápidos de porcentaje de avance */}
-                <Text style={estilos.subCampoEtiqueta}>Hitos rápidos de avance:</Text>
-                <View style={estilos.rapidoPorcentajeFila}>
-                  {[10, 25, 50, 75, 90, 100].map((pct) => (
-                    <TouchableOpacity
-                      key={pct}
-                      onPress={() => establecerAvancePorcentaje(pct)}
-                      style={[estilos.rapidoPorcentajeChip, avancePorcentaje === pct && estilos.rapidoPorcentajeChipActivo]}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[estilos.rapidoPorcentajeTexto, avancePorcentaje === pct && estilos.rapidoPorcentajeTextoActivo]}>
-                        {pct}%
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                <View style={estilos.ajustadorFila}>
-                  <TouchableOpacity onPress={() => manejarAjustarPorcentaje(-10)} style={estilos.pasoBoton} activeOpacity={0.7}>
-                    <Text style={estilos.pasoBotonTexto}>−10%</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => manejarAjustarPorcentaje(-5)} style={estilos.pasoBoton} activeOpacity={0.7}>
-                    <Text style={estilos.pasoBotonTexto}>−5%</Text>
-                  </TouchableOpacity>
-
-                  <View style={estilos.porcentajeDisplay}>
-                    <TextInput
-                      value={String(avancePorcentaje)}
-                      onChangeText={(v) => {
-                        const cleaned = v.replace(/[^0-9]/g, "");
-                        if (cleaned === "") {
-                          establecerAvancePorcentaje(0);
-                          return;
-                        }
-                        const numero = parseInt(cleaned, 10);
-                        if (!isNaN(numero)) establecerAvancePorcentaje(Math.max(0, Math.min(100, numero)));
-                      }}
-                      keyboardType="numeric"
-                      maxLength={3}
-                      selectTextOnFocus
-                      style={estilos.porcentajeEntrada}
-                    />
-                    <Text style={estilos.porcentajeUnidad}>%</Text>
-                  </View>
-
-                  <TouchableOpacity onPress={() => manejarAjustarPorcentaje(+5)} style={estilos.pasoBoton} activeOpacity={0.7}>
-                    <Text style={estilos.pasoBotonTexto}>+5%</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => manejarAjustarPorcentaje(+10)} style={estilos.pasoBoton} activeOpacity={0.7}>
-                    <Text style={estilos.pasoBotonTexto}>+10%</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Barra visual de progreso */}
-                <View style={{ marginTop: 14 }}>
-                  <BarraProgreso
-                    value={avancePorcentaje}
-                    max={100}
-                    height={10}
-                    color={tema.colors.primary}
-                  />
-                </View>
-              </View>
-
-              {/* Comentarios de Avance */}
-              <CampoTexto
-                label="Comentarios y descripción del avance"
-                value={avanceComentarios}
-                onChangeText={establecerAvanceComentarios}
-                placeholder="Describa el trabajo realizado, cuadrillas involucradas..."
-              />
-
-              {/* MATERIALES USADOS (NO GENERA EGRESO) */}
-              <View style={estilos.materialesUsadoSeccion}>
-                <View style={estilos.seccionTituloFila}>
-                  <Text style={estilos.materialesUsadoTitulo}>Materiales Consumidos en la Jornada:</Text>
-                  <Insignia label="Informativo" tone="mute" size="sm" />
-                </View>
-
-                {/* BANNER REQUISITO PASO 10: NO GENERA EGRESO */}
-                <View style={estilos.noExistenciaDespachoBanner}>
-                  <Ionicons name="information-circle" size={18} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-                  <Text style={estilos.noExistenciaDespachoTexto}>
-                    Nota: El reporte de materiales en faena es informativo y <Text style={{ fontWeight: "bold" }}>NO rebaja stock en bodega</Text> ni genera egreso contable.
-                  </Text>
-                </View>
-
-                {usadoMateriales.map((m, idx) => (
-                  <View key={idx} style={estilos.usadoMaterialFila}>
-                    <View style={{ flex: 1, marginRight: 10 }}>
-                      <Text style={estilos.usadoMaterialNombre}>• {m.name}</Text>
-                      <Text style={estilos.usadoMaterialSku}>SKU: {m.sku}</Text>
-                    </View>
-
-                    <View style={estilos.usadoCantidadAjustadorCaja}>
-                      <TouchableOpacity
-                        onPress={() => manejarAjustarMaterialCantidad(idx, -1)}
-                        style={estilos.cantidadPasoBoton}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="remove" size={16} color={tema.colors.primaryDark} />
-                      </TouchableOpacity>
-
-                      <View style={estilos.cantidadDisplayCaja}>
-                        <Text style={estilos.cantidadDisplayValor}>{m.quantity}</Text>
-                        <Text style={estilos.cantidadDisplayUnidad}>{m.unit}</Text>
-                      </View>
-
-                      <TouchableOpacity
-                        onPress={() => manejarAjustarMaterialCantidad(idx, +1)}
-                        style={estilos.cantidadPasoBoton}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="add" size={16} color={tema.colors.primaryDark} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              {Boolean(avanceExito) && (
-                <Text style={estilos.exitoTexto}>{avanceExito}</Text>
-              )}
-
-              <Boton
-                title="Guardar Avance de Obra"
-                variant="primary"
-                icon="save-outline"
-                onPress={manejarGuardarAvance}
-                style={{ marginTop: 16, height: 48 }}
-              />
-            </Tarjeta>
-          ) : null}
-
-          {/* Historial de Avances Anteriores */}
-          <Text style={estilos.historialEncabezado}>Reportes de Avance Anteriores:</Text>
-          {reportesAvanceTecnico.map((rep) => (
-            <Tarjeta key={rep.id} variant="default" style={estilos.historialTarjeta}>
-              <View style={estilos.historyHeader}>
-                <View>
-                  <Text style={estilos.historialProyecto}>{rep.projectName} ({rep.projectCode})</Text>
-                  <Text style={estilos.historialFecha}>Fecha: {formatearFecha(rep.date)}</Text>
-                </View>
-                <Insignia label={`${rep.progressPct}%`} tone="ok" size="sm" />
-              </View>
-              <Text style={estilos.historialComentarios}>"{rep.comments}"</Text>
-            </Tarjeta>
-          ))}
-        </ScrollView>
+        <FormularioReporteAvance
+          proyectoInicialId={seleccionadoProyectoId}
+          mostrarHistorial={true}
+        />
       )}
 
       {/* ========================================================================= */}

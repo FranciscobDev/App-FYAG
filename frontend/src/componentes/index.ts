@@ -8,3 +8,4 @@ export * from "./Insumos";
 export * from "./AsignacionTecnicos";
 export * from "./DistintivoEstadoProyecto";
 export * from "./BandejaOrdenesCompra";
+export * from "./FormularioReporteAvance";

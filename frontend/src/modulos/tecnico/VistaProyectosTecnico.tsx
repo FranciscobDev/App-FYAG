@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +23,7 @@ import {
   IndicadorUltimaSincronizacion,
   LeyendaAccesibilidadEstados,
 } from "@/componentes/DistintivoEstadoProyecto";
+import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
 import { Proyecto } from "@/nucleo/tipos";
 
 interface TechnicianProjectsViewProps {
@@ -39,6 +41,8 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
   const { usuario } = usarAutenticacion();
 
   const [estadoFiltrar, establecerEstadoFiltrar] = useState<string>("todos");
+  const [modalAvanceProyecto, establecerModalAvanceProyecto] = useState<Proyecto | null>(null);
+  const [avisoExito, establecerAvisoExito] = useState<string>("");
   const [ultimaSincronizacion, establecerUltimaSincronizacion] = useState<Date>(
     () => new Date()
   );
@@ -132,6 +136,13 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
             </View>
           )}
         </View>
+
+        {Boolean(avisoExito) && (
+          <View style={estilos.avisoExitoContenedor}>
+            <Ionicons name="checkmark-circle" size={20} color={tema.colors.ok} style={{ marginRight: 8 }} />
+            <Text style={estilos.avisoExitoTexto}>{avisoExito}</Text>
+          </View>
+        )}
 
         {/* [FRONT-2] Indicador de última sincronización accesible en móvil */}
         <IndicadorUltimaSincronizacion
@@ -345,7 +356,7 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
                       variant="outline"
                       size="sm"
                       icon="trending-up-outline"
-                      onPress={() => onNavigateTab && onNavigateTab("registrar", proj, "avance")}
+                      onPress={() => establecerModalAvanceProyecto(proj)}
                       style={{ marginRight: 6, height: 42 }}
                     />
                     <Boton
@@ -363,6 +374,34 @@ export const VistaProyectosTecnico: React.FC<TechnicianProjectsViewProps> = ({
           })
         )}
       </ScrollView>
+
+      {/* MODAL MÓVIL DE REPORTE DE AVANCE RÁPIDO [FRONT-2] */}
+      {modalAvanceProyecto && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          transparent
+          onRequestClose={() => establecerModalAvanceProyecto(null)}
+        >
+          <View style={estilos.modalOverlay}>
+            <View style={estilos.modalCardContenedor}>
+              <FormularioReporteAvance
+                proyectoInicialId={modalAvanceProyecto.id}
+                avanceInicial={50}
+                modoModal={true}
+                onCerrar={() => establecerModalAvanceProyecto(null)}
+                onExito={(nuevoPct, codigo) => {
+                  establecerAvisoExito(
+                    `✓ [SCRUM] Avance del ${nuevoPct}% verificado y actualizado exitosamente en el proyecto ${codigo}.`
+                  );
+                  setTimeout(() => establecerAvisoExito(""), 5000);
+                  establecerModalAvanceProyecto(null);
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
+      )}
     </ContenedorEstadoPantalla>
   );
 };
@@ -586,5 +625,33 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     flexWrap: "wrap",
     gap: 8,
+  },
+  avisoExitoContenedor: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: tema.colors.okLight,
+    borderWidth: 1,
+    borderColor: tema.colors.okBorder,
+    borderRadius: tema.radius.md,
+    padding: 12,
+    marginBottom: 12,
+  },
+  avisoExitoTexto: {
+    flex: 1,
+    fontSize: tema.fontSize.xs,
+    fontWeight: "700",
+    color: tema.colors.okDark,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalCardContenedor: {
+    backgroundColor: tema.colors.card,
+    borderTopLeftRadius: tema.radius.xl,
+    borderTopRightRadius: tema.radius.xl,
+    height: "90%",
+    paddingTop: tema.spacing.sm,
   },
 });
