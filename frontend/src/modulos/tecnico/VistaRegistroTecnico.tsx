@@ -21,32 +21,33 @@ import { CampoTexto } from "@/componentes/formularios/CampoTexto";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevoluciones";
-import { HoraTrabajoTecnico } from "@/nucleo/tipos";
+import { SeccionCronometroHorasTecnico } from "./SeccionCronometroHorasTecnico";
 
 interface TechnicianRegisterViewProps {
   initialSubTab?: "avance" | "horas" | "sobrante";
   initialProjectId?: string;
+  isOffline?: boolean;
+  onCambioConexion?: (sinConexion: boolean) => void;
 }
 
 export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
   initialSubTab = "avance",
   initialProjectId,
+  isOffline = false,
+  onCambioConexion,
 }) => {
   const {
     proyectos,
-    productos,
-    horasTecnico,
     reportesAvanceTecnico,
-    sesionTrabajoActiva,
-    iniciarSesionTrabajo,
-    detenerSesionTrabajo,
-    cancelarSesionTrabajo,
-    actualizarHoraTrabajoTecnico,
     crearReporteAvanceTecnico,
   } = usarAplicacion();
-  const { usuario, rolActual } = usarAutenticacion();
+  const { usuario } = usarAutenticacion();
 
   const [activoSubPestana, establecerActivoSubPestana] = useState<"avance" | "horas" | "sobrante">(initialSubTab);
+
+  useEffect(() => {
+    establecerActivoSubPestana(initialSubTab);
+  }, [initialSubTab]);
 
   const activoProyectos = proyectos.filter(
     (p) =>
@@ -57,6 +58,12 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState<string>(
     initialProjectId || activoProyectos[0]?.id || ""
   );
+
+  useEffect(() => {
+    if (initialProjectId) {
+      establecerSeleccionadoProyectoId(initialProjectId);
+    }
+  }, [initialProjectId]);
 
   const actualProyecto = activoProyectos.find((p) => p.id === seleccionadoProyectoId) || activoProyectos[0];
 
@@ -98,110 +105,6 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
     establecerUsadoMateriales((prev) =>
       prev.map((it, i) => (i === idx ? { ...it, quantity: Math.max(0, it.quantity + delta) } : it))
     );
-  };
-
-  // =========================================================================
-  // 2. REGISTRAR HORAS (100% AUTOMÁTICO EN FAENA CON CRONÓMETRO, H27/H28)
-  // =========================================================================
-  const [sesionTranscurridoSegundos, establecerSesionTranscurridoSegundos] = useState<number>(0);
-  const [automaticoDescripcion, establecerAutomaticoDescripcion] = useState<string>("");
-  const [horasError, establecerHorasError] = useState<string>("");
-  const [horasExito, establecerHorasExito] = useState<string>("");
-
-  // Modal para editar horas si usuario es Administrador
-  const [editandoHora, establecerEditandoHora] = useState<HoraTrabajoTecnico | null>(null);
-  const [editarHorasValor, establecerEditarHorasValor] = useState<number>(8.0);
-  const [editarDescripcion, establecerEditarDescripcion] = useState<string>("");
-  const [editarError, establecerEditarError] = useState<string>("");
-
-  // Timer en vivo para sesión activa en faena
-  useEffect(() => {
-    if (!sesionTrabajoActiva) {
-      establecerSesionTranscurridoSegundos(0);
-      return;
-    }
-    const tick = () => {
-      const iniciarMs = new Date(sesionTrabajoActiva.startTime).getTime();
-      const transcurrido = Math.max(0, Math.floor((Date.now() - iniciarMs) / 1000));
-      establecerSesionTranscurridoSegundos(transcurrido);
-    };
-    tick();
-    const temporizador = setInterval(tick, 1000);
-    return () => clearInterval(temporizador);
-  }, [sesionTrabajoActiva]);
-
-  const formatearDuration = (totalSeconds: number) => {
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  };
-
-  const manejarIniciarAutomaticoSesion = () => {
-    establecerHorasError("");
-    establecerHorasExito("");
-    if (!actualProyecto) {
-      establecerHorasError("Seleccione un proyecto para iniciar la faena.");
-      return;
-    }
-    const resultado = iniciarSesionTrabajo(actualProyecto.id);
-    if (!resultado.success) {
-      establecerHorasError(resultado.error || "Error al iniciar la jornada automática.");
-    } else {
-      establecerHorasExito(`✓ Jornada iniciada automáticamente en ${actualProyecto.code}. El sistema cronometra en segundo plano.`);
-      setTimeout(() => establecerHorasExito(""), 4000);
-    }
-  };
-
-  const manejarDetenerAutomaticoSesion = () => {
-    establecerHorasError("");
-    establecerHorasExito("");
-    const resultado = detenerSesionTrabajo(automaticoDescripcion);
-    if (!resultado.success) {
-      establecerHorasError(resultado.error || "Error al finalizar jornada.");
-    } else {
-      const tarifa = sesionTrabajoActiva?.hourlyRate || actualProyecto?.hourlyRate || 18500;
-      const costoReal = (resultado.hours || 0) * tarifa;
-      establecerHorasExito(
-        `✓ Jornada registrada con éxito: ${resultado.hours} HH (${formatearCLP(costoReal)}). Alimenta el costo real H27 y rentabilidad H28.`
-      );
-      establecerAutomaticoDescripcion("");
-      setTimeout(() => establecerHorasExito(""), 5000);
-    }
-  };
-
-  const manejarCancelarAutomaticoSesion = () => {
-    if (Platform.OS === "web") {
-      if (window.confirm("¿Seguro que deseas cancelar el registro automático? El tiempo cronometrado no se guardará.")) {
-        cancelarSesionTrabajo();
-        establecerAutomaticoDescripcion("");
-      }
-    } else {
-      cancelarSesionTrabajo();
-      establecerAutomaticoDescripcion("");
-    }
-  };
-
-  const manejarAbrirEditarHora = (h: HoraTrabajoTecnico) => {
-    if (rolActual !== "admin") {
-      alert("Normativa contable: La edición y ajuste de jornadas fuera del flujo automático está reservada a Administración.");
-      return;
-    }
-    establecerEditandoHora(h);
-    establecerEditarHorasValor(h.hours);
-    establecerEditarDescripcion(h.description);
-    establecerEditarError("");
-  };
-
-
-  const manejarConfirmarEditarHora = () => {
-    if (!editandoHora) return;
-    const resultado = actualizarHoraTrabajoTecnico(editandoHora.id, editarHorasValor, editarDescripcion, rolActual);
-    if (!resultado.success) {
-      establecerEditarError(resultado.error || "Error al editar horas.");
-    } else {
-      establecerEditandoHora(null);
-    }
   };
 
   return (
@@ -460,365 +363,16 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 2. REGISTRAR HORAS (HH)                                                   */}
+      {/* 2. REGISTRAR HORAS (CRONÓMETRO AUTOMÁTICO OFFLINE + BLOQUES 0,5 h + H41)  */}
       {/* ========================================================================= */}
       {activoSubPestana === "horas" && (
-        <ScrollView style={estilos.cuerpoScroll} contentContainerStyle={estilos.cuerpoContenido}>
-          {/* Selector de Proyecto */}
-          <Text style={estilos.campoEtiqueta}>PROYECTO / FAENA A IMPUTAR HH:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-            {activoProyectos.map((p) => {
-              const esSeleccionado = p.id === actualProyecto?.id;
-              return (
-                <TouchableOpacity
-                  key={p.id}
-                  onPress={() => establecerSeleccionadoProyectoId(p.id)}
-                  style={[estilos.chipBoton, esSeleccionado && estilos.chipBotonActivo]}
-                >
-                  <Text style={[estilos.chipTexto, esSeleccionado && estilos.chipTextoActivo]}>
-                    {p.code} - {p.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {activoProyectos.length === 0 ? (
-            <EstadoVacio
-              icon="time-outline"
-              title="Sin proyectos activos"
-              description="No tienes proyectos asignados actualmente para imputar horas hombre."
-              containerStyle={{ marginVertical: 32 }}
-            />
-          ) : (
-            <>
-              {/* REGISTRO AUTOMÁTICO AL INICIAR PROYECTO (CRONÓMETRO FAENA) */}
-              {sesionTrabajoActiva ? (
-                /* SESIÓN EN CURSO (CRONOMETRANDO) */
-                <Tarjeta variant="elevated" style={estilos.activoSesionTarjeta}>
-                  <View style={estilos.activoSesionEncabezado}>
-                    <View style={estilos.enVivoInsigniaFila}>
-                      <View style={estilos.activoPuntoPulsoGrande} />
-                      <Text style={estilos.enVivoInsigniaTexto}>JORNADA EN CURSO EN FAENA</Text>
-                    </View>
-                    <Insignia label="Offline" tone="ok" size="sm" icon="cloud-done" />
-                  </View>
-
-                  <Text style={estilos.activoSesionProyecto}>
-                    {sesionTrabajoActiva.projectCode} • {sesionTrabajoActiva.projectName}
-                  </Text>
-                  <Text style={estilos.activoSesionIniciado}>
-                    Iniciado: {new Date(sesionTrabajoActiva.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })} • Tarifa: {formatearCLP(sesionTrabajoActiva.hourlyRate)} / HH
-                  </Text>
-
-                  {/* RELOJ DIGITAL */}
-                  <View style={estilos.temporizadorRelojCaja}>
-                    <Text style={estilos.temporizadorDigits}>{formatearDuration(sesionTranscurridoSegundos)}</Text>
-                    <Text style={estilos.temporizadorSubEtiqueta}>Tiempo transcurrido en terreno (segundo plano)</Text>
-                  </View>
-
-                  {/* CÁLCULO EN VIVO DE HH Y COSTO REAL (H27 / H28) */}
-                  {(() => {
-                    const transcurridoH = sesionTranscurridoSegundos / 3600;
-                    const bloques = Math.max(0.5, Math.min(24.0, Math.round(transcurridoH * 2) / 2));
-                    const costoManoObra = bloques * sesionTrabajoActiva.hourlyRate;
-                    return (
-                      <View style={estilos.enVivoCalculoGrilla}>
-                        <View style={estilos.enVivoCalculoColumna}>
-                          <Text style={estilos.enVivoCalculoValor}>{bloques.toFixed(1)} HH</Text>
-                          <Text style={estilos.enVivoCalculoDescripcion}>Bloque normativo 0,5 h</Text>
-                        </View>
-                        <View style={estilos.enVivoCalculoDivisor} />
-                        <View style={estilos.enVivoCalculoColumna}>
-                          <Text style={estilos.enVivoCalculoValor}>{formatearCLP(costoManoObra)}</Text>
-                          <Text style={estilos.enVivoCalculoDescripcion}>Costo M.O. Real (H27)</Text>
-                        </View>
-                        <View style={estilos.enVivoCalculoDivisor} />
-                        <View style={estilos.enVivoCalculoColumna}>
-                          <Text style={estilos.enVivoCalculoValor}>H27 / H28</Text>
-                          <Text style={estilos.enVivoCalculoDescripcion}>Alimenta Rentabilidad</Text>
-                        </View>
-                      </View>
-                    );
-                  })()}
-
-                  <CampoTexto
-                    label="Descripción de la labor ejecutada"
-                    value={automaticoDescripcion}
-                    onChangeText={establecerAutomaticoDescripcion}
-                    placeholder="Ej: Montaje de bandejas, cableado estructurado y pruebas..."
-                  />
-
-                  {Boolean(horasError) && <Text style={estilos.errorTexto}>{horasError}</Text>}
-                  {Boolean(horasExito) && <Text style={estilos.exitoTexto}>{horasExito}</Text>}
-
-                  <View style={estilos.activoAccionesFila}>
-                    <Boton
-                      title="Descartar"
-                      variant="ghost"
-                      icon="close-outline"
-                      onPress={manejarCancelarAutomaticoSesion}
-                      style={{ flex: 1, marginRight: 8, height: 48 }}
-                    />
-                    <Boton
-                      title="Finalizar y Registrar HH"
-                      variant="primary"
-                      icon="checkmark-circle-outline"
-                      onPress={manejarDetenerAutomaticoSesion}
-                      style={{ flex: 2, height: 48 }}
-                    />
-                  </View>
-                </Tarjeta>
-              ) : (
-                /* SIN SESIÓN: INICIAR JORNADA AUTOMÁTICA */
-                <Tarjeta variant="elevated" style={estilos.automaticoPromptTarjeta}>
-                  <View style={estilos.automaticoPromptSuperior}>
-                    <View style={estilos.automaticoIconoCirculo}>
-                      <Ionicons name="play" size={26} color={tema.colors.primary} />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={estilos.tarjetaEncabezado}>Registro Automático de Horas</Text>
-                      <Text style={estilos.tarjetaSub}>
-                        Inicia tu faena al llegar al proyecto. El sistema cronometra y registra automáticamente tus horas trabajadas en bloques de 0,5 h.
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={estilos.automaticoPastillasCaja}>
-                    <View style={estilos.automaticoPastillaElemento}>
-                      <Ionicons name="speedometer-outline" size={14} color={tema.colors.primary} />
-                      <Text style={estilos.automaticoPastillaTexto}>Bloques de 0,5 h</Text>
-                    </View>
-                    <View style={estilos.automaticoPastillaElemento}>
-                      <Ionicons name="shield-checkmark-outline" size={14} color={tema.colors.ok} />
-                      <Text style={estilos.automaticoPastillaTexto}>Máx 24 h por día</Text>
-                    </View>
-                    <View style={estilos.automaticoPastillaElemento}>
-                      <Ionicons name="flash-outline" size={14} color={tema.colors.infoDark} />
-                      <Text style={estilos.automaticoPastillaTexto}>100% Automático</Text>
-                    </View>
-                    <View style={estilos.automaticoPastillaElemento}>
-                      <Ionicons name="cloud-offline-outline" size={14} color={tema.colors.textMuted} />
-                      <Text style={estilos.automaticoPastillaTexto}>Funciona Offline</Text>
-                    </View>
-                  </View>
-
-                  <View style={estilos.automaticoProyectoTarifaFila}>
-                    <Text style={estilos.automaticoProyectoTarifaEtiqueta}>Proyecto seleccionado:</Text>
-                    <Text style={estilos.automaticoProyectoTarifaValor}>
-                      {actualProyecto ? `${actualProyecto.code} - ${actualProyecto.name}` : "Seleccione un proyecto"}
-                    </Text>
-                  </View>
-                  <View style={estilos.automaticoProyectoTarifaFila}>
-                    <Text style={estilos.automaticoProyectoTarifaEtiqueta}>Tarifa M.O. imputable:</Text>
-                    <Text style={estilos.automaticoProyectoTarifaDestacado}>
-                      {formatearCLP(actualProyecto?.hourlyRate || 18500)} / HH → Alimenta H27 y H28
-                    </Text>
-                  </View>
-
-                  {Boolean(horasError) && <Text style={estilos.errorTexto}>{horasError}</Text>}
-                  {Boolean(horasExito) && <Text style={estilos.exitoTexto}>{horasExito}</Text>}
-
-                  <Boton
-                    title={`Iniciar Faena en ${actualProyecto?.code || "Proyecto"}`}
-                    variant="primary"
-                    icon="play-circle"
-                    onPress={manejarIniciarAutomaticoSesion}
-                    style={{ marginTop: 14, height: 50 }}
-                  />
-                </Tarjeta>
-              )}
-
-              {/* AVISO DE CARGA MANUAL DELEGADA A ADMINISTRACIÓN */}
-              <View style={estilos.adminDelegationAvisoTarjeta}>
-                <View style={estilos.adminDelegationAvisoEncabezado}>
-                  <Ionicons name="information-circle" size={20} color="#f59e0b" style={{ marginRight: 8 }} />
-                  <Text style={estilos.adminDelegationAvisoTitulo}>
-                    Carga Manual de Horas Asignada a Administración
-                  </Text>
-                </View>
-                <Text style={estilos.adminDelegationAvisoDescripcion}>
-                  El registro en terreno es estrictamente automático con cronómetro. En caso de que no se haya registrado automáticamente tu jornada (por batería agotada, falla de terminal o falta de señal), contacta a Administración para que seleccione tu perfil e impute manualmente tus horas al proyecto.
-                </Text>
-              </View>
-
-              {/* BANNER INFORMATIVO: ALIMENTACIÓN H27 Y H28 + REGLA 48 HORAS */}
-              <View style={estilos.financialIntegrationBanner}>
-                <View style={estilos.financialBannerEncabezado}>
-                  <Ionicons name="analytics" size={16} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-                  <Text style={estilos.financialBannerTitulo}>
-                    Integración Financiera H27 y H28 (Mano de Obra Real)
-                  </Text>
-                </View>
-                <Text style={estilos.financialBannerDescripcion}>
-                  • <Text style={{ fontWeight: "bold" }}>H27 (Costo Real):</Text> Cada bloque de 0,5 h suma a los costos reales de mano de obra del proyecto según la tarifa base.
-                  {"\n"}• <Text style={{ fontWeight: "bold" }}>H28 (Liquidación Financiera):</Text> Actualiza la desviación respecto al presupuesto de HH y rentabilidad.
-                  {"\n"}• <Text style={{ fontWeight: "bold" }}>Cargas Manuales:</Text> Reservadas exclusivamente a Administración cuando no se registra automáticamente.
-                  {"\n"}• <Text style={{ fontWeight: "bold" }}>Offline:</Text> Funciona sin conexión a internet y sincroniza automáticamente al reconectar.
-                </Text>
-              </View>
-            </>
-          )}
-
-          {/* LISTADO DE HORAS REGISTRADAS */}
-          <Text style={estilos.historialEncabezado}>Mis Jornadas Registradas:</Text>
-          <Text style={estilos.historialReglaAviso}>
-            Historial de jornadas imputadas a tus proyectos (vía cronómetro en faena o carga autorizada por Administración).
-          </Text>
-
-          {horasTecnico.map((h) => {
-            const createdTiempo = new Date(h.createdAt).getTime();
-            const diferenciaHoras = (Date.now() - createdTiempo) / (1000 * 60 * 60);
-            const puedeEditar = rolActual === "admin";
-            const proyecto = proyectos.find((p) => p.id === h.projectId);
-            const tarifa = proyecto?.hourlyRate || 18500;
-            const costoReal = h.hours * tarifa;
-
-            return (
-              <Tarjeta key={h.id} variant="default" style={estilos.horaTarjeta}>
-                <View style={estilos.horaTarjetaSuperior}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={estilos.horaProyecto}>{h.projectName} ({h.projectCode})</Text>
-                    <Text style={estilos.horaFecha}>
-                      Fecha trabajada: {formatearFecha(h.date)} • Imputado: {formatearCLP(costoReal)}
-                    </Text>
-                    <Text style={estilos.horaDescripcion}>{h.description}</Text>
-                  </View>
-
-                  <View style={{ alignItems: "flex-end" }}>
-                    <Insignia label={`${h.hours} HH`} tone="info" size="md" />
-                    <View style={{ marginTop: 4 }}>
-                      {h.registeredBy === "admin_manual" ? (
-                        <Insignia label="Manual" tone="warn" icon="shield-checkmark" size="sm" />
-                      ) : (
-                        <Insignia label="Cronómetro" tone="ok" icon="timer-outline" size="sm" />
-                      )}
-                    </View>
-                    <Text style={estilos.horaDiferenciaHorasTexto}>
-                      {diferenciaHoras < 1
-                        ? "Recién registrado"
-                        : diferenciaHoras < 24
-                        ? `Hace ${Math.floor(diferenciaHoras)} h`
-                        : `Hace ${Math.floor(diferenciaHoras / 24)} días`}
-                    </Text>
-                  </View>
-                </View>
-
-                {puedeEditar && (
-                  <View style={estilos.horaTarjetaAcciones}>
-                    <Boton
-                      title="Editar Registro (Admin)"
-                      variant="outline"
-                      size="sm"
-                      icon="create-outline"
-                      onPress={() => manejarAbrirEditarHora(h)}
-                      style={{ height: 38 }}
-                    />
-                  </View>
-                )}
-              </Tarjeta>
-            );
-          })}
-
-          {/* MODAL PARA EDITAR HORAS DENTRO DE 48H O COMO ADMIN */}
-          <VistaModal
-            visible={Boolean(editandoHora)}
-            onClose={() => establecerEditandoHora(null)}
-            title="Editar Jornada de Horas"
-            subtitle={editandoHora ? `${editandoHora.projectCode} • Registrado el ${formatearFecha(editandoHora.date)}` : ""}
-          >
-            {editandoHora && (() => {
-              const diferenciaH = (Date.now() - new Date(editandoHora.createdAt).getTime()) / (1000 * 60 * 60);
-              const esPast48 = diferenciaH > 48;
-              return (
-                <View style={{ marginBottom: 12 }}>
-                  {esPast48 ? (
-                    <View style={estilos.adminEditarAviso}>
-                      <Ionicons name="shield-checkmark" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
-                      <Text style={estilos.adminEditarAvisoTexto}>
-                        Modo Administrador: Edición autorizada fuera de la ventana de 48 horas.
-                      </Text>
-                    </View>
-                  ) : (
-                    <Text style={estilos.modalSub}>
-                      Registro dentro de la ventana de 48 horas de gracia del técnico:
-                    </Text>
-                  )}
-                </View>
-              );
-            })()}
-
-            <Text style={estilos.horasCampoEtiqueta}>Horas (Bloques de 0,5 h, máx 24):</Text>
-            <View style={estilos.horasAjustadorFila}>
-              <TouchableOpacity
-                onPress={() => establecerEditarHorasValor((p) => Math.max(0.5, Math.round((p - 0.5) * 2) / 2))}
-                style={estilos.horaPasoBoton}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="remove" size={16} color={tema.colors.primaryDark} />
-                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-              </TouchableOpacity>
-
-              <View style={estilos.horasDisplay}>
-                <Text style={estilos.horasDisplayValor}>{editarHorasValor.toFixed(1)}</Text>
-                <Text style={estilos.horasDisplayUnidad}>HH</Text>
-              </View>
-
-              <TouchableOpacity
-                onPress={() => establecerEditarHorasValor((p) => Math.min(24.0, Math.round((p + 0.5) * 2) / 2))}
-                style={estilos.horaPasoBoton}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="add" size={16} color={tema.colors.primaryDark} />
-                <Text style={estilos.horaPasoBotonTexto}>0.5 h</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Chips rápidos en el modal */}
-            <View style={estilos.rapidoHorasFila}>
-              {[1.0, 2.0, 4.0, 8.0, 10.0].map((h) => {
-                const esActivo = editarHorasValor === h;
-                return (
-                  <TouchableOpacity
-                    key={`modal-h-${h}`}
-                    style={[estilos.rapidoHoraChip, esActivo && estilos.rapidoHoraChipActivo]}
-                    onPress={() => establecerEditarHorasValor(h)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[estilos.rapidoHoraTexto, esActivo && estilos.rapidoHoraTextoActivo]}>
-                      {h} h
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={{ marginTop: 10 }}>
-              <CampoTexto
-                label="Descripción de las labores"
-                value={editarDescripcion}
-                onChangeText={establecerEditarDescripcion}
-              />
-            </View>
-
-            {Boolean(editarError) && <Text style={estilos.errorTexto}>{editarError}</Text>}
-
-            <View style={estilos.modalBotonesFila}>
-              <Boton
-                title="Cancelar"
-                variant="ghost"
-                onPress={() => establecerEditandoHora(null)}
-                style={{ marginRight: 8, flex: 1 }}
-              />
-              <Boton
-                title="Guardar Cambios (H27/H28)"
-                variant="primary"
-                onPress={manejarConfirmarEditarHora}
-                style={{ flex: 2, height: 46 }}
-              />
-            </View>
-          </VistaModal>
-        </ScrollView>
+        <SeccionCronometroHorasTecnico
+          activoProyectos={activoProyectos}
+          actualProyecto={actualProyecto}
+          establecerSeleccionadoProyectoId={establecerSeleccionadoProyectoId}
+          isOffline={isOffline}
+          onCambioConexion={onCambioConexion}
+        />
       )}
 
       {/* ========================================================================= */}

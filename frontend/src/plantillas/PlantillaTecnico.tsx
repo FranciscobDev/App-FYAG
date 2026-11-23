@@ -114,6 +114,8 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <VistaRegistroTecnico
             initialSubTab={registerInicialSubPestana}
             initialProjectId={seleccionadoProyectoForPestana?.id}
+            isOffline={esSinConexion}
+            onCambioConexion={establecerSinConexionRed}
           />
         );
       case "alertas":

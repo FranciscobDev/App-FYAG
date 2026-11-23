@@ -237,17 +237,34 @@ interface TipoContextoAplicacion {
     notes: string
   ) => void;
 
-  // Technician module
+  // Módulo técnico (cronómetro automático, horas y soporte offline)
   hojasServicio: HojaServicio[];
   horasTecnico: HoraTrabajoTecnico[];
   reportesAvanceTecnico: ReporteAvanceTecnico[];
   sesionTrabajoActiva: SesionTrabajoActiva | null;
   iniciarSesionTrabajo: (projectId: string) => { success: boolean; error?: string };
-  detenerSesionTrabajo: (description?: string) => { success: boolean; hours?: number; error?: string };
+  detenerSesionTrabajo: (
+    description?: string,
+    opciones?: { offline?: boolean }
+  ) => {
+    success: boolean;
+    hours?: number;
+    syncStatus?: "pendiente" | "sincronizado";
+    registro?: HoraTrabajoTecnico;
+    error?: string;
+  };
   cancelarSesionTrabajo: () => void;
+  sincronizarHorasTrabajoPendientes: () => number;
+  restaurarEstadoHorasOffline: (
+    sesion: SesionTrabajoActiva | null,
+    horasGuardadas: HoraTrabajoTecnico[]
+  ) => void;
   crearHojaServicio: (sheet: Omit<HojaServicio, "id">) => { success: boolean; error?: string };
   resolverConflictoHojaServicio: (sheetId: string, choice: "local" | "server") => void;
-  crearHoraTrabajoTecnico: (entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">) => { success: boolean; error?: string };
+  crearHoraTrabajoTecnico: (
+    entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">,
+    syncStatus?: "pendiente" | "sincronizado"
+  ) => { success: boolean; registro?: HoraTrabajoTecnico; error?: string };
   actualizarHoraTrabajoTecnico: (id: string, hours: number, description: string, userRole?: Rol) => { success: boolean; error?: string };
   registrarHorasManualesAdmin: (data: {
     technicianRut: string;
@@ -1904,7 +1921,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
-  const crearHoraTrabajoTecnico = (entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">) => {
+  const crearHoraTrabajoTecnico = (
+    entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">,
+    syncStatus: "pendiente" | "sincronizado" = "sincronizado"
+  ) => {
     if (entry.hours <= 0 || entry.hours > 24) {
       return { success: false, error: "Las horas deben ser mayores a 0 y máximo 24 horas por día." };
     }
@@ -1916,19 +1936,20 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       ...entry,
       id: `twh_${Date.now()}`,
       createdAt: new Date().toISOString(),
-      syncStatus: "sincronizado",
+      syncStatus,
+      registeredBy: entry.registeredBy || "technician_auto",
     };
     setTechnicianHours((prev) => [newH, ...prev]);
 
-    // Impute into project labor entries
+    // Imputar costo real de mano de obra en el proyecto (H27 / H28)
     const proj = proyectos.find((p) => p.id === entry.projectId);
     if (proj) {
       const hourlyRate = proj.hourlyRate || 18500;
       const newLaborEntry = {
         id: `hh_${Date.now()}`,
         date: entry.date,
-        technicianRut: USUARIOS.technician.rut,
-        technicianName: USUARIOS.technician.name,
+        technicianRut: entry.technicianRut || USUARIOS.technician.rut,
+        technicianName: entry.technicianName || USUARIOS.technician.name,
         hours: entry.hours,
         hourlyCost: hourlyRate,
         totalCost: entry.hours * hourlyRate,
@@ -1948,7 +1969,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         )
       );
     }
-    return { success: true };
+    return { success: true, registro: newH };
   };
 
   const iniciarSesionTrabajo = (projectId: string) => {
@@ -1967,33 +1988,77 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  const detenerSesionTrabajo = (description?: string) => {
+  const detenerSesionTrabajo = (
+    description?: string,
+    opciones?: { offline?: boolean }
+  ) => {
     if (!sesionTrabajoActiva) {
       return { success: false, error: "No hay una jornada de trabajo activa." };
     }
     const startTimeMs = new Date(sesionTrabajoActiva.startTime).getTime();
     const elapsedHours = (Date.now() - startTimeMs) / (1000 * 60 * 60);
-    // Redondeo automático a bloques de 0,5 h (mínimo 0.5, máximo 24)
+    // Redondeo automático a bloques de 0,5 h (mínimo 0,5 h y máximo 24,0 h)
     const roundedHours = Math.max(0.5, Math.min(24.0, Math.round(elapsedHours * 2) / 2));
+    const estadoSync: "pendiente" | "sincronizado" = opciones?.offline
+      ? "pendiente"
+      : "sincronizado";
 
-    const res = crearHoraTrabajoTecnico({
-      projectId: sesionTrabajoActiva.projectId,
-      projectCode: sesionTrabajoActiva.projectCode,
-      projectName: sesionTrabajoActiva.projectName,
-      date: new Date().toISOString().slice(0, 10),
-      hours: roundedHours,
-      description: description?.trim() || "Jornada registrada automáticamente al finalizar trabajo en faena.",
-    });
+    const res = crearHoraTrabajoTecnico(
+      {
+        projectId: sesionTrabajoActiva.projectId,
+        projectCode: sesionTrabajoActiva.projectCode,
+        projectName: sesionTrabajoActiva.projectName,
+        date: new Date().toISOString().slice(0, 10),
+        hours: roundedHours,
+        description:
+          description?.trim() ||
+          "Jornada registrada automáticamente al finalizar trabajo en faena.",
+        registeredBy: "technician_auto",
+      },
+      estadoSync
+    );
 
     if (res.success) {
       setActiveWorkSession(null);
-      return { success: true, hours: roundedHours };
+      return {
+        success: true,
+        hours: roundedHours,
+        syncStatus: estadoSync,
+        registro: res.registro,
+      };
     }
     return res;
   };
 
   const cancelarSesionTrabajo = () => {
     setActiveWorkSession(null);
+  };
+
+  const sincronizarHorasTrabajoPendientes = () => {
+    const pendientes = horasTecnico.filter((h) => h.syncStatus === "pendiente").length;
+    if (pendientes === 0) return 0;
+    setTechnicianHours((prev) =>
+      prev.map((h) =>
+        h.syncStatus === "pendiente" ? { ...h, syncStatus: "sincronizado" } : h
+      )
+    );
+    return pendientes;
+  };
+
+  const restaurarEstadoHorasOffline = (
+    sesion: SesionTrabajoActiva | null,
+    horasGuardadas: HoraTrabajoTecnico[]
+  ) => {
+    if (sesion && !sesionTrabajoActiva) {
+      setActiveWorkSession(sesion);
+    }
+    if (horasGuardadas.length > 0) {
+      setTechnicianHours((prev) => {
+        const idsExistentes = new Set(prev.map((h) => h.id));
+        const nuevas = horasGuardadas.filter((h) => !idsExistentes.has(h.id));
+        return nuevas.length > 0 ? [...nuevas, ...prev] : prev;
+      });
+    }
   };
 
   const actualizarHoraTrabajoTecnico = (
@@ -2461,6 +2526,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         iniciarSesionTrabajo,
         detenerSesionTrabajo,
         cancelarSesionTrabajo,
+        sincronizarHorasTrabajoPendientes,
+        restaurarEstadoHorasOffline,
         usuariosSistema,
         registrosAuditoria,
         parametrosSistema,
