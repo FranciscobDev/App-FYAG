@@ -6,6 +6,7 @@ import { registrarAuditoria } from '../services/auditoriaService';
 import { ejecutarTransaccion } from '../services/transaccion';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { evaluarReposicionArticuloEnTransaccion } from '../services/motorReposicionService';
 
 export interface Articulo {
     id_articulo: number;
@@ -14,9 +15,14 @@ export interface Articulo {
     precio_unitario: number;
     categoria: string;
     id_proveedor: number | null;
+    id_unidad: number | null;
     activo: boolean;
     cantidad_disponible: number | null;
+    cantidad_comprometida?: number | null;
+    cantidad_cuarentena?: number | null;
+    pmp?: number | null;
     stock_minimo: number | null;
+    cant_reposicion?: number | null;
     ubicacion: string | null;
 }
 
@@ -26,11 +32,21 @@ interface ArticuloBody {
     precio_unitario?: number;
     categoria?: string;
     id_proveedor?: number | null;
+    id_unidad?: number | null;
     activo?: boolean;
     stock?: number;
     stock_minimo?: number;
+    cant_reposicion?: number;
+    cantidad_reposicion?: number;
     ubicacion?: string | null;
 }
+
+/** Campos cuyo cambio dispara un registro de auditoría individual (campos críticos). */
+const CAMPOS_CRITICOS: { campo: string; label: string; origen: 'articulo' | 'stock' }[] = [
+    { campo: 'stock_minimo', label: 'stock mínimo', origen: 'stock' },
+    { campo: 'id_unidad', label: 'unidad de medida', origen: 'articulo' },
+    { campo: 'id_proveedor', label: 'proveedor predeterminado', origen: 'articulo' },
+];
 
 // Debe coincidir con categoria_enum de la base de datos y con CATEGORIAS_ARTICULO del frontend
 export const CATEGORIAS_ARTICULO = ['Herramientas', 'Materiales', 'Equipos', 'Consumibles', 'Seguridad'] as const;
@@ -53,9 +69,13 @@ const esErrorPg = (error: unknown): error is DatabaseError => {
 // Artículo + su stock (tabla articulos_stock). ::float8 evita que PostgreSQL devuelva NUMERIC como texto.
 const SELECT_ARTICULO = `
     SELECT a.id_articulo, a.nombre_articulo, a.sku, a.precio_unitario, a.categoria,
-           a.id_proveedor, a.activo,
+           a.id_proveedor, a.id_unidad, a.activo,
            s.cantidad_disponible::float8 AS cantidad_disponible,
+           COALESCE(s.cantidad_comprometida, 0)::float8 AS cantidad_comprometida,
+           COALESCE(s.cantidad_cuarentena, 0)::float8 AS cantidad_cuarentena,
+           COALESCE(s.pmp, a.precio_unitario, 0)::float8 AS pmp,
            s.stock_minimo::float8 AS stock_minimo,
+           COALESCE(s.cant_reposicion, 0)::float8 AS cant_reposicion,
            s.ubicacion
     FROM articulo a
     LEFT JOIN articulos_stock s ON s.id_articulo = a.id_articulo
@@ -64,6 +84,36 @@ const SELECT_ARTICULO = `
 const leerArticulo = async (cliente: Pick<PoolClient, 'query'>, id: number | string): Promise<Articulo | null> => {
     const res = await cliente.query<Articulo>(`${SELECT_ARTICULO} WHERE a.id_articulo = $1`, [id]);
     return res.rows[0] ?? null;
+};
+
+/**
+ * Registra auditoría granular por cada campo crítico que haya cambiado.
+ * Se llama DENTRO de la transacción que ya hizo la mutación.
+ */
+const auditarCamposCriticos = async (
+    cliente: PoolClient,
+    idArticulo: number | string,
+    antes: Articulo,
+    despues: Articulo,
+    idUsuarioEjecutor: number | null,
+): Promise<void> => {
+    for (const { campo, label } of CAMPOS_CRITICOS) {
+        const valorAnterior = (antes as unknown as Record<string, unknown>)[campo];
+        const valorNuevo = (despues as unknown as Record<string, unknown>)[campo];
+        // Solo si realmente cambió (incluyendo null ↔ valor)
+        if (valorAnterior === valorNuevo) continue;
+        if (valorAnterior == null && valorNuevo == null) continue;
+
+        await registrarAuditoria({
+            entidad: 'insumo',
+            accion: 'editar_campo_critico',
+            idRegistro: idArticulo,
+            idUsuarioEjecutor,
+            estadoAnterior: { [campo]: valorAnterior },
+            estadoNuevo: { [campo]: valorNuevo },
+            descripcion: `Campo crítico «${label}» cambiado de ${String(valorAnterior ?? 'vacío')} a ${String(valorNuevo ?? 'vacío')} en artículo ID ${idArticulo}`,
+        }, cliente);
+    }
 };
 
 // Listar todos (administración, bodega y técnicos: el técnico solo lee)
@@ -93,9 +143,10 @@ export const obtenerArticuloPorId = async (req: Request<{ id: string }>, res: Re
     }
 };
 
-// Crear un artículo con su stock inicial: ambas filas en la misma transacción
+// Crear un artículo (insumo) con su stock inicial: ambas filas en la misma transacción
 export const crearArticulo = async (req: Request<Record<string, string>, unknown, ArticuloBody>, res: Response): Promise<void> => {
-    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo, stock, stock_minimo, ubicacion } = req.body;
+    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo, stock, stock_minimo, cant_reposicion, cantidad_reposicion, ubicacion } = req.body;
+    const cantReposicionFinal = cant_reposicion ?? cantidad_reposicion ?? 0;
 
     if (!nombre_articulo || !categoria) {
         res.status(400).json({ mensaje: 'El nombre y la categoría son obligatorios' });
@@ -114,10 +165,10 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
     }
 
     try {
-        const creado = await ejecutarTransaccion(async (cliente) => {
+        const resultado = await ejecutarTransaccion(async (cliente) => {
             const insertado = await cliente.query<{ id_articulo: number }>(
-                `INSERT INTO articulo (nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                `INSERT INTO articulo (nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                  RETURNING id_articulo`,
                 [
                     nombre_articulo.trim(),
@@ -125,35 +176,41 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
                     precio_unitario || 0,
                     categoria,
                     id_proveedor || null,
+                    id_unidad || null,
                     activo !== false,
                 ]
             );
             const id = insertado.rows[0].id_articulo;
 
             await cliente.query(
-                `INSERT INTO articulos_stock (id_articulo, cantidad_disponible, stock_minimo, ubicacion)
-                 VALUES ($1, $2, $3, $4)`,
-                [id, stock ?? 0, stock_minimo ?? 0, ubicacion ?? null]
+                `INSERT INTO articulos_stock (id_articulo, cantidad_disponible, stock_minimo, cant_reposicion, ubicacion, pmp)
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [id, stock ?? 0, stock_minimo ?? 0, cantReposicionFinal, ubicacion ?? null, precio_unitario || 0]
             );
 
             const nuevo = await leerArticulo(cliente, id);
+            const idEjecutor = obtenerIdEjecutor(req);
 
             await registrarAuditoria({
-                entidad: 'articulo',
+                entidad: 'insumo',
                 accion: 'crear',
                 idRegistro: id,
-                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                idUsuarioEjecutor: idEjecutor,
                 estadoAnterior: null,
                 estadoNuevo: nuevo,
-                descripcion: `Artículo ${nombre_articulo.trim()} (SKU ${sku || 'sin SKU'}) creado con stock inicial ${stock ?? 0}`,
+                descripcion: `Insumo «${nombre_articulo.trim()}» (SKU ${sku || 'sin SKU'}) creado con stock inicial ${stock ?? 0}`,
             }, cliente);
 
-            return nuevo;
+            // [BACK-1] Evaluar motor automático si nace con stock <= stock_minimo
+            const reposicion = await evaluarReposicionArticuloEnTransaccion(cliente, id, idEjecutor);
+
+            return { articulo: nuevo, reposicion };
         });
 
         res.status(201).json({
             mensaje: 'Artículo creado exitosamente',
-            articulo: creado,
+            articulo: resultado.articulo,
+            ...(resultado.reposicion?.creada ? { oc_automatica: resultado.reposicion } : {}),
         });
     } catch (error) {
         // Código 23505 = unique_violation en PostgreSQL
@@ -165,10 +222,12 @@ export const crearArticulo = async (req: Request<Record<string, string>, unknown
     }
 };
 
-// Modificar un artículo: solo cambia los campos enviados; el resto conserva su valor
+// Modificar un artículo (insumo): solo cambia los campos enviados; el resto conserva su valor.
+// Los cambios en stock_minimo, id_unidad o id_proveedor generan registros de auditoría individuales.
 export const actualizarArticulo = async (req: Request<{ id: string }, unknown, ArticuloBody>, res: Response): Promise<void> => {
     const { id } = req.params;
-    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, activo, stock, stock_minimo, ubicacion } = req.body;
+    const { nombre_articulo, sku, precio_unitario, categoria, id_proveedor, id_unidad, activo, stock, stock_minimo, cant_reposicion, cantidad_reposicion, ubicacion } = req.body;
+    const cantReposicionInput = cant_reposicion ?? cantidad_reposicion;
 
     if (categoria !== undefined) {
         const errorCategoria = validarCategoriaArticulo(categoria);
@@ -184,7 +243,7 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
     }
 
     try {
-        const actualizado = await ejecutarTransaccion(async (cliente) => {
+        const resultado = await ejecutarTransaccion(async (cliente) => {
             // FOR UPDATE: evita que dos ediciones simultáneas se pisen
             const previo = await cliente.query<Articulo>(`${SELECT_ARTICULO} WHERE a.id_articulo = $1 FOR UPDATE OF a`, [id]);
             const antes = previo.rows[0];
@@ -199,56 +258,68 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
                      precio_unitario = COALESCE($3, precio_unitario),
                      categoria       = COALESCE($4, categoria),
                      id_proveedor    = COALESCE($5, id_proveedor),
-                     activo          = COALESCE($6, activo)
-                 WHERE id_articulo = $7`,
+                     id_unidad       = COALESCE($6, id_unidad),
+                     activo          = COALESCE($7, activo)
+                 WHERE id_articulo = $8`,
                 [
                     nombre_articulo?.trim() ?? null,
                     sku ?? null,
                     precio_unitario ?? null,
                     categoria ?? null,
                     id_proveedor ?? null,
+                    id_unidad ?? null,
                     typeof activo === 'boolean' ? activo : null,
                     id,
                 ]
             );
 
-            if (stock !== undefined || stock_minimo !== undefined || ubicacion !== undefined) {
+            if (stock !== undefined || stock_minimo !== undefined || cantReposicionInput !== undefined || ubicacion !== undefined) {
                 const filas = await cliente.query(
                     `UPDATE articulos_stock
                      SET cantidad_disponible = COALESCE($2, cantidad_disponible),
                          stock_minimo        = COALESCE($3, stock_minimo),
-                         ubicacion           = COALESCE($4, ubicacion)
+                         cant_reposicion     = COALESCE($4, cant_reposicion),
+                         ubicacion           = COALESCE($5, ubicacion)
                      WHERE id_articulo = $1`,
-                    [id, stock ?? null, stock_minimo ?? null, ubicacion ?? null]
+                    [id, stock ?? null, stock_minimo ?? null, cantReposicionInput ?? null, ubicacion ?? null]
                 );
                 // Artículo sin fila de stock (p. ej. creado antes de esta función): se crea
                 if ((filas.rowCount ?? 0) === 0) {
                     await cliente.query(
-                        `INSERT INTO articulos_stock (id_articulo, cantidad_disponible, stock_minimo, ubicacion)
-                         VALUES ($1, $2, $3, $4)`,
-                        [id, stock ?? 0, stock_minimo ?? 0, ubicacion ?? null]
+                        `INSERT INTO articulos_stock (id_articulo, cantidad_disponible, stock_minimo, cant_reposicion, ubicacion)
+                         VALUES ($1, $2, $3, $4, $5)`,
+                        [id, stock ?? 0, stock_minimo ?? 0, cantReposicionInput ?? 0, ubicacion ?? null]
                     );
                 }
             }
 
             const despues = await leerArticulo(cliente, id);
+            const idEjecutor = obtenerIdEjecutor(req);
 
+            // Auditoría granular: un registro por cada campo crítico que haya cambiado
+            await auditarCamposCriticos(cliente, id, antes, despues!, idEjecutor);
+
+            // Auditoría general de la mutación
             await registrarAuditoria({
-                entidad: 'articulo',
+                entidad: 'insumo',
                 accion: activo === false ? 'deshabilitar' : 'editar',
                 idRegistro: id,
-                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                idUsuarioEjecutor: idEjecutor,
                 estadoAnterior: antes,
                 estadoNuevo: despues,
-                descripcion: `Artículo ${despues?.nombre_articulo ?? antes.nombre_articulo} (ID ${id}) actualizado`,
+                descripcion: `Insumo «${despues?.nombre_articulo ?? antes.nombre_articulo}» (ID ${id}) actualizado`,
             }, cliente);
 
-            return despues;
+            // [BACK-1] Evaluar motor automático si el stock disponible cayó al mínimo o por debajo (H35 / H40 / H43)
+            const reposicion = await evaluarReposicionArticuloEnTransaccion(cliente, id, idEjecutor);
+
+            return { articulo: despues, reposicion };
         });
 
         res.status(200).json({
             mensaje: 'Artículo actualizado exitosamente',
-            articulo: actualizado,
+            articulo: resultado.articulo,
+            ...(resultado.reposicion ? { reposicion_stock_minimo: resultado.reposicion } : {}),
         });
     } catch (error) {
         if (esErrorPg(error) && error.code === '23505') {
@@ -256,6 +327,47 @@ export const actualizarArticulo = async (req: Request<{ id: string }, unknown, A
             return;
         }
         enviarErrorHttp(res, error, 'Error al actualizar el artículo');
+    }
+};
+
+// Deshabilitar un artículo (insumo) lógicamente: pone activo = false sin borrar datos.
+// Los insumos con historial solo se deshabilitan; nunca se eliminan físicamente.
+export const deshabilitarArticulo = async (req: Request<{ id: string }>, res: Response): Promise<void> => {
+    const { id } = req.params;
+    try {
+        const deshabilitado = await ejecutarTransaccion(async (cliente) => {
+            const previo = await cliente.query<Articulo>(`${SELECT_ARTICULO} WHERE a.id_articulo = $1 FOR UPDATE OF a`, [id]);
+            const antes = previo.rows[0];
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Artículo no encontrado para deshabilitar');
+            }
+            if (!antes.activo) {
+                throw new ErrorAplicacion(400, 'El artículo ya está deshabilitado');
+            }
+
+            await cliente.query('UPDATE articulo SET activo = FALSE WHERE id_articulo = $1', [id]);
+
+            const despues = await leerArticulo(cliente, id);
+
+            await registrarAuditoria({
+                entidad: 'insumo',
+                accion: 'deshabilitar',
+                idRegistro: id,
+                idUsuarioEjecutor: obtenerIdEjecutor(req),
+                estadoAnterior: antes,
+                estadoNuevo: despues,
+                descripcion: `Insumo «${antes.nombre_articulo}» (ID ${id}) deshabilitado lógicamente`,
+            }, cliente);
+
+            return despues;
+        });
+
+        res.status(200).json({
+            mensaje: 'Artículo deshabilitado correctamente',
+            articulo: deshabilitado,
+        });
+    } catch (error) {
+        enviarErrorHttp(res, error, 'Error al deshabilitar el artículo');
     }
 };
 

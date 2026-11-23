@@ -128,6 +128,12 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
       const error = await iniciarSesion(correo.trim(), contrasena);
 
       if (error) {
+        const esErrorConexion = error.toLowerCase().includes("no se pudo conectar");
+        if (esErrorConexion) {
+          mostrarAviso("Servidor apagado o inaccesible. Inicia el backend (npm run dev en la carpeta backend).", "danger");
+          return;
+        }
+
         const siguienteAttempts = failedAttempts + 1;
         establecerFailedAttempts(siguienteAttempts);
 

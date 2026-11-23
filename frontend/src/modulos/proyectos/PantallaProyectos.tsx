@@ -18,7 +18,9 @@ import { formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import {
   ContenedorEstadoPantalla,
+  EncabezadoPagina,
   EstadoVacio,
+  Insignia,
   NotificacionFlotante,
 } from "@/componentes/comunes";
 import {
@@ -34,6 +36,10 @@ import {
 import { KitProyecto } from "@/nucleo/tipos";
 import { listarKits } from "./kitsApi";
 import { ModalGestionKits } from "./ModalGestionKits";
+import {
+  ClienteProyecto,
+  listarClientes,
+} from "./clientesApi";
 import { SelectorFecha } from "@/componentes/formularios/SelectorFecha";
 import { estilos } from "./estilos";
 import { SeccionTecnicos } from "./SeccionTecnicos";
@@ -66,10 +72,29 @@ const colorAvance = (porcentaje: number) => {
   return "#9ca3af";
 };
 
+const obtenerEstiloEstado = (estado: string) => {
+  const norm = estado.toLowerCase();
+  if (norm.includes("complet") || norm.includes("finaliz")) {
+    return { bg: "#dcfce7", border: "#bbf7d0", text: "#15803d", dot: "#16a34a" };
+  }
+  if (norm.includes("proceso") || norm.includes("curso") || norm.includes("activ")) {
+    return { bg: "#fef3c7", border: "#fde68a", text: "#b45309", dot: "#d97706" };
+  }
+  if (norm.includes("pausad")) {
+    return { bg: "#f3e8ff", border: "#e9d5ff", text: "#7e22ce", dot: "#9333ea" };
+  }
+  if (norm.includes("cancel")) {
+    return { bg: "#fee2e2", border: "#fecaca", text: "#b91c1c", dot: "#dc2626" };
+  }
+  return { bg: "#eff6ff", border: "#bfdbfe", text: "#1d4ed8", dot: "#3b82f6" };
+};
+
+/** Determina si un estado de proyecto corresponde a un cierre definitivo (solo lectura). */
+const esEstadoCerrado = (estado?: string | null): boolean =>
+  estado === "Completado" || estado === "Cancelado";
+
 export const PantallaProyectos: React.FC = () => {
-  const { usuario } = usarAutenticacion();
-  const idUsuario: number | null =
-    (usuario as unknown as { id_usuario?: number })?.id_usuario ?? null;
+  const { usuario, idUsuario } = usarAutenticacion();
 
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
@@ -90,8 +115,9 @@ export const PantallaProyectos: React.FC = () => {
   const [errorFormulario, establecerErrorFormulario] = useState("");
   const [guardando, establecerGuardando] = useState(false);
 
-  // Kits predeterminados
+  // Kits predeterminados y Clientes
   const [kits, establecerKits] = useState<KitProyecto[]>([]);
+  const [clientesLista, establecerClientesLista] = useState<ClienteProyecto[]>([]);
   const [modalKitsVisible, establecerModalKitsVisible] = useState(false);
   const [panelAsignacionVisible, establecerPanelAsignacionVisible] = useState(false);
 
@@ -103,7 +129,11 @@ export const PantallaProyectos: React.FC = () => {
 
   const cargar = useCallback(async () => {
     establecerCargando(true);
-    const [resProy, resKits] = await Promise.all([listarProyectos(), listarKits()]);
+    const [resProy, resKits, resCli] = await Promise.all([
+      listarProyectos(),
+      listarKits(),
+      listarClientes(),
+    ]);
     if (resProy.ok && resProy.data) {
       establecerProyectos(resProy.data);
       establecerError(null);
@@ -113,6 +143,9 @@ export const PantallaProyectos: React.FC = () => {
     }
     if (resKits.ok && resKits.data) {
       establecerKits(resKits.data);
+    }
+    if (resCli.ok && resCli.data) {
+      establecerClientesLista(resCli.data);
     }
     establecerCargando(false);
   }, []);
@@ -219,6 +252,21 @@ export const PantallaProyectos: React.FC = () => {
       return;
     }
 
+    // Regla de negocio: si el proyecto ya estaba cerrado, no se puede alterar el presupuesto
+    if (esEstadoCerrado(editando?.estado_proyecto)) {
+      const presupuestoOriginal = Number(editando.presupuesto_inicial) || 0;
+      const horasOriginal = Number(editando.presupuesto_horas) || 0;
+      const presupuestoNuevo = Number(formulario.presupuesto_inicial) || 0;
+      const horasNuevas = Number(formulario.presupuesto_horas) || 0;
+
+      if (presupuestoNuevo !== presupuestoOriginal || horasNuevas !== horasOriginal) {
+        establecerErrorFormulario(
+          "No se puede modificar el presupuesto de un proyecto que ya está cerrado."
+        );
+        return;
+      }
+    }
+
     if (
       formulario.fecha_inicio &&
       formulario.fecha_fin &&
@@ -295,8 +343,10 @@ export const PantallaProyectos: React.FC = () => {
       <ModalFormulario
         visible={modalVisible}
         editando={Boolean(editando)}
+        proyectoOriginal={editando}
         formulario={formulario}
         kits={kits}
+        clientes={clientesLista}
         onAbrirGestionKits={() => establecerModalKitsVisible(true)}
         error={errorFormulario}
         guardando={guardando}
@@ -422,10 +472,23 @@ export const PantallaProyectos: React.FC = () => {
 
             <View style={estilos.detalleAccionesFila}>
               <TouchableOpacity
-                style={styles.boton}
+                style={[styles.boton, esEstadoCerrado(seleccionado.estado_proyecto) && styles.botonSecundario]}
                 onPress={() => abrirEditar(seleccionado)}
               >
-                <Text style={styles.botonTexto}>Editar</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  {esEstadoCerrado(seleccionado.estado_proyecto) && (
+                    <Ionicons name="lock-closed" size={16} color={tema.colors.text} />
+                  )}
+                  <Text
+                    style={
+                      esEstadoCerrado(seleccionado.estado_proyecto)
+                        ? styles.botonTextoOscuro
+                        : styles.botonTexto
+                    }
+                  >
+                    {esEstadoCerrado(seleccionado.estado_proyecto) ? "Ver (Cerrado)" : "Editar"}
+                  </Text>
+                </View>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.boton, styles.botonPeligro]}
@@ -442,6 +505,18 @@ export const PantallaProyectos: React.FC = () => {
   }
 
   // ---------- Listado ----------
+  const totalPlanificados = proyectos.filter((p) =>
+    p.estado_proyecto.toLowerCase().includes("planific")
+  ).length;
+  const totalEnCurso = proyectos.filter((p) => {
+    const s = p.estado_proyecto.toLowerCase();
+    return s.includes("curso") || s.includes("proceso") || s.includes("activ");
+  }).length;
+  const totalFinalizados = proyectos.filter((p) => {
+    const s = p.estado_proyecto.toLowerCase();
+    return s.includes("finaliz") || s.includes("complet");
+  }).length;
+
   return (
     <ContenedorEstadoPantalla screenTitle="Proyectos y Obras" skeletonType="cards">
       <View style={estilos.contenedor}>
@@ -451,55 +526,40 @@ export const PantallaProyectos: React.FC = () => {
           onDismiss={() => establecerAviso(null)}
         />
 
-        <View style={estilos.superiorBarra}>
-          <View style={{ flex: 1 }}>
-            <Text style={estilos.encabezado}>Proyectos</Text>
-            <Text style={estilos.seccionSubtitulo}>
-              {proyectosFiltrados.length} de {proyectos.length} proyectos
-            </Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <TouchableOpacity
-              style={[
-                styles.boton,
-                styles.botonKits,
-                panelAsignacionVisible && {
-                  backgroundColor: tema.colors.primary,
-                  borderColor: tema.colors.primary,
-                },
-              ]}
-              onPress={() => establecerPanelAsignacionVisible((prev) => !prev)}
-            >
-              <Ionicons
-                name="person-add-outline"
-                size={16}
-                color={panelAsignacionVisible ? "#ffffff" : tema.colors.primary}
-              />
-              <Text
-                style={[
-                  styles.botonKitsTexto,
-                  panelAsignacionVisible && { color: "#ffffff" },
-                ]}
-              >
-                {panelAsignacionVisible ? "Ocultar Asignación" : "Asignar Técnicos"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.boton, styles.botonKits]}
-              onPress={() => establecerModalKitsVisible(true)}
-            >
-              <Ionicons name="cube-outline" size={16} color={tema.colors.primary} />
-              <Text style={styles.botonKitsTexto}>Gestionar Kits</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[estilos.botonCrearProyectoGrande, styles.boton]}
-              onPress={abrirNuevo}
-            >
-              <Text style={styles.botonTexto}>+ Nuevo</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* 1. ENCABEZADO OSCURO ESTÁNDAR (Igual al resto de módulos FYAG) */}
+        <EncabezadoPagina
+          title="Proyectos y Obras"
+          subtitle="Planificación de faenas, asignación de técnicos, kits predeterminados y control presupuestario"
+        />
 
+        <ScrollView contentContainerStyle={estilos.scrollCuerpo}>
+          {/* 2. KPIs DE RESUMEN SUPERIOR (Estilo Control de Herramientas) */}
+          <View style={styles.kpisProyectosFila}>
+            <View style={styles.kpiProyectoCaja}>
+              <Text style={styles.kpiProyectoValor}>{proyectos.length}</Text>
+              <Text style={styles.kpiProyectoLbl}>Total Obras</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#bfdbfe" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: "#1d4ed8" }]}>
+                {totalPlanificados}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>Planificados</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#fde68a" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: tema.colors.primaryDark }]}>
+                {totalEnCurso}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>En Curso</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#bbf7d0" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: "#15803d" }]}>
+                {totalFinalizados}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>Finalizados</Text>
+            </View>
+          </View>
+
+<<<<<<< HEAD
         {/* [FRONT-2] Indicador de última sincronización en tiempo real */}
         <IndicadorUltimaSincronizacion
           ultimaSincronizacion={ultimaSincronizacion}
@@ -555,30 +615,171 @@ export const PantallaProyectos: React.FC = () => {
                 >
                   <Text style={[styles.chipTexto, activo && styles.chipTextoActivo]}>
                     {e === "todos" ? "Todos" : e}
+=======
+          {/* 3. TARJETA HERO CON BORDE ÁMBAR (Igual a Herramientas, OC y Conteos) */}
+          <View style={estilos.crearProyectoHeroTarjeta}>
+            <View style={estilos.crearProyectoHeroContenido}>
+              <View style={estilos.crearProyectoHeroIzquierda}>
+                <View style={estilos.heroInsigniaFila}>
+                  <Insignia label="Obras y Faenas" tone="warn" size="sm" />
+                  <Text style={estilos.heroInsigniaHint}>
+                    Control de Ejecución y Presupuesto
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+                </View>
+                <Text style={estilos.crearProyectoHeroTitulo}>
+                  Registrar Nuevo Proyecto o Faena
+                </Text>
+                <Text style={estilos.crearProyectoHeroDescripcion}>
+                  Crea una obra o mantención definiendo cliente, plazos, kit predeterminado de materiales y presupuesto inicial.
+                </Text>
+              </View>
 
-        {cargando ? (
-          <ActivityIndicator style={{ marginTop: 40 }} />
-        ) : error ? (
-          <EstadoVacio title="No se pudieron cargar los proyectos" description={error} />
-        ) : proyectosFiltrados.length === 0 ? (
-          <EstadoVacio title="Sin proyectos" description="No hay proyectos que coincidan." />
-        ) : (
-          <ScrollView contentContainerStyle={estilos.scrollCuerpo}>
-            {proyectosFiltrados.map((p) => {
+              <View style={{ width: "100%", gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.botonHeroPrimario}
+                  onPress={abrirNuevo}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
+                  <Text style={styles.botonNuevoPrimarioTexto}>
+                    + Registrar Nuevo Proyecto
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.herramientasRapidasFila}>
+                  <TouchableOpacity
+                    style={[
+                      styles.botonHerramientaSecundario,
+                      panelAsignacionVisible && styles.botonHerramientaSecundarioActivo,
+                    ]}
+                    onPress={() => establecerPanelAsignacionVisible((prev) => !prev)}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.iconoHerramientaCirculo,
+                        panelAsignacionVisible && styles.iconoHerramientaCirculoActivo,
+                      ]}
+                    >
+                      <Ionicons
+                        name="person-add-outline"
+                        size={15}
+                        color={panelAsignacionVisible ? "#ffffff" : tema.colors.primary}
+                      />
+                    </View>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.botonHerramientaTexto,
+                        panelAsignacionVisible && styles.botonHerramientaTextoActivo,
+                      ]}
+                    >
+                      {panelAsignacionVisible ? "Ocultar Asignación" : "Asignar Técnicos"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.botonHerramientaSecundario}
+                    onPress={() => establecerModalKitsVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconoHerramientaCirculo}>
+                      <Ionicons name="cube-outline" size={15} color={tema.colors.primary} />
+                    </View>
+                    <Text numberOfLines={1} style={styles.botonHerramientaTexto}>
+                      Gestionar Kits
+                    </Text>
+                    {kits.length > 0 && (
+                      <View style={styles.badgeContadorKits}>
+                        <Text style={styles.badgeContadorKitsTexto}>{kits.length}</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {panelAsignacionVisible && (
+            <ScrollView style={{ maxHeight: 500, marginBottom: 12 }} nestedScrollEnabled>
+              <AsignacionTecnicos
+                proyectosProp={proyectos.length > 0 ? proyectos : undefined}
+                onAviso={mostrarAviso}
+                onCancel={() => establecerPanelAsignacionVisible(false)}
+              />
+            </ScrollView>
+          )}
+
+          {/* 4. BUSCADOR Y FILTROS DE ESTADO */}
+          <View style={styles.buscadorModernoCaja}>
+            <Ionicons name="search-outline" size={18} color="#9ca3af" />
+            <TextInput
+              style={styles.buscadorModernoInput}
+              placeholder="Buscar por código, nombre o cliente..."
+              placeholderTextColor="#9ca3af"
+              value={busqueda}
+              onChangeText={establecerBusqueda}
+            />
+            {busqueda.length > 0 && (
+              <TouchableOpacity onPress={() => establecerBusqueda("")}>
+                <Ionicons name="close-circle" size={18} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={[styles.filtrosWrapper, { marginBottom: 14 }]}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filtrosContenido}
+              style={styles.filtrosScroll}
+            >
+              {["todos", ...ESTADOS_PROYECTO].map((e) => {
+                const activo = filtroEstado === e;
+                const cantidadEstado =
+                  e === "todos"
+                    ? proyectos.length
+                    : proyectos.filter((p) => p.estado_proyecto === e).length;
+                return (
+                  <Pressable
+                    key={e}
+                    onPress={() => establecerFiltroEstado(e)}
+                    style={[styles.chip, activo && styles.chipActivo]}
+                  >
+                    <Text style={[styles.chipTexto, activo && styles.chipTextoActivo]}>
+                      {e === "todos" ? `Todos (${cantidadEstado})` : `${e} (${cantidadEstado})`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* 5. LISTADO DE PROYECTOS */}
+          {cargando ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={tema.colors.primary} size="large" />
+          ) : error ? (
+            <EstadoVacio title="No se pudieron cargar los proyectos" description={error} />
+          ) : proyectosFiltrados.length === 0 ? (
+            <EstadoVacio title="Sin proyectos" description="No hay proyectos que coincidan." />
+          ) : (
+            proyectosFiltrados.map((p) => {
               const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
               const color = colorAvance(porcentaje);
+<<<<<<< HEAD
               const cfgEstado = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
 
+=======
+              const esCerrado = esEstadoCerrado(p.estado_proyecto);
+              const estEstado = obtenerEstiloEstado(p.estado_proyecto);
+              const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
               return (
                 <Pressable
                   key={p.id_proyecto}
                   style={[
+<<<<<<< HEAD
                     estilos.finalAuditoriaTarjeta,
                     estilos.proyectoListaTarjeta,
                     {
@@ -613,32 +814,88 @@ export const PantallaProyectos: React.FC = () => {
                       </Text>
                       <Text style={estilos.clienteTexto}>
                         {p.cliente ?? "Sin cliente"}
-                      </Text>
+=======
+                    styles.tarjetaProyectoModerna,
+                    esCerrado && { opacity: 0.85, backgroundColor: "#f9fafb" },
+                  ]}
+                  onPress={() => establecerSeleccionado(p)}
+                >
+                  {/* Fila superior de insignias: Tipo + Estado */}
+                  <View style={styles.tarjetaTopInsignias}>
+                    <View style={styles.badgeTipoProyecto}>
+                      <Ionicons
+                        name={esMantencion ? "build-outline" : "construct-outline"}
+                        size={12}
+                        color={tema.colors.primary}
+                      />
+                      <Text style={styles.badgeTipoProyectoTexto}>{p.tipo_proyecto}</Text>
                     </View>
-                    <View style={estilos.semaphoreIndicatorPastilla}>
-                      <View style={[estilos.semaphorePunto, { backgroundColor: color }]} />
-                      <Text style={[estilos.semaphorePorcentajeTexto, { color }]}>
-                        {porcentaje}%
-                      </Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.barra}>
                     <View
                       style={[
-                        styles.barraRelleno,
-                        { width: `${porcentaje}%`, backgroundColor: color },
+                        styles.badgeEstadoProyecto,
+                        { backgroundColor: estEstado.bg, borderColor: estEstado.border },
                       ]}
-                    />
+                    >
+                      <View
+                        style={[styles.puntoEstadoProyecto, { backgroundColor: estEstado.dot }]}
+                      />
+                      <Text style={[styles.badgeEstadoProyectoTexto, { color: estEstado.text }]}>
+                        {p.estado_proyecto}
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
+                      </Text>
+                    </View>
                   </View>
 
-                  <View style={estilos.costoSemaphoreFila}>
-                    <Text style={estilos.costoEtiqueta}>Presupuesto usado</Text>
-                    <Text style={estilos.costoValoresTexto}>
-                      {formatearCLP(p.valor_venta)}
+                  {/* Nombre y Cliente */}
+                  <Text style={styles.nombreProyectoModerna} numberOfLines={2}>
+                    {p.nombre_proyecto}
+                  </Text>
+
+                  <View style={styles.clienteProyectoFila}>
+                    <Ionicons name="business-outline" size={14} color="#6b7280" />
+                    <Text style={styles.clienteProyectoTexto} numberOfLines={1}>
+                      {p.cliente && p.cliente.trim().length > 0 ? p.cliente : "Sin cliente asignado"}
                     </Text>
                   </View>
 
+                  {p.direccion ? (
+                    <View style={[styles.clienteProyectoFila, { marginTop: 3 }]}>
+                      <Ionicons name="location-outline" size={14} color="#9ca3af" />
+                      <Text style={styles.direccionProyectoTexto} numberOfLines={1}>
+                        {p.direccion}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Barra de progreso con etiqueta */}
+                  <View style={styles.bloqueProgresoModerna}>
+                    <View style={styles.progresoEncabezadoFila}>
+                      <Text style={styles.progresoEtiqueta}>Avance de obra</Text>
+                      <Text style={[styles.progresoPorcentajeValor, { color }]}>
+                        {porcentaje}%
+                      </Text>
+                    </View>
+                    <View style={styles.barraModernaFondo}>
+                      <View
+                        style={[
+                          styles.barraModernaRelleno,
+                          { width: `${porcentaje}%`, backgroundColor: color },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Pie de tarjeta con métricas y fechas */}
+                  <View style={styles.pieTarjetaModerna}>
+                    <View style={styles.metricaPieBloque}>
+                      <Text style={styles.metricaPieEtiqueta}>Presupuesto usado</Text>
+                      <Text style={styles.metricaPieValor}>{formatearCLP(p.valor_venta)}</Text>
+                    </View>
+
+                    <View style={styles.divisorVerticalPie} />
+
+<<<<<<< HEAD
                   <View style={estilos.tarjetaInferiorFila}>
                     <View
                       style={{
@@ -666,12 +923,32 @@ export const PantallaProyectos: React.FC = () => {
                       {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} ·{" "}
                       {p.fecha_fin ? formatearFecha(p.fecha_fin) : "—"}
                     </Text>
+=======
+                    <View style={[styles.metricaPieBloque, { flex: 1.2 }]}>
+                      <Text style={styles.metricaPieEtiqueta}>Plazo estimado</Text>
+                      <View style={styles.fechasPieFila}>
+                        <Ionicons name="calendar-outline" size={13} color="#6b7280" />
+                        <Text style={styles.fechasPieTexto} numberOfLines={1}>
+                          {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} →{" "}
+                          {p.fecha_fin ? formatearFecha(p.fecha_fin) : "—"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.flechaDetalleCaja}>
+                      <Ionicons
+                        name={esCerrado ? "lock-closed" : "chevron-forward"}
+                        size={16}
+                        color={esCerrado ? "#b91c1c" : "#9ca3af"}
+                      />
+                    </View>
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   </View>
                 </Pressable>
               );
-            })}
-          </ScrollView>
-        )}
+            })
+          )}
+        </ScrollView>
       </View>
       {modal}
     </ContenedorEstadoPantalla>
@@ -690,8 +967,10 @@ const Metrica: React.FC<{ etiqueta: string; valor: string }> = ({ etiqueta, valo
 type ModalProps = {
   visible: boolean;
   editando: boolean;
+  proyectoOriginal: Proyecto | null;
   formulario: FormularioProyecto;
   kits: KitProyecto[];
+  clientes: ClienteProyecto[];
   onAbrirGestionKits: () => void;
   error: string;
   guardando: boolean;
@@ -703,8 +982,10 @@ type ModalProps = {
 const ModalFormulario: React.FC<ModalProps> = ({
   visible,
   editando,
+  proyectoOriginal,
   formulario,
   kits,
+  clientes,
   onAbrirGestionKits,
   error,
   guardando,
@@ -712,26 +993,74 @@ const ModalFormulario: React.FC<ModalProps> = ({
   onCancelar,
   onGuardar,
 }) => {
+  const esCerrado = esEstadoCerrado(formulario.estado_proyecto);
+  const yaEstabaCerrado = Boolean(proyectoOriginal && esEstadoCerrado(proyectoOriginal.estado_proyecto));
+
+  const [desplegableClientesAbierto, setDesplegableClientesAbierto] = useState(false);
+  const [busquedaCliente, setBusquedaCliente] = useState("");
+
+  useEffect(() => {
+    if (!visible) {
+      setDesplegableClientesAbierto(false);
+      setBusquedaCliente("");
+    }
+  }, [visible]);
   const kitSeleccionado = kits.find((k) => k.id_kit_proyecto === formulario.id_kit_proyecto);
+
+  const clienteSeleccionado = useMemo(() => {
+    if (formulario.id_cliente) {
+      return clientes.find((c) => c.id_cliente === formulario.id_cliente) ?? null;
+    }
+    if (formulario.cliente) {
+      return (
+        clientes.find(
+          (c) => c.razon_social.toLowerCase() === (formulario.cliente ?? "").toLowerCase()
+        ) ?? null
+      );
+    }
+    return null;
+  }, [clientes, formulario.id_cliente, formulario.cliente]);
+
+  const clientesDisponibles = useMemo(() => {
+    const activos = clientes.filter((c) => c.activo !== false);
+    if (!busquedaCliente.trim()) return activos;
+    const q = busquedaCliente.toLowerCase().trim();
+    return activos.filter(
+      (c) =>
+        c.razon_social.toLowerCase().includes(q) ||
+        c.rut_cliente.toLowerCase().includes(q) ||
+        (c.giro ?? "").toLowerCase().includes(q)
+    );
+  }, [clientes, busquedaCliente]);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancelar}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
-          {/* HEADER MODAL */}
+          {/* Encabezado del modal */}
           <View style={styles.modalHeader}>
             <View style={{ flex: 1 }}>
               <View style={styles.modalHeaderTag}>
                 <Ionicons name="briefcase-outline" size={13} color={tema.colors.primary} />
                 <Text style={styles.modalHeaderTagTexto}>
-                  {editando ? "EDICIÓN DE PROYECTO" : "GESTIÓN DE OBRAS"}
+                  {yaEstabaCerrado
+                    ? "PROYECTO CERRADO (SOLO LECTURA)"
+                    : editando
+                    ? "EDICIÓN DE PROYECTO"
+                    : "GESTIÓN DE OBRAS"}
                 </Text>
               </View>
               <Text style={styles.modalTitulo}>
-                {editando ? `Editar Proyecto: ${formulario.nombre_proyecto || "Sin nombre"}` : "Crear Nuevo Proyecto"}
+                {yaEstabaCerrado
+                  ? `Ver Proyecto: ${formulario.nombre_proyecto || "Cerrado"}`
+                  : editando
+                  ? `Editar Proyecto: ${formulario.nombre_proyecto || "Sin nombre"}`
+                  : "Crear Nuevo Proyecto"}
               </Text>
               <Text style={styles.modalSubtitulo}>
-                Define la información técnica, plazos, kit de insumos y presupuestos asignados.
+                {esCerrado
+                  ? "Proyecto en modo solo lectura. Los campos se encuentran bloqueados."
+                  : "Define la información técnica, plazos, kit de insumos y presupuestos asignados."}
               </Text>
             </View>
 
@@ -744,13 +1073,39 @@ const ModalFormulario: React.FC<ModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* CUERPO CON SCROLL */}
+          {/* Cuerpo con desplazamiento */}
           <ScrollView
             style={styles.modalScrollCuerpo}
             contentContainerStyle={{ padding: 18, paddingBottom: 28 }}
             showsVerticalScrollIndicator={true}
           >
-            {/* SECCIÓN 1: INFORMACIÓN GENERAL */}
+            {/* Guía visual de control de estados de proyecto */}
+            <View style={styles.scrumBanner}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Ionicons name="information-circle" size={16} color="#92400e" />
+                <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
+              </View>
+              <Text style={styles.scrumBannerTexto}>
+                Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.
+              </Text>
+            </View>
+
+            {/* Aviso de bloqueo cuando está en estado Cerrado */}
+            {esCerrado && (
+              <View style={styles.bannerCerrado}>
+                <Ionicons name="lock-closed" size={18} color="#b91c1c" />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bannerCerradoTitulo}>
+                    {yaEstabaCerrado ? "Proyecto Cerrado — Solo Lectura" : "Cambio de Estado: Cerrado"}
+                  </Text>
+                  <Text style={styles.bannerCerradoTexto}>
+                    Los campos se bloquean visualmente. No se permite la alteración del presupuesto inicial ni horas.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Sección 1: Información general */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="business-outline" size={16} color={tema.colors.primary} />
@@ -758,9 +1113,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
 
               <Text style={styles.campoEtiqueta}>Nombre del Proyecto *</Text>
-              <View style={styles.inputContenedorConIcono}>
+              <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                 <Ionicons name="document-text-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                 <TextInput
+                  editable={!esCerrado}
                   style={styles.inputConIcono}
                   placeholder="Ej: Montaje Tableros Centro Logístico Quilicura"
                   placeholderTextColor={tema.colors.textMuted}
@@ -769,12 +1125,162 @@ const ModalFormulario: React.FC<ModalProps> = ({
                 />
               </View>
 
+              {/* Selector de Cliente con Listado y Selección Directa */}
+              <View style={{ marginBottom: 12 }}>
+                <Text style={styles.campoEtiqueta}>
+                  Seleccionar Cliente Registrado (Autocompleta datos y dirección):
+                </Text>
+
+                {/* Gatillador del Selector / Dropdown */}
+                <TouchableOpacity
+                  style={[
+                    styles.selectorClienteTrigger,
+                    desplegableClientesAbierto && styles.selectorClienteTriggerAbierto,
+                    clienteSeleccionado && styles.selectorClienteTriggerSeleccionado,
+                  ]}
+                  onPress={() => setDesplegableClientesAbierto((prev) => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.selectorClienteIconoCaja}>
+                    <Ionicons
+                      name={clienteSeleccionado ? "business" : "business-outline"}
+                      size={18}
+                      color={clienteSeleccionado ? tema.colors.primary : "#9ca3af"}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    {clienteSeleccionado ? (
+                      <>
+                        <Text style={styles.selectorClienteNombre} numberOfLines={1}>
+                          {clienteSeleccionado.razon_social}
+                        </Text>
+                        <Text style={styles.selectorClienteSub} numberOfLines={1}>
+                          RUT: {clienteSeleccionado.rut_cliente}
+                          {clienteSeleccionado.giro ? ` • ${clienteSeleccionado.giro}` : ""}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.selectorClientePlaceholder}>
+                        Toca aquí para seleccionar un cliente del listado...
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    {clienteSeleccionado && (
+                      <TouchableOpacity
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          onCambiar("id_cliente", null);
+                          onCambiar("cliente", "");
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.selectorClienteBtnLimpiar}
+                      >
+                        <Ionicons name="close-circle" size={18} color="#9ca3af" />
+                      </TouchableOpacity>
+                    )}
+                    <Ionicons
+                      name={desplegableClientesAbierto ? "chevron-up" : "chevron-down"}
+                      size={18}
+                      color="#6b7280"
+                    />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Listado Desplegable con opciones */}
+                {desplegableClientesAbierto && (
+                  <View style={styles.selectorClienteListaContenedor}>
+                    {/* Buscador interno si hay varios clientes */}
+                    <View style={styles.selectorClienteBuscadorCaja}>
+                      <Ionicons name="search-outline" size={15} color="#9ca3af" />
+                      <TextInput
+                        style={styles.selectorClienteBuscadorInput}
+                        placeholder="Buscar cliente por nombre o RUT..."
+                        placeholderTextColor="#9ca3af"
+                        value={busquedaCliente}
+                        onChangeText={setBusquedaCliente}
+                      />
+                      {busquedaCliente.length > 0 && (
+                        <TouchableOpacity onPress={() => setBusquedaCliente("")}>
+                          <Ionicons name="close-circle" size={15} color="#9ca3af" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <ScrollView
+                      style={{ maxHeight: 220 }}
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {clientesDisponibles.length === 0 ? (
+                        <View style={{ padding: 14, alignItems: "center" }}>
+                          <Text style={{ fontSize: 12, color: "#9ca3af" }}>
+                            No se encontraron clientes activos
+                          </Text>
+                        </View>
+                      ) : (
+                        clientesDisponibles.map((cli) => {
+                          const esSeleccionado =
+                            clienteSeleccionado?.id_cliente === cli.id_cliente;
+                          return (
+                            <TouchableOpacity
+                              key={cli.id_cliente}
+                              style={[
+                                styles.selectorClienteFilaItem,
+                                esSeleccionado && styles.selectorClienteFilaItemActivo,
+                              ]}
+                              onPress={() => {
+                                onCambiar("id_cliente", cli.id_cliente);
+                                onCambiar("cliente", cli.razon_social);
+                                if (cli.direccion) {
+                                  onCambiar("direccion", cli.direccion);
+                                }
+                                setDesplegableClientesAbierto(false);
+                              }}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text
+                                  style={[
+                                    styles.selectorClienteItemTitulo,
+                                    esSeleccionado && styles.selectorClienteItemTituloActivo,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {cli.razon_social}
+                                </Text>
+                                <Text style={styles.selectorClienteItemSub} numberOfLines={1}>
+                                  RUT: {cli.rut_cliente}
+                                  {cli.direccion ? ` • 📍 ${cli.direccion}` : ""}
+                                </Text>
+                              </View>
+
+                              {esSeleccionado ? (
+                                <Ionicons
+                                  name="checkmark-circle"
+                                  size={18}
+                                  color={tema.colors.primary}
+                                />
+                              ) : (
+                                <Ionicons name="chevron-forward" size={15} color="#d1d5db" />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                    </ScrollView>
+                  </View>
+                )}
+              </View>
+
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Cliente / Empresa</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="person-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       placeholder="Ej: Retail & Logística S.A."
                       placeholderTextColor={tema.colors.textMuted}
@@ -786,9 +1292,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Dirección de la Faena</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="location-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       placeholder="Ej: Camino El Alba 1200, Quilicura"
                       placeholderTextColor={tema.colors.textMuted}
@@ -800,7 +1307,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 2: CLASIFICACIÓN Y ESTADO */}
+            {/* Sección 2: Clasificación y estado */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="options-outline" size={16} color={tema.colors.primary} />
@@ -808,7 +1315,6 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
 
               <View style={styles.dosColumnasFila}>
-                {/* Tipo de proyecto */}
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Tipo de Proyecto</Text>
                   <View style={styles.segmentedRow}>
@@ -818,8 +1324,13 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       return (
                         <TouchableOpacity
                           key={o}
-                          style={[styles.segmentBtn, activo && styles.segmentBtnActivo]}
-                          onPress={() => onCambiar("tipo_proyecto", o)}
+                          disabled={esCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            esCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !esCerrado && onCambiar("tipo_proyecto", o)}
                         >
                           <Ionicons
                             name={iconName}
@@ -835,8 +1346,8 @@ const ModalFormulario: React.FC<ModalProps> = ({
                   </View>
                 </View>
 
-                {/* Estado inicial */}
                 <View style={{ flex: 1, minWidth: 200 }}>
+<<<<<<< HEAD
                   <View
                     style={{
                       flexDirection: "row",
@@ -854,14 +1365,22 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       mostrarPrefijo
                     />
                   </View>
+=======
+                  <Text style={styles.campoEtiqueta}>Estado</Text>
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   <View style={styles.segmentedRow}>
                     {ESTADOS_PROYECTO.map((o) => {
                       const activo = formulario.estado_proyecto === o;
                       return (
                         <TouchableOpacity
                           key={o}
-                          style={[styles.segmentBtn, activo && styles.segmentBtnActivo]}
-                          onPress={() => onCambiar("estado_proyecto", o)}
+                          disabled={yaEstabaCerrado}
+                          style={[
+                            styles.segmentBtn,
+                            activo && styles.segmentBtnActivo,
+                            yaEstabaCerrado && !activo && styles.opcionDeshabilitada,
+                          ]}
+                          onPress={() => !yaEstabaCerrado && onCambiar("estado_proyecto", o)}
                         >
                           <Text style={[styles.segmentBtnTexto, activo && styles.segmentBtnTextoActivo]}>
                             {o}
@@ -874,7 +1393,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 3: PLAZOS Y FECHAS */}
+            {/* Sección 3: Plazos y fechas */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="calendar-outline" size={16} color={tema.colors.primary} />
@@ -886,6 +1405,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
                   <SelectorFecha
                     label="Fecha de Inicio"
                     required
+                    disabled={esCerrado}
                     value={formulario.fecha_inicio ?? ""}
                     onChangeDate={(date) => {
                       onCambiar("fecha_inicio", date);
@@ -900,12 +1420,15 @@ const ModalFormulario: React.FC<ModalProps> = ({
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <SelectorFecha
                     label="Fecha de Fin"
+                    disabled={esCerrado}
                     value={formulario.fecha_fin ?? ""}
                     onChangeDate={(date) => onCambiar("fecha_fin", date)}
                     onClear={() => onCambiar("fecha_fin", null)}
                     minDate={formulario.fecha_inicio ?? undefined}
                     error={
-                      formulario.fecha_inicio && formulario.fecha_fin && formulario.fecha_fin < formulario.fecha_inicio
+                      formulario.fecha_inicio &&
+                      formulario.fecha_fin &&
+                      formulario.fecha_fin < formulario.fecha_inicio
                         ? "La fecha de fin no puede ser anterior al inicio"
                         : undefined
                     }
@@ -916,18 +1439,24 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* SECCIÓN 4: ASIGNACIÓN DE KIT PREDETERMINADO */}
+            {/* Sección 4: Asignación de kit predeterminado al crear */}
             {!editando && (
               <View style={[styles.cardSeccion, styles.cardSeccionKit]}>
                 <View style={[styles.kitSeccionHeader, !kitSeleccionado && { marginBottom: 0 }]}>
                   <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Ionicons name="cube-outline" size={16} color="#065f46" />
-                    <Text style={[styles.cardSeccionTitulo, { color: "#065f46", borderBottomWidth: 0, paddingBottom: 0, marginBottom: 0 }]}>
+                    <Text
+                      style={[
+                        styles.cardSeccionTitulo,
+                        { color: "#065f46", borderBottomWidth: 0, paddingBottom: 0, marginBottom: 0 },
+                      ]}
+                    >
                       4. Asignar Kit Predeterminado (Opcional)
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.btnGestionarKitsMini}
+                    disabled={esCerrado}
+                    style={[styles.btnGestionarKitsMini, esCerrado && styles.opcionDeshabilitada]}
                     onPress={onAbrirGestionKits}
                   >
                     <Ionicons name="settings-outline" size={13} color={tema.colors.primary} />
@@ -958,7 +1487,8 @@ const ModalFormulario: React.FC<ModalProps> = ({
                     <View style={styles.kitItemsPreview}>
                       {kitSeleccionado.items.slice(0, 4).map((it, idx) => (
                         <Text key={idx} style={styles.kitItemPreviewTexto}>
-                          • {it.cantidad_requerida_kit}x {it.nombre_articulo} ({formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
+                          • {it.cantidad_requerida_kit}x {it.nombre_articulo} (
+                          {formatearCLP(it.subtotal ?? it.cantidad_requerida_kit * it.precio_unitario)})
                         </Text>
                       ))}
                       {kitSeleccionado.items.length > 4 && (
@@ -972,30 +1502,32 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       <Text style={styles.kitAutoPresupuestoNota}>
                         ✓ Presupuesto asignado automáticamente.
                       </Text>
-                      <TouchableOpacity
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 4,
-                          paddingVertical: 4,
-                          paddingHorizontal: 8,
-                          borderRadius: 6,
-                          backgroundColor: "#fef2f2",
-                          borderWidth: 1,
-                          borderColor: "#fecaca",
-                        }}
-                        onPress={() => onCambiar("id_kit_proyecto", null)}
-                      >
-                        <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
-                        <Text style={{ fontSize: 11, fontWeight: "600", color: "#dc2626" }}>Quitar kit</Text>
-                      </TouchableOpacity>
+                      {!esCerrado && (
+                        <TouchableOpacity
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 4,
+                            paddingVertical: 4,
+                            paddingHorizontal: 8,
+                            borderRadius: 6,
+                            backgroundColor: "#fef2f2",
+                            borderWidth: 1,
+                            borderColor: "#fecaca",
+                          }}
+                          onPress={() => onCambiar("id_kit_proyecto", null)}
+                        >
+                          <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
+                          <Text style={{ fontSize: 11, fontWeight: "600", color: "#dc2626" }}>Quitar kit</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 )}
               </View>
             )}
 
-            {/* SECCIÓN 5: PRESUPUESTOS Y VALOR DE VENTA */}
+            {/* Sección 5: Presupuestos y avance */}
             <View style={styles.cardSeccion}>
               <View style={styles.cardSeccionEncabezado}>
                 <Ionicons name="cash-outline" size={16} color={tema.colors.primary} />
@@ -1007,9 +1539,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Presupuesto Materiales ($ CLP)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="cash-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1022,9 +1555,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Presupuesto Horas (HH)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="time-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1038,10 +1572,11 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
               <View style={styles.dosColumnasFila}>
                 <View style={{ flex: 1, minWidth: 200 }}>
-                  <Text style={styles.campoEtiqueta}>Valor de Venta ($ CLP)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <Text style={styles.campoEtiqueta}>Presupuesto Usado / Valor Venta ($ CLP)</Text>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="pricetag-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1054,9 +1589,10 @@ const ModalFormulario: React.FC<ModalProps> = ({
 
                 <View style={{ flex: 1, minWidth: 200 }}>
                   <Text style={styles.campoEtiqueta}>Porcentaje de Avance (%)</Text>
-                  <View style={styles.inputContenedorConIcono}>
+                  <View style={[styles.inputContenedorConIcono, esCerrado && styles.inputContenedorBloqueado]}>
                     <Ionicons name="stats-chart-outline" size={17} color={tema.colors.textMuted} style={styles.inputIcono} />
                     <TextInput
+                      editable={!esCerrado}
                       style={styles.inputConIcono}
                       keyboardType="numeric"
                       placeholder="0"
@@ -1069,7 +1605,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
               </View>
             </View>
 
-            {/* ERROR */}
+            {/* Mensaje de error del formulario */}
             {Boolean(error) && (
               <View style={styles.errorBannerModal}>
                 <Ionicons name="alert-circle" size={18} color="#dc2626" />
@@ -1078,32 +1614,40 @@ const ModalFormulario: React.FC<ModalProps> = ({
             )}
           </ScrollView>
 
-          {/* FOOTER ACCIONES */}
+          {/* Pie del modal con botones de acción */}
           <View style={styles.modalFooter}>
             <TouchableOpacity
               style={styles.btnModalCancelar}
               onPress={onCancelar}
               disabled={guardando}
             >
-              <Text style={styles.btnModalCancelarTexto}>Cancelar</Text>
+              <Text style={styles.btnModalCancelarTexto}>
+                {yaEstabaCerrado ? "Cerrar" : "Cancelar"}
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.btnModalGuardar, guardando && { opacity: 0.7 }]}
-              onPress={onGuardar}
-              disabled={guardando}
-            >
-              {guardando ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="save-outline" size={18} color="#ffffff" />
-                  <Text style={styles.btnModalGuardarTexto}>
-                    {editando ? "Guardar Cambios" : "Crear Proyecto"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {!yaEstabaCerrado && (
+              <TouchableOpacity
+                style={[styles.btnModalGuardar, guardando && { opacity: 0.7 }]}
+                onPress={onGuardar}
+                disabled={guardando}
+              >
+                {guardando ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="save-outline" size={18} color="#ffffff" />
+                    <Text style={styles.btnModalGuardarTexto}>
+                      {editando
+                        ? esCerrado
+                          ? "Guardar y Cerrar"
+                          : "Guardar Cambios"
+                        : "Crear Proyecto"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -1114,22 +1658,49 @@ const ModalFormulario: React.FC<ModalProps> = ({
 // ---------- Estilos locales ----------
 
 const styles = StyleSheet.create({
-  campoEtiqueta: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 6,
-  },
-  input: {
-    height: 44,
+  bannerCerrado: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fee2e2",
     borderWidth: 1,
-    borderColor: tema.colors.borderDark,
+    borderColor: "#fecaca",
     borderRadius: tema.radius.md,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+    gap: 10,
+  },
+  bannerCerradoTitulo: {
     fontSize: tema.fontSize.sm,
-    color: tema.colors.text,
-    backgroundColor: tema.colors.card,
-    marginBottom: 8,
+    fontWeight: "700",
+    color: "#b91c1c",
+  },
+  bannerCerradoTexto: {
+    fontSize: tema.fontSize.xs,
+    color: "#7f1d1d",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  scrumBanner: {
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: tema.radius.md,
+    padding: 10,
+    marginBottom: 12,
+  },
+  scrumBannerTitulo: {
+    fontSize: tema.fontSize.xs,
+    fontWeight: "700",
+    color: "#92400e",
+  },
+  scrumBannerTexto: {
+    fontSize: tema.fontSize.xs,
+    color: "#92400e",
+    lineHeight: 16,
+  },
+  opcionDeshabilitada: {
+    opacity: 0.5,
   },
   barra: {
     height: 6,
@@ -1145,7 +1716,7 @@ const styles = StyleSheet.create({
   filtrosWrapper: {
     flexGrow: 0,
     flexShrink: 0,
-    marginBottom: 12,
+    marginTop: 2,
   },
   filtrosScroll: {
     flexGrow: 0,
@@ -1158,27 +1729,399 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   chip: {
-    height: 32,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    height: 34,
     paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: tema.colors.border,
-    backgroundColor: tema.colors.surfaceAlt,
+    borderColor: tema.colors.borderDark,
+    backgroundColor: tema.colors.card,
     justifyContent: "center",
-    alignItems: "center",
   },
   chipActivo: {
-    backgroundColor: tema.colors.primaryLight,
-    borderColor: tema.colors.primary,
+    backgroundColor: tema.colors.primary,
+    borderColor: tema.colors.primaryDark,
   },
   chipTexto: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textMuted,
+    fontSize: 12,
+    color: tema.colors.text,
     fontWeight: "600",
   },
   chipTextoActivo: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  kpisProyectosFila: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: tema.spacing.md,
+  },
+  kpiProyectoCaja: {
+    flex: 1,
+    minWidth: 72,
+    backgroundColor: tema.colors.card,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: tema.colors.borderDark,
+  },
+  kpiProyectoValor: {
+    fontSize: tema.fontSize.md,
+    fontWeight: "700",
+    color: tema.colors.text,
+  },
+  kpiProyectoLbl: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: tema.colors.textMuted,
+    textAlign: "center",
+    marginTop: 2,
+  },
+  botonHeroPrimario: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    minHeight: 46,
+    paddingHorizontal: 20,
+    borderRadius: tema.radius.md,
+    backgroundColor: tema.colors.primary,
+  },
+  chipContador: {
+    minWidth: 20,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 999,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chipContadorActivo: {
+    backgroundColor: tema.colors.primary,
+  },
+  chipContadorTexto: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#4b5563",
+  },
+  chipContadorTextoActivo: {
+    color: "#ffffff",
+  },
+  cabeceraFijaContenedor: {
+    backgroundColor: "#ffffff",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  encabezadoFilaPrincipal: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginBottom: 12,
+    flexWrap: "wrap",
+  },
+  tituloConIconoFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 180,
+  },
+  iconoTituloCaja: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tituloPaginaTexto: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+    letterSpacing: -0.2,
+  },
+  subtituloPaginaTexto: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 1,
+  },
+  botonNuevoPrimario: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    backgroundColor: tema.colors.primary,
+    shadowColor: tema.colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  botonNuevoPrimarioTexto: {
+    color: "#ffffff",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  herramientasRapidasFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  botonHerramientaSecundario: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    height: 42,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  botonHerramientaSecundarioActivo: {
+    backgroundColor: "#fffbeb",
+    borderColor: tema.colors.primary,
+  },
+  iconoHerramientaCirculo: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconoHerramientaCirculoActivo: {
+    backgroundColor: tema.colors.primary,
+    borderColor: tema.colors.primary,
+  },
+  botonHerramientaTexto: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#374151",
+    flexShrink: 1,
+  },
+  botonHerramientaTextoActivo: {
     color: tema.colors.primary,
-    fontWeight: "bold",
+  },
+  badgeContadorKits: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 999,
+    backgroundColor: "#fef3c7",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeContadorKitsTexto: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#b45309",
+  },
+  buscadorModernoCaja: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 42,
+    marginBottom: 10,
+    gap: 8,
+  },
+  buscadorModernoInput: {
+    flex: 1,
+    fontSize: 13,
+    color: "#111827",
+  },
+  tarjetaProyectoModerna: {
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  tarjetaTopInsignias: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 8,
+  },
+  badgeTipoProyecto: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+  },
+  badgeTipoProyectoTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#b45309",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  badgeEstadoProyecto: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  puntoEstadoProyecto: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+  },
+  badgeEstadoProyectoTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  nombreProyectoModerna: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 6,
+    lineHeight: 22,
+  },
+  clienteProyectoFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  clienteProyectoTexto: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#4b5563",
+    flex: 1,
+  },
+  direccionProyectoTexto: {
+    fontSize: 12,
+    color: "#6b7280",
+    flex: 1,
+  },
+  bloqueProgresoModerna: {
+    marginTop: 14,
+    marginBottom: 14,
+  },
+  progresoEncabezadoFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  progresoEtiqueta: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#6b7280",
+  },
+  progresoPorcentajeValor: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  barraModernaFondo: {
+    height: 7,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  barraModernaRelleno: {
+    height: 7,
+    borderRadius: 999,
+  },
+  pieTarjetaModerna: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#f3f4f6",
+    gap: 10,
+  },
+  metricaPieBloque: {
+    flex: 1,
+  },
+  metricaPieEtiqueta: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6b7280",
+    textTransform: "uppercase",
+    letterSpacing: 0.2,
+    marginBottom: 2,
+  },
+  metricaPieValor: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  divisorVerticalPie: {
+    width: 1,
+    height: 26,
+    backgroundColor: "#e5e7eb",
+  },
+  fechasPieFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 1,
+  },
+  fechasPieTexto: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#374151",
+    flex: 1,
+  },
+  flechaDetalleCaja: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
   },
   boton: {
     backgroundColor: tema.colors.primary,
@@ -1220,6 +2163,38 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: tema.fontSize.sm,
   },
+  campoEtiqueta: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
+  },
+  tituloEncabezadoBloque: {
+    flexGrow: 1,
+    flexShrink: 0,
+    minWidth: 150,
+  },
+  accionesEncabezadoFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  botonAccionEncabezado: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexShrink: 0,
+  },
+  botonNuevoEncabezado: {
+    minHeight: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    flexShrink: 0,
+  },
   filaFechas: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -1240,16 +2215,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 6,
   },
-  kitSeccionTitulo: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#111827",
-  },
-  kitSeccionSub: {
-    fontSize: 11,
-    color: "#6b7280",
-    marginTop: 1,
-  },
   btnGestionarKitsMini: {
     flexDirection: "row",
     alignItems: "center",
@@ -1265,29 +2230,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: tema.colors.primary,
-  },
-  kitChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    marginRight: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  kitChipActivo: {
-    backgroundColor: tema.colors.primary,
-    borderColor: tema.colors.primary,
-  },
-  kitChipTexto: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#374151",
-  },
-  kitChipTextoActivo: {
-    color: "#fff",
   },
   kitResumenCaja: {
     marginTop: 10,
@@ -1461,6 +2403,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginBottom: 8,
   },
+  inputContenedorBloqueado: {
+    backgroundColor: tema.colors.surfaceAlt,
+    borderColor: tema.colors.border,
+    opacity: 0.8,
+  },
   inputIcono: {
     marginRight: 8,
   },
@@ -1559,4 +2506,113 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#ffffff",
   },
+<<<<<<< HEAD
 });
+=======
+  selectorClienteTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    minHeight: 48,
+    marginBottom: 4,
+  },
+  selectorClienteTriggerAbierto: {
+    borderColor: tema.colors.primary,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: "#fffdfa",
+  },
+  selectorClienteTriggerSeleccionado: {
+    backgroundColor: "#fffdfa",
+    borderColor: "#fde68a",
+  },
+  selectorClienteIconoCaja: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#f9fafb",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  selectorClienteNombre: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  selectorClienteSub: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  selectorClientePlaceholder: {
+    fontSize: 13,
+    color: "#9ca3af",
+  },
+  selectorClienteBtnLimpiar: {
+    padding: 3,
+  },
+  selectorClienteListaContenedor: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderTopWidth: 0,
+    borderColor: tema.colors.primary,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    overflow: "hidden",
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  selectorClienteBuscadorCaja: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f9fafb",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
+    paddingHorizontal: 10,
+    height: 38,
+    gap: 6,
+  },
+  selectorClienteBuscadorInput: {
+    flex: 1,
+    fontSize: 12,
+    color: "#111827",
+    paddingVertical: 0,
+  },
+  selectorClienteFilaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  selectorClienteFilaItemActivo: {
+    backgroundColor: "#fffbeb",
+  },
+  selectorClienteItemTitulo: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1f2937",
+  },
+  selectorClienteItemTituloActivo: {
+    color: tema.colors.primaryDark,
+    fontWeight: "700",
+  },
+  selectorClienteItemSub: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+});
+>>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec

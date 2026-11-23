@@ -35,12 +35,14 @@ import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevolucione
 export type RutaBodega =
   | "home"
   | "egreso"
+  | "solicitudes"
   | "recepcion"
   | "devoluciones"
   | "inventario"
   | "conteo"
   | "mermas"
-  | "herramientas";
+  | "herramientas"
+  | "proveedores";
 
 export interface ElementoNavBodega {
   id: RutaBodega;
@@ -79,6 +81,7 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
 
   // Contadores dinámicos para badges de bodega
   const pendienteEgressConteo = solicitudesMaterial.filter((r) => r.status === "aprobada").length;
+  const pendienteSolicitudesConteo = solicitudesMaterial.filter((r) => r.status === "pendiente").length;
   const pendienteRecepcionesConteo = recepcionesPendientes.filter((p) => p.status === "por_confirmar").length;
   const pendienteDevolucionesConteo = ordenesDevolucion.filter((r) => r.status === "en_transito").length;
 
@@ -99,6 +102,14 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           icon: "arrow-up-circle-outline",
           badge: pendienteEgressConteo > 0 ? String(pendienteEgressConteo) : undefined,
           badgeTone: "primary",
+        },
+        {
+          id: "solicitudes",
+          label: "Solicitudes de Material",
+          description: "Crear pedidos a Administración y revisar comprobantes o rechazos",
+          icon: "clipboard-outline",
+          badge: pendienteSolicitudesConteo > 0 ? String(pendienteSolicitudesConteo) : undefined,
+          badgeTone: "info",
         },
         {
           id: "recepcion",
@@ -150,6 +161,12 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           description: "Asignar herramientas a técnicos y verificar estado al retorno",
           icon: "construct-outline",
         },
+        {
+          id: "proveedores",
+          label: "Proveedores y Clientes",
+          description: "Consulta de fichas técnicas de terceros (bancos restringidos)",
+          icon: "people-outline",
+        },
       ],
     },
   ];
@@ -191,6 +208,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
             hideTabBar={true}
             title="Egreso y Despacho"
             subtitle="Entrega física de materiales a técnicos con guía de salida"
+          />
+        );
+      case "solicitudes":
+        return (
+          <PantallaInventario
+            key="solicitudes"
+            initialTab="solicitudes"
+            hideTabBar={true}
+            title="Solicitudes de Material"
+            subtitle="Enviar pedidos a Administración, ver comprobantes numerados y rechazos"
           />
         );
       case "conteo":
@@ -237,6 +264,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
         return <PantallaHerramientas />;
       case "devoluciones":
         return <PantallaDevoluciones />;
+      case "proveedores":
+        return (
+          <PantallaCompras
+            key="proveedores"
+            initialTab="terceros"
+            hideTabBar={true}
+            title="Proveedores y Clientes"
+            subtitle="Consulta de fichas técnicas de terceros (sección bancaria protegida para bodega)"
+          />
+        );
       default:
         return <PanelBodega onNavigate={(tab) => establecerActivoRoute(tab as RutaBodega)} />;
     }
@@ -286,9 +323,24 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           </View>
         </View>
 
-        {/* Acciones Rápidas Superior: Campana en la esquina */}
+        {/* Acciones rápidas superiores: Campana de notificaciones en la esquina */}
         <View style={estilos.superiorDerecha}>
-          <CampanaNotificaciones variant="dark" />
+          <CampanaNotificaciones
+            variant="dark"
+            onNavigateToObject={(entityType) => {
+              if (entityType === "solicitud") {
+                establecerActivoRoute("solicitudes");
+              } else if (entityType === "insumo") {
+                establecerActivoRoute("inventario");
+              } else if (entityType === "orden_compra") {
+                establecerActivoRoute("recepcion");
+              } else if (entityType === "herramienta") {
+                establecerActivoRoute("herramientas");
+              } else {
+                establecerActivoRoute("home");
+              }
+            }}
+          />
         </View>
       </View>
 

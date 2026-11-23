@@ -29,7 +29,13 @@ interface ReturnItemForm {
   quantityReturned: number;
 }
 
-export const PantallaDevoluciones: React.FC = () => {
+export interface PropiedadesPantallaDevoluciones {
+  showHeader?: boolean;
+}
+
+export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = ({
+  showHeader = true,
+}) => {
   const {
     proyectos,
     productos,
@@ -148,6 +154,7 @@ export const PantallaDevoluciones: React.FC = () => {
   const [confirmarDevolucionModal, establecerConfirmarDevolucionModal] = useState<OrdenDevolucion | null>(null);
   const [verificadoLista, establecerVerificadoLista] = useState<{ sku: string; quantityReceivedReal: number }[]>([]);
   const [discrepancyNota, establecerDiscrepancyNota] = useState("");
+  const [avisoBodega, establecerAvisoBodega] = useState("");
 
   const manejarAbrirConfirmarDevolucion = (ret: OrdenDevolucion) => {
     establecerConfirmarDevolucionModal(ret);
@@ -168,6 +175,8 @@ export const PantallaDevoluciones: React.FC = () => {
 
   const manejarConfirmarBodegaRecepcion = () => {
     if (!confirmarDevolucionModal) return;
+    const codigoConfirmado = confirmarDevolucionModal.code;
+    const tecnicoConfirmado = confirmarDevolucionModal.technicianName;
     confirmarDevolucionBodega(
       confirmarDevolucionModal.id,
       verificadoLista,
@@ -175,6 +184,9 @@ export const PantallaDevoluciones: React.FC = () => {
       usuario.name
     );
     establecerConfirmarDevolucionModal(null);
+    establecerAvisoBodega(
+      `Devolución ${codigoConfirmado} marcada como Recibida. Stock y Cardex actualizados, y estado reflejado en el móvil de ${tecnicoConfirmado}.`
+    );
   };
 
   // -------------------------------------------------------------
@@ -287,10 +299,12 @@ export const PantallaDevoluciones: React.FC = () => {
   return (
     <ContenedorEstadoPantalla screenTitle="Devoluciones de Stock" skeletonType="cards">
       <View style={estilos.contenedor}>
-        <EncabezadoPagina
-          title="Devoluciones de Stock"
-          subtitle="Reingreso físico de sobrantes de obra en Cardex y gestión de garantías con proveedores"
-        />
+        {showHeader && (
+          <EncabezadoPagina
+            title="Devoluciones de Stock"
+            subtitle="Reingreso físico de sobrantes de obra en Cardex y gestión de garantías con proveedores"
+          />
+        )}
 
         {/* BARRA ÚNICA DE PESTAÑAS LIMPIA (Sin barra duplicada de Paso 1, 2, 3) */}
         <View style={estilos.pestanaBarraEnvoltorio}>
@@ -350,10 +364,12 @@ export const PantallaDevoluciones: React.FC = () => {
 
         <SeccionDevolucionesBodega
           activoPestana={activoPestana}
+          avisoBodega={avisoBodega}
           establecerTransitBuscar={establecerTransitBuscar}
           filtradoTransitDevoluciones={filtradoTransitDevoluciones}
           inTransitConteo={inTransitConteo}
           manejarAbrirConfirmarDevolucion={manejarAbrirConfirmarDevolucion}
+          onCerrarAvisoBodega={() => establecerAvisoBodega("")}
           transitBuscar={transitBuscar}
         />
 

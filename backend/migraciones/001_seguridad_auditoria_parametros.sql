@@ -9,11 +9,19 @@ ALTER TABLE usuario ADD COLUMN IF NOT EXISTS intentos_fallidos INT NOT NULL DEFA
 ALTER TABLE usuario ADD COLUMN IF NOT EXISTS bloqueado_hasta TIMESTAMPTZ NULL;
 
 -- 2. Bitácora: estado anterior/nuevo en JSON y referencia exacta al registro afectado
-ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS valor_anterior TEXT;
-ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS valor_nuevo TEXT;
-ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS id_registro_afectado INT NULL;
-CREATE INDEX IF NOT EXISTS idx_bitacora_entidad_registro
-    ON bitacora_auditoria (entidad, id_registro_afectado);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'bitacora_auditoria' AND table_type = 'BASE TABLE'
+    ) THEN
+        ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS valor_anterior TEXT;
+        ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS valor_nuevo TEXT;
+        ALTER TABLE bitacora_auditoria ADD COLUMN IF NOT EXISTS id_registro_afectado INT NULL;
+        CREATE INDEX IF NOT EXISTS idx_bitacora_entidad_registro
+            ON bitacora_auditoria (entidad, id_registro_afectado);
+    END IF;
+END $$;
 
 -- 3. Parámetros configurables con rango validado
 CREATE TABLE IF NOT EXISTS parametro_sistema (
@@ -45,12 +53,20 @@ CREATE TABLE IF NOT EXISTS sesion_usuario (
 CREATE INDEX IF NOT EXISTS idx_sesion_usuario_id_usuario ON sesion_usuario (id_usuario);
 
 -- 5. Enlaces de recuperación de contraseña: solo se guarda el hash SHA-256 del token
-CREATE TABLE IF NOT EXISTS token_recuperacion_clave (
-    id_token       SERIAL PRIMARY KEY,
-    id_usuario     INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
-    token_hash     CHAR(64) NOT NULL UNIQUE,
-    fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expira_en      TIMESTAMPTZ NOT NULL,
-    usado_en       TIMESTAMPTZ NULL
-);
-CREATE INDEX IF NOT EXISTS idx_token_recuperacion_usuario ON token_recuperacion_clave (id_usuario);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'token_recuperacion_clave'
+    ) THEN
+        CREATE TABLE token_recuperacion_clave (
+            id_token       SERIAL PRIMARY KEY,
+            id_usuario     INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+            token_hash     CHAR(64) NOT NULL UNIQUE,
+            fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expira_en      TIMESTAMPTZ NOT NULL,
+            usado_en       TIMESTAMPTZ NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_token_recuperacion_usuario ON token_recuperacion_clave (id_usuario);
+    END IF;
+END $$;

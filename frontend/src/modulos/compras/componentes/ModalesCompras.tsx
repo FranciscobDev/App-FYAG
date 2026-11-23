@@ -30,6 +30,8 @@ import {
   CalificacionEstrellas,
   ContenedorEstadoPantalla,
   NotificacionFlotante,
+  SelectorBuscable,
+  OpcionSelectorBuscable,
 } from "@/componentes/comunes";
 import {
   Cliente,
@@ -41,8 +43,16 @@ import {
   CalificacionProveedor,
 } from "@/nucleo/tipos";
 import { estilos } from "../estilos";
+import { descargarPdfOrdenCompra } from "../ordenCompraPdf";
+
+export interface LineaFormularioOrdenCompra {
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+}
 
 export interface PropiedadesModalesCompras {
+  aprobarYEnviarOrden: (orderId: string) => void;
   bancoNombre: any;
   calificacionComentario: any;
   calificacionPrecio: any;
@@ -50,7 +60,7 @@ export interface PropiedadesModalesCompras {
   calificacionTiempo: any;
   cuentaNumero: any;
   cuentaTipo: any;
-  editandoPo: any;
+  editandoPo: OrdenCompra | null;
   escanerAbrir: any;
   establecerBancoNombre: any;
   establecerCalificacionComentario: any;
@@ -69,19 +79,19 @@ export interface PropiedadesModalesCompras {
   establecerPartyRut: any;
   establecerPartyTelefono: any;
   establecerPartyTradeNombre: any;
-  establecerPdfVistaPreviaOrden: any;
-  establecerPoElementos: any;
-  establecerPoEsAutomaticoMinimo: any;
-  establecerPoEsperadoFecha: any;
-  establecerPoModal: any;
-  establecerPoNotas: any;
+  establecerPdfVistaPreviaOrden: React.Dispatch<React.SetStateAction<OrdenCompra | null>>;
+  establecerPoElementos: React.Dispatch<React.SetStateAction<LineaFormularioOrdenCompra[]>>;
+  establecerPoEsAutomaticoMinimo: React.Dispatch<React.SetStateAction<boolean>>;
+  establecerPoEsperadoFecha: React.Dispatch<React.SetStateAction<string>>;
+  establecerPoModal: React.Dispatch<React.SetStateAction<boolean>>;
+  establecerPoNotas: React.Dispatch<React.SetStateAction<string>>;
   establecerSeleccionadoProveedorId: any;
   establecerTarifaModalOrden: any;
   manejarEscanearCodigo: any;
   manejarGuardarCalificacion: any;
-  manejarGuardarCompraOrden: any;
+  manejarGuardarCompraOrden: (asDraft?: boolean) => void;
   manejarGuardarParty: any;
-  mostrarAviso: any;
+  mostrarAviso: (mensaje: string) => void;
   partyCategoria: any;
   partyContacto: any;
   partyCorreo: any;
@@ -92,23 +102,24 @@ export interface PropiedadesModalesCompras {
   partyRut: any;
   partyTelefono: any;
   partyTradeNombre: any;
-  pdfVistaPreviaOrden: any;
-  poElementos: any;
-  poError: any;
-  poEsAutomaticoMinimo: any;
-  poEsperadoFecha: any;
-  poModal: any;
-  poNotas: any;
-  productos: any;
-  proveedores: any;
+  pdfVistaPreviaOrden: OrdenCompra | null;
+  poElementos: LineaFormularioOrdenCompra[];
+  poError: string;
+  poEsAutomaticoMinimo: boolean;
+  poEsperadoFecha: string;
+  poModal: boolean;
+  poNotas: string;
+  productos: any[];
+  proveedores: any[];
   scanningTargetSku: any;
-  seleccionadoProveedorId: any;
+  seleccionadoProveedorId: string;
   tarifaModalOrden: any;
   thirdPartyPestana: any;
   width: any;
 }
 
 export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
+  aprobarYEnviarOrden,
   bancoNombre,
   calificacionComentario,
   calificacionPrecio,
@@ -173,6 +184,84 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
   thirdPartyPestana,
   width,
 }) => {
+  const { rolActual } = usarAutenticacion();
+  const [descargandoPdf, establecerDescargandoPdf] = useState(false);
+
+  // Solo las órdenes nuevas o en estado Borrador admiten edición
+  const esSoloLectura = Boolean(editandoPo && editandoPo.status !== "borrador");
+
+  // Cálculo financiero en vivo de las líneas ingresadas en el formulario
+  const subtotalOrden = poElementos.reduce(
+    (acc, it) => acc + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0),
+    0
+  );
+  const ivaOrden = Math.round(subtotalOrden * 0.19);
+  const totalOrden = subtotalOrden + ivaOrden;
+
+  const opcionesProductos: OpcionSelectorBuscable<string>[] = productos.map((p: any) => ({
+    label: p.name,
+    value: p.sku,
+    hint: `SKU: ${p.sku} • Stock: ${p.stock} ${p.unit} • Ref: ${formatearCLP(p.unitCost)}`,
+    badge: p.unit,
+    icon: "cube-outline",
+  }));
+
+  const manejarCambiarProductoLinea = (indice: number, nuevoSku: string) => {
+    const productoElegido = productos.find((p: any) => p.sku === nuevoSku);
+    establecerPoElementos((prev) =>
+      prev.map((it, i) =>
+        i === indice
+          ? {
+              ...it,
+              sku: nuevoSku,
+              unitPrice: productoElegido ? productoElegido.unitCost : it.unitPrice,
+            }
+          : it
+      )
+    );
+  };
+
+  const manejarActualizarNumeroLinea = (
+    indice: number,
+    campo: "quantity" | "unitPrice",
+    texto: string
+  ) => {
+    const limpio = texto.replace(/[^0-9]/g, "");
+    const valor = limpio === "" ? 0 : Number(limpio);
+    establecerPoElementos((prev) =>
+      prev.map((it, i) => (i === indice ? { ...it, [campo]: valor } : it))
+    );
+  };
+
+  const manejarEliminarLinea = (indice: number) => {
+    establecerPoElementos((prev) => prev.filter((_, i) => i !== indice));
+  };
+
+  const manejarAgregarLinea = () => {
+    const siguienteProducto = productos.find(
+      (p: any) => !poElementos.some((i) => i.sku === p.sku)
+    );
+    if (!siguienteProducto) {
+      mostrarAviso("Todos los insumos del catálogo ya están incluidos en esta orden.");
+      return;
+    }
+    establecerPoElementos((prev) => [
+      ...prev,
+      { sku: siguienteProducto.sku, quantity: 10, unitPrice: siguienteProducto.unitCost },
+    ]);
+  };
+
+  const manejarDescargarPdf = async () => {
+    if (!pdfVistaPreviaOrden || descargandoPdf) return;
+    establecerDescargandoPdf(true);
+    try {
+      const resultado = await descargarPdfOrdenCompra(pdfVistaPreviaOrden);
+      mostrarAviso(resultado.mensaje);
+    } finally {
+      establecerDescargandoPdf(false);
+    }
+  };
+
   return (
     <>
       {/* =====================================================================
@@ -184,8 +273,17 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
         visible={poModal}
         onClose={() => establecerPoModal(false)}
         title={editandoPo ? `Editar Orden: ${editandoPo.code}` : "Nueva Orden de Compra"}
-        subtitle={editandoPo && editandoPo.status !== "borrador" ? "Solo lectura (ya aprobada)" : "Editable solo en estado Borrador"}
+        subtitle={esSoloLectura ? "Solo lectura (ya aprobada)" : "Editable solo en estado Borrador"}
       >
+        {esSoloLectura && (
+          <View style={estilos.ocSoloLecturaAviso}>
+            <Ionicons name="lock-closed-outline" size={16} color={tema.colors.warnDark} />
+            <Text style={estilos.ocSoloLecturaTexto}>
+              La orden {editandoPo?.code} ya salió de Borrador y no admite modificaciones.
+            </Text>
+          </View>
+        )}
+
         {/* 1. PROVEEDOR Y PLAZOS */}
         <Text style={estilos.formularioSeccionEncabezado}>1. Proveedor y Plazo de Entrega</Text>
         <Text style={estilos.campoEtiqueta}>Proveedor:</Text>
@@ -195,10 +293,12 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
             .map((s: any) => (
               <TouchableOpacity
                 key={s.id}
-                onPress={() => establecerSeleccionadoProveedorId(s.id)}
+                disabled={esSoloLectura}
+                onPress={() => !esSoloLectura && establecerSeleccionadoProveedorId(s.id)}
                 style={[
                   estilos.chipBoton,
                   seleccionadoProveedorId === s.id && estilos.chipBotonActivo,
+                  esSoloLectura && { opacity: 0.7 },
                 ]}
               >
                 <Text style={[estilos.chipTexto, seleccionadoProveedorId === s.id && estilos.chipTextoActivo]}>
@@ -209,8 +309,9 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
         </ScrollView>
 
         <TouchableOpacity
-          onPress={() => establecerPoEsAutomaticoMinimo(!poEsAutomaticoMinimo)}
-          style={estilos.checkboxFila}
+          disabled={esSoloLectura}
+          onPress={() => !esSoloLectura && establecerPoEsAutomaticoMinimo(!poEsAutomaticoMinimo)}
+          style={[estilos.checkboxFila, esSoloLectura && { opacity: 0.7 }]}
         >
           <Ionicons
             name={poEsAutomaticoMinimo ? "checkbox" : "square-outline"}
@@ -227,82 +328,136 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
           value={poEsperadoFecha}
           onChangeText={establecerPoEsperadoFecha}
           placeholder="YYYY-MM-DD"
+          disabled={esSoloLectura}
         />
 
         {/* 2. ÍTEMS REQUERIDOS */}
-        <Text style={estilos.formularioSeccionEncabezado}>2. Ítems Requeridos en la Orden</Text>
-        <Text style={estilos.campoEtiqueta}>Ítems a ordenar:</Text>
-        {poElementos.map((item: any, idx: any) => {
+        <Text style={estilos.formularioSeccionEncabezado}>2. Líneas de Compra e Insumos</Text>
+        {poElementos.map((item, idx) => {
           const prod = productos.find((p: any) => p.sku === item.sku);
+          const opcionesDisponibles = opcionesProductos.filter(
+            (op) => op.value === item.sku || !poElementos.some((el) => el.sku === op.value)
+          );
+          const totalLinea = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+
           return (
-            <View key={idx} style={estilos.poElementoFormularioFila}>
-              <View style={{ flex: 2, marginRight: 8 }}>
-                <Text style={estilos.elementoSkuTexto}>{prod ? prod.name : item.sku}</Text>
+            <View key={`${item.sku}_${idx}`} style={estilos.ocLineaTarjeta}>
+              <View style={estilos.ocLineaEncabezado}>
+                <Text style={estilos.ocLineaTitulo}>Línea #{idx + 1}</Text>
+                <View style={estilos.ocLineaAccionesDerecha}>
+                  <Text style={estilos.ocLineaTotalTexto}>{formatearCLP(totalLinea)}</Text>
+                  {!esSoloLectura && (
+                    <TouchableOpacity
+                      onPress={() => manejarEliminarLinea(idx)}
+                      style={estilos.ocLineaEliminarBoton}
+                      accessibilityLabel={`Eliminar línea ${idx + 1}`}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={tema.colors.danger} />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
-              <TextInput
-                value={String(item.quantity)}
-                onChangeText={(v: any) => {
-                  const val = Number(v) || 0;
-                  establecerPoElementos((prev: any) =>
-                    prev.map((it: any, i: any) => (i === idx ? { ...it, quantity: val } : it))
-                  );
-                }}
-                keyboardType="numeric"
-                style={estilos.poNumeroEntrada}
-                placeholder="Cant"
+
+              <SelectorBuscable<string>
+                label="Insumo / Material"
+                options={opcionesDisponibles}
+                value={item.sku}
+                onChange={(nuevoSku) => manejarCambiarProductoLinea(idx, nuevoSku)}
+                placeholder="Seleccionar insumo..."
+                searchPlaceholder="Buscar por nombre o SKU..."
+                disabled={esSoloLectura}
               />
-              <TextInput
-                value={String(item.unitPrice)}
-                onChangeText={(v: any) => {
-                  const val = Number(v) || 0;
-                  establecerPoElementos((prev: any) =>
-                    prev.map((it: any, i: any) => (i === idx ? { ...it, unitPrice: val } : it))
-                  );
-                }}
-                keyboardType="numeric"
-                style={[estilos.poNumeroEntrada, { width: 80, marginLeft: 6 }]}
-                placeholder="Precio"
-              />
+
+              <View style={estilos.ocLineaMontosFila}>
+                <View style={estilos.ocLineaCampoCol}>
+                  <Text style={estilos.ocLineaMiniEtiqueta}>
+                    Cantidad ({prod ? prod.unit : "un"})
+                  </Text>
+                  <TextInput
+                    value={item.quantity === 0 ? "" : String(item.quantity)}
+                    onChangeText={(v) => manejarActualizarNumeroLinea(idx, "quantity", v)}
+                    keyboardType="numeric"
+                    editable={!esSoloLectura}
+                    style={[estilos.poNumeroEntrada, { width: "100%" }]}
+                    placeholder="Cant."
+                  />
+                </View>
+
+                <View style={estilos.ocLineaCampoCol}>
+                  <Text style={estilos.ocLineaMiniEtiqueta}>Precio Unitario Neto (CLP)</Text>
+                  <TextInput
+                    value={item.unitPrice === 0 ? "" : String(item.unitPrice)}
+                    onChangeText={(v) => manejarActualizarNumeroLinea(idx, "unitPrice", v)}
+                    keyboardType="numeric"
+                    editable={!esSoloLectura}
+                    style={[estilos.poNumeroEntrada, { width: "100%" }]}
+                    placeholder="Precio neto"
+                  />
+                </View>
+              </View>
             </View>
           );
         })}
 
-        <Boton
-          title="+ Agregar Insumo"
-          variant="outline"
-          size="sm"
-          onPress={() => {
-            const siguienteProducto = productos.find((p: any) => !poElementos.some((i: any) => i.sku === p.sku)) || productos[0];
-            establecerPoElementos((prev: any) => [
-              ...prev,
-              { sku: siguienteProducto.sku, quantity: 10, unitPrice: siguienteProducto.unitCost },
-            ]);
-          }}
-          style={{ marginVertical: 8 }}
-        />
+        {!esSoloLectura && (
+          <Boton
+            title="+ Agregar Línea de Compra"
+            variant="outline"
+            size="sm"
+            onPress={manejarAgregarLinea}
+            style={{ marginVertical: 8 }}
+          />
+        )}
 
         <CampoTexto
           label="Observaciones o condiciones de despacho"
           value={poNotas}
           onChangeText={establecerPoNotas}
           placeholder="Ej: Entregar en bodega central antes de las 16:00"
+          disabled={esSoloLectura}
         />
+
+        {/* Resumen financiero en tiempo real */}
+        <View style={estilos.ocResumenVivoCaja}>
+          <View style={estilos.ocResumenFila}>
+            <Text style={estilos.ocResumenEtiqueta}>Subtotal Neto ({poElementos.length} líneas)</Text>
+            <Text style={estilos.ocResumenValor}>{formatearCLP(subtotalOrden)}</Text>
+          </View>
+          <View style={estilos.ocResumenFila}>
+            <Text style={estilos.ocResumenEtiqueta}>IVA (19%)</Text>
+            <Text style={estilos.ocResumenValor}>{formatearCLP(ivaOrden)}</Text>
+          </View>
+          <View style={estilos.ocResumenTotalFila}>
+            <Text style={estilos.ocResumenTotalEtiqueta}>Total c/ IVA</Text>
+            <Text style={estilos.ocResumenTotalValor}>{formatearCLP(totalOrden)}</Text>
+          </View>
+        </View>
 
         {Boolean(poError) && <Text style={estilos.errorTexto}>{poError}</Text>}
 
         <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Guardar Borrador"
-            variant="secondary"
-            onPress={() => manejarGuardarCompraOrden(true)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Aprobar y Enviar"
-            variant="primary"
-            icon="paper-plane-outline"
-            onPress={() => manejarGuardarCompraOrden(false)}
-          />
+          {esSoloLectura ? (
+            <Boton
+              title="Cerrar"
+              variant="secondary"
+              onPress={() => establecerPoModal(false)}
+            />
+          ) : (
+            <>
+              <Boton
+                title={editandoPo ? "Guardar Cambios (Borrador)" : "Guardar Borrador"}
+                variant="secondary"
+                onPress={() => manejarGuardarCompraOrden(true)}
+                style={{ marginRight: 8 }}
+              />
+              <Boton
+                title="Aprobar y Enviar"
+                variant="primary"
+                icon="paper-plane-outline"
+                onPress={() => manejarGuardarCompraOrden(false)}
+              />
+            </>
+          )}
         </View>
       </VistaModal>
 
@@ -328,7 +483,13 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
                 <Text style={estilos.pdfDocNumero}>{pdfVistaPreviaOrden.code}</Text>
                 <Insignia
                   label={pdfVistaPreviaOrden.status.toUpperCase()}
-                  tone={pdfVistaPreviaOrden.status === "recibida" ? "ok" : "info"}
+                  tone={
+                    pdfVistaPreviaOrden.status === "recibida" || pdfVistaPreviaOrden.status === "cerrada"
+                      ? "ok"
+                      : pdfVistaPreviaOrden.status === "borrador"
+                      ? "warn"
+                      : "info"
+                  }
                   size="sm"
                   style={{ marginTop: 4 }}
                 />
@@ -342,6 +503,13 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
               <Text style={estilos.pdfSeccionTexto}>RUT: {pdfVistaPreviaOrden.supplierRut || "76.xxx.xxx-x"}</Text>
               <Text style={estilos.pdfSeccionTexto}>Fecha Emisión: {formatearFecha(pdfVistaPreviaOrden.date)} • Fecha Entrega: {formatearFecha(pdfVistaPreviaOrden.expectedDate)}</Text>
             </View>
+
+            {Boolean(pdfVistaPreviaOrden.notes) && (
+              <View style={estilos.pdfNotasCaja}>
+                <Text style={estilos.pdfSeccionCajaTitulo}>OBSERVACIONES DE DESPACHO:</Text>
+                <Text style={estilos.pdfNotasTexto}>{pdfVistaPreviaOrden.notes}</Text>
+              </View>
+            )}
 
             {/* Tabla de Ítems */}
             <View style={estilos.pdfTabla}>
@@ -397,21 +565,35 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
           </View>
         )}
 
-        <View style={estilos.modalBotonesFila}>
+        <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 8 }]}>
           <Boton
             title="Cerrar Vista Previa"
             variant="ghost"
             onPress={() => establecerPdfVistaPreviaOrden(null)}
-            style={{ marginRight: 8 }}
           />
+          {pdfVistaPreviaOrden?.status === "borrador" && rolActual === "admin" && (
+            <Boton
+              title="Aprobar y Enviar"
+              variant="secondary"
+              icon="paper-plane-outline"
+              onPress={() => {
+                aprobarYEnviarOrden(pdfVistaPreviaOrden.id);
+                establecerPdfVistaPreviaOrden((prev) =>
+                  prev ? { ...prev, status: "enviada" } : null
+                );
+                mostrarAviso(
+                  `Orden ${pdfVistaPreviaOrden.code} aprobada y enviada al proveedor.`
+                );
+              }}
+            />
+          )}
           <Boton
-            title="Descargar PDF (Simulado)"
+            title="Descargar / Imprimir PDF"
             variant="primary"
             icon="download-outline"
-            onPress={() => {
-              mostrarAviso("Documento PDF de Orden de Compra descargado exitosamente.");
-              establecerPdfVistaPreviaOrden(null);
-            }}
+            loading={descargandoPdf}
+            disabled={descargandoPdf}
+            onPress={manejarDescargarPdf}
           />
         </View>
       </VistaModal>
