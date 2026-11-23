@@ -119,7 +119,12 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           />
         );
       case "alertas":
-        return <VistaHojasServicioTecnico isOffline={esSinConexion} />;
+        return (
+          <VistaHojasServicioTecnico
+            isOffline={esSinConexion}
+            onCambioConexion={establecerSinConexionRed}
+          />
+        );
       default:
         return <VistaProyectosTecnico isOffline={esSinConexion} />;
     }
