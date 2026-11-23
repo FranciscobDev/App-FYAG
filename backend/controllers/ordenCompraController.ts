@@ -973,6 +973,7 @@ export interface ItemRecepcionOrdenInput {
     defective?: number;
     cantidad_faltante?: number;
     missing?: number;
+    contenedor_principal?: boolean;
 }
 
 export interface SaldoBolsaActualizado {
@@ -1162,20 +1163,21 @@ export const ejecutarRecepcionOrdenCompraEnTransaccion = async (
         }
     }
 
+    const formatoCantidadRecepcion = /^\d+(\.\d{1,3})?$/;
     for (const item of itemsRecepcion) {
-        const conforme = Number(item.cantidad_conforme ?? item.cantidad_recibida ?? item.received ?? 0);
-        const defectuosa = Number(item.cantidad_defectuosa ?? item.defective ?? 0);
+        const textoConforme = String(item.cantidad_conforme ?? item.cantidad_recibida ?? item.received ?? 0).trim();
+        const textoDefectuosa = String(item.cantidad_defectuosa ?? item.defective ?? 0).trim();
         const faltanteInput = item.cantidad_faltante ?? item.missing;
 
         if (
-            !Number.isFinite(conforme) ||
-            conforme < 0 ||
-            !Number.isFinite(defectuosa) ||
-            defectuosa < 0 ||
-            (faltanteInput !== undefined && (!Number.isFinite(Number(faltanteInput)) || Number(faltanteInput) < 0))
+            !formatoCantidadRecepcion.test(textoConforme) ||
+            !formatoCantidadRecepcion.test(textoDefectuosa) ||
+            (faltanteInput != null && !formatoCantidadRecepcion.test(String(faltanteInput).trim()))
         ) {
-            throw new ErrorAplicacion(400, 'Las cantidades conformes, defectuosas y faltantes deben ser números no negativos');
+            throw new ErrorAplicacion(400, 'Las cantidades conformes, defectuosas y faltantes deben ser números positivos con máximo 3 decimales');
         }
+        const conforme = Number(textoConforme);
+        const defectuosa = Number(textoDefectuosa);
         if (conforme === 0 && defectuosa === 0 && (faltanteInput === undefined || Number(faltanteInput) === 0)) {
             continue;
         }
@@ -1202,6 +1204,15 @@ export const ejecutarRecepcionOrdenCompraEnTransaccion = async (
              VALUES ($1, $2, CURRENT_DATE, $3, $4)`,
             [idRegistroRec, lineaOc.id_oc_linea, conforme, defectuosa]
         );
+
+        // Contenedor principal (rollo/bobina): capacidad inicial = cantidad conforme recibida
+        if (item.contenedor_principal === true && conforme > 0) {
+            await cliente.query(
+                `INSERT INTO contenedor_stock (id_articulo, capacidad_inicial, cantidad_restante)
+                 VALUES ($1, $2, $2)`,
+                [lineaOc.id_articulo, conforme]
+            );
+        }
 
         // Leer saldos y PMP actuales de articulos_stock
         const stockPrevRes = await cliente.query<{
