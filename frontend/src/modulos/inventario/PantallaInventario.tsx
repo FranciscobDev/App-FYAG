@@ -732,6 +732,13 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [conteoPhysicalCantidad, establecerConteoPhysicalCantidad] = useState("0");
   const [conteoNotas, establecerConteoNotas] = useState("");
   const [conteoError, establecerConteoError] = useState("");
+  const [ultimoResultadoConteo, establecerUltimoResultadoConteo] = useState<{
+    sku: string;
+    productName: string;
+    diferencia: number;
+    diferenciaPct: number;
+    requiereAprobacion: boolean;
+  } | null>(null);
 
   const seleccionadoConteoProducto = productos.find((p) => p.sku === conteoSku);
   const conteoCantidadNumero = parseFloat(conteoPhysicalCantidad) || 0;
@@ -766,10 +773,17 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     );
 
     if (res.success) {
+      establecerUltimoResultadoConteo({
+        sku: conteoSku,
+        productName: seleccionadoConteoProducto?.name || conteoSku,
+        diferencia: conteoDiferencia,
+        diferenciaPct: Number(conteoDiferenciaPorcentaje.toFixed(1)),
+        requiereAprobacion: res.requiresApproval,
+      });
       if (res.requiresApproval) {
-        mostrarAviso("Conteo registrado: Discrepancia > 5% enviada a aprobación de Admin. Insumo bloqueado.");
+        mostrarAviso("Conteo retenido (> 5%): enviado a bandeja de aprobación del Administrador.");
       } else {
-        mostrarAviso("Conteo registrado y ajustado directamente en bodega (≤ 5%).");
+        mostrarAviso("Ajuste directo aplicado (≤ 5%) y registrado en el Cardex.");
       }
       establecerConteoModalVisible(false);
     } else {
@@ -819,6 +833,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                 ]
                 : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
+                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
+                  {
+                    id: "conteo",
+                    label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
+                    icon: "checkbox-outline",
+                  },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                 ]
               ).map((tab) => {
@@ -933,9 +953,16 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           manejarAbrirConteoModal={manejarAbrirConteoModal}
           mermaSku={mermaSku}
           mostrarAviso={mostrarAviso}
+          onCerrarUltimoResultado={() => establecerUltimoResultadoConteo(null)}
+          onIrACardex={(sku) => {
+            establecerKardexFiltrarSku(sku);
+            establecerKardexFiltrarTipo("ajuste_conteo");
+            establecerActivoPestana("cardex");
+          }}
           productos={productos}
           rechazarConteoFisico={rechazarConteoFisico}
           rolActual={rolActual}
+          ultimoResultadoConteo={ultimoResultadoConteo}
           usuario={usuario}
           width={width}
         />
