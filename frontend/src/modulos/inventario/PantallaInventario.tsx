@@ -779,7 +779,6 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                 ]
                 : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
-                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                 ]
               ).map((tab) => {
