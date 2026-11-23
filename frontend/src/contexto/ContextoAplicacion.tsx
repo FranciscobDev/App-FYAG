@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
+import { guardarCache, leerCache } from "@/nucleo/cacheLocal";
 import {
   listarArticulosApi,
   crearArticuloApi,
@@ -315,6 +316,28 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [clientes, setClients] = useState<Cliente[]>(CLIENTES);
   const [herramientas, setTools] = useState<Herramienta[]>(HERRAMIENTAS);
   const [ordenesDevolucion, setReturnOrders] = useState<OrdenDevolucion[]>(ORDENES_DEVOLUCION);
+  const [devolucionesHidratadas, establecerDevolucionesHidratadas] = useState(false);
+
+  // Sincronización persistente de devoluciones entre Bodeguero y móvil del Técnico
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setReturnOrders(registro.datos);
+      }
+      if (!cancelado) {
+        establecerDevolucionesHidratadas(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!devolucionesHidratadas) return;
+    void guardarCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas", ordenesDevolucion);
+  }, [devolucionesHidratadas, ordenesDevolucion]);
   const [devolucionesProveedor, setSupplierReturns] = useState<DevolucionProveedor[]>(DEVOLUCIONES_PROVEEDOR);
   const [cardex, setCardex] = useState<MovimientoCardex[]>(MOVIMIENTOS_CARDEX);
   const [tecnicos] = useState<Tecnico[]>(TECNICOS);
@@ -1781,6 +1804,21 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             relatedEntityLabel: r.code,
           };
           setNotificationsList((prevN) => [notif, ...prevN]);
+        } else {
+          // Notificación de recepción conforme reflejada para el Técnico y trazabilidad
+          const notifOk: DetalleNotificacion = {
+            id: `notif_ret_ok_${Date.now()}`,
+            title: `Devolución Recibida: ${r.code}`,
+            message: `${receivedBy} confirmó recepción física conforme de los sobrantes de ${r.projectName}. Stock reingresado a bodega.`,
+            date: new Date().toISOString().slice(0, 10),
+            type: "stock",
+            severity: "ok",
+            read: false,
+            relatedEntityType: "proyecto",
+            relatedEntityId: r.projectCode,
+            relatedEntityLabel: r.code,
+          };
+          setNotificationsList((prevN) => [notifOk, ...prevN]);
         }
 
         return {
