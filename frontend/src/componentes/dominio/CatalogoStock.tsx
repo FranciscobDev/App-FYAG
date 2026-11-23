@@ -192,7 +192,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
   };
 
   // =========================================================================
-  // FUNCIONES DE PRUEBA [SCRUM]
+    // FUNCIONES DE PRUEBA [SCRUM]
   // =========================================================================
   const simularInsumoBajoMinimo = () => {
     setInsumos((prev) => {

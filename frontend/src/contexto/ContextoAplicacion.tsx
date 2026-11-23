@@ -344,6 +344,28 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [alertas, setAlerts] = useState<AlertaPanel[]>(ALERTAS_PANEL);
   const [registrosMerma, setWasteRecords] = useState<RegistroMerma[]>(REGISTROS_MERMAS);
   const [conteosFisicos, setPhysicalCounts] = useState<ConteoFisico[]>(CONTEOS_FISICOS);
+  const [conteosHidratados, establecerConteosHidratados] = useState(false);
+
+  // Sincronización persistente de conteos físicos entre Bodeguero y bandeja de aprobación del Administrador
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<ConteoFisico[]>("conteos_fisicos_compartidos").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setPhysicalCounts(registro.datos);
+      }
+      if (!cancelado) {
+        establecerConteosHidratados(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!conteosHidratados) return;
+    void guardarCache<ConteoFisico[]>("conteos_fisicos_compartidos", conteosFisicos);
+  }, [conteosHidratados, conteosFisicos]);
   const [hojasServicio, setServiceSheets] = useState<HojaServicio[]>(HOJAS_SERVICIO);
   const [horasTecnico, setTechnicianHours] = useState<HoraTrabajoTecnico[]>(HORAS_TRABAJO_TECNICO);
   const [sesionTrabajoActiva, setActiveWorkSession] = useState<SesionTrabajoActiva | null>(null);
@@ -602,18 +624,33 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         productName: prod.name,
         date: nowStr,
         type: "ajuste_conteo",
-        typeLabel: "Ajuste Conteo Físico",
+        typeLabel: "Ajuste Conteo Físico (≤ 5%)",
         reference: `CONTEO-${newCount.id.slice(-4)} (Directo)`,
         qtyIn: diff > 0 ? diff : 0,
         qtyOut: diff < 0 ? Math.abs(diff) : 0,
         balance: countedStock,
         pmp: pmpVal,
-        totalValue: pmpVal * countedStock,
-        userName: "Camila Vera Soto",
+        totalValue: Math.round(pmpVal * countedStock),
+        userName: counterUser || "Camila Vera Soto",
         userRole: "Bodeguero",
         userRut: "15.321.654-2",
       };
       setCardex((prev) => [cardexEntry, ...prev]);
+    } else {
+      // Notificación al Administrador cuando la diferencia supera el umbral del 5 %
+      const notifRetenido: DetalleNotificacion = {
+        id: `notif_cnt_ret_${Date.now()}`,
+        title: `Conteo Físico Retenido (> 5%): ${sku}`,
+        message: `${counterUser} registró diferencia de ${diff > 0 ? `+${diff}` : diff} ${prod.unit} (${diffPct.toFixed(1)}%) en ${prod.name}. Requiere aprobación de Administración.`,
+        date: nowStr,
+        type: "stock",
+        severity: "warn",
+        read: false,
+        relatedEntityType: "insumo",
+        relatedEntityId: sku,
+        relatedEntityLabel: prod.name,
+      };
+      setNotificationsList((prev) => [notifRetenido, ...prev]);
     }
 
     return { success: true, requiresApproval };

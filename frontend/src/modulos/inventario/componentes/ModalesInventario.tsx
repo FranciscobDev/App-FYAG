@@ -1010,37 +1010,68 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           keyboardType="decimal-pad"
         />
 
-        {/* Tarjeta de Discrepancia y Regla de Negocio */}
+        {/* Tarjeta de Discrepancia y Regla de Umbral del 5 % */}
         <Tarjeta variant="outlined" style={estilos.conteoDiferenciaTarjeta}>
-          <View style={estilos.conteoDiferenciaFila}>
+          <View style={[estilos.conteoDiferenciaFila, { flexWrap: "wrap", gap: 8 }]}>
             <View>
               <Text style={estilos.conteoDiferenciaEtiqueta}>Diferencia Física:</Text>
-              <Text style={[estilos.conteoDiferenciaValor, conteoDiferencia !== 0 && { color: tema.colors.danger }]}>
-                {conteoDiferencia > 0 ? `+${conteoDiferencia}` : conteoDiferencia} {seleccionadoConteoProducto?.unit} ({conteoDiferenciaPorcentaje.toFixed(1)}%)
+              <Text
+                style={[
+                  estilos.conteoDiferenciaValor,
+                  conteoDiferencia !== 0 && {
+                    color: conteoRequiresApproval ? tema.colors.danger : tema.colors.okDark,
+                  },
+                ]}
+              >
+                {conteoDiferencia > 0 ? `+${conteoDiferencia}` : conteoDiferencia}{" "}
+                {seleccionadoConteoProducto?.unit} ({conteoDiferenciaPorcentaje.toFixed(1)}%)
               </Text>
             </View>
             <View style={{ alignItems: "flex-end" }}>
               <Text style={estilos.conteoDiferenciaEtiqueta}>Impacto Valorizado:</Text>
-              <Text style={[estilos.conteoDiferenciaValor, conteoDiferencia !== 0 && { color: tema.colors.danger }]}>
+              <Text
+                style={[
+                  estilos.conteoDiferenciaValor,
+                  conteoDiferencia !== 0 && { color: tema.colors.danger },
+                ]}
+              >
                 {formatearCLP(conteoDiferenciaValor)}
               </Text>
             </View>
           </View>
 
-          <View style={estilos.conteoReglaInsigniaCaja}>
-            {conteoRequiresApproval ? (
-              <Insignia
-                label="Pendiente"
-                tone="warn"
-                size="md"
-              />
-            ) : (
-              <Insignia
-                label="Directo"
-                tone="ok"
-                size="md"
-              />
-            )}
+          <View
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: tema.radius.sm,
+              backgroundColor: conteoRequiresApproval
+                ? tema.colors.warnLight
+                : tema.colors.okLight,
+              borderWidth: 1,
+              borderColor: conteoRequiresApproval ? tema.colors.warn : tema.colors.ok,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <Ionicons
+              name={conteoRequiresApproval ? "lock-closed" : "checkmark-circle"}
+              size={18}
+              color={conteoRequiresApproval ? tema.colors.warnDark : tema.colors.ok}
+            />
+            <Text
+              style={{
+                flex: 1,
+                fontSize: 12,
+                fontWeight: "600",
+                color: conteoRequiresApproval ? tema.colors.warnDark : tema.colors.okDark,
+              }}
+            >
+              {conteoRequiresApproval
+                ? "Supera el umbral del 5 %: el ajuste quedará RETENIDO para aprobación del Administrador."
+                : "Dentro del umbral (≤ 5 %): el ajuste se aplicará DIRECTO al stock y al Cardex."}
+            </Text>
           </View>
         </Tarjeta>
 
@@ -1053,17 +1084,23 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
 
         {Boolean(conteoError) && <Text style={estilos.errorTexto}>{conteoError}</Text>}
 
-        <View style={estilos.modalBotonesFila}>
+        <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 8 }]}>
           <Boton
             title="Cancelar"
             variant="ghost"
             onPress={() => establecerConteoModalVisible(false)}
-            style={{ marginRight: 8 }}
+            style={{ flex: 1, minWidth: 110, minHeight: 44 }}
           />
           <Boton
-            title="Guardar Conteo"
-            variant="primary"
+            title={
+              conteoRequiresApproval
+                ? "Enviar a Aprobación (> 5%)"
+                : "Aplicar Ajuste Directo (≤ 5%)"
+            }
+            variant={conteoRequiresApproval ? "secondary" : "primary"}
+            icon={conteoRequiresApproval ? "lock-closed-outline" : "checkmark-circle-outline"}
             onPress={manejarRegisterConteo}
+            style={{ flex: 1.6, minWidth: 170, minHeight: 46 }}
           />
         </View>
       </VistaModal>
