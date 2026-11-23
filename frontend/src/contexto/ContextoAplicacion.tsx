@@ -259,8 +259,14 @@ interface TipoContextoAplicacion {
     sesion: SesionTrabajoActiva | null,
     horasGuardadas: HoraTrabajoTecnico[]
   ) => void;
-  crearHojaServicio: (sheet: Omit<HojaServicio, "id">) => { success: boolean; error?: string };
+  crearHojaServicio: (sheet: Omit<HojaServicio, "id">) => {
+    success: boolean;
+    hoja?: HojaServicio;
+    error?: string;
+  };
   resolverConflictoHojaServicio: (sheetId: string, choice: "local" | "server") => void;
+  sincronizarHojasServicioPendientes: () => number;
+  restaurarHojasServicioOffline: (hojasGuardadas: HojaServicio[]) => void;
   crearHoraTrabajoTecnico: (
     entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">,
     syncStatus?: "pendiente" | "sincronizado"
@@ -1897,7 +1903,31 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       id: `hs_${Date.now()}`,
     };
     setServiceSheets((prev) => [newSheet, ...prev]);
-    return { success: true };
+    return { success: true, hoja: newSheet };
+  };
+
+  const sincronizarHojasServicioPendientes = () => {
+    const pendientes = hojasServicio.filter(
+      (s) => s.syncStatus === "pendiente" && !s.hasVersionConflict
+    ).length;
+    if (pendientes === 0) return 0;
+    setServiceSheets((prev) =>
+      prev.map((s) =>
+        s.syncStatus === "pendiente" && !s.hasVersionConflict
+          ? { ...s, syncStatus: "sincronizado" }
+          : s
+      )
+    );
+    return pendientes;
+  };
+
+  const restaurarHojasServicioOffline = (hojasGuardadas: HojaServicio[]) => {
+    if (hojasGuardadas.length === 0) return;
+    setServiceSheets((prev) => {
+      const idsExistentes = new Set(prev.map((s) => s.id));
+      const nuevas = hojasGuardadas.filter((s) => !idsExistentes.has(s.id));
+      return nuevas.length > 0 ? [...nuevas, ...prev] : prev;
+    });
   };
 
   const resolverConflictoHojaServicio = (sheetId: string, choice: "local" | "server") => {
@@ -2573,6 +2603,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         resolverDevolucionProveedor,
         crearHojaServicio,
         resolverConflictoHojaServicio,
+        sincronizarHojasServicioPendientes,
+        restaurarHojasServicioOffline,
         crearHoraTrabajoTecnico,
         actualizarHoraTrabajoTecnico,
         registrarHorasManualesAdmin,
