@@ -97,6 +97,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         return (
           <VistaMaterialesTecnico
             isOffline={esSinConexion}
+            onCambioConexion={establecerSinConexionRed}
             initialProjectId={seleccionadoProyectoForPestana?.id}
             onNavigateTab={(tab, subTab) => {
               if (tab === "registrar") {
