@@ -51,6 +51,7 @@ import {
   obtenerConfiguracionEstadoProyecto,
 } from "@/componentes/DistintivoEstadoProyecto";
 import { SeccionControlPresupuestarioAdmin } from "./componentes/SeccionControlPresupuestarioAdmin";
+import { SeccionRentabilidadFinalAdmin } from "./componentes/SeccionRentabilidadFinalAdmin";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -96,7 +97,7 @@ const esEstadoCerrado = (estado?: string | null): boolean =>
 
 export const PantallaProyectos: React.FC = () => {
   const { usuario, idUsuario, rolActual } = usarAutenticacion();
-  const [vistaActiva, establecerVistaActiva] = useState<"obras" | "presupuesto">("obras");
+  const [vistaActiva, establecerVistaActiva] = useState<"obras" | "presupuesto" | "rentabilidad">("obras");
 
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
@@ -620,12 +621,54 @@ export const PantallaProyectos: React.FC = () => {
                 Control Presupuestario (H27)
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => establecerVistaActiva("rentabilidad")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor:
+                  vistaActiva === "rentabilidad" ? tema.colors.primary : tema.colors.border,
+                backgroundColor:
+                  vistaActiva === "rentabilidad" ? tema.colors.primaryLight : tema.colors.surfaceAlt,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="pie-chart-outline"
+                size={16}
+                color={
+                  vistaActiva === "rentabilidad"
+                    ? tema.colors.primaryDark
+                    : tema.colors.textMuted
+                }
+              />
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: "700",
+                  color:
+                    vistaActiva === "rentabilidad"
+                      ? tema.colors.primaryDark
+                      : tema.colors.textSecondary,
+                }}
+              >
+                Rentabilidad Final (H34)
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
         <ScrollView contentContainerStyle={estilos.scrollCuerpo}>
           {rolActual === "admin" && vistaActiva === "presupuesto" ? (
             <SeccionControlPresupuestarioAdmin mostrarAviso={mostrarAviso} />
+          ) : rolActual === "admin" && vistaActiva === "rentabilidad" ? (
+            <SeccionRentabilidadFinalAdmin mostrarAviso={mostrarAviso} />
           ) : (
             <>
           {/* 2. KPIs DE RESUMEN SUPERIOR (Estilo Control de Herramientas) */}
