@@ -50,6 +50,7 @@ import {
   LeyendaAccesibilidadEstados,
   obtenerConfiguracionEstadoProyecto,
 } from "@/componentes/DistintivoEstadoProyecto";
+import { SeccionControlPresupuestarioAdmin } from "./componentes/SeccionControlPresupuestarioAdmin";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -94,7 +95,8 @@ const esEstadoCerrado = (estado?: string | null): boolean =>
   estado === "Completado" || estado === "Cancelado";
 
 export const PantallaProyectos: React.FC = () => {
-  const { usuario, idUsuario } = usarAutenticacion();
+  const { usuario, idUsuario, rolActual } = usarAutenticacion();
+  const [vistaActiva, establecerVistaActiva] = useState<"obras" | "presupuesto">("obras");
 
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
@@ -532,7 +534,100 @@ export const PantallaProyectos: React.FC = () => {
           subtitle="Planificación de faenas, asignación de técnicos, kits predeterminados y control presupuestario"
         />
 
+        {/* Barra de alternancia de vista para Administrador: Obras vs Control Presupuestario (H27) */}
+        {rolActual === "admin" && (
+          <View
+            style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              gap: 8,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              backgroundColor: tema.colors.card,
+              borderBottomWidth: 1,
+              borderBottomColor: tema.colors.borderLight,
+            }}
+          >
+            <TouchableOpacity
+              onPress={() => establecerVistaActiva("obras")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor:
+                  vistaActiva === "obras" ? tema.colors.primary : tema.colors.border,
+                backgroundColor:
+                  vistaActiva === "obras" ? tema.colors.primaryLight : tema.colors.surfaceAlt,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="business-outline"
+                size={16}
+                color={vistaActiva === "obras" ? tema.colors.primaryDark : tema.colors.textMuted}
+              />
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: "700",
+                  color: vistaActiva === "obras" ? tema.colors.primaryDark : tema.colors.textSecondary,
+                }}
+              >
+                Listado de Obras
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => establecerVistaActiva("presupuesto")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor:
+                  vistaActiva === "presupuesto" ? tema.colors.primary : tema.colors.border,
+                backgroundColor:
+                  vistaActiva === "presupuesto" ? tema.colors.primaryLight : tema.colors.surfaceAlt,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="analytics-outline"
+                size={16}
+                color={
+                  vistaActiva === "presupuesto"
+                    ? tema.colors.primaryDark
+                    : tema.colors.textMuted
+                }
+              />
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: "700",
+                  color:
+                    vistaActiva === "presupuesto"
+                      ? tema.colors.primaryDark
+                      : tema.colors.textSecondary,
+                }}
+              >
+                Control Presupuestario (H27)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <ScrollView contentContainerStyle={estilos.scrollCuerpo}>
+          {rolActual === "admin" && vistaActiva === "presupuesto" ? (
+            <SeccionControlPresupuestarioAdmin mostrarAviso={mostrarAviso} />
+          ) : (
+            <>
           {/* 2. KPIs DE RESUMEN SUPERIOR (Estilo Control de Herramientas) */}
           <View style={styles.kpisProyectosFila}>
             <View style={styles.kpiProyectoCaja}>
@@ -836,6 +931,8 @@ export const PantallaProyectos: React.FC = () => {
                 </Pressable>
               );
             })
+          )}
+            </>
           )}
         </ScrollView>
       </View>
