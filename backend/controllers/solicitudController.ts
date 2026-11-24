@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../config/db';
-import { obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
 import { registrarAuditoria } from '../services/auditoriaService';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { AlertaReposicionH40 } from '../services/motorReposicionService';
@@ -1134,8 +1134,11 @@ export const anularSolicitudInsumos = async (
     }
 };
 
-export const listarSolicitudesInsumos = async (_req: Request, res: Response): Promise<void> => {
+export const listarSolicitudesInsumos = async (req: Request, res: Response): Promise<void> => {
     try {
+        // El técnico solo ve sus propias solicitudes; administración y bodega ven todas
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const cabRes = await pool.query<{
             id_solicitud: number;
             id_usuario: number;
@@ -1147,6 +1150,8 @@ export const listarSolicitudesInsumos = async (_req: Request, res: Response): Pr
             nro_comprobante: string | null;
             descripcion_solicitud: string | null;
             fecha_solicitud: string;
+            tecnico_rut: string;
+            tecnico_nombre: string;
         }>(
             `SELECT s.id_solicitud,
                     s.id_usuario,
@@ -1157,10 +1162,15 @@ export const listarSolicitudesInsumos = async (_req: Request, res: Response): Pr
                     s.motivo_rechazo,
                     s.nro_comprobante,
                     s.descripcion_solicitud,
-                    s.fecha_solicitud::text AS fecha_solicitud
+                    s.fecha_solicitud::text AS fecha_solicitud,
+                    COALESCE(u.rut, '') AS tecnico_rut,
+                    TRIM(COALESCE(u.nombre_usuario, '') || ' ' || COALESCE(u.apellido_usuario, '')) AS tecnico_nombre
              FROM solicitudes s
              JOIN proyecto p ON p.id_proyecto = s.id_proyecto
-             ORDER BY s.id_solicitud DESC`
+             LEFT JOIN usuario u ON u.id_usuario = s.id_usuario
+             WHERE ($1::boolean = FALSE OR s.id_usuario = $2)
+             ORDER BY s.id_solicitud DESC`,
+            [esTecnico, payload?.id ?? null]
         );
 
         const detRes = await pool.query<{
@@ -2567,5 +2577,3 @@ export const intentarEliminarSalidaBodegaEnDb = async (
         );
     }
 };
-
-

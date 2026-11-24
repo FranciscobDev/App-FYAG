@@ -10,6 +10,11 @@ import {
 } from "@/modulos/inventario/articulosApi";
 import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
 import {
+  crearSolicitudInsumosApi,
+  listarSolicitudesApi,
+  solicitudDesdeApi,
+} from "@/modulos/solicitudes/solicitudesApi";
+import {
   aprobarOrdenCompraApi,
   actualizarOrdenCompraApi,
   cambiarEstadoOrdenCompraApi,
@@ -133,7 +138,7 @@ interface TipoContextoAplicacion {
     urgency?: "normal" | "alta" | "urgente",
     comment?: string,
     requesterInfo?: { name?: string; role?: Rol }
-  ) => { success: boolean; missingItems?: string[]; error?: string };
+  ) => Promise<{ success: boolean; missingItems?: string[]; error?: string }>;
   aprobarSolicitudMaterial: (
     id: string,
     authorName: string
@@ -442,6 +447,28 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
+  // Solicitudes de material desde la base de datos al iniciar sesión.
+  // Si el servidor no responde, se conserva la lista que ya está en pantalla.
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    listarSolicitudesApi().then((r) => {
+      if (!r.ok || !r.data || cancelado) return;
+      setMaterialRequests(
+        r.data.map((fila) =>
+          solicitudDesdeApi(
+            fila,
+            proyectos.find((p) => p.id === String(fila.id_proyecto)),
+            productos
+          )
+        )
+      );
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [haySesion]);
+
   // Órdenes de Compra desde la API al iniciar sesión
   useEffect(() => {
     if (!haySesion) return;
@@ -731,44 +758,37 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   // 2. GESTIÓN DE SOLICITUDES DE MATERIALES
-  const crearSolicitudMaterial = (
+  const crearSolicitudMaterial = async (
     projectId: string,
     technicianRut: string,
     items: ItemSolicitudMaterial[],
     urgency: "normal" | "alta" | "urgente" = "normal",
     comment?: string,
     requesterInfo?: { name?: string; role?: Rol }
-  ) => {
+  ): Promise<{ success: boolean; missingItems?: string[]; error?: string }> => {
     const proj = proyectos.find((p) => p.id === projectId) || null;
     if (!proj) return { success: false, error: "Proyecto no encontrado." };
     if (proj.status === "cerrado") {
       return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
     }
 
-    // Check stock
-    const missing: string[] = [];
-    items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (!prod || prod.stock < item.quantity) {
-        missing.push(
-          `${item.name} (${prod ? prod.stock : 0} disponibles vs ${item.quantity} solicitados)`
-        );
-      }
+    // La solicitud solo existe si la base de datos la guarda. El servidor valida stock y estado del proyecto.
+    const respuesta = await crearSolicitudInsumosApi({
+      idProyecto: Number(proj.id),
+      items: items.map((it) => ({ sku: it.sku, cantidad: it.quantity })),
+      comentario: comment,
+      urgencia: urgency,
     });
-
-    if (missing.length > 0) {
-      return {
-        success: false,
-        missingItems: missing,
-        error: "Stock insuficiente en bodega para uno o más ítems.",
-      };
+    if (!respuesta.ok || !respuesta.data) {
+      return { success: false, error: respuesta.error ?? "No se pudo guardar la solicitud." };
     }
 
     const ahoraFecha = new Date().toISOString().slice(0, 10);
     const tech = tecnicos.find((t) => t.rut === technicianRut);
-    const newCode = `SOL-2026-${String(solicitudesMaterial.length + 101).padStart(3, "0")}`;
+    const idSolicitud = respuesta.data.solicitud.id_solicitud;
+    const newCode = `SOL-${ahoraFecha.slice(0, 4)}-${String(idSolicitud).padStart(3, "0")}`;
     const newReq: SolicitudMaterial = {
-      id: `sol_${Date.now()}`,
+      id: `sol_${idSolicitud}`,
       code: newCode,
       projectId: proj.id,
       projectCode: proj.code,

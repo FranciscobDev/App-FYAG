@@ -84,6 +84,7 @@ export const eliminarProyecto = (id: number) =>
 export interface Tecnico {
   id_usuario: number;
   nombre: string;
+  rut?: string | null;
 }
 
 export const listarTecnicos = () =>
