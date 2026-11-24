@@ -43,6 +43,11 @@ import {
 import { estilos } from "./estilos";
 import { SeccionOrdenesCompra, SeccionFacturasProveedor, SeccionRecepcionBodega, SeccionDirectorioTerceros, ModalesCompras } from "./componentes";
 import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+  ResultadoResolucionCodigoBodega,
+} from "@/modulos/inventario/escanerBodegaUtils";
+import {
   aplicarEntregaChecklistEnOrden,
   calcularSaldoPendienteLineaOc,
   construirChecklistInicialDesdeOc,
@@ -422,13 +427,21 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     scanned?: boolean;
   }[]>([]);
 
-  // Escáner QR / Barras con la cámara de la tablet
+  // Escáner QR / Barras con la cámara de la tablet (H33)
   const [escanerAbrir, establecerEscanerAbrir] = useState(false);
   const [scanningTargetSku, establecerScanningTargetSku] = useState<string | null>(null);
+  const [ultimoEscaneoRecepcion, establecerUltimoEscaneoRecepcion] = useState<{
+    tipo: "ok" | "alerta";
+    sku?: string;
+    nombre?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null>(null);
 
   useEffect(() => {
     if (activoRecepcionOrden) {
       establecerRecepcionListaChequeo(construirChecklistInicialDesdeOc(activoRecepcionOrden));
+      establecerUltimoEscaneoRecepcion(null);
 
       // Vincular automáticamente la factura asociada si ya existe registrada
       const linkedInv = facturasCompra.find((inv) => inv.orderCode === activoRecepcionOrden.code);
@@ -445,29 +458,50 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     establecerEscanerAbrir(true);
   };
 
-  const manejarEscanearCodigo = (scannedCode: string) => {
+  const manejarEscanearCodigo = (
+    scannedCode: string,
+    meta?: ResultadoResolucionCodigoBodega
+  ) => {
     establecerEscanerAbrir(false);
-    const clean = scannedCode.trim();
+    const resolucion =
+      meta && meta.valido && meta.producto
+        ? meta
+        : resolverCodigoEscaneadoBodega(scannedCode, productos);
+    const tiempoTexto = formatearTiempoEscaneo(resolucion.tiempoMs);
 
     // 1. Validar si el código existe en el catálogo maestro
-    const matchedProducto = productos.find((p) => p.sku === clean || p.barcode === clean);
-    if (!matchedProducto) {
-      mostrarAviso(`El código "${clean}" no existe en el catálogo del sistema.`);
+    if (!resolucion.valido || !resolucion.producto) {
+      const msg =
+        resolucion.mensajeError ||
+        `El código "${scannedCode.trim()}" no existe en el catálogo del sistema. Flujo detenido.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
+    const matchedProducto = resolucion.producto;
     if (!activoRecepcionOrden) return;
 
     // 2. Validar si el insumo pertenece a la OC activa
     const poElemento = activoRecepcionOrden.items.find((it) => it.sku === matchedProducto.sku);
     if (!poElemento) {
-      mostrarAviso(
-        `El insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`
-      );
+      const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        sku: matchedProducto.sku,
+        nombre: matchedProducto.name,
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
-    // 3. Marcar como verificado y autocompletar la cantidad pendiente como conforme
+    // 3. Autocompletar el SKU sin digitar, marcar como escaneado y completar saldo pendiente conforme
     const pendiente = Math.max(0, poElemento.quantity - (poElemento.receivedQuantity || 0));
     establecerRecepcionListaChequeo((prev) =>
       prev.map((c) =>
@@ -476,7 +510,17 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           : c
       )
     );
-    mostrarAviso(`✓ Insumo identificado y validado: ${matchedProducto.name} (${matchedProducto.sku})`);
+    const etiquetaFormato =
+      resolucion.formatoDetectado === "QR_H47" ? "QR H47" : "Código";
+    const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto}.`;
+    establecerUltimoEscaneoRecepcion({
+      tipo: "ok",
+      sku: matchedProducto.sku,
+      nombre: matchedProducto.name,
+      tiempoTexto,
+      mensaje: msgOk,
+    });
+    mostrarAviso(`✓ ${msgOk}`);
   };
 
   // Alerta de discrepancia en recepción física vs esperada o vs factura asociada
@@ -842,6 +886,8 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           seleccionadoFacturaNumero={seleccionadoFacturaNumero}
           seleccionadoOcCodigo={seleccionadoOcCodigo}
           tieneRecepcionDiscrepancy={tieneRecepcionDiscrepancy}
+          ultimoEscaneoRecepcion={ultimoEscaneoRecepcion}
+          onLimpiarUltimoEscaneo={() => establecerUltimoEscaneoRecepcion(null)}
           width={width}
         />
 
@@ -929,6 +975,7 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           productos={productos}
           proveedores={proveedores}
           scanningTargetSku={scanningTargetSku}
+          sugerenciaSkusRecepcion={activoRecepcionOrden?.items.map((it) => it.sku) || []}
           seleccionadoProveedorId={seleccionadoProveedorId}
           tarifaModalOrden={tarifaModalOrden}
           thirdPartyPestana={thirdPartyPestana}

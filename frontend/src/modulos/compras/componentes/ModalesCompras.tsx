@@ -112,6 +112,7 @@ export interface PropiedadesModalesCompras {
   productos: any[];
   proveedores: any[];
   scanningTargetSku: any;
+  sugerenciaSkusRecepcion?: string[];
   seleccionadoProveedorId: string;
   tarifaModalOrden: any;
   thirdPartyPestana: any;
@@ -179,6 +180,7 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
   productos,
   proveedores,
   scanningTargetSku,
+  sugerenciaSkusRecepcion,
   seleccionadoProveedorId,
   tarifaModalOrden,
   thirdPartyPestana,
@@ -780,12 +782,26 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
         </View>
       </VistaModal>
 
-      {/* Escáner de Cámara Tablet para Recepción */}
+      {/* Escáner de Cámara Tablet para Recepción (H33) */}
       <ModalEscanerQr
         visible={escanerAbrir}
         onClose={() => establecerEscanerAbrir(false)}
-        onScanResult={manejarEscanearCodigo}
-        title={scanningTargetSku ? `Escanear Insumo SKU: ${scanningTargetSku}` : "Escanear Insumo de la OC"}
+        onScanResult={() => {}}
+        onScanMeta={(meta) => {
+          if (meta.valido) {
+            manejarEscanearCodigo(meta.sku, meta);
+          }
+        }}
+        productos={productos}
+        validarExistencia={true}
+        moduloOrigen="recepcion"
+        sugerenciaSkus={
+          scanningTargetSku
+            ? [scanningTargetSku, ...(sugerenciaSkusRecepcion || [])]
+            : sugerenciaSkusRecepcion
+        }
+        title={scanningTargetSku ? `Escanear Insumo SKU: ${scanningTargetSku}` : "Escanear Insumo de la OC (H33)"}
+        subtitle="Reconoce etiquetas QR de H47 o códigos de barras en menos de 2 s y autocompleta el SKU"
       />
     </>
   );

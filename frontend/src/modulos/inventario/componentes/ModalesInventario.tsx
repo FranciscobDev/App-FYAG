@@ -46,6 +46,10 @@ import {
   RegistroMerma,
 } from "@/nucleo/tipos";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
+import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+} from "../escanerBodegaUtils";
 import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
 import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
 import {
@@ -79,8 +83,13 @@ export interface PropiedadesModalesInventario {
   conteoSku: any;
   editandoProducto: any;
   editandoSolicitud?: SolicitudMaterial | null;
+  conteoEscaneoInfo?: string | null;
+  establecerConteoEscaneoInfo?: (val: string | null) => void;
   escanerCallback: any;
+  escanerModuloOrigen?: any;
+  escanerSugerenciaSkus?: string[];
   escanerTitulo: any;
+  escanerValidarExistencia?: boolean;
   escanerVisible: any;
   establecerAnularConfirmarSolicitud?: React.Dispatch<
     React.SetStateAction<SolicitudMaterial | null>
@@ -196,10 +205,15 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   conteoPhysicalCantidad,
   conteoRequiresApproval,
   conteoSku,
+  conteoEscaneoInfo,
+  establecerConteoEscaneoInfo,
   editandoProducto,
   editandoSolicitud = null,
   escanerCallback,
+  escanerModuloOrigen,
+  escanerSugerenciaSkus,
   escanerTitulo,
+  escanerValidarExistencia = true,
   escanerVisible,
   establecerAnularConfirmarSolicitud,
   establecerConfirmarDespachoVisible,
@@ -333,10 +347,14 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           {!editandoProducto && (
             <TouchableOpacity
               onPress={() =>
-                abrirEscaner("Escanear Código de Barras o QR", (code: any) => {
-                  establecerFormularioSku(code);
-                  establecerFormularioBarcode(code);
-                })
+                abrirEscaner(
+                  "Escanear Código de Barras o QR",
+                  (code: any) => {
+                    establecerFormularioSku(code);
+                    establecerFormularioBarcode(code);
+                  },
+                  { moduloOrigen: "catalogo", validarExistencia: false }
+                )
               }
               style={estilos.escanerIconoBoton}
             >
@@ -976,6 +994,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                   onPress={() => {
                     establecerConteoSku(p.sku);
                     establecerConteoPhysicalCantidad(String(p.stock));
+                    if (establecerConteoEscaneoInfo) establecerConteoEscaneoInfo(null);
                   }}
                   style={[estilos.productoSeleccionarChip, conteoSku === p.sku && estilos.productoSeleccionarChipActivo]}
                 >
@@ -989,19 +1008,58 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           </View>
           <TouchableOpacity
             onPress={() =>
-              abrirEscaner("Escanear Insumo a Auditar", (code: any) => {
-                const prod = productos.find((p: any) => p.sku === code || p.barcode === code);
-                if (prod) {
-                  establecerConteoSku(prod.sku);
-                  establecerConteoPhysicalCantidad(String(prod.stock));
-                }
-              })
+              abrirEscaner(
+                "Escanear Insumo a Auditar (H19)",
+                (code: any, meta: any) => {
+                  const res =
+                    meta && meta.valido && meta.producto
+                      ? meta
+                      : resolverCodigoEscaneadoBodega(code, productos);
+                  if (!res.valido || !res.producto) {
+                    mostrarAviso(
+                      res.mensajeError || `Código "${code}" no existe en el catálogo. Flujo detenido.`
+                    );
+                    return;
+                  }
+                  establecerConteoSku(res.producto.sku);
+                  establecerConteoPhysicalCantidad(String(res.producto.stock));
+                  const tiempoTexto = formatearTiempoEscaneo(res.tiempoMs);
+                  const info = `SKU ${res.producto.sku} autocompletado en ${tiempoTexto}`;
+                  if (establecerConteoEscaneoInfo) establecerConteoEscaneoInfo(info);
+                  mostrarAviso(`✓ ${info} (${res.producto.name})`);
+                },
+                { moduloOrigen: "conteo", validarExistencia: true }
+              )
             }
-            style={estilos.escanerIconoBoton}
+            style={[estilos.escanerIconoBoton, { flexDirection: "row", gap: 4, paddingHorizontal: 10, width: "auto" }]}
+            accessibilityLabel="Escanear QR o código de barras para conteo físico"
           >
-            <Ionicons name="barcode-outline" size={20} color={tema.colors.primary} />
+            <Ionicons name="qr-code-outline" size={18} color={tema.colors.primary} />
+            <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.primaryDark }}>QR / Barras</Text>
           </TouchableOpacity>
         </View>
+
+        {Boolean(conteoEscaneoInfo) && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: tema.colors.okLight,
+              borderWidth: 1,
+              borderColor: tema.colors.ok,
+              borderRadius: tema.radius.sm,
+              paddingHorizontal: 10,
+              paddingVertical: 7,
+              marginBottom: 10,
+            }}
+          >
+            <Ionicons name="checkmark-circle" size={16} color={tema.colors.okDark} />
+            <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: tema.colors.okDark }}>
+              {conteoEscaneoInfo}
+            </Text>
+          </View>
+        )}
 
         <CampoTexto
           label={`Cantidad Física Contada en Bodega (${seleccionadoConteoProducto?.unit || "un"}):`}
@@ -1117,13 +1175,24 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         onCancel={() => establecerConfirmarDespachoVisible(false)}
       />
 
-      {/* MODAL 9: ESCÁNER QR Y CÓDIGO DE BARRAS REUTILIZABLE */}
+      {/* MODAL 9: ESCÁNER QR Y CÓDIGO DE BARRAS REUTILIZABLE (TABLET) */}
       <ModalEscanerQr
         visible={escanerVisible}
         onClose={() => establecerEscanerVisible(false)}
         title={escanerTitulo}
+        productos={productos}
+        validarExistencia={escanerValidarExistencia}
+        moduloOrigen={escanerModuloOrigen}
+        sugerenciaSkus={escanerSugerenciaSkus}
         onScanResult={(code: any) => {
-          if (escanerCallback) escanerCallback(code);
+          if (!escanerValidarExistencia && escanerCallback) {
+            escanerCallback(code);
+          }
+        }}
+        onScanMeta={(meta) => {
+          if (escanerValidarExistencia && meta.valido && escanerCallback) {
+            escanerCallback(meta.sku, meta);
+          }
         }}
       />
 

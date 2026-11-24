@@ -36,6 +36,14 @@ export interface PropiedadesSeccionRecepcionBodega {
   seleccionadoFacturaNumero: any;
   seleccionadoOcCodigo: any;
   tieneRecepcionDiscrepancy: any;
+  ultimoEscaneoRecepcion?: {
+    tipo: "ok" | "alerta";
+    sku?: string;
+    nombre?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null;
+  onLimpiarUltimoEscaneo?: () => void;
   width: any;
 }
 
@@ -54,6 +62,8 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
   seleccionadoFacturaNumero,
   seleccionadoOcCodigo,
   tieneRecepcionDiscrepancy,
+  ultimoEscaneoRecepcion,
+  onLimpiarUltimoEscaneo,
   width,
 }) => {
   const ordenesPendientes = ordenesCompra.filter(
@@ -360,13 +370,75 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
             </View>
 
             <Boton
-              variant="secondary"
+              variant="primary"
               size="sm"
-              title="Verificar Bulto"
+              title="Escanear QR / Barras"
               icon="qr-code-outline"
               onPress={() => manejarAbrirEscaner()}
+              style={{ minHeight: 40 }}
             />
           </View>
+
+          {/* Resultado del último escaneo óptico en Recepción (H33) */}
+          {ultimoEscaneoRecepcion && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                padding: 12,
+                borderRadius: tema.radius.md,
+                marginBottom: 12,
+                backgroundColor:
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.okLight
+                    : tema.colors.dangerLight,
+                borderWidth: 1,
+                borderColor:
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.ok
+                    : tema.colors.danger,
+              }}
+            >
+              <Ionicons
+                name={
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? "checkmark-circle"
+                    : "alert-circle"
+                }
+                size={20}
+                color={
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.okDark
+                    : tema.colors.danger
+                }
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color:
+                      ultimoEscaneoRecepcion.tipo === "ok"
+                        ? tema.colors.okDark
+                        : tema.colors.danger,
+                  }}
+                >
+                  {ultimoEscaneoRecepcion.tipo === "ok"
+                    ? `Lectura óptica exitosa (${ultimoEscaneoRecepcion.tiempoTexto})`
+                    : `Lectura bloqueada (${ultimoEscaneoRecepcion.tiempoTexto})`}
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.text, marginTop: 2 }}>
+                  {ultimoEscaneoRecepcion.mensaje}
+                </Text>
+              </View>
+              {onLimpiarUltimoEscaneo && (
+                <TouchableOpacity onPress={onLimpiarUltimoEscaneo} style={{ padding: 4 }}>
+                  <Ionicons name="close" size={16} color={tema.colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Selector de Factura de Compra Vinculada */}
           <View style={estilos.facturaSeleccionarContenedor}>

@@ -703,7 +703,7 @@ export const LeyendaAccesibilidadEstados: React.FC<
         <View style={estilos.panelScrumMovil}>
           <View style={estilos.panelScrumEncabezado}>
             <Ionicons
-              name="checkmark-shield-outline"
+              name="shield-checkmark-outline"
               size={16}
               color="#065F46"
             />

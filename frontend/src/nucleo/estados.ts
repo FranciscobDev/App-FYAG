@@ -7,16 +7,11 @@ export type ClaveEstado =
   | "conforme"
   | "activo"
   | "en_curso"
-<<<<<<< HEAD
   | "en_proceso"
   | "pausado"
   | "finalizado"
   | "completado"
   | "cancelado"
-=======
-  | "pausado"
-  | "finalizado"
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
   | "rechazada"
   | "defectuoso"
   | "vencido"
@@ -66,14 +61,9 @@ export const ESTADOS: Record<ClaveEstado, DefinicionEstado> = {
   // 2. VERDE
   aprobada: { label: "Aprobada", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
   conforme: { label: "Conforme", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
-<<<<<<< HEAD
   activo: { label: "Activo", tone: "ok", icon: "play-circle-outline", colorName: "verde" },
   en_curso: { label: "En curso", tone: "ok", icon: "play-circle-outline", colorName: "verde" },
   en_proceso: { label: "En Proceso", tone: "ok", icon: "play-circle-outline", colorName: "verde" },
-=======
-  activo: { label: "Activo", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
-  en_curso: { label: "En Proceso", tone: "ok", icon: "play-circle-outline", colorName: "verde" },
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
   recibida: { label: "Recibida", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
   entregada: { label: "Entregada", tone: "ok", icon: "checkmark-done-outline", colorName: "verde" },
   disponible: { label: "Disponible", tone: "ok", icon: "checkmark-circle-outline", colorName: "verde" },
@@ -98,7 +88,6 @@ export const ESTADOS: Record<ClaveEstado, DefinicionEstado> = {
 
   // 6. GRIS
   cerrado: { label: "Cerrado", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
-  finalizado: { label: "Completado", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
   cerrada: { label: "Cerrada", tone: "mute", icon: "lock-closed-outline", colorName: "gris" },
   anulada: { label: "Anulada", tone: "mute", icon: "ban-outline", colorName: "gris" },
   borrador: { label: "Borrador", tone: "mute", icon: "document-text-outline", colorName: "gris" },
