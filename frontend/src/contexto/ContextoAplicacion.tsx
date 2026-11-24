@@ -339,6 +339,28 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     void guardarCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas", ordenesDevolucion);
   }, [devolucionesHidratadas, ordenesDevolucion]);
   const [devolucionesProveedor, setSupplierReturns] = useState<DevolucionProveedor[]>(DEVOLUCIONES_PROVEEDOR);
+  const [devolucionesProvHidratadas, establecerDevolucionesProvHidratadas] = useState(false);
+
+  // Sincronización persistente de devoluciones a proveedor entre Bodeguero y Administrador
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<DevolucionProveedor[]>("devoluciones_proveedor_compartidas").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setSupplierReturns(registro.datos);
+      }
+      if (!cancelado) {
+        establecerDevolucionesProvHidratadas(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!devolucionesProvHidratadas) return;
+    void guardarCache<DevolucionProveedor[]>("devoluciones_proveedor_compartidas", devolucionesProveedor);
+  }, [devolucionesProvHidratadas, devolucionesProveedor]);
   const [cardex, setCardex] = useState<MovimientoCardex[]>(MOVIMIENTOS_CARDEX);
   const [tecnicos] = useState<Tecnico[]>(TECNICOS);
   const [alertas, setAlerts] = useState<AlertaPanel[]>(ALERTAS_PANEL);
@@ -1956,6 +1978,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     resolutionType: "nota_credito" | "reemplazo_producto" | "reembolso",
     notes: string
   ) => {
+    const objetivo = devolucionesProveedor.find((r) => r.id === returnId);
+    const fechaHoy = new Date().toISOString().slice(0, 10);
+
     setSupplierReturns((prev) =>
       prev.map((r) =>
         r.id === returnId
@@ -1964,11 +1989,62 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             status: "resuelta",
             resolutionType,
             resolutionNotes: notes,
-            resolvedAt: new Date().toISOString().slice(0, 10),
+            resolvedAt: fechaHoy,
           }
           : r
       )
     );
+
+    if (objetivo) {
+      // Si el proveedor resuelve mediante reposición física, reingresa al stock disponible y al Cardex
+      if (resolutionType === "reemplazo_producto") {
+        const prod = productos.find((p) => p.sku === objetivo.productSku);
+        if (prod) {
+          const nuevoStock = Number((prod.stock + objetivo.quantity).toFixed(3));
+          const pmpActual = prod.pmp || prod.unitCost || 0;
+          actualizarProducto(prod.sku, { stock: nuevoStock });
+          const entradaCardex: MovimientoCardex = {
+            id: `kdx_rep_${Date.now()}_${prod.sku}`,
+            sku: prod.sku,
+            productName: prod.name,
+            date: fechaHoy,
+            type: "devolucion",
+            typeLabel: "Reposición garantía proveedor",
+            reference: `${objetivo.code} / Guía ${objetivo.dispatchGuideNumber}`,
+            qtyIn: objetivo.quantity,
+            qtyOut: 0,
+            balance: nuevoStock,
+            pmp: pmpActual,
+            totalValue: Math.round(nuevoStock * pmpActual),
+            userName: "Javier Muñoz Contreras",
+            userRole: "Administrador",
+            userRut: "12.456.789-5",
+          };
+          setCardex((k) => [entradaCardex, ...k]);
+        }
+      }
+
+      const etiquetaVia =
+        resolutionType === "nota_credito"
+          ? "Nota de Crédito"
+          : resolutionType === "reemplazo_producto"
+          ? "Reposición de Producto"
+          : "Reembolso";
+
+      const notifCierre: DetalleNotificacion = {
+        id: `notif_supres_${Date.now()}`,
+        title: `Devolución a Proveedor Resuelta: ${objetivo.code}`,
+        message: `Cierre administrativo registrado vía ${etiquetaVia} para ${objetivo.supplierName} (${objetivo.quantity} ${objetivo.unit} de ${objetivo.productName}).`,
+        date: fechaHoy,
+        type: "stock",
+        severity: "ok",
+        read: false,
+        relatedEntityType: "orden_compra",
+        relatedEntityId: objetivo.dispatchGuideNumber,
+        relatedEntityLabel: objetivo.code,
+      };
+      setNotificationsList((prevN) => [notifCierre, ...prevN]);
+    }
   };
 
   // 8. TECHNICIAN OPERATIONS

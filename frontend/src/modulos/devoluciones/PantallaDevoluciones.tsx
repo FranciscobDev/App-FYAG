@@ -195,16 +195,26 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
   const [nuevoProveedorDevolucionModal, establecerNuevoProveedorDevolucionModal] = useState(false);
   const [supRetProveedorId, establecerSupRetProveedorId] = useState(proveedores[0]?.id || "");
   const [supRetSku, establecerSupRetSku] = useState(productos[0]?.sku || "");
-  const [supRetCantidad, establecerSupRetCantidad] = useState("5");
+  const [supRetCantidad, establecerSupRetCantidad] = useState("1");
   const [supRetMotivo, establecerSupRetMotivo] = useState("Bobina magnética defectuosa de fábrica detectada en recepción");
   const [supRetGuia, establecerSupRetGuia] = useState("GD-2026-905");
   const [supRetError, establecerSupRetError] = useState("");
+  const [avisoProveedor, establecerAvisoProveedor] = useState("");
 
   const [resolverDevolucionModal, establecerResolverDevolucionModal] = useState<DevolucionProveedor | null>(null);
   const [resolverTipo, establecerResolverTipo] = useState<"nota_credito" | "reemplazo_producto" | "reembolso">("nota_credito");
   const [resolverNotas, establecerResolverNotas] = useState("");
 
   const cuarentenaProductos = productos.filter((p) => (p.quarantine || 0) > 0);
+
+  const manejarAbrirModalNuevaDevolucionProveedor = () => {
+    establecerSupRetError("");
+    if (cuarentenaProductos.length > 0) {
+      establecerSupRetSku(cuarentenaProductos[0].sku);
+      establecerSupRetCantidad(String(Math.min(1, cuarentenaProductos[0].quarantine || 1)));
+    }
+    establecerNuevoProveedorDevolucionModal(true);
+  };
 
   const manejarGuardarProveedorDevolucion = () => {
     establecerSupRetError("");
@@ -228,16 +238,29 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
       supRetGuia.trim()
     );
     establecerNuevoProveedorDevolucionModal(false);
+    establecerAvisoProveedor(
+      `Devolución emitida con Guía N° ${supRetGuia.trim()}. Quedó en estado Pendiente de resolución para seguimiento del Administrador.`
+    );
   };
 
   const manejarConfirmarResolution = () => {
     if (!resolverDevolucionModal) return;
+    const codigoCerrado = resolverDevolucionModal.code;
+    const viaTexto =
+      resolverTipo === "nota_credito"
+        ? "Nota de Crédito"
+        : resolverTipo === "reemplazo_producto"
+        ? "Reposición de Producto (stock reingresado al Cardex)"
+        : "Reembolso";
     resolverDevolucionProveedor(
       resolverDevolucionModal.id,
       resolverTipo,
-      resolverNotas.trim() || "Resolución formal registrada por el proveedor."
+      resolverNotas.trim() || "Resolución formal registrada por Administración."
     );
     establecerResolverDevolucionModal(null);
+    establecerAvisoProveedor(
+      `Devolución ${codigoCerrado} cambiada a estado Resuelta mediante ${viaTexto}.`
+    );
   };
 
   // Filtrado de búsquedas
@@ -375,12 +398,16 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
 
         <SeccionDevolucionesProveedor
           activoPestana={activoPestana}
+          avisoProveedor={avisoProveedor}
+          cuarentenaConteo={cuarentenaProductos.length}
           devolucionesProveedor={devolucionesProveedor}
           establecerNuevoProveedorDevolucionModal={establecerNuevoProveedorDevolucionModal}
           establecerResolverDevolucionModal={establecerResolverDevolucionModal}
           establecerResolverNotas={establecerResolverNotas}
           establecerResolverTipo={establecerResolverTipo}
           establecerSupRetError={establecerSupRetError}
+          onAbrirModalNuevaDevolucion={manejarAbrirModalNuevaDevolucionProveedor}
+          onCerrarAvisoProveedor={() => establecerAvisoProveedor("")}
           rolActual={rolActual}
           width={width}
         />
