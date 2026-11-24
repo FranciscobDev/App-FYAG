@@ -42,6 +42,7 @@ import {
   RegistroMerma,
 } from "@/nucleo/tipos";
 import { CatalogoStock } from "@/componentes/dominio/CatalogoStock";
+import { SeccionQrInsumosAdmin } from "./SeccionQrInsumosAdmin";
 import { estilos, UNIDADES_PRODUCTO } from "../estilos";
 import { RangoFechaCardex } from "../cardexExcel";
 import { SeccionCardexSoloLectura } from "./SeccionCardexSoloLectura";
@@ -101,7 +102,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
   proyectos,
   rolActual,
 }) => {
-  const [modoVista, setModoVista] = useState<"tabla" | "tarjetas">("tabla");
+  const [modoVista, setModoVista] = useState<"tabla" | "tarjetas" | "qr">("tabla");
 
   return (
     <>
@@ -110,7 +111,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
           ===================================================================== */}
       {activoPestana === "catalogo" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          {/* Barra de alternancia de vista: Tabla (FRONT-1) / Tarjetas */}
+          {/* Barra de alternancia de vista: Tabla / Tarjetas / Códigos QR (Admin) */}
           <View
             style={{
               flexDirection: "row",
@@ -121,7 +122,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
               gap: 8,
             }}
           >
-            <View style={{ flexDirection: "row", gap: 8 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               <TouchableOpacity
                 onPress={() => setModoVista("tabla")}
                 style={[
@@ -129,7 +130,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     flexDirection: "row",
                     alignItems: "center",
                     paddingHorizontal: 12,
-                    paddingVertical: 7,
+                    paddingVertical: 8,
                     borderRadius: 8,
                     borderWidth: 1,
                     borderColor: modoVista === "tabla" ? tema.colors.primary : "#cbd5e1",
@@ -161,7 +162,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     flexDirection: "row",
                     alignItems: "center",
                     paddingHorizontal: 12,
-                    paddingVertical: 7,
+                    paddingVertical: 8,
                     borderRadius: 8,
                     borderWidth: 1,
                     borderColor: modoVista === "tarjetas" ? tema.colors.primary : "#cbd5e1",
@@ -185,6 +186,40 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                   Vista Tarjetas
                 </Text>
               </TouchableOpacity>
+
+              {rolActual === "admin" && (
+                <TouchableOpacity
+                  onPress={() => setModoVista("qr")}
+                  style={[
+                    {
+                      flexDirection: "row",
+                      alignItems: "center",
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: modoVista === "qr" ? tema.colors.primary : "#cbd5e1",
+                      backgroundColor: modoVista === "qr" ? tema.colors.primaryLight : "#ffffff",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="qr-code-outline"
+                    size={16}
+                    color={modoVista === "qr" ? tema.colors.primaryDark : "#64748b"}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: modoVista === "qr" ? tema.colors.primaryDark : "#475569",
+                    }}
+                  >
+                    Códigos QR
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
             {rolActual === "admin" && (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexGrow: 1, minWidth: 260 }}>
@@ -219,6 +254,11 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                   manejarAbrirCardexProducto(prod);
                 }
               }}
+            />
+          ) : modoVista === "qr" && rolActual === "admin" ? (
+            <SeccionQrInsumosAdmin
+              productos={productos || filtradoProductos || []}
+              mostrarAviso={mostrarAviso}
             />
           ) : (
             <>
