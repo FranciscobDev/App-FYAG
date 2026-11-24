@@ -20,6 +20,7 @@ import { tema } from "@/nucleo/tema";
 // Componentes
 import { Insignia } from "@/componentes/base/Insignia";
 import { BannerSinConexion } from "@/componentes/dominio/BannerSinConexion";
+import { CampanaNotificaciones } from "@/componentes/dominio/CampanaNotificaciones";
 import { ChipSincronizacion } from "@/componentes/dominio/ChipSincronizacion";
 import { NotificacionFlotante, TipoNotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
 
@@ -173,6 +174,19 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           />
 
 
+
+          <CampanaNotificaciones
+            variant="dark"
+            onNavigateToObject={(entityType) => {
+              if (entityType === "proyecto") {
+                establecerActivoPestana("proyectos");
+              } else if (entityType === "solicitud" || entityType === "insumo") {
+                establecerActivoPestana("insumos");
+              } else {
+                establecerActivoPestana("alertas");
+              }
+            }}
+          />
 
           <TouchableOpacity
             onPress={() => establecerUsuarioMenuAbrir(true)}
