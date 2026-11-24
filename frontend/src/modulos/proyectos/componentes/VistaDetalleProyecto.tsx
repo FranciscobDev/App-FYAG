@@ -22,6 +22,7 @@ import {
   IndicadorUltimaSincronizacion,
 } from "@/componentes/DistintivoEstadoProyecto";
 import { estilos } from "../estilos";
+import { PanelGraficosRentabilidadProyecto } from "./SeccionRentabilidadFinalAdmin";
 
 export interface PropiedadesVistaDetalleProyecto {
   asignarTecnicosAProyecto: any;
@@ -412,154 +413,8 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                   </Text>
                 </View>
               ) : (
-                <View style={estilos.rentabilityContenido}>
-                  <View style={estilos.auditoriaCerradoAviso}>
-                    <Ionicons name="checkmark-done-circle" size={20} color={tema.colors.ok} style={{ marginRight: 6 }} />
-                    <Text style={estilos.cerradoAtNota}>
-                      Proyecto liquidado y cerrado por: <Text style={{ fontWeight: "bold" }}>{seleccionadoProyecto.closedBy || "Administración"}</Text> el {formatearFecha(seleccionadoProyecto.closedAt || "")}
-                    </Text>
-                  </View>
-
-                  <Text style={estilos.compSeccionTitulo}>Comparativo Planificado vs Real por Categoría:</Text>
-
-                  {/* 1. Materiales */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>1. Insumos y Materiales</Text>
-                      <Text style={estilos.catEncabezadoValor}>
-                        Real: {formatearCLP(seleccionadoProyecto.costRealMaterials || 0)} / Plan: {formatearCLP(seleccionadoProyecto.budgetMaterials)}
-                      </Text>
-                    </View>
-                    <BarraProgreso
-                      value={seleccionadoProyecto.costRealMaterials || 0}
-                      max={seleccionadoProyecto.budgetMaterials}
-                      height={6}
-                      showPercentage
-                      semaforo
-                    />
-                    <Text style={estilos.catDesviationTexto}>
-                      Desviación: {formatearCLP((seleccionadoProyecto.costRealMaterials || 0) - seleccionadoProyecto.budgetMaterials)} (
-                      {seleccionadoProyecto.budgetMaterials > 0
-                        ? ((((seleccionadoProyecto.costRealMaterials || 0) - seleccionadoProyecto.budgetMaterials) / seleccionadoProyecto.budgetMaterials) * 100).toFixed(1)
-                        : "0"}%)
-                    </Text>
-                  </View>
-
-                  {/* 2. Horas Hombre */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>2. Mano de Obra (Horas Hombre)</Text>
-                      <Text style={estilos.catEncabezadoValor}>
-                        Real: {formatearCLP(seleccionadoProyecto.costRealHours || 0)} / Plan: {formatearCLP(seleccionadoProyecto.budgetHours * 18750)}
-                      </Text>
-                    </View>
-                    <BarraProgreso
-                      value={seleccionadoProyecto.costRealHours || 0}
-                      max={seleccionadoProyecto.budgetHours * 18750}
-                      height={6}
-                      showPercentage
-                      semaforo
-                    />
-                    <Text style={estilos.catDesviationTexto}>
-                      Desviación: {formatearCLP((seleccionadoProyecto.costRealHours || 0) - seleccionadoProyecto.budgetHours * 18750)} (
-                      {seleccionadoProyecto.budgetHours > 0
-                        ? ((((seleccionadoProyecto.costRealHours || 0) - seleccionadoProyecto.budgetHours * 18750) / (seleccionadoProyecto.budgetHours * 18750)) * 100).toFixed(1)
-                        : "0"}%)
-                    </Text>
-                  </View>
-
-                  {/* 3. Mermas y Daños */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>3. Mermas y Daños Imputados a Obra</Text>
-                      <Text style={[estilos.catEncabezadoValor, { color: tema.colors.danger }]}>
-                        {formatearCLP(seleccionadoProyecto.costRealWaste || 0)}
-                      </Text>
-                    </View>
-                    <Text style={estilos.catDesviationTexto}>
-                      Pérdida neta de materiales en faena absorbida por el margen del proyecto.
-                    </Text>
-                  </View>
-
-                  <Text style={[estilos.compSeccionTitulo, { marginTop: 16 }]}>Composición del Costo Real Total:</Text>
-                  {(() => {
-                    const totalCosto = seleccionadoProyecto.costReal || 1;
-                    const materialCosto = seleccionadoProyecto.costRealMaterials || 0;
-                    const hrsCosto = seleccionadoProyecto.costRealHours || 0;
-                    const wstCosto = seleccionadoProyecto.costRealWaste || 0;
-
-                    const materialPorcentaje = Math.round((materialCosto / totalCosto) * 100);
-                    const hrsPorcentaje = Math.round((hrsCosto / totalCosto) * 100);
-                    const wstPorcentaje = Math.round((wstCosto / totalCosto) * 100);
-
-                    return (
-                      <View style={estilos.pieContenedor}>
-                        <View style={estilos.pieSegmentedBarra}>
-                          <View style={[estilos.pieSegment, { flex: materialPorcentaje, backgroundColor: "#2563eb" }]} />
-                          <View style={[estilos.pieSegment, { flex: hrsPorcentaje, backgroundColor: "#7c3aed" }]} />
-                          <View style={[estilos.pieSegment, { flex: wstPorcentaje, backgroundColor: "#dc2626" }]} />
-                        </View>
-
-                        <View style={estilos.pieLegendFila}>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#2563eb" }]} />
-                            <Text style={estilos.pieLegendTexto}>Materiales: {materialPorcentaje}% ({formatearCLP(materialCosto)})</Text>
-                          </View>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#7c3aed" }]} />
-                            <Text style={estilos.pieLegendTexto}>Horas: {hrsPorcentaje}% ({formatearCLP(hrsCosto)})</Text>
-                          </View>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#dc2626" }]} />
-                            <Text style={estilos.pieLegendTexto}>Mermas: {wstPorcentaje}% ({formatearCLP(wstCosto)})</Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })()}
-
-                  {(() => {
-                    const totalDev = seleccionadoProyecto.costReal - seleccionadoProyecto.budget;
-                    const totalDevPorcentaje =
-                      seleccionadoProyecto.budget > 0
-                        ? ((totalDev / seleccionadoProyecto.budget) * 100).toFixed(1)
-                        : "0";
-                    const netoRentabilidad = seleccionadoProyecto.saleValue - seleccionadoProyecto.costReal;
-                    const rentabilidadMargenPorcentaje =
-                      seleccionadoProyecto.saleValue > 0
-                        ? ((netoRentabilidad / seleccionadoProyecto.saleValue) * 100).toFixed(1)
-                        : "0";
-
-                    return (
-                      <View style={estilos.finalAuditoriaTarjeta}>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Presupuesto Total Contratado:</Text>
-                          <Text style={estilos.auditoriaValor}>{formatearCLP(seleccionadoProyecto.budget)}</Text>
-                        </View>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Costo Real Final Auditado:</Text>
-                          <Text style={estilos.auditoriaValor}>{formatearCLP(seleccionadoProyecto.costReal)}</Text>
-                        </View>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Desviación Presupuestaria Total:</Text>
-                          <Text style={[estilos.auditoriaValor, totalDev > 0 ? { color: tema.colors.danger } : { color: tema.colors.ok }]}>
-                            {totalDev > 0 ? `+${formatearCLP(totalDev)}` : formatearCLP(totalDev)} ({totalDevPorcentaje}%)
-                          </Text>
-                        </View>
-                        <View style={[estilos.auditoriaLinea, estilos.auditoriaFinalLinea]}>
-                          <Text style={estilos.auditoriaFinalLbl}>Utilidad Neta del Proyecto:</Text>
-                          <Text
-                            style={[
-                              estilos.auditoriaFinalValor,
-                              netoRentabilidad >= 0 ? { color: tema.colors.ok } : { color: tema.colors.danger },
-                            ]}
-                          >
-                            {formatearCLP(netoRentabilidad)} (Margen: {rentabilidadMargenPorcentaje}%)
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })()}
+                <View style={{ marginTop: 10 }}>
+                  <PanelGraficosRentabilidadProyecto proyecto={seleccionadoProyecto} />
                 </View>
               )}
             </Tarjeta>

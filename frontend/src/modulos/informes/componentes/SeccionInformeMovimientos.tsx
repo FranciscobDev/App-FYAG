@@ -46,7 +46,94 @@ export const SeccionInformeMovimientos: React.FC<PropiedadesSeccionInformeMovimi
   return (
     <>
             {activoPestana === "movimientos" && (
-              filtradoCardex.length === 0 ? (
+              <>
+                {/* Franja KPI resumida del reporte filtrado de movimientos */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    marginBottom: 14,
+                  }}
+                >
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 130,
+                      backgroundColor: tema.colors.surfaceAlt,
+                      borderRadius: tema.radius.md,
+                      borderWidth: 1,
+                      borderColor: tema.colors.border,
+                      padding: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: tema.colors.textMuted }}>
+                      MOVIMIENTOS
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text, marginTop: 2 }}>
+                      {cardexTotals.count}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 130,
+                      backgroundColor: tema.colors.okLight,
+                      borderRadius: tema.radius.md,
+                      borderWidth: 1,
+                      borderColor: tema.colors.ok,
+                      padding: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: tema.colors.okDark }}>
+                      TOTAL ENTRADAS
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.okDark, marginTop: 2 }}>
+                      +{cardexTotals.totalIn} un.
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 130,
+                      backgroundColor: tema.colors.dangerLight,
+                      borderRadius: tema.radius.md,
+                      borderWidth: 1,
+                      borderColor: tema.colors.danger,
+                      padding: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: tema.colors.dangerDark }}>
+                      TOTAL SALIDAS
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.dangerDark, marginTop: 2 }}>
+                      -{cardexTotals.totalOut} un.
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flex: 1,
+                      minWidth: 150,
+                      backgroundColor: tema.colors.primaryLight,
+                      borderRadius: tema.radius.md,
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                      padding: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 10.5, fontWeight: "700", color: tema.colors.primaryDark }}>
+                      VALOR CONSOLIDADO
+                    </Text>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.primaryDark, marginTop: 2 }}>
+                      {formatearCLP(cardexTotals.totalValue)}
+                    </Text>
+                  </View>
+                </View>
+
+              {filtradoCardex.length === 0 ? (
                 <EstadoVacio
                   icon="swap-horizontal-outline"
                   title="Sin movimientos coincidentes"
@@ -116,6 +203,40 @@ export const SeccionInformeMovimientos: React.FC<PropiedadesSeccionInformeMovimi
                       </View>
                     </View>
                   ))}
+
+                  {/* Fila / Tarjeta de Totales Consolidados en vista móvil */}
+                  <View
+                    style={{
+                      backgroundColor: tema.colors.primaryLight,
+                      borderWidth: 1.5,
+                      borderColor: tema.colors.primary,
+                      borderRadius: tema.radius.md,
+                      padding: 12,
+                      gap: 8,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: "800", color: tema.colors.primaryDark }}>
+                      TOTALES CONSOLIDADOS ({cardexTotals.count} movimientos)
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.okDark }}>
+                        Entradas: +{cardexTotals.totalIn} un.
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.dangerDark }}>
+                        Salidas: -{cardexTotals.totalOut} un.
+                      </Text>
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: tema.colors.text }}>
+                        Total: {formatearCLP(cardexTotals.totalValue)}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 980 }}>
@@ -198,7 +319,8 @@ export const SeccionInformeMovimientos: React.FC<PropiedadesSeccionInformeMovimi
                     </View>
                   </View>
                 </ScrollView>
-              )
+              )}
+              </>
             )}
     </>
   );
