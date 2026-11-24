@@ -248,7 +248,7 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
           sku: prod.sku,
           name: prod.name,
           unit: prod.unit,
-          quantityAssigned: prod.stockTotal || 10,
+          quantityAssigned: prod.stock || 10,
           quantityUsed: 1,
           selected: true,
         },
@@ -370,7 +370,7 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
     const q = filtroCatalogo.trim().toLowerCase();
     return productos.filter(
       (p) =>
-        p.active &&
+        !p.disabled &&
         (p.name.toLowerCase().includes(q) ||
           p.sku.toLowerCase().includes(q) ||
           p.category.toLowerCase().includes(q))
@@ -969,7 +969,7 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
                     <View style={estilos.productoItemMeta}>
                       <Insignia label={prod.sku} tone="mute" size="sm" />
                       <Text style={estilos.productoItemStock}>
-                        Stock: {prod.stockTotal} {prod.unit}
+                        Stock: {prod.stock} {prod.unit}
                       </Text>
                     </View>
                   </View>

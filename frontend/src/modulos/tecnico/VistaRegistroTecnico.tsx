@@ -21,12 +21,9 @@ import { CampoTexto } from "@/componentes/formularios/CampoTexto";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevoluciones";
-<<<<<<< HEAD
 import { HoraTrabajoTecnico } from "@/nucleo/tipos";
 import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
-=======
 import { SeccionCronometroHorasTecnico } from "./SeccionCronometroHorasTecnico";
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
 
 interface TechnicianRegisterViewProps {
   initialSubTab?: "avance" | "horas" | "sobrante";
@@ -65,15 +62,6 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
   );
 
   useEffect(() => {
-<<<<<<< HEAD
-    if (initialSubTab) {
-      establecerActivoSubPestana(initialSubTab);
-    }
-  }, [initialSubTab]);
-
-  useEffect(() => {
-=======
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
     if (initialProjectId) {
       establecerSeleccionadoProyectoId(initialProjectId);
     }

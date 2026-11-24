@@ -559,63 +559,23 @@ export const PantallaProyectos: React.FC = () => {
             </View>
           </View>
 
-<<<<<<< HEAD
-        {/* [FRONT-2] Indicador de última sincronización en tiempo real */}
-        <IndicadorUltimaSincronizacion
-          ultimaSincronizacion={ultimaSincronizacion}
-          sincronizando={cargando}
-          sinConexion={Boolean(error)}
-          onSincronizar={cargar}
-          fuenteDatos="Estados de proyectos sincronizados con el servidor central"
-          style={{ marginBottom: 12 }}
-        />
-
-        {/* [SCRUM] Distintivos de color y texto por cada estado + revisor de accesibilidad móvil */}
-        <LeyendaAccesibilidadEstados
-          conteoPorEstado={conteoPorEstado}
-          estadoSeleccionado={filtroEstado}
-          onSeleccionarEstado={establecerFiltroEstado}
-        />
-
-        {panelAsignacionVisible && (
-          <ScrollView style={{ maxHeight: 540, marginBottom: 12 }} nestedScrollEnabled>
-            <AsignacionTecnicos
-              proyectosProp={proyectos.length > 0 ? proyectos : undefined}
-              onAviso={mostrarAviso}
-              onCancel={() => establecerPanelAsignacionVisible(false)}
-            />
-          </ScrollView>
-        )}
-
-        <View style={estilos.buscarCajaEnvoltorio}>
-          <Ionicons name="search" size={16} color={tema.colors.textMuted} />
-          <TextInput
-            style={[estilos.buscarEntradaTexto, { marginLeft: 8 }]}
-            placeholder="Buscar por nombre, cliente o estado"
-            placeholderTextColor={tema.colors.textMuted}
-            value={busqueda}
-            onChangeText={establecerBusqueda}
+          {/* Indicador de última sincronización en tiempo real */}
+          <IndicadorUltimaSincronizacion
+            ultimaSincronizacion={ultimaSincronizacion}
+            sincronizando={cargando}
+            sinConexion={Boolean(error)}
+            onSincronizar={cargar}
+            fuenteDatos="Estados de proyectos sincronizados con el servidor central"
+            style={{ marginBottom: 12 }}
           />
-        </View>
 
-        <View style={styles.filtrosWrapper}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filtrosContenido}
-            style={styles.filtrosScroll}
-          >
-            {["todos", ...ESTADOS_PROYECTO].map((e) => {
-              const activo = filtroEstado === e;
-              return (
-                <Pressable
-                  key={e}
-                  onPress={() => establecerFiltroEstado(e)}
-                  style={[styles.chip, activo && styles.chipActivo]}
-                >
-                  <Text style={[styles.chipTexto, activo && styles.chipTextoActivo]}>
-                    {e === "todos" ? "Todos" : e}
-=======
+          {/* Distintivos de color y texto por cada estado */}
+          <LeyendaAccesibilidadEstados
+            conteoPorEstado={conteoPorEstado}
+            estadoSeleccionado={filtroEstado}
+            onSeleccionarEstado={establecerFiltroEstado}
+          />
+
           {/* 3. TARJETA HERO CON BORDE ÁMBAR (Igual a Herramientas, OC y Conteos) */}
           <View style={estilos.crearProyectoHeroTarjeta}>
             <View style={estilos.crearProyectoHeroContenido}>
@@ -624,7 +584,6 @@ export const PantallaProyectos: React.FC = () => {
                   <Insignia label="Obras y Faenas" tone="warn" size="sm" />
                   <Text style={estilos.heroInsigniaHint}>
                     Control de Ejecución y Presupuesto
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   </Text>
                 </View>
                 <Text style={estilos.crearProyectoHeroTitulo}>
@@ -767,55 +726,16 @@ export const PantallaProyectos: React.FC = () => {
             proyectosFiltrados.map((p) => {
               const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
               const color = colorAvance(porcentaje);
-<<<<<<< HEAD
               const cfgEstado = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
-
-=======
               const esCerrado = esEstadoCerrado(p.estado_proyecto);
               const estEstado = obtenerEstiloEstado(p.estado_proyecto);
               const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
               return (
                 <Pressable
                   key={p.id_proyecto}
                   style={[
-<<<<<<< HEAD
-                    estilos.finalAuditoriaTarjeta,
-                    estilos.proyectoListaTarjeta,
-                    {
-                      marginTop: 0,
-                      borderLeftWidth: 4,
-                      borderLeftColor: cfgEstado.colorBorde,
-                    },
-                  ]}
-                  onPress={() => establecerSeleccionado(p)}
-                >
-                  <View style={estilos.tarjetaSuperior}>
-                    <View style={{ flex: 1, marginRight: 8 }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          flexWrap: "wrap",
-                          gap: 8,
-                          marginBottom: 4,
-                        }}
-                      >
-                        <Text style={estilos.codigoTexto}>{p.tipo_proyecto}</Text>
-                        {/* [FRONT-2] Distintivo visual y textual por estado */}
-                        <DistintivoEstadoProyecto
-                          estado={p.estado_proyecto}
-                          tamano="sm"
-                          mostrarPrefijo
-                        />
-                      </View>
-                      <Text style={estilos.nombreTexto} numberOfLines={2}>
-                        {p.nombre_proyecto}
-                      </Text>
-                      <Text style={estilos.clienteTexto}>
-                        {p.cliente ?? "Sin cliente"}
-=======
                     styles.tarjetaProyectoModerna,
+                    { borderLeftWidth: 4, borderLeftColor: cfgEstado.colorBorde },
                     esCerrado && { opacity: 0.85, backgroundColor: "#f9fafb" },
                   ]}
                   onPress={() => establecerSeleccionado(p)}
@@ -842,7 +762,6 @@ export const PantallaProyectos: React.FC = () => {
                       />
                       <Text style={[styles.badgeEstadoProyectoTexto, { color: estEstado.text }]}>
                         {p.estado_proyecto}
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                       </Text>
                     </View>
                   </View>
@@ -895,35 +814,6 @@ export const PantallaProyectos: React.FC = () => {
 
                     <View style={styles.divisorVerticalPie} />
 
-<<<<<<< HEAD
-                  <View style={estilos.tarjetaInferiorFila}>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      <Ionicons
-                        name="cloud-done-outline"
-                        size={13}
-                        color="#059669"
-                      />
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "600",
-                          color: "#065F46",
-                        }}
-                      >
-                        Sincronizado ({horaSincCorta})
-                      </Text>
-                    </View>
-                    <Text style={estilos.fechasTexto}>
-                      {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} ·{" "}
-                      {p.fecha_fin ? formatearFecha(p.fecha_fin) : "—"}
-                    </Text>
-=======
                     <View style={[styles.metricaPieBloque, { flex: 1.2 }]}>
                       <Text style={styles.metricaPieEtiqueta}>Plazo estimado</Text>
                       <View style={styles.fechasPieFila}>
@@ -942,7 +832,6 @@ export const PantallaProyectos: React.FC = () => {
                         color={esCerrado ? "#b91c1c" : "#9ca3af"}
                       />
                     </View>
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   </View>
                 </Pressable>
               );
@@ -1347,7 +1236,6 @@ const ModalFormulario: React.FC<ModalProps> = ({
                 </View>
 
                 <View style={{ flex: 1, minWidth: 200 }}>
-<<<<<<< HEAD
                   <View
                     style={{
                       flexDirection: "row",
@@ -1365,9 +1253,6 @@ const ModalFormulario: React.FC<ModalProps> = ({
                       mostrarPrefijo
                     />
                   </View>
-=======
-                  <Text style={styles.campoEtiqueta}>Estado</Text>
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
                   <View style={styles.segmentedRow}>
                     {ESTADOS_PROYECTO.map((o) => {
                       const activo = formulario.estado_proyecto === o;
@@ -2506,9 +2391,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#ffffff",
   },
-<<<<<<< HEAD
-});
-=======
   selectorClienteTrigger: {
     flexDirection: "row",
     alignItems: "center",
@@ -2615,4 +2497,3 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
->>>>>>> 404a57fb7429f75b177a46e0688ec6b54d849fec
