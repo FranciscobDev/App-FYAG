@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import {
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -8,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Rect } from "react-native-svg";
 import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { formatearCLP, formatearFecha } from "@/nucleo/formato";
@@ -17,11 +19,76 @@ import { Boton } from "@/componentes/base/Boton";
 import { Tarjeta } from "@/componentes/base/Tarjeta";
 import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
+import { NotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
 import { CampoTexto } from "@/componentes/formularios/CampoTexto";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
 import { Herramienta, EstadoHerramienta } from "@/nucleo/tipos";
+import { generarMatrizQrVisual } from "@/modulos/inventario/qrInsumosUtils";
+
+/**
+ * Construye el payload JSON embebido dentro del código QR de un activo fijo (herramienta).
+ */
+function construirPayloadQrHerramienta(t: Herramienta): string {
+  return JSON.stringify({
+    sistema: "FYAG",
+    tipo: "ACTIVO_FIJO",
+    codigoQr: `QR-HER-${t.code}`,
+    codigo: t.code,
+    serie: t.serialNumber,
+    nombre: t.name,
+    categoria: t.category,
+    marca: t.brand,
+    modelo: t.model,
+    estado: t.status,
+    proximaMantencion: t.nextMaintenanceDate,
+  });
+}
+
+/**
+ * Renderiza el código QR de una herramienta en formato vectorial SVG.
+ */
+const CodigoQrHerramientaSvg: React.FC<{ contenido: string; tamano?: number }> = ({
+  contenido,
+  tamano = 176,
+}) => {
+  const matriz = generarMatrizQrVisual(contenido, 25);
+  const modulos = matriz.length;
+  const celda = tamano / modulos;
+
+  return (
+    <View
+      style={{
+        backgroundColor: "#ffffff",
+        padding: 10,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: tema.colors.border,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Svg width={tamano} height={tamano} viewBox={`0 0 ${tamano} ${tamano}`}>
+        <Rect x={0} y={0} width={tamano} height={tamano} fill="#ffffff" />
+        {matriz.map((fila, r) =>
+          fila.map((activo, c) =>
+            activo ? (
+              <Rect
+                key={`${r}-${c}`}
+                x={c * celda}
+                y={r * celda}
+                width={celda + 0.25}
+                height={celda + 0.25}
+                fill="#0f172a"
+              />
+            ) : null
+          )
+        )}
+      </Svg>
+    </View>
+  );
+};
 
 export const PantallaHerramientas: React.FC = () => {
   const {
@@ -32,15 +99,30 @@ export const PantallaHerramientas: React.FC = () => {
     prestarHerramienta,
     devolverHerramienta,
     registrarMantencionHerramienta,
+    darDeBajaHerramienta,
   } = usarAplicacion();
-  const { rolActual } = usarAutenticacion();
+  const { rolActual, usuario } = usarAutenticacion();
 
   const [buscarQuery, establecerBuscarQuery] = useState("");
   const [filtrarEstado, establecerFiltrarEstado] = useState<string>("todos");
+  const [avisoMensaje, establecerAvisoMensaje] = useState<string | null>(null);
+
+  const mostrarAviso = (msg: string) => {
+    establecerAvisoMensaje(msg);
+    setTimeout(() => establecerAvisoMensaje(null), 3500);
+  };
 
   // Herramienta seleccionada para ver Historial (Préstamos y Mantenciones)
   const [seleccionadoHerramientaHistorial, establecerSeleccionadoHerramientaHistorial] = useState<Herramienta | null>(null);
   const [historialPestana, establecerHistorialPestana] = useState<"prestamos" | "mantenciones">("prestamos");
+
+  // Modal de Visualización de Código QR del activo fijo
+  const [qrModalHerramienta, establecerQrModalHerramienta] = useState<Herramienta | null>(null);
+
+  // Modal de Baja Lógica Patrimonial
+  const [bajaModalHerramienta, establecerBajaModalHerramienta] = useState<Herramienta | null>(null);
+  const [bajaMotivo, establecerBajaMotivo] = useState("");
+  const [bajaError, establecerBajaError] = useState("");
 
   // 1. Alta de Herramienta Modal
   const [nuevoHerramientaModal, establecerNuevoHerramientaModal] = useState(false);
@@ -51,6 +133,7 @@ export const PantallaHerramientas: React.FC = () => {
   const [herramientaMarca, establecerHerramientaMarca] = useState("Bosch");
   const [herramientaModelo, establecerHerramientaModelo] = useState("");
   const [herramientaDiasFreq, establecerHerramientaDiasFreq] = useState("90");
+  const [herramientaProximaMantencion, establecerHerramientaProximaMantencion] = useState("");
   const [herramientaError, establecerHerramientaError] = useState("");
 
   // 2. Préstamo a Técnico Modal
@@ -86,11 +169,12 @@ export const PantallaHerramientas: React.FC = () => {
     return Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
   };
 
-  // KPIs de inventario de maquinaria
+  // KPIs de inventario de activos fijos (herramientas y maquinaria)
   const totalConteo = herramientas.length;
   const disponibleConteo = herramientas.filter((t) => t.status === "disponible").length;
   const asignadoConteo = herramientas.filter((t) => t.status === "asignada").length;
   const mantencionConteo = herramientas.filter((t) => t.status === "en_mantencion").length;
+  const bajaConteo = herramientas.filter((t) => t.status === "dada_de_baja").length;
   const overdueConteo = herramientas.filter((t) => {
     if (t.status === "dada_de_baja") return false;
     return obtenerDiasUntilMantencion(t.nextMaintenanceDate) <= 0;
@@ -116,14 +200,28 @@ export const PantallaHerramientas: React.FC = () => {
     return coincidenciaQuery;
   });
 
-  // Guardar nueva herramienta
+  // Guardar nueva herramienta con fecha explícita de próximo mantenimiento
   const manejarAbrirNuevoHerramientaModal = () => {
     establecerHerramientaCodigo(`HER-${String(herramientas.length + 1).padStart(3, "0")}`);
     establecerHerramientaSerie("");
     establecerHerramientaNombre("");
     establecerHerramientaModelo("");
+    establecerHerramientaDiasFreq("90");
+    establecerHerramientaProximaMantencion(
+      new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10)
+    );
     establecerHerramientaError("");
     establecerNuevoHerramientaModal(true);
+  };
+
+  const manejarCambioFrecuenciaDias = (valor: string) => {
+    establecerHerramientaDiasFreq(valor);
+    const dias = Number(valor);
+    if (!Number.isNaN(dias) && dias > 0) {
+      establecerHerramientaProximaMantencion(
+        new Date(Date.now() + dias * 86400000).toISOString().slice(0, 10)
+      );
+    }
   };
 
   const manejarGuardarNuevoHerramienta = () => {
@@ -133,9 +231,13 @@ export const PantallaHerramientas: React.FC = () => {
     }
 
     const freqDias = Number(herramientaDiasFreq) || 90;
-    const siguienteMaint = new Date(Date.now() + freqDias * 86400000)
-      .toISOString()
-      .slice(0, 10);
+    const fechaProximaLimpia = herramientaProximaMantencion.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaProximaLimpia)) {
+      establecerHerramientaError(
+        "La fecha de próximo mantenimiento debe tener formato YYYY-MM-DD (ej: 2026-12-30)."
+      );
+      return;
+    }
 
     const nuevoT: Herramienta = {
       id: `tool_${Date.now()}`,
@@ -148,7 +250,7 @@ export const PantallaHerramientas: React.FC = () => {
       status: "disponible",
       purchaseDate: hoyCadena,
       maintenanceFrequencyDays: freqDias,
-      nextMaintenanceDate: siguienteMaint,
+      nextMaintenanceDate: fechaProximaLimpia,
       loans: [],
       maintenances: [],
     };
@@ -158,7 +260,61 @@ export const PantallaHerramientas: React.FC = () => {
       establecerHerramientaError(resultado.error || "Error al crear herramienta.");
     } else {
       establecerNuevoHerramientaModal(false);
+      mostrarAviso(
+        `Activo fijo ${nuevoT.code} registrado con próximo mantenimiento el ${formatearFecha(nuevoT.nextMaintenanceDate)}.`
+      );
     }
+  };
+
+  // Confirmar baja lógica de herramienta
+  const manejarConfirmarBajaLogica = () => {
+    if (!bajaModalHerramienta) return;
+    if (bajaMotivo.trim().length < 5) {
+      establecerBajaError("Ingresa un motivo de baja de al menos 5 caracteres.");
+      return;
+    }
+    const res = darDeBajaHerramienta(
+      bajaModalHerramienta.id,
+      bajaMotivo.trim(),
+      usuario?.name || usuarioRolDisplay(rolActual)
+    );
+    if (!res.success) {
+      establecerBajaError(res.error || "No se pudo realizar la baja lógica.");
+      return;
+    }
+    mostrarAviso(
+      `Baja lógica aplicada a ${bajaModalHerramienta.code}. Historial patrimonial conservado.`
+    );
+    establecerBajaModalHerramienta(null);
+    establecerBajaMotivo("");
+    establecerBajaError("");
+  };
+
+  // Imprimir etiqueta QR de herramienta en Web
+  const manejarImprimirQrWeb = (t: Herramienta) => {
+    if (Platform.OS !== "web" || typeof window === "undefined") {
+      mostrarAviso(`Código QR ${t.code} listo para etiquetado físico.`);
+      return;
+    }
+    const win = window.open("", "_blank", "width=460,height=520");
+    if (!win) {
+      mostrarAviso("Permite ventanas emergentes para imprimir la etiqueta QR.");
+      return;
+    }
+    const payload = construirPayloadQrHerramienta(t);
+    win.document.write(`
+      <html><head><title>Etiqueta QR ${t.code}</title></head>
+      <body style="font-family:sans-serif;padding:24px;text-align:center;">
+        <h2 style="margin:0 0 6px;">FYAG • Activo Fijo</h2>
+        <p style="margin:0 0 12px;font-weight:bold;font-size:18px;">${t.code} — ${t.name}</p>
+        <p style="margin:0 0 8px;font-size:13px;">Serie: ${t.serialNumber} • ${t.brand} ${t.model}</p>
+        <p style="margin:0 0 16px;font-size:12px;">Próxima mantención: ${t.nextMaintenanceDate}</p>
+        <pre style="text-align:left;background:#f8fafc;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:11px;white-space:pre-wrap;">${payload}</pre>
+      </body></html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
   };
 
   // Confirmar préstamo a técnico
@@ -200,15 +356,21 @@ export const PantallaHerramientas: React.FC = () => {
   return (
     <ContenedorEstadoPantalla screenTitle="Control de Herramientas" skeletonType="table">
       <View style={estilos.contenedor}>
+        <NotificacionFlotante
+          visible={Boolean(avisoMensaje)}
+          message={avisoMensaje || ""}
+          onDismiss={() => establecerAvisoMensaje(null)}
+        />
+
         {/* ========================================================================= */}
         {/* HEADER LIMPIO Y RESPONSIVO (ANCHO COMPLETO EDGE-TO-EDGE)                   */}
         {/* ========================================================================= */}
         <EncabezadoPagina
-          title="Control de Herramientas"
+          title="Mantenedor de Herramientas (Activos Fijos)"
           subtitle={
             rolActual === "warehouse"
-              ? undefined
-              : "Asignaciones a faena, control de mantenciones preventivas y calibración"
+              ? "Inventario de activos fijos separado de insumos consumibles"
+              : "Activos fijos, códigos QR, asignaciones a faena, mantención preventiva y baja lógica"
           }
         />
 
@@ -237,6 +399,11 @@ export const PantallaHerramientas: React.FC = () => {
           <Text style={estilos.kpiLbl}>En Mantención</Text>
         </View>
 
+        <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.borderDark }]}>
+          <Text style={[estilos.kpiValor, { color: tema.colors.textMuted }]}>{bajaConteo}</Text>
+          <Text style={estilos.kpiLbl}>Dadas de Baja</Text>
+        </View>
+
         {overdueConteo > 0 && (
           <View style={[estilos.kpiTarjeta, estilos.kpiTarjetaPeligro]}>
             <Text style={[estilos.kpiValor, { color: tema.colors.danger }]}>{overdueConteo}</Text>
@@ -253,12 +420,12 @@ export const PantallaHerramientas: React.FC = () => {
           <View style={estilos.crearHerramientaHeroContenido}>
             <View style={estilos.crearHerramientaHeroIzquierda}>
               <View style={estilos.herramientaInsigniaFila}>
-                <Insignia label="Activos" tone="primary" size="sm" />
-                <Text style={estilos.herramientaInsigniaHint}>Control de Equipos y Maquinarias</Text>
+                <Insignia label="Activos Fijos" tone="primary" size="sm" />
+                <Insignia label="Separado de Insumos" tone="info" size="sm" />
               </View>
               <Text style={estilos.crearHerramientaHeroTitulo}>Registrar Nueva Herramienta o Equipo</Text>
               <Text style={estilos.crearHerramientaHeroDescripcion}>
-                Ingresa maquinaria o herramientas con código interno, serie, marca y periodicidad de mantención para faena.
+                Administra el inventario de activos fijos con código QR, serie, fecha de próximo mantenimiento y baja lógica sin mezclar con insumos consumibles.
               </Text>
             </View>
             <Boton
@@ -299,7 +466,7 @@ export const PantallaHerramientas: React.FC = () => {
           { id: "asignada", label: `Asignadas en Faena (${asignadoConteo})` },
           { id: "en_mantencion", label: `En Mantención (${mantencionConteo})` },
           { id: "vencidas", label: `⚠️ Mantención Vencida (${overdueConteo})` },
-          { id: "dada_de_baja", label: "Dadas de Baja" },
+          { id: "dada_de_baja", label: `Dadas de Baja (${bajaConteo})` },
         ].map((f) => {
           const esActivo = filtrarEstado === f.id;
           return (
@@ -459,22 +626,34 @@ export const PantallaHerramientas: React.FC = () => {
             </View>
 
             {/* BOTONES DE ACCIÓN */}
-            <View style={estilos.herramientaAccionesFila}>
-              {/* Botón Historial de Préstamos */}
-              <TouchableOpacity
-                onPress={() => {
-                  establecerSeleccionadoHerramientaHistorial(t);
-                  establecerHistorialPestana("prestamos");
-                }}
-                style={estilos.historialBoton}
-              >
-                <Ionicons name="time-outline" size={16} color={tema.colors.primary} />
-                <Text style={estilos.historialBotonTexto}>
-                  Historial ({t.loans?.length || 0})
-                </Text>
-              </TouchableOpacity>
+            <View style={[estilos.herramientaAccionesFila, { flexWrap: "wrap", gap: 8 }]}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {/* Botón Ver Código QR del Activo Fijo */}
+                <TouchableOpacity
+                  onPress={() => establecerQrModalHerramienta(t)}
+                  style={estilos.historialBoton}
+                  accessibilityLabel={`Ver código QR de ${t.code}`}
+                >
+                  <Ionicons name="qr-code-outline" size={16} color={tema.colors.primaryDark} />
+                  <Text style={estilos.historialBotonTexto}>Ver QR</Text>
+                </TouchableOpacity>
 
-              <View style={estilos.accionBtnsGrupo}>
+                {/* Botón Historial de Préstamos y Mantenciones */}
+                <TouchableOpacity
+                  onPress={() => {
+                    establecerSeleccionadoHerramientaHistorial(t);
+                    establecerHistorialPestana("prestamos");
+                  }}
+                  style={estilos.historialBoton}
+                >
+                  <Ionicons name="time-outline" size={16} color={tema.colors.primary} />
+                  <Text style={estilos.historialBotonTexto}>
+                    Historial ({t.loans?.length || 0})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[estilos.accionBtnsGrupo, { flexWrap: "wrap", gap: 6 }]}>
                 {/* 1. Prestar a Técnico (Disponible) */}
                 {esDisponible && rolActual !== "technician" && (
                   <Boton
@@ -487,7 +666,7 @@ export const PantallaHerramientas: React.FC = () => {
                       establecerPrestamoTecnicoRut(tecnicos[0]?.rut || "");
                       establecerPrestamoProyectoCodigo(proyectos[0]?.code || "");
                     }}
-                    style={{ marginRight: 6, height: 38 }}
+                    style={{ minHeight: 38 }}
                   />
                 )}
 
@@ -503,7 +682,7 @@ export const PantallaHerramientas: React.FC = () => {
                       establecerDevolucionCondicion("bueno");
                       establecerDevolucionNotas("");
                     }}
-                    style={{ marginRight: 6, height: 38 }}
+                    style={{ minHeight: 38 }}
                   />
                 )}
 
@@ -520,13 +699,34 @@ export const PantallaHerramientas: React.FC = () => {
                       establecerMaintTaller("Servicio Técnico Oficial Bosch");
                       establecerMaintCosto("35000");
                       establecerMaintDescripcion(t.status === "en_mantencion" ? "Reparación y cambio de piezas averiadas" : "Limpieza, calibración y engrase general");
-                      // Próxima fecha calculada automáticamente
                       const calculoSiguiente = new Date(Date.now() + t.maintenanceFrequencyDays * 86400000)
                         .toISOString()
                         .slice(0, 10);
                       establecerMaintSiguienteFecha(calculoSiguiente);
                     }}
-                    style={{ height: 38 }}
+                    style={{ minHeight: 38 }}
+                  />
+                )}
+
+                {/* 4. Baja Lógica Patrimonial (Admin / Bodeguero, conserva historial) */}
+                {!esRetired && rolActual !== "technician" && (
+                  <Boton
+                    title="Dar de Baja"
+                    variant="danger"
+                    size="sm"
+                    icon="archive-outline"
+                    onPress={() => {
+                      if (esAsignado) {
+                        mostrarAviso(
+                          `Primero registra la devolución de ${t.code} antes de darle baja lógica.`
+                        );
+                        return;
+                      }
+                      establecerBajaModalHerramienta(t);
+                      establecerBajaMotivo("");
+                      establecerBajaError("");
+                    }}
+                    style={{ minHeight: 38 }}
                   />
                 )}
               </View>
@@ -589,22 +789,32 @@ export const PantallaHerramientas: React.FC = () => {
 
         {/* 2. CONTROL DE MANTENCIÓN */}
         <Text style={estilos.formularioSeccionEncabezado}>2. Control de Mantención Preventiva</Text>
-        <CampoTexto
-          label="Frecuencia Mantención Preventiva (Días)"
-          value={herramientaDiasFreq}
-          onChangeText={establecerHerramientaDiasFreq}
-          keyboardType="numeric"
-          placeholder="90"
-        />
+        <View style={estilos.formularioFilaTwo}>
+          <CampoTexto
+            label="Frecuencia (Días)"
+            value={herramientaDiasFreq}
+            onChangeText={manejarCambioFrecuenciaDias}
+            keyboardType="numeric"
+            placeholder="90"
+            containerStyle={{ flex: 1, marginRight: 8 }}
+          />
+          <CampoTexto
+            label="Fecha Próximo Mantenimiento"
+            value={herramientaProximaMantencion}
+            onChangeText={establecerHerramientaProximaMantencion}
+            placeholder="YYYY-MM-DD"
+            containerStyle={{ flex: 1.3 }}
+          />
+        </View>
 
         <View style={estilos.calculatedSiguienteCaja}>
-          <Ionicons name="information-circle" size={16} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+          <Ionicons name="calendar-outline" size={16} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
           <Text style={estilos.calculatedSiguienteTexto}>
-            Próxima mantención calculada:{" "}
+            Próximo mantenimiento programado:{" "}
             <Text style={{ fontWeight: "bold" }}>
-              {new Date(Date.now() + (Number(herramientaDiasFreq) || 90) * 86400000).toISOString().slice(0, 10)}
+              {herramientaProximaMantencion || "Sin definir"}
             </Text>{" "}
-            (en {Number(herramientaDiasFreq) || 90} días).
+            (puedes editar la fecha directamente en formato AAAA-MM-DD).
           </Text>
         </View>
 
@@ -1032,6 +1242,165 @@ export const PantallaHerramientas: React.FC = () => {
             variant="ghost"
             onPress={() => establecerSeleccionadoHerramientaHistorial(null)}
             style={{ width: "100%", height: 44 }}
+          />
+        </View>
+      </VistaModal>
+
+      {/* ========================================================================= */}
+      {/* 6. MODAL: VISUALIZACIÓN DE CÓDIGO QR DE ACTIVO FIJO                       */}
+      {/* ========================================================================= */}
+      <VistaModal
+        visible={Boolean(qrModalHerramienta)}
+        onClose={() => establecerQrModalHerramienta(null)}
+        title={qrModalHerramienta ? `Código QR — ${qrModalHerramienta.code}` : "Código QR"}
+        subtitle={
+          qrModalHerramienta
+            ? `${qrModalHerramienta.name} • Serie: ${qrModalHerramienta.serialNumber}`
+            : ""
+        }
+      >
+        {qrModalHerramienta && (() => {
+          const payloadQr = construirPayloadQrHerramienta(qrModalHerramienta);
+          return (
+            <View style={{ gap: 14 }}>
+              <View style={{ alignItems: "center", gap: 8 }}>
+                <CodigoQrHerramientaSvg contenido={payloadQr} tamano={196} />
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" }}>
+                  <Insignia label={`QR-HER-${qrModalHerramienta.code}`} tone="primary" size="sm" />
+                  <InsigniaEstado status={qrModalHerramienta.status} size="sm" />
+                </View>
+              </View>
+
+              <View
+                style={{
+                  backgroundColor: tema.colors.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: tema.colors.border,
+                  borderRadius: tema.radius.md,
+                  padding: 12,
+                  gap: 5,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: "800", color: tema.colors.text }}>
+                  Datos Embebidos del Activo Fijo:
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary }}>
+                  • Código Interno: <Text style={{ fontWeight: "700" }}>{qrModalHerramienta.code}</Text>
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary }}>
+                  • N° Serie: <Text style={{ fontWeight: "700" }}>{qrModalHerramienta.serialNumber}</Text>
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary }}>
+                  • Marca / Modelo:{" "}
+                  <Text style={{ fontWeight: "700" }}>
+                    {qrModalHerramienta.brand} {qrModalHerramienta.model}
+                  </Text>
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.textSecondary }}>
+                  • Próximo Mantenimiento:{" "}
+                  <Text style={{ fontWeight: "700" }}>
+                    {formatearFecha(qrModalHerramienta.nextMaintenanceDate)}
+                  </Text>
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  backgroundColor: "#0f172a",
+                  borderRadius: tema.radius.md,
+                  padding: 10,
+                }}
+              >
+                <Text style={{ fontSize: 10.5, color: "#94a3b8", fontWeight: "700", marginBottom: 4 }}>
+                  PAYLOAD JSON EMBEBIDO:
+                </Text>
+                <Text style={{ fontSize: 11, color: "#e2e8f0", fontFamily: "monospace" }}>
+                  {payloadQr}
+                </Text>
+              </View>
+
+              <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 8 }]}>
+                <Boton
+                  title="Imprimir Etiqueta QR"
+                  variant="primary"
+                  size="sm"
+                  icon="print-outline"
+                  onPress={() => manejarImprimirQrWeb(qrModalHerramienta)}
+                  style={{ flex: 1, minWidth: 150, minHeight: 42 }}
+                />
+                <Boton
+                  title="Cerrar"
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => establecerQrModalHerramienta(null)}
+                  style={{ flex: 1, minWidth: 110, minHeight: 42 }}
+                />
+              </View>
+            </View>
+          );
+        })()}
+      </VistaModal>
+
+      {/* ========================================================================= */}
+      {/* 7. MODAL: BAJA LÓGICA DE HERRAMIENTA (CONSERVA HISTORIAL PATRIMONIAL)     */}
+      {/* ========================================================================= */}
+      <VistaModal
+        visible={Boolean(bajaModalHerramienta)}
+        onClose={() => establecerBajaModalHerramienta(null)}
+        title="Confirmar Baja Lógica de Herramienta"
+        subtitle={
+          bajaModalHerramienta
+            ? `${bajaModalHerramienta.code} • ${bajaModalHerramienta.name}`
+            : ""
+        }
+      >
+        <View
+          style={{
+            backgroundColor: tema.colors.dangerLight,
+            borderWidth: 1,
+            borderColor: tema.colors.danger,
+            borderRadius: tema.radius.md,
+            padding: 12,
+            marginBottom: 12,
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 8,
+          }}
+        >
+          <Ionicons name="alert-circle" size={20} color={tema.colors.danger} />
+          <Text style={{ flex: 1, fontSize: 12, color: tema.colors.text, lineHeight: 17 }}>
+            La baja es <Text style={{ fontWeight: "800" }}>lógica</Text>: el activo pasará a estado{" "}
+            <Text style={{ fontWeight: "800" }}>Dada de Baja</Text>, no podrá volver a prestarse y
+            se conservará íntegro su historial de préstamos y mantenciones para auditoría.
+          </Text>
+        </View>
+
+        <CampoTexto
+          label="Motivo Obligatorio de la Baja Lógica"
+          value={bajaMotivo}
+          onChangeText={(txt) => {
+            establecerBajaMotivo(txt);
+            if (bajaError) establecerBajaError("");
+          }}
+          placeholder="Ej: Daño irreparable en motor / Vida útil cumplida / Extravío confirmado"
+          multiline
+        />
+
+        {Boolean(bajaError) && <Text style={estilos.errorTexto}>{bajaError}</Text>}
+
+        <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 8 }]}>
+          <Boton
+            title="Cancelar"
+            variant="ghost"
+            onPress={() => establecerBajaModalHerramienta(null)}
+            style={{ flex: 1, minWidth: 110, minHeight: 44 }}
+          />
+          <Boton
+            title="Confirmar Baja Lógica"
+            variant="danger"
+            icon="archive-outline"
+            onPress={manejarConfirmarBajaLogica}
+            style={{ flex: 1.5, minWidth: 160, minHeight: 44 }}
           />
         </View>
       </VistaModal>
