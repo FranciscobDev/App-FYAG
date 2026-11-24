@@ -12,7 +12,17 @@ export interface InsumoAsignadoProyecto {
   quantityRetrieved: number;
   quantityPending: number;
   fulfillmentPct: number;
-  origen: "despacho" | "solicitud" | "mixto";
+  origen: "despacho" | "solicitud" | "mixto" | "planificado";
+}
+
+/** Insumo planificado del proyecto (GET /api/proyectos/insumos-asignados). */
+export interface InsumoPlanificadoServidor {
+  id_proyecto: number;
+  id_articulo: number;
+  sku: string | null;
+  nombre_articulo: string;
+  unidad: string;
+  cantidad_asignada: number;
 }
 
 export interface SnapshotInsumosProyecto {
@@ -40,7 +50,8 @@ const TIEMPO_LIMITE_RED_MS = 3500;
 
 const construirClaveCacheInsumos = (identificadorUsuario: string): string => {
   const limpio = (identificadorUsuario || "tecnico").replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `insumos_mis_proyectos_${limpio}`;
+  // v2: los saldos guardados antes de este cambio incluían solicitudes pendientes; se descartan.
+  return `insumos_mis_proyectos_v2_${limpio}`;
 };
 
 /**
@@ -65,7 +76,8 @@ export const formatearMarcaSincronizacion = (iso: string | null): string => {
 export const calcularInsumosProyecto = (
   proyecto: Proyecto,
   productos: Producto[],
-  solicitudesMaterial: SolicitudMaterial[]
+  solicitudesMaterial: SolicitudMaterial[],
+  planificados: InsumoPlanificadoServidor[] = []
 ): InsumoAsignadoProyecto[] => {
   const mapaPorSku = new Map<
     string,
@@ -76,8 +88,10 @@ export const calcularInsumosProyecto = (
       retiradoDespachos: number;
       solicitadoActivo: number;
       entregadoSolicitudes: number;
+      cantidadPlanificada: number;
       tieneDespacho: boolean;
       tieneSolicitud: boolean;
+      tienePlanificacion: boolean;
     }
   >();
 
@@ -93,8 +107,10 @@ export const calcularInsumosProyecto = (
       retiradoDespachos: 0,
       solicitadoActivo: 0,
       entregadoSolicitudes: 0,
+      cantidadPlanificada: 0,
       tieneDespacho: false,
       tieneSolicitud: false,
+      tienePlanificacion: false,
     };
     mapaPorSku.set(clave, nuevo);
     return nuevo;
@@ -107,11 +123,19 @@ export const calcularInsumosProyecto = (
     entry.tieneDespacho = true;
   });
 
-  // 2. Sumar solicitudes vigentes del proyecto (pendientes de retiro, aprobadas o entregadas)
+  // 1b. Insumos planificados del proyecto (kit o carga manual): aparecen aunque no existan solicitudes ni despachos
+  planificados.forEach((pl) => {
+    const entry = obtenerOInicializar(pl.sku || String(pl.id_articulo), pl.nombre_articulo, pl.unidad);
+    entry.cantidadPlanificada += Number(pl.cantidad_asignada || 0);
+    entry.tienePlanificacion = true;
+  });
+
+  // 2. Sumar solo solicitudes aprobadas o entregadas. Una solicitud pendiente aún no fue
+  //    aprobada por bodega, así que no tiene material asignado ni pendiente por retirar.
   const solicitudesVigentes = solicitudesMaterial.filter(
     (s) =>
       s.projectId === proyecto.id &&
-      (s.status === "pendiente" || s.status === "aprobada" || s.status === "entregada")
+      (s.status === "aprobada" || s.status === "entregada")
   );
 
   solicitudesVigentes.forEach((sol) => {
@@ -134,7 +158,10 @@ export const calcularInsumosProyecto = (
     );
 
     let asignado = 0;
-    if (entry.tieneSolicitud && entry.tieneDespacho) {
+    if (entry.tienePlanificacion) {
+      // Cantidad planificada para el proyecto, sin perder lo ya retirado o solicitado
+      asignado = Math.max(retirado, entry.solicitadoActivo, entry.cantidadPlanificada);
+    } else if (entry.tieneSolicitud && entry.tieneDespacho) {
       asignado = Math.max(retirado, entry.solicitadoActivo, Math.round(entry.retiradoDespachos * 1.25));
     } else if (entry.tieneSolicitud) {
       asignado = Math.max(retirado, entry.solicitadoActivo);
@@ -149,7 +176,9 @@ export const calcularInsumosProyecto = (
       asignado > 0 ? Math.min(100, Math.round((retirado / asignado) * 100)) : 100;
 
     const origen: InsumoAsignadoProyecto["origen"] =
-      entry.tieneDespacho && entry.tieneSolicitud
+      entry.tienePlanificacion && !entry.tieneDespacho && !entry.tieneSolicitud
+        ? "planificado"
+        : entry.tieneDespacho && entry.tieneSolicitud
         ? "mixto"
         : entry.tieneSolicitud
         ? "solicitud"
@@ -183,7 +212,8 @@ export const construirSnapshotsInsumosTecnico = (
   proyectos: Proyecto[],
   rutTecnico: string,
   productos: Producto[],
-  solicitudesMaterial: SolicitudMaterial[]
+  solicitudesMaterial: SolicitudMaterial[],
+  planificadosPorProyecto: Map<string, InsumoPlanificadoServidor[]> = new Map()
 ): SnapshotInsumosProyecto[] => {
   const proyectosActivos = proyectos.filter(
     (p) =>
@@ -193,7 +223,12 @@ export const construirSnapshotsInsumosTecnico = (
   );
 
   return proyectosActivos.map((proyecto) => {
-    const insumos = calcularInsumosProyecto(proyecto, productos, solicitudesMaterial);
+    const insumos = calcularInsumosProyecto(
+      proyecto,
+      productos,
+      solicitudesMaterial,
+      planificadosPorProyecto.get(proyecto.id) ?? []
+    );
     const solicitudes = solicitudesMaterial.filter((s) => s.projectId === proyecto.id);
     const totalAsignado = Number(
       insumos.reduce((acc, i) => acc + i.quantityAssigned, 0).toFixed(3)
@@ -249,6 +284,43 @@ export const guardarInsumosProyectosCacheLocal = async (
     { proyectos }
   );
   return registro.guardadoEn;
+};
+
+/**
+ * Obtiene los insumos planificados de todos los proyectos visibles para el técnico, agrupados por proyecto.
+ * Devuelve null si el servidor no responde, para no sobrescribir la caché con datos incompletos.
+ */
+export const obtenerInsumosPlanificadosServidor = async (): Promise<
+  Map<string, InsumoPlanificadoServidor[]> | null
+> => {
+  for (const baseUrl of obtenerUrlsCandidatasApi()) {
+    const controlador = new AbortController();
+    const temporizador = setTimeout(() => controlador.abort(), TIEMPO_LIMITE_RED_MS);
+    try {
+      const res = await fetch(`${baseUrl}/proyectos/insumos-asignados`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          ...encabezadosAuth(),
+        },
+        signal: controlador.signal,
+      });
+      if (!res.ok) continue;
+      const filas = await res.json();
+      if (!Array.isArray(filas)) return null;
+      const mapa = new Map<string, InsumoPlanificadoServidor[]>();
+      for (const fila of filas as InsumoPlanificadoServidor[]) {
+        const clave = String(fila.id_proyecto);
+        mapa.set(clave, [...(mapa.get(clave) ?? []), fila]);
+      }
+      return mapa;
+    } catch {
+      // Intenta la siguiente URL candidata
+    } finally {
+      clearTimeout(temporizador);
+    }
+  }
+  return null;
 };
 
 /**
@@ -311,22 +383,28 @@ export const sincronizarInsumosProyectosConCache = async (params: {
   if (!forzarSinConexion) {
     const conectado = await verificarConectividadServidor();
     if (conectado) {
-      const snapshots = construirSnapshotsInsumosTecnico(
-        proyectosContexto,
-        rutTecnico,
-        productosContexto,
-        solicitudesContexto
-      );
-      const guardadoEn = await guardarInsumosProyectosCacheLocal(
-        identificadorUsuario,
-        snapshots
-      );
-      return {
-        proyectos: snapshots,
-        origen: "red",
-        guardadoEn,
-        sinConexion: false,
-      };
+      const planificados = await obtenerInsumosPlanificadosServidor();
+      // Si no se pudieron leer los insumos planificados, no se guarda una versión incompleta:
+      // se usa la última copia local válida.
+      if (planificados !== null) {
+        const snapshots = construirSnapshotsInsumosTecnico(
+          proyectosContexto,
+          rutTecnico,
+          productosContexto,
+          solicitudesContexto,
+          planificados
+        );
+        const guardadoEn = await guardarInsumosProyectosCacheLocal(
+          identificadorUsuario,
+          snapshots
+        );
+        return {
+          proyectos: snapshots,
+          origen: "red",
+          guardadoEn,
+          sinConexion: false,
+        };
+      }
     }
   }
 

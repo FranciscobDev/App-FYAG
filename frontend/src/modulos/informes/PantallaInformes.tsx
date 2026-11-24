@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Platform,
   ScrollView,
@@ -27,6 +27,7 @@ import {
 } from "@/componentes/comunes";
 import { MovimientoCardex, Producto, Proyecto, RegistroMerma } from "@/nucleo/tipos";
 import { estilos } from "./estilos";
+import { construirQueryCardex, descargarCardexExcel, obtenerCardexApi } from "./cardexApi";
 import { SeccionInformeMovimientos, SeccionInformeInventario, SeccionInformeProyectos, SeccionInformeMateriales, SeccionInformeGastos, SeccionInformeMermas } from "./componentes";
 import {
   exportarInformeExcelWeb,
@@ -56,7 +57,6 @@ export const PantallaInformes: React.FC = () => {
   const {
     productos,
     proyectos,
-    cardex,
     solicitudesMaterial,
     facturasCompra,
     registrosMerma,
@@ -149,10 +149,33 @@ export const PantallaInformes: React.FC = () => {
   };
 
   // =========================================================================
-  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD)
+  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD) - datos reales desde /api/cardex
   // =========================================================================
+  const [cardexApi, establecerCardexApi] = useState<MovimientoCardex[]>([]);
+  const queryCardex = useMemo(
+    () => construirQueryCardex(period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos),
+    [period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos]
+  );
+
+  useEffect(() => {
+    let cancelado = false;
+    obtenerCardexApi(queryCardex, proyectos)
+      .then((lista) => {
+        if (!cancelado) establecerCardexApi(lista);
+      })
+      .catch((err: Error) => {
+        if (!cancelado) {
+          establecerCardexApi([]);
+          mostrarAviso(err.message);
+        }
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [queryCardex, proyectos]);
+
   const filtradoCardex = useMemo(() => {
-    return cardex.filter((item) => {
+    return cardexApi.filter((item) => {
       const coincidenciasPeriod = esWithinPeriod(item.date);
       const coincidenciasTipo =
         seleccionadoMovementTipo === "todos" || item.type === seleccionadoMovementTipo;
@@ -170,6 +193,7 @@ export const PantallaInformes: React.FC = () => {
 
       return coincidenciasPeriod && coincidenciasTipo && coincidenciasProyecto && coincidenciasQuery;
     });
+  }, [cardexApi, period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
   }, [cardex, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
 
   const cardexTotals = useMemo(() => {
@@ -387,6 +411,16 @@ export const PantallaInformes: React.FC = () => {
   // EXPORTACIÓN A EXCEL / CSV
   // =========================================================================
   const manejarExportar = (format: "pdf" | "excel") => {
+    // Cardex: el Excel sale del backend con los mismos filtros de la pantalla
+    if (format === "excel" && activoPestana === "movimientos") {
+      if (Platform.OS !== "web") {
+        mostrarAviso("La descarga del Excel del Cardex está disponible desde la versión web por ahora.");
+        return;
+      }
+      descargarCardexExcel(queryCardex).catch((err: Error) => mostrarAviso(err.message));
+      return;
+    }
+
     let headers: string[] = [];
     let filas: any[] = [];
     let filename = `reporte_${activoPestana}`;

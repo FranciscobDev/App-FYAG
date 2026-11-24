@@ -41,6 +41,7 @@ interface ProyectoBody {
 interface TecnicoResumen {
     id_usuario: number;
     nombre: string;
+    rut?: string | null;
 }
 
 const esErrorPg = (error: unknown): error is DatabaseError => {
@@ -444,10 +445,11 @@ export const listarTecnicos = async (_req: Request, res: Response): Promise<void
     try {
         const result = await pool.query<TecnicoResumen>(
             `SELECT u.id_usuario,
-                    TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre
+                    TRIM(u.nombre_usuario || ' ' || u.apellido_usuario) AS nombre,
+                    u.rut
              FROM usuario u
              LEFT JOIN roles r ON r.id_rol = u.id_rol
-             WHERE (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%') AND u.activo = TRUE
+             WHERE (u.id_rol = 3 OR LOWER(r.nombre_rol::text) LIKE '%tecnic%') AND u.activo = TRUE
              ORDER BY u.nombre_usuario ASC`
         );
         res.status(200).json(result.rows);
@@ -496,7 +498,7 @@ export const asignarTecnico = async (
             `SELECT u.id_usuario
              FROM usuario u
              LEFT JOIN roles r ON r.id_rol = u.id_rol
-             WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol) LIKE '%tecnic%')`,
+             WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol::text) LIKE '%tecnic%')`,
             [id_usuario]
         );
         if (esTecnico.rows.length === 0) {
@@ -628,3 +630,49 @@ export const cerrarProyecto = async (
     }
 };
 
+
+/**
+ * Insumos planificados de cada proyecto (tabla articulo_en_proyecto, cargada desde el kit o manualmente).
+ * El técnico solo recibe los insumos de los proyectos que tiene asignados; el administrador recibe todos.
+ */
+export const listarInsumosAsignados = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
+
+        const result = await pool.query<{
+            id_proyecto: number;
+            id_articulo: number;
+            sku: string | null;
+            nombre_articulo: string;
+            unidad: string;
+            cantidad_asignada: number;
+        }>(
+            `SELECT aep.id_proyecto,
+                    aep.id_articulo,
+                    a.sku,
+                    a.nombre_articulo,
+                    COALESCE(um.codigo, 'un') AS unidad,
+                    SUM(aep.cantidad)::float8 AS cantidad_asignada
+             FROM articulo_en_proyecto aep
+             JOIN articulo a ON a.id_articulo = aep.id_articulo
+             LEFT JOIN insumos i ON i.id_insumo = aep.id_articulo
+             LEFT JOIN unidades_medida um ON um.id_unidad = COALESCE(aep.id_unidad, i.id_unidad)
+             WHERE ($1::boolean = FALSE OR aep.id_proyecto IN (
+                     SELECT DISTINCT p.id_proyecto
+                     FROM proyecto p
+                     LEFT JOIN asignaciones_proyecto ap ON ap.proyecto_id = p.id_proyecto AND ap.tecnico_id = $2 AND ap.activo = TRUE
+                     LEFT JOIN proyecto_tecnico pt ON pt.id_proyecto = p.id_proyecto AND pt.id_usuario = $2
+                     WHERE (ap.tecnico_id = $2 OR pt.id_usuario = $2 OR p.id_usuario = $2)
+                 ))
+             GROUP BY aep.id_proyecto, aep.id_articulo, a.sku, a.nombre_articulo, um.codigo
+             ORDER BY aep.id_proyecto ASC, a.nombre_articulo ASC`,
+            [esTecnico, payload?.id ?? null]
+        );
+
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Error al listar insumos asignados a proyectos:', error);
+        res.status(500).json({ error: 'Error al obtener los insumos de los proyectos' });
+    }
+};

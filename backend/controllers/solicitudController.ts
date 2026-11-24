@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../config/db';
-import { obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
 import { registrarAuditoria } from '../services/auditoriaService';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { AlertaReposicionH40 } from '../services/motorReposicionService';
@@ -1134,8 +1134,11 @@ export const anularSolicitudInsumos = async (
     }
 };
 
-export const listarSolicitudesInsumos = async (_req: Request, res: Response): Promise<void> => {
+export const listarSolicitudesInsumos = async (req: Request, res: Response): Promise<void> => {
     try {
+        // El técnico solo ve sus propias solicitudes; administración y bodega ven todas
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
         const cabRes = await pool.query<{
             id_solicitud: number;
             id_usuario: number;
@@ -1147,6 +1150,8 @@ export const listarSolicitudesInsumos = async (_req: Request, res: Response): Pr
             nro_comprobante: string | null;
             descripcion_solicitud: string | null;
             fecha_solicitud: string;
+            tecnico_rut: string;
+            tecnico_nombre: string;
         }>(
             `SELECT s.id_solicitud,
                     s.id_usuario,
@@ -1157,10 +1162,15 @@ export const listarSolicitudesInsumos = async (_req: Request, res: Response): Pr
                     s.motivo_rechazo,
                     s.nro_comprobante,
                     s.descripcion_solicitud,
-                    s.fecha_solicitud::text AS fecha_solicitud
+                    s.fecha_solicitud::text AS fecha_solicitud,
+                    COALESCE(u.rut, '') AS tecnico_rut,
+                    TRIM(COALESCE(u.nombre_usuario, '') || ' ' || COALESCE(u.apellido_usuario, '')) AS tecnico_nombre
              FROM solicitudes s
              JOIN proyecto p ON p.id_proyecto = s.id_proyecto
-             ORDER BY s.id_solicitud DESC`
+             LEFT JOIN usuario u ON u.id_usuario = s.id_usuario
+             WHERE ($1::boolean = FALSE OR s.id_usuario = $2)
+             ORDER BY s.id_solicitud DESC`,
+            [esTecnico, payload?.id ?? null]
         );
 
         const detRes = await pool.query<{
@@ -1610,6 +1620,8 @@ export interface ItemEgresoSolicitudInput {
 }
 
 export interface LineaEgresoRegistrada {
+    id_contenedor: number | null;
+    remanente_contenedor: number | null;
     id_solicitud_linea: number;
     id_articulo: number;
     sku: string;
@@ -1876,13 +1888,14 @@ export const registrarEgresoSolicitudEnTransaccion = async (
 
     const egresoAcumuladoPorArticulo = new Map<number, number>();
     for (const raw of itemsInput) {
-        const cant = Number(raw.cantidad_egreso ?? raw.cantidad ?? raw.quantity ?? NaN);
-        if (!Number.isFinite(cant) || cant < 0) {
+        const textoCant = String(raw.cantidad_egreso ?? raw.cantidad ?? raw.quantity ?? '').trim();
+        if (!/^\d+(\.\d{1,3})?$/.test(textoCant)) {
             throw new ErrorAplicacion(
                 400,
-                'Las cantidades de egreso deben ser números válidos mayores o iguales a 0'
+                `Cantidad de egreso inválida "${textoCant}": debe ser un número positivo con máximo 3 decimales`
             );
         }
+        const cant = Number(textoCant);
         if (cant === 0) continue;
 
         let idArt = raw.id_articulo ? Number(raw.id_articulo) : 0;
@@ -1926,6 +1939,8 @@ export const registrarEgresoSolicitudEnTransaccion = async (
         disponible_actual: number;
         saldo_historico_cardex: number;
         pmp_historico: number;
+        id_contenedor: number | null;
+        contenedor_restante_nuevo: number | null;
     }[] = [];
     const erroresValidacion: string[] = [];
 
@@ -1971,6 +1986,24 @@ export const registrarEgresoSolicitudEnTransaccion = async (
             continue;
         }
 
+        // Remanente del contenedor (rollo) del artículo, si tiene uno registrado
+        const contRes = await cliente.query<{ id_contenedor: number; cantidad_restante: number }>(
+            `SELECT id_contenedor, cantidad_restante::float8 AS cantidad_restante
+             FROM contenedor_stock
+             WHERE id_articulo = $1 AND activo = TRUE
+             ORDER BY (cantidad_restante > 0) DESC, id_contenedor ASC
+             LIMIT 1
+             FOR UPDATE`,
+            [idArt]
+        );
+        const contenedor = contRes.rows[0] ?? null;
+        if (contenedor && cantEgreso > Number(contenedor.cantidad_restante)) {
+            erroresValidacion.push(
+                `${lin.nombre_articulo} (${lin.sku}): cantidad a egresar (${cantEgreso}) supera el remanente del contenedor (${Number(contenedor.cantidad_restante)})`
+            );
+            continue;
+        }
+
         const compNuevo = Math.max(0, Number((compAnterior - cantEgreso).toFixed(3)));
         const entregadaAcumulada = Number((lin.cantidad_entregada + cantEgreso).toFixed(3));
         const saldoPendienteRestante = Math.max(
@@ -1995,6 +2028,10 @@ export const registrarEgresoSolicitudEnTransaccion = async (
             disponible_actual: dispActual,
             saldo_historico_cardex: saldoHistoricoCardex,
             pmp_historico: pmpActual,
+            id_contenedor: contenedor ? Number(contenedor.id_contenedor) : null,
+            contenedor_restante_nuevo: contenedor
+                ? Number((Number(contenedor.cantidad_restante) - cantEgreso).toFixed(3))
+                : null,
         });
     }
 
@@ -2072,6 +2109,14 @@ export const registrarEgresoSolicitudEnTransaccion = async (
             [itemPlan.id_articulo, itemPlan.comprometido_nuevo]
         );
 
+        // 6.1b Descontar del remanente del contenedor (si el artículo tiene contenedor)
+        if (itemPlan.id_contenedor !== null) {
+            await cliente.query(
+                `UPDATE contenedor_stock SET cantidad_restante = $2 WHERE id_contenedor = $1`,
+                [itemPlan.id_contenedor, itemPlan.contenedor_restante_nuevo]
+            );
+        }
+
         // 6.2 Actualizar cantidad_entregada en solicitud_lineas conservando el saldo pendiente
         await cliente.query(
             `UPDATE solicitud_lineas
@@ -2147,9 +2192,10 @@ export const registrarEgresoSolicitudEnTransaccion = async (
                  pmp_historico,
                  valor_total_historico,
                  referencia,
-                 id_usuario
+                 id_usuario,
+                 id_proyecto
              )
-             VALUES ($1, NULL, NULL, NULL, 'Salida', 'comprometido', $2, $3, $4, $5, $6, $7, $8)
+             VALUES ($1, NULL, NULL, NULL, 'Salida', 'comprometido', $2, $3, $4, $5, $6, $7, $8, $9)
              RETURNING id_movimiento`,
             [
                 itemPlan.id_articulo,
@@ -2160,6 +2206,7 @@ export const registrarEgresoSolicitudEnTransaccion = async (
                 valorTotalHistorico,
                 referenciaCardex,
                 bodegueroId,
+                cabecera.proyecto_id,
             ]
         );
         const idMovCardex = movRes.rows[0]?.id_movimiento ?? 1;
@@ -2190,6 +2237,7 @@ export const registrarEgresoSolicitudEnTransaccion = async (
 
         lineasEgresadas.push({
             ...itemPlan,
+            remanente_contenedor: itemPlan.contenedor_restante_nuevo,
             id_movimiento_cardex: idMovCardex,
         });
 
@@ -2567,5 +2615,3 @@ export const intentarEliminarSalidaBodegaEnDb = async (
         );
     }
 };
-
-

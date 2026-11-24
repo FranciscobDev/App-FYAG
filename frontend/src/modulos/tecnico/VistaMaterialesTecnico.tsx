@@ -356,7 +356,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
       unit: it.unit,
     }));
 
-    const res = crearSolicitudMaterial(
+    const res = await crearSolicitudMaterial(
       actualProyecto.id,
       usuario.rut,
       itemsHastaEnviar,

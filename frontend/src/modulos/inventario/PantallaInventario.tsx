@@ -476,7 +476,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     if (solicitudError) establecerSolicitudError("");
   };
 
-  const manejarEnviarSolicitud = () => {
+  const manejarEnviarSolicitud = async () => {
     establecerSolicitudError("");
     const validacion = validarFormularioNuevaSolicitudInsumos(
       proyectoSeleccionadoSolicitud,
@@ -522,7 +522,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       return;
     }
 
-    const res = crearSolicitudMaterial(
+    const res = await crearSolicitudMaterial(
       seleccionadoProyectoId,
       usuario.rut,
       elementosHastaEnviar,
@@ -1179,4 +1179,3 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     </ContenedorEstadoPantalla>
   );
 };
-

@@ -97,49 +97,6 @@ export interface PropiedadesAsignacionTecnicos {
 // demostrar que las listas desplegables filtran SOLO los activos.
 // ============================================================================
 
-export const TECNICOS_FALLBACK: TecnicoAsignable[] = [
-  {
-    id: "tec-1",
-    id_usuario: 101,
-    rut: "17.894.562-3",
-    nombre: "Alejandro Rojas Pino",
-    especialidad: "Electricidad SEC Clase A",
-    activo: true,
-  },
-  {
-    id: "tec-2",
-    id_usuario: 102,
-    rut: "16.783.421-5",
-    nombre: "Matías Fuentes Araya",
-    especialidad: "Climatización Industrial",
-    activo: true,
-  },
-  {
-    id: "tec-3",
-    id_usuario: 103,
-    rut: "18.234.905-K",
-    nombre: "Constanza Leiva Núñez",
-    especialidad: "Gasfitería y Redes Húmedas",
-    activo: true,
-  },
-  {
-    id: "tec-4",
-    id_usuario: 104,
-    rut: "14.567.832-1",
-    nombre: "Pedro Aguilera Mora",
-    especialidad: "Soldadura y Estructuras",
-    activo: true,
-  },
-  {
-    id: "tec-inactivo-5",
-    id_usuario: 105,
-    rut: "13.111.222-4",
-    nombre: "Roberto Soto (Inactivo)",
-    especialidad: "Obras Civiles",
-    activo: false,
-  },
-];
-
 export const PROYECTOS_FALLBACK: ProyectoAsignable[] = [
   {
     id: "p1",
@@ -364,37 +321,21 @@ export const AsignacionTecnicos: React.FC<PropiedadesAsignacionTecnicos> = ({
     }
     establecerTodosProyectos(listaProyectos);
 
-    // 1.2 Resolver lista de técnicos
+    // 1.2 Técnicos: SOLO datos reales del servidor. No se usan listas simuladas, porque
+    // harían aparecer como reales a personas que no existen en la base de datos.
     let listaTecnicos: TecnicoAsignable[] = [];
     if (tecnicosProp && tecnicosProp.length > 0) {
       listaTecnicos = tecnicosProp.map(normalizarTecnico);
     } else {
       const resTec = await listarTecnicosApi();
-      if (resTec.ok && resTec.data && resTec.data.length > 0) {
+      if (resTec.ok && Array.isArray(resTec.data)) {
         listaTecnicos = resTec.data.map((t: TecnicoApi) =>
           normalizarTecnico({ ...t, activo: true })
         );
-      } else if (contextoApp?.usuariosSistema && contextoApp.usuariosSistema.length > 0) {
-        const tecnicosDeUsuarios = contextoApp.usuariosSistema
-          .filter((u) => u.role === "technician")
-          .map((u) =>
-            normalizarTecnico({
-              id: u.id_usuario ?? u.id,
-              id_usuario: u.id_usuario,
-              rut: u.rut,
-              nombre: u.name,
-              especialidad: u.especializacion ?? "Técnico en Terreno",
-              activo: !u.disabled,
-            })
-          );
-        listaTecnicos =
-          tecnicosDeUsuarios.length > 0
-            ? tecnicosDeUsuarios
-            : (contextoApp.tecnicos || []).map(normalizarTecnico);
-      } else if (contextoApp?.tecnicos && contextoApp.tecnicos.length > 0) {
-        listaTecnicos = contextoApp.tecnicos.map(normalizarTecnico);
       } else {
-        listaTecnicos = TECNICOS_FALLBACK;
+        establecerMensajeError(
+          resTec.error ?? "No se pudo cargar la lista de técnicos desde el servidor."
+        );
       }
     }
     establecerTodosTecnicos(listaTecnicos);
@@ -1060,6 +1001,8 @@ export const AsignacionTecnicos: React.FC<PropiedadesAsignacionTecnicos> = ({
                     >
                       {tecnicoSeleccionadoObj
                         ? tecnicoSeleccionadoObj.nombre
+                        : todosTecnicos.length === 0
+                        ? "No hay técnicos registrados en el sistema"
                         : tecnicosDisponiblesDropdown.length === 0
                         ? "Sin técnicos disponibles (todos asignados)"
                         : "Seleccione un técnico activo..."}
