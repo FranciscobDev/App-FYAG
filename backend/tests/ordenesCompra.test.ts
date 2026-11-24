@@ -3134,3 +3134,54 @@ test('[DB][SCRUM] tablas salidas_bodega (solicitud_id, proyecto_id, tecnico_reti
 
 
 
+
+test('[BACK-2][SCRUM] 3 salidas fraccionadas de un rollo de cable en metros: descuenta exacto con 3 decimales, comprueba el remanente y bloquea excesos o más de 3 decimales', async () => {
+    const estado = { comprometido: 200, restante: 100, entregada: 0, egresos: 0 };
+    const cliente = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+            if (q.startsWith('SELECT id_solicitud, proyecto_id, bodeguero_id, estado::text AS estado, nro_comprobante FROM solicitudes_insumos'))
+                return { rows: [{ id_solicitud: 960, proyecto_id: 15, bodeguero_id: 2, estado: 'Aprobada', nro_comprobante: 'COMP-2026-060' }] };
+            if (q.startsWith('SELECT sl.id_solicitud_linea, sl.id_articulo'))
+                return { rows: [{ id_solicitud_linea: 1, id_articulo: 700, sku: 'CAB-700', nombre_articulo: 'Cable 6 AWG (m)', precio_unitario: 1000, cantidad_solicitada: 200, cantidad_entregada: estado.entregada }] };
+            if (q.startsWith('SELECT COALESCE(cantidad_disponible, 0)::float8 AS cantidad_disponible, COALESCE(cantidad_comprometida'))
+                return { rows: [{ cantidad_disponible: 0, cantidad_comprometida: estado.comprometido, pmp: 1000 }] };
+            if (q.startsWith('SELECT id_contenedor, cantidad_restante'))
+                return { rows: [{ id_contenedor: 9, cantidad_restante: estado.restante }] };
+            if (q.startsWith('INSERT INTO egresos_bodega')) return { rows: [{ id_egreso: 800 + estado.egresos++ }] };
+            if (q.startsWith('UPDATE articulos_stock SET cantidad_comprometida')) { estado.comprometido = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            if (q.startsWith('UPDATE contenedor_stock SET cantidad_restante')) { estado.restante = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            if (q.startsWith('UPDATE solicitud_lineas SET cantidad_entregada')) { estado.entregada = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    const egreso = (cant: number) =>
+        registrarEgresoSolicitudEnTransaccion(cliente, 960, {
+            bodeguero_id: 2,
+            tecnico_retira_rut: '16.543.210-9',
+            tecnico_retira_nombre: 'Sebastián Mora',
+            items: [{ id_articulo: 700, cantidad_egreso: cant }],
+        });
+
+    // 3 salidas fraccionadas: 12.350 + 7.125 + 30.500 = 49.975 m
+    await egreso(12.35);
+    await egreso(7.125);
+    await egreso(30.5);
+    assert.equal(estado.restante, 50.025, 'remanente del rollo: 100 - 49.975');
+    assert.equal(estado.comprometido, 150.025, 'comprometido descontado con exactitud decimal');
+
+    // Más de 3 decimales: se rechaza sin descontar nada
+    await assert.rejects(
+        () => egreso(0.0005),
+        (err: any) => String(err?.message).includes('máximo 3 decimales')
+    );
+
+    // Excede el remanente del rollo (50.025 m): bloquea y no descuenta
+    await assert.rejects(
+        () => egreso(60),
+        (err: any) => String(err?.message).includes('supera el remanente del contenedor (50.025)')
+    );
+    assert.equal(estado.restante, 50.025, 'un egreso rechazado no altera el remanente');
+    assert.equal(estado.comprometido, 150.025, 'un egreso rechazado no altera el comprometido');
+});
