@@ -798,6 +798,36 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     // [FRONT-1 / H6] El stock solicitado pasa inmediatamente de Disponible a Comprometido
     setProducts((prev) => aplicarReservaComprometidoEnCatalogoH6(prev, items));
     setMaterialRequests((prev) => [newReq, ...prev]);
+
+    // Emitir alerta en vivo (H3) para la campana de notificaciones superior (web y móvil)
+    const solicitanteNombre = requesterInfo?.name || (tech ? tech.name : "Técnico de Terreno");
+    const totalUnidades = items.reduce((acc, it) => acc + Number(it.quantity || 0), 0);
+    const nuevaNotifSolicitud: DetalleNotificacion = {
+      id: `notif_sol_${Date.now()}`,
+      title: `Nueva Solicitud de Material: ${newCode}`,
+      message: `${solicitanteNombre} solicitó ${items.length} ítem(s) (${totalUnidades} un.) para ${proj.name} (${proj.code}). Urgencia: ${urgency.toUpperCase()}.`,
+      date: ahoraFecha,
+      type: "solicitud",
+      severity: urgency === "urgente" ? "danger" : "warn",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: newReq.id,
+      relatedEntityLabel: `Revisar ${newCode}`,
+    };
+    setNotificationsList((prev) => [nuevaNotifSolicitud, ...prev]);
+    setAlerts((prev) => [
+      {
+        id: `al_sol_${Date.now()}`,
+        type: "solicitud",
+        severity: urgency === "urgente" ? "rojo" : "amarillo",
+        title: `Nueva solicitud pendiente: ${newCode}`,
+        description: `${proj.code} • ${items.length} ítem(s) solicitados por ${solicitanteNombre}.`,
+        time: "Ahora mismo",
+        actionLabel: "Revisar Solicitud",
+      },
+      ...prev,
+    ]);
+
     return { success: true };
   };
 
