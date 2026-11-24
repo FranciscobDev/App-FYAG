@@ -211,6 +211,11 @@ interface TipoContextoAplicacion {
   prestarHerramienta: (toolId: string, technicianRut: string, projectCode: string) => void;
   devolverHerramienta: (toolId: string, condition: "bueno" | "danado", notes?: string) => void;
   registrarMantencionHerramienta: (toolId: string, record: Omit<RegistroMantencionHerramienta, "id">) => void;
+  darDeBajaHerramienta: (
+    toolId: string,
+    motivo: string,
+    responsable?: string
+  ) => { success: boolean; error?: string };
 
   // Returns actions
   crearDevolucionTecnico: (
@@ -1754,6 +1759,55 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
+  // Baja lógica de herramienta / activo fijo (conserva historial de préstamos y mantenciones)
+  const darDeBajaHerramienta = (
+    toolId: string,
+    motivo: string,
+    responsable = "Administración Central"
+  ): { success: boolean; error?: string } => {
+    const herramienta = herramientas.find((t) => t.id === toolId);
+    if (!herramienta) {
+      return { success: false, error: "Herramienta no encontrada." };
+    }
+    if (herramienta.status === "asignada") {
+      return {
+        success: false,
+        error: `No se puede dar de baja ${herramienta.code} mientras esté asignada a ${herramienta.currentTechnicianName || "un técnico"}. Registre primero su devolución.`,
+      };
+    }
+    if (herramienta.status === "dada_de_baja") {
+      return { success: false, error: "La herramienta ya se encuentra dada de baja." };
+    }
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const motivoLimpio = motivo.trim() || "Baja lógica administrativa de activo fijo";
+    const registroBaja: RegistroMantencionHerramienta = {
+      id: `baja_${Date.now()}`,
+      toolId: herramienta.id,
+      date: hoy,
+      type: "correctiva",
+      workshop: "Baja Lógica Patrimonial",
+      cost: 0,
+      description: `BAJA LÓGICA: ${motivoLimpio}`,
+      nextMaintenanceDate: herramienta.nextMaintenanceDate,
+      performedBy: responsable,
+    };
+
+    setTools((prev) =>
+      prev.map((t) =>
+        t.id === toolId
+          ? {
+              ...t,
+              status: "dada_de_baja",
+              maintenances: [registroBaja, ...(t.maintenances || [])],
+            }
+          : t
+      )
+    );
+
+    return { success: true };
+  };
+
   // 7. RETURNS
   const crearDevolucionTecnico = (
     projectId: string,
@@ -2778,6 +2832,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         prestarHerramienta,
         devolverHerramienta,
         registrarMantencionHerramienta,
+        darDeBajaHerramienta,
         crearDevolucionTecnico,
         confirmarDevolucionBodega,
         crearDevolucionProveedor,
