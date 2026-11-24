@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -20,6 +20,10 @@ import {
   calcularResumenLineaSalidaFisica,
   calcularResumenSolicitudSalidaFisica,
 } from "@/modulos/inventario/solicitudInsumosUtils";
+import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+} from "@/modulos/inventario/escanerBodegaUtils";
 import { estilos } from "../estilos";
 
 export interface PropiedadesSeccionEgresoBodega {
@@ -68,6 +72,20 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
   totalUnidadesHastaDespacho,
 }) => {
   const { solicitudesMaterial } = usarAplicacion();
+
+  // Estado visual de lectura óptica QR/Barras en Salidas (H5)
+  const [ultimoEscaneoSalida, establecerUltimoEscaneoSalida] = useState<{
+    tipo: "ok" | "alerta";
+    sku?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null>(null);
+  const [skusEscaneadosSalida, establecerSkusEscaneadosSalida] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    establecerUltimoEscaneoSalida(null);
+    establecerSkusEscaneadosSalida({});
+  }, [seleccionadoDespachoSolicitudId]);
 
   // Auto-seleccionar la primera solicitud pendiente de despacho para no dejar la pantalla vacía
   useEffect(() => {
@@ -366,24 +384,161 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                   </Text>
                 </View>
                 <Boton
-                  variant="secondary"
+                  variant="primary"
                   size="sm"
-                  title="Verificar SKU"
+                  title="Escanear QR / Barras"
                   icon="qr-code-outline"
                   onPress={() =>
-                    abrirEscaner("Verificar SKU para Despacho", (scannedCode: any) => {
-                      const matchedProducto = productos.find(
-                        (p: any) => p.sku === scannedCode || p.barcode === scannedCode
-                      );
-                      if (matchedProducto) {
-                        mostrarAviso(`SKU verificado: ${matchedProducto.sku} (${matchedProducto.name})`);
-                      } else {
-                        mostrarAviso(`Código leído: ${scannedCode}`);
+                    abrirEscaner(
+                      "Escanear SKU para Salida Física (H5)",
+                      (scannedCode: any, meta: any) => {
+                        const resolucion =
+                          meta && meta.valido && meta.producto
+                            ? meta
+                            : resolverCodigoEscaneadoBodega(scannedCode, productos);
+                        const tiempoTexto = formatearTiempoEscaneo(resolucion.tiempoMs);
+
+                        if (!resolucion.valido || !resolucion.producto) {
+                          const msg =
+                            resolucion.mensajeError ||
+                            `Código "${scannedCode}" no existe en el catálogo maestro. Flujo detenido.`;
+                          establecerUltimoEscaneoSalida({
+                            tipo: "alerta",
+                            tiempoTexto,
+                            mensaje: msg,
+                          });
+                          mostrarAviso(msg);
+                          return;
+                        }
+
+                        const matchedProducto = resolucion.producto;
+                        const itemSolicitud = activoDespachoSolicitud.items.find(
+                          (it: any) => it.sku === matchedProducto.sku
+                        );
+
+                        if (!itemSolicitud) {
+                          const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la solicitud ${activoDespachoSolicitud.code}.`;
+                          establecerUltimoEscaneoSalida({
+                            tipo: "alerta",
+                            sku: matchedProducto.sku,
+                            tiempoTexto,
+                            mensaje: msg,
+                          });
+                          mostrarAviso(msg);
+                          return;
+                        }
+
+                        // Autocompletar SKU y cantidad a retirar sin digitar
+                        const resLinea = calcularResumenLineaSalidaFisica(
+                          itemSolicitud,
+                          0,
+                          matchedProducto
+                        );
+                        const maxPosible = Math.min(
+                          resLinea.saldoPendienteAntes,
+                          resLinea.stockRespaldoParaEgreso
+                        );
+                        const actual = Number(despachoQuantities[matchedProducto.sku] || 0);
+                        const nuevaCantidad =
+                          actual <= 0
+                            ? maxPosible
+                            : Math.min(maxPosible, actual + (matchedProducto.isBulk ? 0.5 : 1));
+
+                        if (maxPosible > 0) {
+                          manejarDespachoCantidadCambiar(
+                            matchedProducto.sku,
+                            String(nuevaCantidad)
+                          );
+                        }
+
+                        establecerSkusEscaneadosSalida((prev) => ({
+                          ...prev,
+                          [matchedProducto.sku]: true,
+                        }));
+
+                        const etiquetaFormato =
+                          resolucion.formatoDetectado === "QR_H47" ? "QR H47" : "Código";
+                        const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto} • Retiro: ${nuevaCantidad} ${itemSolicitud.unit}.`;
+                        establecerUltimoEscaneoSalida({
+                          tipo: "ok",
+                          sku: matchedProducto.sku,
+                          tiempoTexto,
+                          mensaje: msgOk,
+                        });
+                        mostrarAviso(`✓ ${msgOk}`);
+                      },
+                      {
+                        moduloOrigen: "salida",
+                        validarExistencia: true,
+                        sugerenciaSkus: activoDespachoSolicitud.items.map((it: any) => it.sku),
                       }
-                    })
+                    )
                   }
+                  style={{ minHeight: 40 }}
                 />
               </View>
+
+              {/* Feedback visual inmediato del escaneo óptico en Salidas (H5) */}
+              {ultimoEscaneoSalida && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: 12,
+                    borderRadius: tema.radius.md,
+                    marginBottom: 12,
+                    backgroundColor:
+                      ultimoEscaneoSalida.tipo === "ok"
+                        ? tema.colors.okLight
+                        : tema.colors.dangerLight,
+                    borderWidth: 1,
+                    borderColor:
+                      ultimoEscaneoSalida.tipo === "ok"
+                        ? tema.colors.ok
+                        : tema.colors.danger,
+                  }}
+                >
+                  <Ionicons
+                    name={
+                      ultimoEscaneoSalida.tipo === "ok"
+                        ? "checkmark-circle"
+                        : "alert-circle"
+                    }
+                    size={20}
+                    color={
+                      ultimoEscaneoSalida.tipo === "ok"
+                        ? tema.colors.okDark
+                        : tema.colors.danger
+                    }
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "800",
+                        color:
+                          ultimoEscaneoSalida.tipo === "ok"
+                            ? tema.colors.okDark
+                            : tema.colors.danger,
+                      }}
+                    >
+                      {ultimoEscaneoSalida.tipo === "ok"
+                        ? `Lectura óptica exitosa (${ultimoEscaneoSalida.tiempoTexto})`
+                        : `Lectura bloqueada (${ultimoEscaneoSalida.tiempoTexto})`}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: tema.colors.text, marginTop: 2 }}>
+                      {ultimoEscaneoSalida.mensaje}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => establecerUltimoEscaneoSalida(null)}
+                    style={{ padding: 4 }}
+                  >
+                    <Ionicons name="close" size={16} color={tema.colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Aviso de trazabilidad e inmutabilidad del registro en Cardex */}
               <View
@@ -480,6 +635,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 const resumenLinea = calcularResumenLineaSalidaFisica(it, actualDespacho, prod);
                 const esOverExistencia = resumenLinea.superaStockBodega;
                 const esOverPendiente = resumenLinea.superaSaldoPendiente;
+                const fueEscaneado = Boolean(skusEscaneadosSalida[it.sku]);
 
                 return (
                   <View
@@ -487,6 +643,10 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                     style={[
                       estilos.despachoElementoFila,
                       { flexDirection: "column", alignItems: "stretch", gap: 10 },
+                      fueEscaneado && {
+                        borderColor: tema.colors.ok,
+                        backgroundColor: tema.colors.okLight,
+                      },
                     ]}
                   >
                     <View
@@ -499,7 +659,10 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                       }}
                     >
                       <View style={{ flex: 1.5, minWidth: 180, marginRight: 8 }}>
-                        <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                          {fueEscaneado && <Insignia label="Escaneado ✓" tone="ok" size="sm" />}
+                        </View>
                         <Text style={estilos.despachoElementoSku}>
                           SKU: {it.sku} {prod?.location ? `• ${prod.location}` : ""}
                         </Text>

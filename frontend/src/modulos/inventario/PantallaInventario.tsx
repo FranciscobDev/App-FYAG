@@ -54,6 +54,12 @@ import {
   liberarReservaComprometidoEnCatalogoH6,
   validarFormularioNuevaSolicitudInsumos,
 } from "./solicitudInsumosUtils";
+import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+  ResultadoResolucionCodigoBodega,
+} from "./escanerBodegaUtils";
+import { ModuloOrigenEscaner } from "@/componentes/dominio/ModalEscanerQr";
 
 export type PestanaInventario =
   | "catalogo"
@@ -176,13 +182,35 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     setTimeout(() => establecerAvisoMensaje(null), 3500);
   };
 
-  // --- REUSABLE QR SCANNER ---
+  // --- ESCÁNER QR / CÓDIGO DE BARRAS REUTILIZABLE (TABLET BODEGUERO) ---
   const [escanerVisible, establecerEscanerVisible] = useState(false);
-  const [escanerCallback, establecerEscanerCallback] = useState<((code: string) => void) | null>(null);
+  const [escanerCallback, establecerEscanerCallback] = useState<
+    ((code: string, meta?: ResultadoResolucionCodigoBodega) => void) | null
+  >(null);
   const [escanerTitulo, establecerEscanerTitulo] = useState("Escáner Óptico de Bodega");
+  const [escanerModuloOrigen, establecerEscanerModuloOrigen] = useState<
+    ModuloOrigenEscaner | undefined
+  >(undefined);
+  const [escanerValidarExistencia, establecerEscanerValidarExistencia] = useState<boolean>(true);
+  const [escanerSugerenciaSkus, establecerEscanerSugerenciaSkus] = useState<string[] | undefined>(
+    undefined
+  );
 
-  const abrirEscaner = (title: string, onScan: (code: string) => void) => {
+  const abrirEscaner = (
+    title: string,
+    onScan: (code: string, meta?: ResultadoResolucionCodigoBodega) => void,
+    opciones?: {
+      moduloOrigen?: ModuloOrigenEscaner;
+      validarExistencia?: boolean;
+      sugerenciaSkus?: string[];
+    }
+  ) => {
     establecerEscanerTitulo(title);
+    establecerEscanerModuloOrigen(opciones?.moduloOrigen);
+    establecerEscanerValidarExistencia(
+      typeof opciones?.validarExistencia === "boolean" ? opciones.validarExistencia : true
+    );
+    establecerEscanerSugerenciaSkus(opciones?.sugerenciaSkus);
     establecerEscanerCallback(() => onScan);
     establecerEscanerVisible(true);
   };
@@ -748,15 +776,45 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const conteoDiferenciaValor = conteoDiferencia * (seleccionadoConteoProducto?.pmp || seleccionadoConteoProducto?.unitCost || 0);
   const conteoRequiresApproval = Math.abs(conteoDiferenciaPorcentaje) > 5;
 
-  const manejarAbrirConteoModal = () => {
-    const prod = productos[0];
+  const [conteoEscaneoInfo, establecerConteoEscaneoInfo] = useState<string | null>(null);
+
+  const manejarAbrirConteoModal = (skuPreseleccionado?: string, infoEscaneo?: string) => {
+    const prod =
+      (skuPreseleccionado
+        ? productos.find((p) => p.sku === skuPreseleccionado)
+        : null) || productos[0];
     if (prod) {
       establecerConteoSku(prod.sku);
       establecerConteoPhysicalCantidad(String(prod.stock));
     }
+    establecerConteoEscaneoInfo(infoEscaneo || null);
     establecerConteoNotas("");
     establecerConteoError("");
     establecerConteoModalVisible(true);
+  };
+
+  // Escaneo directo desde la pantalla de Conteo Físico (H19) para abrir el modal con SKU autocompletado
+  const manejarEscanearParaConteoDirecto = () => {
+    abrirEscaner(
+      "Escanear Insumo para Conteo Físico (H19)",
+      (code, meta) => {
+        const res =
+          meta && meta.valido && meta.producto
+            ? meta
+            : resolverCodigoEscaneadoBodega(code, productos);
+        if (!res.valido || !res.producto) {
+          mostrarAviso(
+            res.mensajeError || `Código "${code}" no existe en el catálogo. Flujo detenido.`
+          );
+          return;
+        }
+        const tiempoTexto = formatearTiempoEscaneo(res.tiempoMs);
+        const info = `SKU ${res.producto.sku} autocompletado en ${tiempoTexto}`;
+        mostrarAviso(`✓ ${info} (${res.producto.name})`);
+        manejarAbrirConteoModal(res.producto.sku, info);
+      },
+      { moduloOrigen: "conteo", validarExistencia: true }
+    );
   };
 
   const manejarRegisterConteo = () => {
@@ -950,7 +1008,8 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           activoPestana={activoPestana}
           aprobarConteoFisico={aprobarConteoFisico}
           conteosFisicos={conteosFisicos}
-          manejarAbrirConteoModal={manejarAbrirConteoModal}
+          manejarAbrirConteoModal={() => manejarAbrirConteoModal()}
+          manejarEscanearParaConteo={manejarEscanearParaConteoDirecto}
           mermaSku={mermaSku}
           mostrarAviso={mostrarAviso}
           onCerrarUltimoResultado={() => establecerUltimoResultadoConteo(null)}
@@ -1017,10 +1076,15 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           conteoPhysicalCantidad={conteoPhysicalCantidad}
           conteoRequiresApproval={conteoRequiresApproval}
           conteoSku={conteoSku}
+          conteoEscaneoInfo={conteoEscaneoInfo}
+          establecerConteoEscaneoInfo={establecerConteoEscaneoInfo}
           editandoProducto={editandoProducto}
           editandoSolicitud={editandoSolicitud}
           escanerCallback={escanerCallback}
+          escanerModuloOrigen={escanerModuloOrigen}
+          escanerSugerenciaSkus={escanerSugerenciaSkus}
           escanerTitulo={escanerTitulo}
+          escanerValidarExistencia={escanerValidarExistencia}
           escanerVisible={escanerVisible}
           establecerAnularConfirmarSolicitud={establecerAnularConfirmarSolicitud}
           establecerConfirmarDespachoVisible={establecerConfirmarDespachoVisible}

@@ -34,6 +34,7 @@ export interface PropiedadesSeccionConteoFisico {
   aprobarConteoFisico: (id: string, approverName: string) => void;
   conteosFisicos: ConteoFisico[];
   manejarAbrirConteoModal: () => void;
+  manejarEscanearParaConteo?: () => void;
   mermaSku?: string;
   mostrarAviso: (mensaje: string) => void;
   onIrACardex?: (sku: string) => void;
@@ -58,6 +59,7 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
   aprobarConteoFisico,
   conteosFisicos,
   manejarAbrirConteoModal,
+  manejarEscanearParaConteo,
   mostrarAviso,
   onIrACardex,
   productos,
@@ -223,7 +225,18 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
               </Text>
             </View>
 
-            <View style={estilosLocales.heroAcciones}>
+            <View style={[estilosLocales.heroAcciones, { flexDirection: "row", flexWrap: "wrap", gap: 8 }]}>
+              {manejarEscanearParaConteo && (
+                <Boton
+                  title="Escanear QR / Barras"
+                  variant="secondary"
+                  size="md"
+                  icon="qr-code-outline"
+                  onPress={manejarEscanearParaConteo}
+                  style={{ minHeight: 46 }}
+                  fullWidth={esMovilEstrecho}
+                />
+              )}
               <Boton
                 title="+ Iniciar Nuevo Conteo Físico"
                 variant="primary"
