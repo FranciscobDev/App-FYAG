@@ -153,6 +153,7 @@ export const PantallaHerramientas: React.FC = () => {
   const [maintCosto, establecerMaintCosto] = useState("35000");
   const [maintDescripcion, establecerMaintDescripcion] = useState("Limpieza interna, cambio de carbones y lubricación de engranajes");
   const [maintSiguienteFecha, establecerMaintSiguienteFecha] = useState("");
+  const [maintError, establecerMaintError] = useState("");
 
   const hoyCadena = new Date().toISOString().slice(0, 10);
 
@@ -179,26 +180,50 @@ export const PantallaHerramientas: React.FC = () => {
     if (t.status === "dada_de_baja") return false;
     return obtenerDiasUntilMantencion(t.nextMaintenanceDate) <= 0;
   }).length;
+  const nearDueConteo = herramientas.filter((t) => {
+    if (t.status === "dada_de_baja") return false;
+    const dias = obtenerDiasUntilMantencion(t.nextMaintenanceDate);
+    return dias > 0 && dias <= 15;
+  }).length;
 
-  // Filtrado de herramientas
-  const filtradoHerramientas = herramientas.filter((t) => {
-    const q = buscarQuery.toLowerCase();
-    const coincidenciaQuery =
-      t.code.toLowerCase().includes(q) ||
-      t.name.toLowerCase().includes(q) ||
-      t.serialNumber.toLowerCase().includes(q) ||
-      t.brand.toLowerCase().includes(q) ||
-      t.model.toLowerCase().includes(q);
+  // Filtrado y priorización visual: las herramientas con mantención vencida o próxima destacan primero
+  const filtradoHerramientas = herramientas
+    .filter((t) => {
+      const q = buscarQuery.toLowerCase();
+      const coincidenciaQuery =
+        t.code.toLowerCase().includes(q) ||
+        t.name.toLowerCase().includes(q) ||
+        t.serialNumber.toLowerCase().includes(q) ||
+        t.brand.toLowerCase().includes(q) ||
+        t.model.toLowerCase().includes(q);
 
-    if (filtrarEstado === "vencidas") {
-      return coincidenciaQuery && t.status !== "dada_de_baja" && obtenerDiasUntilMantencion(t.nextMaintenanceDate) <= 0;
-    }
+      if (filtrarEstado === "vencidas") {
+        return coincidenciaQuery && t.status !== "dada_de_baja" && obtenerDiasUntilMantencion(t.nextMaintenanceDate) <= 0;
+      }
+      if (filtrarEstado === "proximas") {
+        const dias = obtenerDiasUntilMantencion(t.nextMaintenanceDate);
+        return coincidenciaQuery && t.status !== "dada_de_baja" && dias > 0 && dias <= 15;
+      }
 
-    if (filtrarEstado !== "todos" && t.status !== filtrarEstado) {
-      return false;
-    }
-    return coincidenciaQuery;
-  });
+      if (filtrarEstado !== "todos" && t.status !== filtrarEstado) {
+        return false;
+      }
+      return coincidenciaQuery;
+    })
+    .sort((a, b) => {
+      const prioridad = (h: Herramienta) => {
+        if (h.status === "dada_de_baja") return 4;
+        const d = obtenerDiasUntilMantencion(h.nextMaintenanceDate);
+        if (d <= 0) return 0; // Vencidas primero
+        if (d <= 15) return 1; // Próximas segundo
+        if (h.status === "en_mantencion") return 2;
+        return 3;
+      };
+      const pa = prioridad(a);
+      const pb = prioridad(b);
+      if (pa !== pb) return pa - pb;
+      return obtenerDiasUntilMantencion(a.nextMaintenanceDate) - obtenerDiasUntilMantencion(b.nextMaintenanceDate);
+    });
 
   // Guardar nueva herramienta con fecha explícita de próximo mantenimiento
   const manejarAbrirNuevoHerramientaModal = () => {
@@ -331,20 +356,36 @@ export const PantallaHerramientas: React.FC = () => {
     establecerDevolucionModalHerramienta(null);
   };
 
-  // Confirmar registro de mantención
+  // Confirmar registro de mantención / calibración ejecutada y pasar herramienta a Disponible
   const manejarConfirmarMantencion = () => {
     if (!maintModalHerramienta) return;
+    if (!maintTaller.trim()) {
+      establecerMaintError("Ingresa el taller o servicio técnico que ejecutó la mantención.");
+      return;
+    }
+    const fechaProximaLimpia = maintSiguienteFecha.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaProximaLimpia) || fechaProximaLimpia <= hoyCadena) {
+      establecerMaintError(
+        `La próxima fecha de mantención debe ser posterior a hoy (${hoyCadena}) en formato YYYY-MM-DD.`
+      );
+      return;
+    }
+    establecerMaintError("");
+    const codigoHerramienta = maintModalHerramienta.code;
     registrarMantencionHerramienta(maintModalHerramienta.id, {
       toolId: maintModalHerramienta.id,
       date: hoyCadena,
       type: maintTipo,
-      workshop: maintTaller,
+      workshop: maintTaller.trim(),
       cost: Number(maintCosto) || 0,
-      description: maintDescripcion,
-      nextMaintenanceDate: maintSiguienteFecha,
-      performedBy: usuarioRolDisplay(rolActual),
+      description: maintDescripcion.trim() || "Mantención y calibración preventiva completada",
+      nextMaintenanceDate: fechaProximaLimpia,
+      performedBy: usuario?.name || usuarioRolDisplay(rolActual),
     });
     establecerMaintModalHerramienta(null);
+    mostrarAviso(
+      `✓ Mantención completada en ${codigoHerramienta}: estado DISPONIBLE con nueva fecha ${formatearFecha(fechaProximaLimpia)}.`
+    );
   };
 
   const usuarioRolDisplay = (role: string) => {
@@ -404,6 +445,13 @@ export const PantallaHerramientas: React.FC = () => {
           <Text style={estilos.kpiLbl}>Dadas de Baja</Text>
         </View>
 
+        {nearDueConteo > 0 && (
+          <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.warn, backgroundColor: tema.colors.warnLight }]}>
+            <Text style={[estilos.kpiValor, { color: tema.colors.warnDark }]}>{nearDueConteo}</Text>
+            <Text style={[estilos.kpiLbl, { color: tema.colors.warnDark }]}>Próx. Mant.</Text>
+          </View>
+        )}
+
         {overdueConteo > 0 && (
           <View style={[estilos.kpiTarjeta, estilos.kpiTarjetaPeligro]}>
             <Text style={[estilos.kpiValor, { color: tema.colors.danger }]}>{overdueConteo}</Text>
@@ -411,6 +459,71 @@ export const PantallaHerramientas: React.FC = () => {
           </View>
         )}
       </View>
+
+      {/* BANNER DESTACADO DE ALERTAS DE MANTENCIÓN VENCIDA O PRÓXIMA */}
+      {(overdueConteo > 0 || nearDueConteo > 0) && (
+        <View
+          style={{
+            backgroundColor: overdueConteo > 0 ? tema.colors.dangerLight : tema.colors.warnLight,
+            borderWidth: 1.5,
+            borderColor: overdueConteo > 0 ? tema.colors.danger : tema.colors.warn,
+            borderRadius: tema.radius.md,
+            padding: 12,
+            marginBottom: tema.spacing.md,
+            flexDirection: "row",
+            flexWrap: "wrap",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 220 }}>
+            <Ionicons
+              name={overdueConteo > 0 ? "alert-circle" : "time"}
+              size={22}
+              color={overdueConteo > 0 ? tema.colors.danger : tema.colors.warnDark}
+            />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "800",
+                  color: overdueConteo > 0 ? tema.colors.danger : tema.colors.warnDark,
+                }}
+              >
+                {overdueConteo > 0
+                  ? `${overdueConteo} herramienta(s) con mantención VENCIDA`
+                  : `${nearDueConteo} herramienta(s) con mantención PRÓXIMA (≤ 15 días)`}
+              </Text>
+              <Text style={{ fontSize: 11.5, color: tema.colors.textSecondary, marginTop: 2 }}>
+                {overdueConteo > 0 && nearDueConteo > 0
+                  ? `Además hay ${nearDueConteo} equipo(s) próximos a calibración. Se muestran primero en el listado.`
+                  : "Registra la mantención o calibración ejecutada para habilitarlas nuevamente como Disponibles."}
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {overdueConteo > 0 && (
+              <Boton
+                title={`Ver Vencidas (${overdueConteo})`}
+                variant="danger"
+                size="sm"
+                onPress={() => establecerFiltrarEstado("vencidas")}
+                style={{ minHeight: 36 }}
+              />
+            )}
+            {nearDueConteo > 0 && (
+              <Boton
+                title={`Ver Próximas (${nearDueConteo})`}
+                variant="outline"
+                size="sm"
+                onPress={() => establecerFiltrarEstado("proximas")}
+                style={{ minHeight: 36 }}
+              />
+            )}
+          </View>
+        </View>
+      )}
 
       {/* ========================================================================= */}
       {/* BOTÓN PROMINENTE PARA REGISTRAR NUEVA HERRAMIENTA O EQUIPO                */}
@@ -466,6 +579,7 @@ export const PantallaHerramientas: React.FC = () => {
           { id: "asignada", label: `Asignadas en Faena (${asignadoConteo})` },
           { id: "en_mantencion", label: `En Mantención (${mantencionConteo})` },
           { id: "vencidas", label: `⚠️ Mantención Vencida (${overdueConteo})` },
+          { id: "proximas", label: `⏰ Próx. Mantención (${nearDueConteo})` },
           { id: "dada_de_baja", label: `Dadas de Baja (${bajaConteo})` },
         ].map((f) => {
           const esActivo = filtrarEstado === f.id;
@@ -526,7 +640,7 @@ export const PantallaHerramientas: React.FC = () => {
           const diasIzquierda = obtenerDiasUntilMantencion(t.nextMaintenanceDate);
         const esRetired = t.status === "dada_de_baja";
         const esOverdue = !esRetired && diasIzquierda <= 0;
-        const esNearDue = !esRetired && diasIzquierda > 0 && diasIzquierda <= 5;
+        const esNearDue = !esRetired && diasIzquierda > 0 && diasIzquierda <= 15;
         const esAsignado = t.status === "asignada";
         const esDisponible = t.status === "disponible";
 
@@ -540,6 +654,41 @@ export const PantallaHerramientas: React.FC = () => {
               esNearDue && estilos.nearDueTarjeta,
             ]}
           >
+            {/* Franja superior de alerta visual inmediata si tiene mantención vencida o próxima */}
+            {(esOverdue || esNearDue) && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  backgroundColor: esOverdue ? tema.colors.dangerLight : tema.colors.warnLight,
+                  borderRadius: tema.radius.sm,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginBottom: 10,
+                  borderWidth: 1,
+                  borderColor: esOverdue ? tema.colors.danger : tema.colors.warn,
+                }}
+              >
+                <Ionicons
+                  name={esOverdue ? "warning" : "time"}
+                  size={15}
+                  color={esOverdue ? tema.colors.danger : tema.colors.warnDark}
+                />
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 11.5,
+                    fontWeight: "800",
+                    color: esOverdue ? tema.colors.danger : tema.colors.warnDark,
+                  }}
+                >
+                  {esOverdue
+                    ? `MANTENCIÓN VENCIDA (${Math.abs(diasIzquierda)} día(s) de atraso) — Registrar calibración/mantención`
+                    : `MANTENCIÓN PRÓXIMA (vence en ${diasIzquierda} día(s) • ${formatearFecha(t.nextMaintenanceDate)})`}
+                </Text>
+              </View>
+            )}
             {/* Top row: Código, S/N, Nombre y EstadoBadge */}
             <View style={estilos.herramientaSuperior}>
               <View style={{ flex: 1 }}>
@@ -695,6 +844,7 @@ export const PantallaHerramientas: React.FC = () => {
                     icon="build-outline"
                     onPress={() => {
                       establecerMaintModalHerramienta(t);
+                      establecerMaintError("");
                       establecerMaintTipo(t.status === "en_mantencion" ? "correctiva" : "preventiva");
                       establecerMaintTaller("Servicio Técnico Oficial Bosch");
                       establecerMaintCosto("35000");
@@ -1095,24 +1245,50 @@ export const PantallaHerramientas: React.FC = () => {
         </View>
 
         <CampoTexto
-          label="Descripción de Trabajos Realizados"
+          label="Descripción de Trabajos y Calibración Ejecutada"
           value={maintDescripcion}
           onChangeText={establecerMaintDescripcion}
-          placeholder="Ej: Cambio de carbones, ajuste de rodamientos y prueba de aislamiento..."
+          placeholder="Ej: Cambio de carbones, calibración de torque, ajuste de rodamientos y prueba de aislamiento..."
         />
 
-        <View style={estilos.modalBotonesFila}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            backgroundColor: tema.colors.okLight,
+            borderWidth: 1,
+            borderColor: tema.colors.ok,
+            borderRadius: tema.radius.md,
+            padding: 10,
+            marginBottom: 10,
+          }}
+        >
+          <Ionicons name="checkmark-circle" size={18} color={tema.colors.okDark} />
+          <Text style={{ flex: 1, fontSize: 11.5, fontWeight: "700", color: tema.colors.okDark }}>
+            Al guardar, la herramienta pasará automáticamente a estado DISPONIBLE con nueva fecha de mantención{" "}
+            {maintSiguienteFecha || "(ingresar fecha futura)"}.
+          </Text>
+        </View>
+
+        {Boolean(maintError) && <Text style={estilos.errorTexto}>{maintError}</Text>}
+
+        <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 8 }]}>
           <Boton
             title="Cancelar"
             variant="ghost"
-            onPress={() => establecerMaintModalHerramienta(null)}
-            style={{ marginRight: 8, flex: 1 }}
+            onPress={() => {
+              establecerMaintError("");
+              establecerMaintModalHerramienta(null);
+            }}
+            style={{ flex: 1, minWidth: 110, minHeight: 44 }}
           />
           <Boton
-            title="Guardar Mantención"
+            title="Completar Mantención"
             variant="success"
+            icon="checkmark-done-outline"
             onPress={manejarConfirmarMantencion}
-            style={{ flex: 2, height: 46 }}
+            style={{ flex: 1.8, minWidth: 170, minHeight: 46 }}
           />
         </View>
       </VistaModal>
