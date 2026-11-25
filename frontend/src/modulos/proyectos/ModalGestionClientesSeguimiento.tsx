@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -8,10 +9,11 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { formatearCLP, formatearFecha } from "@/nucleo/formato";
+import { esRutValido, formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import { KitProyecto } from "@/nucleo/tipos";
 import {
@@ -28,7 +30,17 @@ import {
   registrarSeguimientoContactoApi,
   sumarMesesFecha,
 } from "./clientesApi";
-import { EncabezadoPagina } from "@/componentes/comunes";
+import {
+  Boton,
+  CampoBusqueda,
+  CampoTexto,
+  EncabezadoPagina,
+  EstadoVacio,
+  Insignia,
+  Tarjeta,
+  VistaModal,
+} from "@/componentes/comunes";
+import { Selector, OpcionSelector } from "@/componentes/formularios/Selector";
 import { Proyecto, actualizarProyecto, crearProyecto } from "./proyectosApi";
 
 interface PropiedadesModalClientesSeguimiento {
@@ -44,6 +56,13 @@ interface PropiedadesModalClientesSeguimiento {
 }
 
 const FRECUENCIAS_PRESET = [3, 6, 10, 12];
+const GIROS_SUGERIDOS = [
+  "Constructora e Inmobiliaria",
+  "Salud e Infraestructura Médica",
+  "Industrial y Bodegaje",
+  "Comercial y Retail",
+  "Condominio / Edificio Corporativo",
+] as const;
 const CANALES_CONTACTO = ["Teléfono", "WhatsApp", "Correo", "Visita"] as const;
 const RESULTADOS_CONTACTO = [
   "Cliente Contactado",
@@ -63,6 +82,9 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
   onDatosActualizados,
   onAviso,
 }) => {
+  const { width } = useWindowDimensions();
+  const esMovilEstrecho = width < 440;
+
   const [pestanaActiva, establecerPestanaActiva] = useState<"clientes" | "seguimiento">(initialTab);
   const [cargando, establecerCargando] = useState(true);
   const [clientes, establecerClientes] = useState<ClienteProyecto[]>([]);
@@ -70,6 +92,10 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
 
   // Filtros
   const [busquedaCliente, establecerBusquedaCliente] = useState("");
+  const [filtroEstadoCliente, establecerFiltroEstadoCliente] = useState<
+    "todos" | "activos" | "con_mantencion" | "inactivos"
+  >("todos");
+  const [busquedaPlan, establecerBusquedaPlan] = useState("");
   const [filtroSemaforoPlan, establecerFiltroSemaforoPlan] = useState<
     "todos" | "vencidos" | "proximos" | "al_dia"
   >("todos");
@@ -84,8 +110,7 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
   const [cliTelefono, establecerCliTelefono] = useState("");
   const [cliCorreo, establecerCliCorreo] = useState("");
   const [cliDireccion, establecerCliDireccion] = useState("");
-  const [cliBanco, establecerCliBanco] = useState("");
-  const [cliNumeroCuenta, establecerCliNumeroCuenta] = useState("");
+  const [cliProyectoVincularId, establecerCliProyectoVincularId] = useState<string>("");
   const [errorFormCliente, establecerErrorFormCliente] = useState("");
   const [guardandoCliente, establecerGuardandoCliente] = useState(false);
 
@@ -178,42 +203,177 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
     return sumarMesesFecha(planFechaBase, meses);
   }, [planFechaBase, planFrecuenciaMeses]);
 
-  // Filtrado de clientes
+  // Contadores y filtrado de clientes
+  const contadoresClientes = useMemo(() => {
+    let activos = 0;
+    let conMantencion = 0;
+    let inactivos = 0;
+
+    clientes.forEach((c) => {
+      const tienePlan = planes.some((pl) => pl.id_cliente === c.id_cliente);
+      if (!c.activo) {
+        inactivos++;
+      } else {
+        activos++;
+      }
+      if (c.activo && tienePlan) {
+        conMantencion++;
+      }
+    });
+
+    return {
+      activos,
+      conMantencion,
+      inactivos,
+      total: clientes.length,
+    };
+  }, [clientes, planes]);
+
   const clientesFiltrados = useMemo(() => {
     const q = busquedaCliente.trim().toLowerCase();
-    if (!q) return clientes;
-    return clientes.filter(
-      (c) =>
+    return clientes.filter((c) => {
+      const tienePlan = planes.some((pl) => pl.id_cliente === c.id_cliente);
+      if (filtroEstadoCliente === "activos" && !c.activo) return false;
+      if (filtroEstadoCliente === "con_mantencion" && (!c.activo || !tienePlan)) return false;
+      if (filtroEstadoCliente === "inactivos" && c.activo) return false;
+
+      if (!q) return true;
+      return (
         c.razon_social.toLowerCase().includes(q) ||
         c.rut_cliente.toLowerCase().includes(q) ||
         (c.giro ?? "").toLowerCase().includes(q) ||
         (c.nombre_contacto ?? "").toLowerCase().includes(q)
-    );
-  }, [clientes, busquedaCliente]);
+      );
+    });
+  }, [clientes, planes, busquedaCliente, filtroEstadoCliente]);
 
   // Clasificación semáforo de planes
   const contadoresPlanes = useMemo(() => {
     let vencidos = 0;
     let proximos = 0;
     let alDia = 0;
+    let montoTotalPactado = 0;
     planes.forEach((p) => {
       const dias = p.dias_restantes ?? 30;
+      montoTotalPactado += Number(p.costo_pactado || 0);
       if (dias < 0) vencidos++;
       else if (dias <= 30) proximos++;
       else alDia++;
     });
-    return { vencidos, proximos, alDia, total: planes.length };
+    return {
+      vencidos,
+      proximos,
+      alDia,
+      total: planes.length,
+      montoTotalPactado: Math.round(montoTotalPactado),
+    };
   }, [planes]);
 
   const planesFiltrados = useMemo(() => {
+    const q = busquedaPlan.trim().toLowerCase();
     return planes.filter((p) => {
       const dias = p.dias_restantes ?? 30;
-      if (filtroSemaforoPlan === "vencidos") return dias < 0;
-      if (filtroSemaforoPlan === "proximos") return dias >= 0 && dias <= 30;
-      if (filtroSemaforoPlan === "al_dia") return dias > 30;
+      if (filtroSemaforoPlan === "vencidos" && dias >= 0) return false;
+      if (filtroSemaforoPlan === "proximos" && (dias < 0 || dias > 30)) return false;
+      if (filtroSemaforoPlan === "al_dia" && dias <= 30) return false;
+
+      if (q) {
+        const coincideTitulo = (p.titulo_plan || "").toLowerCase().includes(q);
+        const coincideCliente =
+          (p.razon_social || "").toLowerCase().includes(q) ||
+          (p.rut_cliente || "").toLowerCase().includes(q);
+        const coincideObra = (p.nombre_proyecto_origen || "").toLowerCase().includes(q);
+        const coincideKit =
+          (p.nombre_kit || "").toLowerCase().includes(q) ||
+          (p.codigo_contrato || "").toLowerCase().includes(q);
+        if (!coincideTitulo && !coincideCliente && !coincideObra && !coincideKit) return false;
+      }
       return true;
     });
-  }, [planes, filtroSemaforoPlan]);
+  }, [planes, filtroSemaforoPlan, busquedaPlan]);
+
+  const opcionesSelectorClientes = useMemo<OpcionSelector<string>[]>(
+    () =>
+      clientes
+        .filter((c) => c.activo)
+        .map((c) => ({
+          label: c.razon_social,
+          value: String(c.id_cliente),
+          hint: `RUT: ${c.rut_cliente}${c.giro ? ` • ${c.giro}` : ""}`,
+          icon: "business-outline",
+        })),
+    [clientes]
+  );
+
+  const opcionesSelectorProyectos = useMemo<OpcionSelector<string>[]>(
+    () => [
+      {
+        label: "General por Cliente (Sin obra específica)",
+        value: "",
+        hint: "Aplica a todas las instalaciones del cliente",
+        icon: "layers-outline",
+      },
+      ...proyectos.map((p) => ({
+        label: p.nombre_proyecto,
+        value: String(p.id_proyecto),
+        hint: `${p.cliente || "Sin cliente"} • Estado: ${p.estado_proyecto}`,
+        icon: "construct-outline" as const,
+      })),
+    ],
+    [proyectos]
+  );
+
+  const opcionesSelectorKits = useMemo<OpcionSelector<string>[]>(
+    () =>
+      kits.map((k) => ({
+        label: k.nombre_kit,
+        value: String(k.id_kit_proyecto),
+        hint: `${k.items?.length || 0} insumos • Valor ref: ${formatearCLP(k.costo_total || 0)}`,
+        icon: "cube-outline",
+      })),
+    [kits]
+  );
+
+  const opcionesVincularProyectoCliente = useMemo<OpcionSelector<string>[]>(
+    () => [
+      {
+        label: "Sin vincular a obra por ahora",
+        value: "",
+        hint: "Solo registrar ficha en el directorio de clientes",
+        icon: "layers-outline",
+      },
+      ...proyectos.map((p) => ({
+        label: p.nombre_proyecto,
+        value: String(p.id_proyecto),
+        hint: `Cliente actual: ${p.cliente || "Sin asignar"} • Estado: ${p.estado_proyecto}`,
+        icon: "construct-outline" as const,
+      })),
+    ],
+    [proyectos]
+  );
+
+  const estadoValidacionRutCliente = useMemo(() => {
+    const limpio = cliRut.replace(/[.\s-]/g, "").toUpperCase();
+    if (!limpio) return { estado: "vacio" as const, mensaje: "" };
+    const duplicado = clientes.find(
+      (c) =>
+        c.id_cliente !== editandoClienteId &&
+        c.rut_cliente.replace(/[.\s-]/g, "").toUpperCase() === limpio
+    );
+    if (duplicado) {
+      return {
+        estado: "duplicado" as const,
+        mensaje: `RUT ya registrado para ${duplicado.razon_social}`,
+      };
+    }
+    if (limpio.length >= 7 && esRutValido(cliRut)) {
+      return { estado: "valido" as const, mensaje: "RUT válido (Módulo 11)" };
+    }
+    if (limpio.length >= 8 && !esRutValido(cliRut)) {
+      return { estado: "invalido" as const, mensaje: "Dígito verificador no coincide" };
+    }
+    return { estado: "escribiendo" as const, mensaje: "" };
+  }, [cliRut, clientes, editandoClienteId]);
 
   // ===========================================================================
   // HANDLERS CLIENTE
@@ -224,16 +384,20 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
     establecerCliRazonSocial("");
     establecerCliGiro("");
     establecerCliContacto("");
-    establecerCliTelefono("");
+    establecerCliTelefono("+56 9 ");
     establecerCliCorreo("");
     establecerCliDireccion("");
-    establecerCliBanco("");
-    establecerCliNumeroCuenta("");
+    establecerCliProyectoVincularId("");
     establecerErrorFormCliente("");
     establecerModoFormCliente(true);
   };
 
   const abrirEditarCliente = (c: ClienteProyecto) => {
+    const proyActual = proyectos.find(
+      (p) =>
+        p.id_cliente === c.id_cliente ||
+        (p.cliente ?? "").toLowerCase() === c.razon_social.toLowerCase()
+    );
     establecerEditandoClienteId(c.id_cliente);
     establecerCliRut(c.rut_cliente);
     establecerCliRazonSocial(c.razon_social);
@@ -242,8 +406,7 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
     establecerCliTelefono(c.telefono ?? "");
     establecerCliCorreo(c.correo_contacto ?? "");
     establecerCliDireccion(c.direccion ?? "");
-    establecerCliBanco(c.banco ?? "");
-    establecerCliNumeroCuenta(c.numero_cuenta ?? "");
+    establecerCliProyectoVincularId(proyActual ? String(proyActual.id_proyecto) : "");
     establecerErrorFormCliente("");
     establecerModoFormCliente(true);
   };
@@ -251,6 +414,10 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
   const guardarCliente = async () => {
     if (!cliRut.trim() || !cliRazonSocial.trim()) {
       establecerErrorFormCliente("El RUT y la Razón Social del cliente son obligatorios.");
+      return;
+    }
+    if (estadoValidacionRutCliente.estado === "duplicado") {
+      establecerErrorFormCliente(estadoValidacionRutCliente.mensaje);
       return;
     }
     establecerGuardandoCliente(true);
@@ -262,21 +429,42 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
       telefono: cliTelefono.trim() || undefined,
       correo_contacto: cliCorreo.trim() || undefined,
       direccion: cliDireccion.trim() || undefined,
-      banco: cliBanco.trim() || undefined,
-      tipo_cuenta: cliBanco.trim() ? "Cuenta Corriente" : undefined,
-      numero_cuenta: cliNumeroCuenta.trim() || undefined,
     };
 
     const res = editandoClienteId
       ? await actualizarClienteApi(editandoClienteId, payload)
       : await crearClienteApi(payload);
-    establecerGuardandoCliente(false);
 
     if (!res.ok) {
+      establecerGuardandoCliente(false);
       establecerErrorFormCliente(res.error ?? "No se pudo guardar el cliente.");
       return;
     }
 
+    // Si se seleccionó vincular a una obra existente, actualizar el proyecto en un solo paso
+    if (cliProyectoVincularId) {
+      const proyElegido = proyectos.find((p) => String(p.id_proyecto) === cliProyectoVincularId);
+      const idClienteFinal = editandoClienteId ?? res.data?.cliente?.id_cliente;
+      if (proyElegido) {
+        await actualizarProyecto(proyElegido.id_proyecto, {
+          nombre_proyecto: proyElegido.nombre_proyecto,
+          tipo_proyecto: proyElegido.tipo_proyecto,
+          cliente: cliRazonSocial.trim(),
+          id_cliente: idClienteFinal ?? proyElegido.id_cliente,
+          direccion: proyElegido.direccion || cliDireccion.trim() || null,
+          fecha_inicio: proyElegido.fecha_inicio,
+          fecha_fin: proyElegido.fecha_fin,
+          presupuesto_inicial: proyElegido.presupuesto_inicial,
+          presupuesto_horas: proyElegido.presupuesto_horas,
+          valor_venta: proyElegido.valor_venta,
+          porcentaje_avance: proyElegido.porcentaje_avance,
+          estado_proyecto: proyElegido.estado_proyecto,
+          id_usuario: proyElegido.id_usuario,
+        }).catch(() => undefined);
+      }
+    }
+
+    establecerGuardandoCliente(false);
     establecerModoFormCliente(false);
     await cargarTodo();
     onDatosActualizados?.();
@@ -377,14 +565,91 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
     onAviso?.(res.data?.mensaje ?? "Plan de mantención creado exitosamente");
   };
 
-  const abrirModalContacto = (plan: PlanMantencionCliente) => {
+  const obtenerDatosContactoPlan = (plan: PlanMantencionCliente | null) => {
+    if (!plan) {
+      return {
+        nombreContacto: "Sin contacto registrado",
+        telefono: "",
+        correo: "",
+        direccion: "",
+        rut: "",
+      };
+    }
+    const cli = clientes.find(
+      (c) =>
+        c.id_cliente === plan.id_cliente ||
+        (c.razon_social &&
+          plan.razon_social &&
+          c.razon_social.toLowerCase() === plan.razon_social.toLowerCase())
+    );
+    return {
+      nombreContacto:
+        plan.nombre_contacto || cli?.nombre_contacto || "Encargado de Mantención",
+      telefono: plan.telefono_cliente || cli?.telefono || "",
+      correo: cli?.correo_contacto || "",
+      direccion: cli?.direccion || "",
+      rut: plan.rut_cliente || cli?.rut_cliente || "",
+    };
+  };
+
+  const abrirModalContacto = (
+    plan: PlanMantencionCliente,
+    canalInicial: (typeof CANALES_CONTACTO)[number] = "Teléfono"
+  ) => {
+    const infoContacto = obtenerDatosContactoPlan(plan);
     establecerPlanContactando(plan);
-    establecerSegCanal("Teléfono");
+    establecerSegCanal(canalInicial);
     establecerSegResultado("Visita Confirmada");
     establecerSegObservaciones(
-      `Contacto con ${plan.nombre_contacto || plan.razon_social} por mantención cada ${plan.frecuencia_meses} meses.`
+      `Contacto con ${infoContacto.nombreContacto} (${plan.razon_social}) por mantención cada ${plan.frecuencia_meses} meses.`
     );
     establecerSegGenerarFaena(true);
+  };
+
+  const lanzarAccionComunicacionDirecta = (
+    plan: PlanMantencionCliente,
+    tipo: "llamar" | "whatsapp" | "correo"
+  ) => {
+    const info = obtenerDatosContactoPlan(plan);
+    if (tipo === "llamar") {
+      establecerSegCanal("Teléfono");
+      if (info.telefono) {
+        const telLimpio = info.telefono.replace(/[^+\d]/g, "");
+        Linking.openURL(`tel:${telLimpio}`).catch(() => undefined);
+      } else {
+        onAviso?.("Este cliente no tiene un número telefónico registrado en su ficha.");
+      }
+      return;
+    }
+    if (tipo === "whatsapp") {
+      establecerSegCanal("WhatsApp");
+      if (info.telefono) {
+        const numWa = info.telefono.replace(/[^\d]/g, "");
+        const msg = encodeURIComponent(
+          `Hola ${info.nombreContacto}, le escribimos de FYAG por la programación de "${plan.titulo_plan}" (${plan.razon_social}) correspondiente al ${formatearFecha(plan.fecha_proxima_mantencion)}.`
+        );
+        Linking.openURL(`https://wa.me/${numWa}?text=${msg}`).catch(() => undefined);
+      } else {
+        onAviso?.("Este cliente no tiene un número de teléfono/WhatsApp registrado.");
+      }
+      return;
+    }
+    if (tipo === "correo") {
+      establecerSegCanal("Correo");
+      if (info.correo) {
+        const subject = encodeURIComponent(
+          `Coordinación ${plan.titulo_plan} - ${plan.razon_social}`
+        );
+        const body = encodeURIComponent(
+          `Estimado/a ${info.nombreContacto},\n\nJunto con saludar, nos ponemos en contacto desde FYAG para coordinar la mantención periódica "${plan.titulo_plan}" programada para el ${formatearFecha(plan.fecha_proxima_mantencion)}.\n\nQuedamos atentos a su confirmación.`
+        );
+        Linking.openURL(`mailto:${info.correo}?subject=${subject}&body=${body}`).catch(
+          () => undefined
+        );
+      } else {
+        onAviso?.("Este cliente no tiene un correo electrónico registrado.");
+      }
+    }
   };
 
   const confirmarSeguimientoContacto = async () => {
@@ -452,7 +717,7 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
             </Text>
           </View>
           <TouchableOpacity style={styles.btnCerrar} onPress={onClose}>
-            <Ionicons name="close" size={22} color="#d6d3d1" />
+            <Ionicons name="close" size={22} color="#cbd5e1" />
           </TouchableOpacity>
         </View>
       )}
@@ -519,932 +784,1844 @@ export const ModalGestionClientesSeguimiento: React.FC<PropiedadesModalClientesS
           />
         ) : pestanaActiva === "clientes" ? (
           /* ==============================================================
-             PESTAÑA 1: CRUD DE CLIENTES Y ASIGNACIÓN A PROYECTO
+             PESTAÑA 1: DIRECTORIO DE CLIENTES (DASHBOARD COMPACTO + SEMÁFORO)
              ============================================================== */
-          modoFormCliente ? (
-            <View style={styles.formCaja}>
-              <View style={styles.formHeaderRow}>
-                <Text style={styles.formTitulo}>
-                  {editandoClienteId ? "Editar Ficha de Cliente" : "Registrar Nuevo Cliente"}
-                </Text>
-                <TouchableOpacity onPress={() => establecerModoFormCliente(false)}>
-                  <Text style={styles.linkCancelar}>← Volver al listado</Text>
-                </TouchableOpacity>
+          <>
+            {/* 1. CABECERA COMPACTA INDUSTRIAL + BOTÓN NUEVO CLIENTE */}
+            <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 10,
+                      backgroundColor: tema.colors.primaryLight,
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="business-outline" size={20} color={tema.colors.primaryDark} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                      Directorio de Clientes y Obras
+                    </Text>
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                      <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                        {contadoresClientes.activos} activos
+                      </Text>
+                      {` • ${contadoresClientes.conMantencion} con mantención periódica • ${proyectos.length} obras`}
+                    </Text>
+                  </View>
+                </View>
+
+                <Boton
+                  title="Nuevo Cliente"
+                  variant="primary"
+                  size="sm"
+                  icon="person-add-outline"
+                  onPress={abrirNuevoCliente}
+                  style={{ minHeight: 40 }}
+                  fullWidth={esMovilEstrecho}
+                />
               </View>
+            </Tarjeta>
 
-              <View style={styles.filaDosCol}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>RUT Cliente *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: 76.123.456-7"
-                    placeholderTextColor="#9ca3af"
-                    value={cliRut}
-                    onChangeText={establecerCliRut}
-                  />
-                </View>
-                <View style={{ flex: 1.5 }}>
-                  <Text style={styles.label}>Razón Social / Empresa *</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: Inmobiliaria Pacífico SpA"
-                    placeholderTextColor="#9ca3af"
-                    value={cliRazonSocial}
-                    onChangeText={establecerCliRazonSocial}
-                  />
-                </View>
-              </View>
-
-              <Text style={styles.label}>Giro Comercial</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: Construcción e Ingeniería Civil"
-                placeholderTextColor="#9ca3af"
-                value={cliGiro}
-                onChangeText={establecerCliGiro}
-              />
-
-              <View style={styles.filaDosCol}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Nombre de Contacto</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: Rodrigo Sepúlveda"
-                    placeholderTextColor="#9ca3af"
-                    value={cliContacto}
-                    onChangeText={establecerCliContacto}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Teléfono</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: +56 9 8765 4321"
-                    placeholderTextColor="#9ca3af"
-                    value={cliTelefono}
-                    onChangeText={establecerCliTelefono}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.filaDosCol}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Correo Electrónico</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="contacto@empresa.cl"
-                    placeholderTextColor="#9ca3af"
-                    value={cliCorreo}
-                    onChangeText={establecerCliCorreo}
-                  />
-                </View>
-                <View style={{ flex: 1.2 }}>
-                  <Text style={styles.label}>Dirección Principal / Faena</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Av. Providencia 2450, Santiago"
-                    placeholderTextColor="#9ca3af"
-                    value={cliDireccion}
-                    onChangeText={establecerCliDireccion}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.filaDosCol}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Banco (Opcional)</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: Banco de Chile"
-                    placeholderTextColor="#9ca3af"
-                    value={cliBanco}
-                    onChangeText={establecerCliBanco}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>N° Cuenta Corriente</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Ej: 00-12345678-01"
-                    placeholderTextColor="#9ca3af"
-                    value={cliNumeroCuenta}
-                    onChangeText={establecerCliNumeroCuenta}
-                  />
-                </View>
-              </View>
-
-              {errorFormCliente ? (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={16} color="#dc2626" />
-                  <Text style={styles.errorBannerTexto}>{errorFormCliente}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.formBotonesRow}>
-                <TouchableOpacity
-                  style={styles.btnSecundario}
-                  onPress={() => establecerModoFormCliente(false)}
-                >
-                  <Text style={styles.btnSecundarioTexto}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.btnPrimario}
-                  onPress={guardarCliente}
-                  disabled={guardandoCliente}
-                >
-                  <Ionicons name="save-outline" size={16} color="#ffffff" />
-                  <Text style={styles.btnPrimarioTexto}>
-                    {guardandoCliente
-                      ? "Guardando..."
-                      : editandoClienteId
-                        ? "Guardar Cambios"
-                        : "Registrar Cliente"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+            {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {[
+                {
+                  id: "activos" as const,
+                  titulo: "Activos",
+                  valor: contadoresClientes.activos,
+                  sub: "Clientes operativos",
+                  icon: "checkmark-circle-outline" as const,
+                  bg: "#f0fdf4",
+                  border: "#86efac",
+                  borderActivo: "#16a34a",
+                  textColor: "#166534",
+                },
+                {
+                  id: "con_mantencion" as const,
+                  titulo: "Con Mantención",
+                  valor: contadoresClientes.conMantencion,
+                  sub: "Planes periódicos",
+                  icon: "calendar-outline" as const,
+                  bg: "#fffbeb",
+                  border: "#fcd34d",
+                  borderActivo: "#d97706",
+                  textColor: "#92400e",
+                },
+                {
+                  id: "inactivos" as const,
+                  titulo: "Inactivos",
+                  valor: contadoresClientes.inactivos,
+                  sub: "Deshabilitados",
+                  icon: "ban-outline" as const,
+                  bg: "#f1f5f9",
+                  border: "#cbd5e1",
+                  borderActivo: "#64748b",
+                  textColor: "#334155",
+                },
+                {
+                  id: "todos" as const,
+                  titulo: "Todos",
+                  valor: contadoresClientes.total,
+                  sub: "Directorio total",
+                  icon: "layers-outline" as const,
+                  bg: "#f1f5f9",
+                  border: "#cbd5e1",
+                  borderActivo: "#334155",
+                  textColor: "#0f172a",
+                },
+              ].map((kpi) => {
+                const activo = filtroEstadoCliente === kpi.id;
+                return (
+                  <TouchableOpacity
+                    key={kpi.id}
+                    activeOpacity={0.8}
+                    onPress={() => establecerFiltroEstadoCliente(kpi.id)}
+                    style={{
+                      flexBasis: "48%",
+                      flexGrow: 1,
+                      minWidth: 140,
+                      backgroundColor: kpi.bg,
+                      borderWidth: activo ? 2 : 1,
+                      borderColor: activo ? kpi.borderActivo : kpi.border,
+                      borderLeftWidth: 5,
+                      borderLeftColor: kpi.borderActivo,
+                      borderRadius: 10,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "800",
+                          color: kpi.textColor,
+                          textTransform: "uppercase",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {kpi.titulo}
+                      </Text>
+                      <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        marginTop: 2,
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                        {kpi.valor}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: activo ? "800" : "600",
+                          color: kpi.textColor,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {activo ? "● Vista activa" : kpi.sub}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-          ) : (
-            <>
-              {/* Barra de búsqueda y botón Nuevo Cliente */}
-              <View style={styles.barraAccionTop}>
-                <View style={styles.buscadorCaja}>
-                  <Ionicons name="search-outline" size={16} color="#9ca3af" />
-                  <TextInput
-                    style={styles.buscadorInput}
-                    placeholder="Buscar por RUT, razón social o contacto..."
-                    placeholderTextColor="#9ca3af"
-                    value={busquedaCliente}
-                    onChangeText={establecerBusquedaCliente}
-                  />
-                  {busquedaCliente.length > 0 && (
-                    <TouchableOpacity onPress={() => establecerBusquedaCliente("")}>
-                      <Ionicons name="close-circle" size={16} color="#9ca3af" />
-                    </TouchableOpacity>
-                  )}
-                </View>
 
-                <TouchableOpacity style={styles.btnPrimario} onPress={abrirNuevoCliente}>
-                  <Ionicons name="person-add-outline" size={16} color="#ffffff" />
-                  <Text style={styles.btnPrimarioTexto}>+ Nuevo Cliente</Text>
-                </TouchableOpacity>
-              </View>
+            {/* 3. BUSCADOR DE ANCHO COMPLETO */}
+            <CampoBusqueda
+              value={busquedaCliente}
+              onChangeText={establecerBusquedaCliente}
+              placeholder="Buscar cliente por RUT, razón social, giro o contacto..."
+              containerStyle={{ marginBottom: 12 }}
+            />
 
-              {/* Tarjetas de Clientes */}
-              {clientesFiltrados.map((c) => {
+            {/* 4. LISTADO DE TARJETAS DE CLIENTES CON SEMÁFORO DE SUPERFICIE */}
+            {clientesFiltrados.length === 0 ? (
+              <EstadoVacio
+                icon="business-outline"
+                title="Sin clientes en esta vista"
+                description={
+                  busquedaCliente.trim()
+                    ? `No se encontraron clientes que coincidan con "${busquedaCliente.trim()}".`
+                    : "No hay clientes registrados bajo el filtro seleccionado."
+                }
+                actionTitle={filtroEstadoCliente !== "todos" ? "Ver Todos los Clientes" : "Nuevo Cliente"}
+                onAction={
+                  filtroEstadoCliente !== "todos"
+                    ? () => establecerFiltroEstadoCliente("todos")
+                    : abrirNuevoCliente
+                }
+                containerStyle={{ marginVertical: 16 }}
+              />
+            ) : (
+              clientesFiltrados.map((c) => {
                 const proyectosDelCliente = proyectos.filter(
                   (p) =>
                     p.id_cliente === c.id_cliente ||
                     (p.cliente ?? "").toLowerCase() === c.razon_social.toLowerCase()
                 );
                 const planesDelCliente = planes.filter((pl) => pl.id_cliente === c.id_cliente);
+                const tienePlanUrgente = planesDelCliente.some((pl) => (pl.dias_restantes ?? 30) <= 30);
+                const tienePlanVencido = planesDelCliente.some((pl) => (pl.dias_restantes ?? 30) < 0);
+
+                const semaforo = !c.activo
+                  ? {
+                      bg: "#f1f5f9",
+                      border: "#cbd5e1",
+                      stripe: "#64748b",
+                      text: "#334155",
+                      divider: "#e2e8f0",
+                      label: "Inactivo",
+                      tone: "mute" as const,
+                    }
+                  : tienePlanVencido
+                    ? {
+                        bg: "#fef2f2",
+                        border: "#fca5a5",
+                        stripe: "#dc2626",
+                        text: "#991b1b",
+                        divider: "#fecaca",
+                        label: "Mantención Vencida",
+                        tone: "danger" as const,
+                      }
+                    : tienePlanUrgente
+                      ? {
+                          bg: "#fffbeb",
+                          border: "#fcd34d",
+                          stripe: "#d97706",
+                          text: "#92400e",
+                          divider: "#fde68a",
+                          label: "Mantención Próxima",
+                          tone: "warn" as const,
+                        }
+                      : {
+                          bg: "#f0fdf4",
+                          border: "#86efac",
+                          stripe: "#16a34a",
+                          text: "#166534",
+                          divider: "#bbf7d0",
+                          label: "Activo",
+                          tone: "ok" as const,
+                        };
 
                 return (
-                  <View
+                  <Tarjeta
                     key={c.id_cliente}
-                    style={[styles.tarjetaItem, !c.activo && styles.tarjetaItemInactiva]}
+                    variant="outlined"
+                    style={{
+                      marginBottom: 10,
+                      padding: 12,
+                      backgroundColor: semaforo.bg,
+                      borderColor: semaforo.border,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: semaforo.stripe,
+                      borderRadius: 12,
+                      opacity: c.activo ? 1 : 0.85,
+                    }}
                   >
-                    {/* Cabecera Limpia */}
-                    <View style={styles.tarjetaItemTop}>
-                      <View style={{ flex: 1, marginRight: 8 }}>
-                        <Text style={styles.clienteTitulo}>{c.razon_social}</Text>
-                        <Text style={styles.clienteSub}>
-                          RUT: {c.rut_cliente}{c.giro ? ` • ${c.giro}` : ""}
+                    {/* Cabecera de la ficha del cliente */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        flexWrap: "wrap",
+                        gap: 8,
+                      }}
+                    >
+                      <View style={{ flex: 1, minWidth: 190 }}>
+                        <Text style={{ fontSize: 15, fontWeight: "800", color: tema.colors.text }}>
+                          {c.razon_social}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: semaforo.text, marginTop: 1 }}>
+                          RUT: {c.rut_cliente}
+                          {c.giro ? ` • ${c.giro}` : ""}
                         </Text>
                       </View>
 
-                      <View style={c.activo ? styles.badgeEstadoActivo : styles.badgeInactivo}>
-                        <Text style={c.activo ? styles.badgeEstadoActivoTexto : styles.badgeInactivoTexto}>
-                          {c.activo
-                            ? proyectosDelCliente.length > 0
-                              ? `${proyectosDelCliente.length} obra${proyectosDelCliente.length > 1 ? "s" : ""}`
-                              : "Activo"
-                            : "Inactivo"}
-                        </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                        {proyectosDelCliente.length > 0 && (
+                          <Insignia
+                            label={`${proyectosDelCliente.length} obra${proyectosDelCliente.length > 1 ? "s" : ""}`}
+                            tone="info"
+                            size="sm"
+                          />
+                        )}
+                        <Insignia label={semaforo.label} tone={semaforo.tone} size="sm" />
                       </View>
                     </View>
 
-                    {/* Datos de Contacto y Dirección (Iconos sutiles, tipografía limpia) */}
-                    <View style={styles.clienteDetalleCaja}>
-                      <View style={styles.clienteDetalleFila}>
-                        <View style={styles.clienteDetalleItem}>
-                          <Ionicons name="person-outline" size={13} color="#9ca3af" />
-                          <Text style={styles.clienteDetalleTexto} numberOfLines={1}>
-                            {c.nombre_contacto || "Sin contacto"}
+                    {/* Caja blanca interna con Contacto, Correo, Dirección y Planes */}
+                    <View
+                      style={{
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: semaforo.divider,
+                        borderRadius: 9,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        marginTop: 8,
+                        gap: 5,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, minWidth: 140 }}>
+                          <Ionicons name="person-outline" size={13} color={tema.colors.textMuted} />
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: tema.colors.text }} numberOfLines={1}>
+                            {c.nombre_contacto || "Sin contacto asignado"}
                           </Text>
                         </View>
                         {c.telefono ? (
-                          <View style={styles.clienteDetalleItem}>
-                            <Ionicons name="call-outline" size={13} color="#9ca3af" />
-                            <Text style={styles.clienteDetalleTexto}>{c.telefono}</Text>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                            <Ionicons name="call-outline" size={13} color={tema.colors.primaryDark} />
+                            <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text }}>
+                              {c.telefono}
+                            </Text>
                           </View>
                         ) : null}
                       </View>
 
                       {(c.correo_contacto || c.direccion) && (
-                        <View style={styles.clienteDetalleFila}>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
                           {c.correo_contacto ? (
-                            <View style={styles.clienteDetalleItem}>
-                              <Ionicons name="mail-outline" size={13} color="#9ca3af" />
-                              <Text style={styles.clienteDetalleTexto} numberOfLines={1}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, minWidth: 150 }}>
+                              <Ionicons name="mail-outline" size={13} color={tema.colors.textMuted} />
+                              <Text style={{ fontSize: 11, color: tema.colors.textSecondary }} numberOfLines={1}>
                                 {c.correo_contacto}
                               </Text>
                             </View>
                           ) : null}
                           {c.direccion ? (
-                            <View style={[styles.clienteDetalleItem, { flex: 1.2 }]}>
-                              <Ionicons name="location-outline" size={13} color="#9ca3af" />
-                              <Text style={styles.clienteDetalleTexto} numberOfLines={1}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flex: 1, minWidth: 160 }}>
+                              <Ionicons name="location-outline" size={13} color={tema.colors.textMuted} />
+                              <Text style={{ fontSize: 11, color: tema.colors.textSecondary }} numberOfLines={1}>
                                 {c.direccion}
                               </Text>
                             </View>
                           ) : null}
                         </View>
                       )}
+
+                      {planesDelCliente.length > 0 && (
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => establecerPestanaActiva("seguimiento")}
+                          style={{
+                            flexDirection: "row",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            backgroundColor: "#fffbeb",
+                            borderWidth: 1,
+                            borderColor: "#fde68a",
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            marginTop: 2,
+                          }}
+                        >
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                            <Ionicons name="calendar-outline" size={13} color="#b45309" />
+                            <Text style={{ fontSize: 11, fontWeight: "700", color: "#b45309" }}>
+                              {planesDelCliente.length} plan{planesDelCliente.length > 1 ? "es" : ""} de mantención periódico programado
+                            </Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={13} color="#b45309" />
+                        </TouchableOpacity>
+                      )}
                     </View>
 
-                    {/* Planes de mantención programados */}
-                    {planesDelCliente.length > 0 && (
-                      <View style={styles.clientePlanesAvisoFila}>
-                        <Ionicons name="calendar-outline" size={12} color="#b45309" />
-                        <Text style={styles.clientePlanesAvisoTexto}>
-                          {planesDelCliente.length} plan{planesDelCliente.length > 1 ? "es" : ""} de mantención periódico programado
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Acciones del Cliente (1 Fila Equilibrada y Limpia) */}
-                    <View style={styles.accionesTarjetaFila}>
+                    {/* Fila de acciones con contraste limpio sobre tarjeta coloreada */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        marginTop: 10,
+                      }}
+                    >
                       {onSeleccionarClienteParaProyecto && c.activo ? (
-                        <TouchableOpacity
-                          style={styles.btnAccionPrincipal}
+                        <Boton
+                          title="Seleccionar"
+                          variant="primary"
+                          size="sm"
+                          icon="checkmark-circle-outline"
                           onPress={() => {
                             onSeleccionarClienteParaProyecto(c);
                             onClose();
                           }}
-                        >
-                          <Ionicons name="checkmark-circle-outline" size={14} color="#ffffff" />
-                          <Text style={styles.btnAccionPrincipalTexto}>Seleccionar</Text>
-                        </TouchableOpacity>
+                          style={{ flex: 1, minHeight: 36 }}
+                        />
                       ) : null}
 
                       {c.activo && (
-                        <TouchableOpacity
-                          style={styles.btnAccionSecundario}
+                        <Boton
+                          title="Mantención"
+                          variant="outline"
+                          size="sm"
+                          icon="calendar-outline"
                           onPress={() => abrirNuevoPlan(c)}
-                        >
-                          <Ionicons name="calendar-outline" size={14} color={tema.colors.primaryDark} />
-                          <Text style={styles.btnAccionSecundarioTexto}>+ Mantención</Text>
-                        </TouchableOpacity>
+                          style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
+                        />
                       )}
 
-                      <TouchableOpacity
-                        style={styles.btnAccionNeutro}
+                      <Boton
+                        title="Editar"
+                        variant="outline"
+                        size="sm"
+                        icon="create-outline"
                         onPress={() => abrirEditarCliente(c)}
-                      >
-                        <Ionicons name="create-outline" size={14} color="#4b5563" />
-                        <Text style={styles.btnAccionNeutroTexto}>Editar</Text>
-                      </TouchableOpacity>
+                        style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
+                      />
 
-                      <TouchableOpacity
-                        style={styles.btnAccionNeutro}
+                      <Boton
+                        title={c.activo ? "Deshabilitar" : "Habilitar"}
+                        variant="outline"
+                        size="sm"
+                        icon={c.activo ? "ban-outline" : "checkmark-circle-outline"}
                         onPress={() => toggleEstadoCliente(c)}
-                      >
-                        <Ionicons
-                          name={c.activo ? "ban-outline" : "checkmark-circle-outline"}
-                          size={14}
-                          color={c.activo ? "#dc2626" : "#16a34a"}
-                        />
-                        <Text
-                          style={[
-                            styles.btnAccionNeutroTexto,
-                            { color: c.activo ? "#dc2626" : "#16a34a" },
-                          ]}
-                        >
-                          {c.activo ? "Deshabilitar" : "Habilitar"}
-                        </Text>
-                      </TouchableOpacity>
+                        style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
+                      />
                     </View>
-                  </View>
+                  </Tarjeta>
                 );
-              })}
-            </>
-          )
+              })
+            )}
+          </>
         ) : (
           /* ==============================================================
-             PESTAÑA 2: PLANES DE MANTENCIÓN (3, 6, 10, 12 MESES) Y SEGUIMIENTO
+             PESTAÑA 2: PLANES DE MANTENCIÓN (DASHBOARD COMPACTO + SEMÁFORO)
              ============================================================== */
-          modoFormPlan ? (
-            <View style={styles.formCaja}>
-              <View style={styles.formHeaderRow}>
-                <Text style={styles.formTitulo}>
-                  Programar Plan de Seguimiento y Mantención Periódica
-                </Text>
-                <TouchableOpacity onPress={() => establecerModoFormPlan(false)}>
-                  <Text style={styles.linkCancelar}>← Volver a planes</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* 1. Selección de Cliente */}
-              <Text style={styles.label}>1. Seleccione Cliente *</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 12 }}
-                contentContainerStyle={{ gap: 8 }}
+          <>
+            {/* 1. CABECERA COMPACTA INDUSTRIAL DE MANTENCIONES */}
+            <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
               >
-                {clientes
-                  .filter((c) => c.activo)
-                  .map((c) => {
-                    const sel = planClienteId === c.id_cliente;
-                    return (
-                      <TouchableOpacity
-                        key={c.id_cliente}
-                        style={[styles.selectorChip, sel && styles.selectorChipActivo]}
-                        onPress={() => {
-                          establecerPlanClienteId(c.id_cliente);
-                          if (!planTitulo || planTitulo.startsWith("Mantención Preventiva")) {
-                            establecerPlanTitulo(`Mantención Preventiva – ${c.razon_social}`);
-                          }
-                        }}
-                      >
-                        <Text style={[styles.selectorChipTexto, sel && styles.selectorChipTextoActivo]}>
-                          {c.razon_social} ({c.rut_cliente})
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-              </ScrollView>
-
-              {/* 2. Proyecto u Obra de Origen */}
-              <Text style={styles.label}>2. Proyecto u Obra Relacionada (Opcional)</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 12 }}
-                contentContainerStyle={{ gap: 8 }}
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.selectorChip,
-                    planProyectoOrigenId === null && styles.selectorChipActivo,
-                  ]}
-                  onPress={() => establecerPlanProyectoOrigenId(null)}
-                >
-                  <Text
-                    style={[
-                      styles.selectorChipTexto,
-                      planProyectoOrigenId === null && styles.selectorChipTextoActivo,
-                    ]}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 10,
+                      backgroundColor: tema.colors.primaryLight,
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
                   >
-                    General por Cliente
-                  </Text>
-                </TouchableOpacity>
-                {proyectos.map((p) => {
-                  const sel = planProyectoOrigenId === p.id_proyecto;
-                  return (
-                    <TouchableOpacity
-                      key={p.id_proyecto}
-                      style={[styles.selectorChip, sel && styles.selectorChipActivo]}
-                      onPress={() => establecerPlanProyectoOrigenId(p.id_proyecto)}
-                    >
-                      <Text style={[styles.selectorChipTexto, sel && styles.selectorChipTextoActivo]}>
-                        {p.nombre_proyecto}
+                    <Ionicons name="calendar-outline" size={20} color={tema.colors.primaryDark} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                      Planes y Seguimiento de Mantención
+                    </Text>
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                      Cartera pactada:{" "}
+                      <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                        {formatearCLP(contadoresPlanes.montoTotalPactado)}
                       </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {/* 3. Título y Frecuencia en Meses (3, 6, 10, 12m...) */}
-              <Text style={styles.label}>3. Nombre del Plan o Servicio de Mantención *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: Mantención Trimestral Climatización y Tableros"
-                placeholderTextColor="#9ca3af"
-                value={planTitulo}
-                onChangeText={establecerPlanTitulo}
-              />
-
-              <Text style={styles.label}>
-                4. Frecuencia de Mantención (Cada cuántos meses se contacta al cliente) *
-              </Text>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-                {FRECUENCIAS_PRESET.map((m) => {
-                  const esActivo = Number(planFrecuenciaMeses) === m;
-                  return (
-                    <TouchableOpacity
-                      key={m}
-                      style={[styles.frecuenciaChip, esActivo && styles.frecuenciaChipActivo]}
-                      onPress={() => establecerPlanFrecuenciaMeses(String(m))}
-                    >
-                      <Ionicons
-                        name="repeat-outline"
-                        size={14}
-                        color={esActivo ? "#ffffff" : tema.colors.primary}
-                      />
-                      <Text
-                        style={[
-                          styles.frecuenciaChipTexto,
-                          esActivo && styles.frecuenciaChipTextoActivo,
-                        ]}
-                      >
-                        Cada {m} meses
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <Text style={{ fontSize: 12, color: "#4b5563", fontWeight: "600" }}>
-                    Otro (meses):
-                  </Text>
-                  <TextInput
-                    style={[styles.input, { width: 64, marginBottom: 0, textAlign: "center" }]}
-                    keyboardType="numeric"
-                    value={planFrecuenciaMeses}
-                    onChangeText={establecerPlanFrecuenciaMeses}
-                  />
-                </View>
-              </View>
-
-              {/* 5. Modalidad: Por Kit Predeterminado vs Por Contrato */}
-              <Text style={styles.label}>5. Modalidad de Asignación *</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-                {(
-                  [
-                    { id: "POR_KIT", label: "📦 Por Kit de Insumos" },
-                    { id: "POR_CONTRATO", label: "📄 Por Contrato / SLA" },
-                    { id: "MIXTO", label: "⚡ Mixto (Kit + Contrato)" },
-                  ] as const
-                ).map((mod) => {
-                  const sel = planModalidad === mod.id;
-                  return (
-                    <TouchableOpacity
-                      key={mod.id}
-                      style={[styles.modalidadBtn, sel && styles.modalidadBtnActivo]}
-                      onPress={() => establecerPlanModalidad(mod.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.modalidadBtnTexto,
-                          sel && styles.modalidadBtnTextoActivo,
-                        ]}
-                      >
-                        {mod.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {(planModalidad === "POR_KIT" || planModalidad === "MIXTO") && (
-                <View style={styles.subCajaConfig}>
-                  <Text style={styles.label}>Seleccione el Kit Predeterminado para la Mantención:</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ gap: 8 }}
-                  >
-                    {kits.map((k) => {
-                      const sel = planKitId === k.id_kit_proyecto;
-                      return (
-                        <TouchableOpacity
-                          key={k.id_kit_proyecto}
-                          style={[styles.kitCardChip, sel && styles.kitCardChipActivo]}
-                          onPress={() => seleccionarKitEnPlan(k)}
-                        >
-                          <Text
-                            style={[
-                              styles.kitCardChipTitulo,
-                              sel && { color: "#ffffff" },
-                            ]}
-                          >
-                            {k.nombre_kit}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.kitCardChipSub,
-                              sel && { color: "#fde68a" },
-                            ]}
-                          >
-                            {k.items?.length || 0} insumos • {formatearCLP(k.costo_total || 0)}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
-              )}
-
-              {(planModalidad === "POR_CONTRATO" || planModalidad === "MIXTO") && (
-                <View style={styles.subCajaConfig}>
-                  <Text style={styles.label}>Código / N° de Contrato o SLA:</Text>
-                  <TextInput
-                    style={[styles.input, { marginBottom: 0 }]}
-                    placeholder="Ej: CTR-MANT-2026-014"
-                    placeholderTextColor="#9ca3af"
-                    value={planCodigoContrato}
-                    onChangeText={establecerPlanCodigoContrato}
-                  />
-                </View>
-              )}
-
-              <View style={styles.filaDosCol}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Costo / Valor Pactado ($ CLP)</Text>
-                  <TextInput
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={planCostoPactado}
-                    onChangeText={establecerPlanCostoPactado}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Próxima Mantención Calculada</Text>
-                  <View style={styles.fechaCalculadaCaja}>
-                    <Ionicons name="calendar" size={16} color={tema.colors.primary} />
-                    <Text style={styles.fechaCalculadaTexto}>
-                      {formatearFecha(fechaProximaCalculada)} (+{planFrecuenciaMeses || 3}m)
+                      {` • ${contadoresPlanes.total} plan(es) activos (3, 6, 10 o 12 meses)`}
                     </Text>
                   </View>
                 </View>
-              </View>
 
-              <Text style={styles.label}>Notas o Alcance Técnico del Seguimiento</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej: Incluye limpieza de serpentines, reapriete de bornes y medición de carga..."
-                placeholderTextColor="#9ca3af"
-                value={planNotas}
-                onChangeText={establecerPlanNotas}
-              />
-
-              {errorFormPlan ? (
-                <View style={styles.errorBanner}>
-                  <Ionicons name="alert-circle" size={16} color="#dc2626" />
-                  <Text style={styles.errorBannerTexto}>{errorFormPlan}</Text>
-                </View>
-              ) : null}
-
-              <View style={styles.formBotonesRow}>
-                <TouchableOpacity
-                  style={styles.btnSecundario}
-                  onPress={() => establecerModoFormPlan(false)}
-                >
-                  <Text style={styles.btnSecundarioTexto}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.btnPrimario}
-                  onPress={guardarPlanMantencion}
-                  disabled={guardandoPlan}
-                >
-                  <Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" />
-                  <Text style={styles.btnPrimarioTexto}>
-                    {guardandoPlan ? "Programando..." : "Activar Plan de Mantención"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <>
-              {/* FRANJA DE KPIs DE SEGUIMIENTO */}
-              <View style={styles.kpisPlanesFila}>
-                <TouchableOpacity
-                  style={[
-                    styles.kpiPlanCaja,
-                    filtroSemaforoPlan === "vencidos" && { borderColor: "#dc2626", borderWidth: 2 },
-                  ]}
-                  onPress={() =>
-                    establecerFiltroSemaforoPlan(
-                      filtroSemaforoPlan === "vencidos" ? "todos" : "vencidos"
-                    )
-                  }
-                >
-                  <Text style={[styles.kpiPlanValor, { color: "#dc2626" }]}>
-                    {contadoresPlanes.vencidos}
-                  </Text>
-                  <Text style={styles.kpiPlanLabel}>Vencidas</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.kpiPlanCaja,
-                    filtroSemaforoPlan === "proximos" && { borderColor: "#d97706", borderWidth: 2 },
-                  ]}
-                  onPress={() =>
-                    establecerFiltroSemaforoPlan(
-                      filtroSemaforoPlan === "proximos" ? "todos" : "proximos"
-                    )
-                  }
-                >
-                  <Text style={[styles.kpiPlanValor, { color: "#d97706" }]}>
-                    {contadoresPlanes.proximos}
-                  </Text>
-                  <Text style={styles.kpiPlanLabel}>Próximas (≤30d)</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.kpiPlanCaja,
-                    filtroSemaforoPlan === "al_dia" && { borderColor: "#16a34a", borderWidth: 2 },
-                  ]}
-                  onPress={() =>
-                    establecerFiltroSemaforoPlan(
-                      filtroSemaforoPlan === "al_dia" ? "todos" : "al_dia"
-                    )
-                  }
-                >
-                  <Text style={[styles.kpiPlanValor, { color: "#16a34a" }]}>
-                    {contadoresPlanes.alDia}
-                  </Text>
-                  <Text style={styles.kpiPlanLabel}>Al Día (&gt;30d)</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.btnPrimario}
+                <Boton
+                  title="Nuevo Plan"
+                  variant="primary"
+                  size="sm"
+                  icon="add-outline"
                   onPress={() => abrirNuevoPlan()}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color="#ffffff" />
-                  <Text style={styles.btnPrimarioTexto}>+ Nuevo Plan</Text>
-                </TouchableOpacity>
+                  style={{ minHeight: 40 }}
+                  fullWidth={esMovilEstrecho}
+                />
               </View>
+            </Tarjeta>
 
-              {/* PANEL DE CONTACTO ACTIVO SI SE SELECCIONÓ UN PLAN */}
-              {planContactando && (
-                <View style={styles.panelContactoCaja}>
-                  <View style={styles.formHeaderRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.panelContactoTag}>
-                        REGISTRO DE CONTACTO Y AGENDAMIENTO
-                      </Text>
-                      <Text style={styles.formTitulo}>
-                        {planContactando.razon_social} • {planContactando.titulo_plan}
-                      </Text>
-                    </View>
-                    <TouchableOpacity onPress={() => establecerPlanContactando(null)}>
-                      <Ionicons name="close-circle" size={20} color="#9ca3af" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={styles.label}>Canal de Contacto Utilizado:</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                    {CANALES_CONTACTO.map((c) => (
-                      <TouchableOpacity
-                        key={c}
-                        style={[
-                          styles.selectorChip,
-                          segCanal === c && styles.selectorChipActivo,
-                        ]}
-                        onPress={() => establecerSegCanal(c)}
-                      >
-                        <Text
-                          style={[
-                            styles.selectorChipTexto,
-                            segCanal === c && styles.selectorChipTextoActivo,
-                          ]}
-                        >
-                          {c}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  <Text style={styles.label}>Resultado de la Gestión:</Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                    {RESULTADOS_CONTACTO.map((r) => (
-                      <TouchableOpacity
-                        key={r}
-                        style={[
-                          styles.selectorChip,
-                          segResultado === r && styles.selectorChipActivo,
-                        ]}
-                        onPress={() => {
-                          establecerSegResultado(r);
-                          if (r === "Visita Confirmada") establecerSegGenerarFaena(true);
-                        }}
-                      >
-                        <Text
-                          style={[
-                            styles.selectorChipTexto,
-                            segResultado === r && styles.selectorChipTextoActivo,
-                          ]}
-                        >
-                          {r}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Toggle Conversión en 1 Clic */}
-                  <Pressable
-                    style={[
-                      styles.toggleGenerarFaenaCaja,
-                      segGenerarFaena && styles.toggleGenerarFaenaCajaActivo,
-                    ]}
-                    onPress={() => establecerSegGenerarFaena((prev) => !prev)}
+            {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS CON SEMÁFORO */}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {[
+                {
+                  id: "vencidos" as const,
+                  titulo: "Vencidas",
+                  valor: contadoresPlanes.vencidos,
+                  sub: "Prioridad llamado",
+                  icon: "alert-circle-outline" as const,
+                  bg: contadoresPlanes.vencidos > 0 ? "#fef2f2" : "#f1f5f9",
+                  border: contadoresPlanes.vencidos > 0 ? "#fca5a5" : "#cbd5e1",
+                  borderActivo: contadoresPlanes.vencidos > 0 ? "#dc2626" : "#475569",
+                  textColor: contadoresPlanes.vencidos > 0 ? "#991b1b" : "#334155",
+                },
+                {
+                  id: "proximos" as const,
+                  titulo: "Próximas (≤30d)",
+                  valor: contadoresPlanes.proximos,
+                  sub: "Agendar este mes",
+                  icon: "time-outline" as const,
+                  bg: "#fffbeb",
+                  border: "#fcd34d",
+                  borderActivo: "#d97706",
+                  textColor: "#92400e",
+                },
+                {
+                  id: "al_dia" as const,
+                  titulo: "Al Día (>30d)",
+                  valor: contadoresPlanes.alDia,
+                  sub: "Ciclo vigente",
+                  icon: "checkmark-done-circle-outline" as const,
+                  bg: "#f0fdf4",
+                  border: "#86efac",
+                  borderActivo: "#16a34a",
+                  textColor: "#166534",
+                },
+                {
+                  id: "todos" as const,
+                  titulo: "Todos los Planes",
+                  valor: contadoresPlanes.total,
+                  sub: "Cartera completa",
+                  icon: "layers-outline" as const,
+                  bg: "#f1f5f9",
+                  border: "#cbd5e1",
+                  borderActivo: "#334155",
+                  textColor: "#0f172a",
+                },
+              ].map((kpi) => {
+                const activo = filtroSemaforoPlan === kpi.id;
+                return (
+                  <TouchableOpacity
+                    key={kpi.id}
+                    activeOpacity={0.8}
+                    onPress={() => establecerFiltroSemaforoPlan(kpi.id)}
+                    style={{
+                      flexBasis: "48%",
+                      flexGrow: 1,
+                      minWidth: 140,
+                      backgroundColor: kpi.bg,
+                      borderWidth: activo ? 2 : 1,
+                      borderColor: activo ? kpi.borderActivo : kpi.border,
+                      borderLeftWidth: 5,
+                      borderLeftColor: kpi.borderActivo,
+                      borderRadius: 10,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                    }}
                   >
-                    <Ionicons
-                      name={segGenerarFaena ? "checkbox" : "square-outline"}
-                      size={18}
-                      color={segGenerarFaena ? tema.colors.primary : "#9ca3af"}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.toggleGenerarTitulo}>
-                        Crear Faena de Mantención y avanzar ciclo (+{planContactando.frecuencia_meses} meses)
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "800",
+                          color: kpi.textColor,
+                          textTransform: "uppercase",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {kpi.titulo}
                       </Text>
-                      <Text style={styles.toggleGenerarSub}>
-                        Próxima fecha sugerida: {formatearFecha(
-                          sumarMesesFecha(
-                            planContactando.fecha_proxima_mantencion,
-                            planContactando.frecuencia_meses
-                          )
-                        )}
+                      <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                    </View>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "baseline",
+                        justifyContent: "space-between",
+                        marginTop: 2,
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                        {kpi.valor}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: activo ? "800" : "600",
+                          color: kpi.textColor,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {activo ? "● Vista activa" : kpi.sub}
                       </Text>
                     </View>
-                  </Pressable>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
-                  <Text style={styles.label}>Observaciones / Acuerdos:</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={segObservaciones}
-                    onChangeText={establecerSegObservaciones}
-                    placeholder="Ej: Cliente confirma visita para el viernes a las 09:00 hrs..."
-                    placeholderTextColor="#9ca3af"
-                  />
+            {/* 3. BUSCADOR DE PLANES */}
+            <CampoBusqueda
+              value={busquedaPlan}
+              onChangeText={establecerBusquedaPlan}
+              placeholder="Buscar plan por servicio, cliente, obra, kit o contrato..."
+              containerStyle={{ marginBottom: 12 }}
+            />
 
-                  <View style={styles.formBotonesRow}>
-                    <TouchableOpacity
-                      style={styles.btnSecundario}
-                      onPress={() => establecerPlanContactando(null)}
-                    >
-                      <Text style={styles.btnSecundarioTexto}>Cancelar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.btnPrimario}
-                      onPress={confirmarSeguimientoContacto}
-                      disabled={guardandoSeguimiento}
-                    >
-                      <Ionicons name="checkmark-outline" size={16} color="#ffffff" />
-                      <Text style={styles.btnPrimarioTexto}>
-                        {guardandoSeguimiento
-                          ? "Procesando..."
-                          : segGenerarFaena
-                            ? "Confirmar y Generar Faena"
-                            : "Guardar Contacto"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* LISTADO DE PLANES DE MANTENCIÓN */}
-              {planesFiltrados.map((pl) => {
+            {/* 4. LISTADO DE PLANES DE MANTENCIÓN CON SEMÁFORO DE SUPERFICIE */}
+            {planesFiltrados.length === 0 ? (
+              <EstadoVacio
+                icon="calendar-outline"
+                title="Sin planes de mantención en esta vista"
+                description={
+                  busquedaPlan.trim()
+                    ? `No hay planes que coincidan con "${busquedaPlan.trim()}".`
+                    : "No hay planes registrados bajo este estado del semáforo."
+                }
+                actionTitle={filtroSemaforoPlan !== "todos" ? "Ver Todos los Planes" : "Nuevo Plan"}
+                onAction={
+                  filtroSemaforoPlan !== "todos"
+                    ? () => establecerFiltroSemaforoPlan("todos")
+                    : () => abrirNuevoPlan()
+                }
+                containerStyle={{ marginVertical: 16 }}
+              />
+            ) : (
+              planesFiltrados.map((pl) => {
                 const dias = pl.dias_restantes ?? 30;
                 const esVencido = dias < 0;
                 const esProximo = dias >= 0 && dias <= 30;
-                const colorSem = esVencido ? "#dc2626" : esProximo ? "#d97706" : "#16a34a";
-                const bgSem = esVencido ? "#fee2e2" : esProximo ? "#fef3c7" : "#dcfce7";
-                const textoSem = esVencido
-                  ? `Vencida hace ${Math.abs(dias)}d`
-                  : dias === 0
-                    ? "Vence Hoy"
-                    : `Próxima en ${dias}d`;
+                const datosContactoPlan = obtenerDatosContactoPlan(pl);
+
+                const semaforoPlan = esVencido
+                  ? {
+                      bg: "#fef2f2",
+                      border: "#fca5a5",
+                      stripe: "#dc2626",
+                      text: "#991b1b",
+                      divider: "#fecaca",
+                      badgeBg: "#fee2e2",
+                      texto: `Vencida hace ${Math.abs(dias)}d`,
+                    }
+                  : esProximo
+                    ? {
+                        bg: "#fffbeb",
+                        border: "#fcd34d",
+                        stripe: "#d97706",
+                        text: "#92400e",
+                        divider: "#fde68a",
+                        badgeBg: "#fef3c7",
+                        texto: dias === 0 ? "Vence Hoy" : `Próxima en ${dias}d`,
+                      }
+                    : {
+                        bg: "#f0fdf4",
+                        border: "#86efac",
+                        stripe: "#16a34a",
+                        text: "#166534",
+                        divider: "#bbf7d0",
+                        badgeBg: "#dcfce7",
+                        texto: `Al día (${dias}d)`,
+                      };
+
                 const expandido = Boolean(planesExpandidos[pl.id_plan]);
 
                 return (
-                  <View key={pl.id_plan} style={styles.tarjetaItem}>
-                    {/* Cabecera Limpia del Plan */}
-                    <View style={styles.tarjetaItemTop}>
-                      <View style={{ flex: 1, marginRight: 8 }}>
-                        <Text style={styles.clienteTitulo}>{pl.titulo_plan}</Text>
-                        <Text style={styles.clienteSub}>
+                  <Tarjeta
+                    key={pl.id_plan}
+                    variant="outlined"
+                    style={{
+                      marginBottom: 10,
+                      padding: 12,
+                      backgroundColor: semaforoPlan.bg,
+                      borderColor: semaforoPlan.border,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: semaforoPlan.stripe,
+                      borderRadius: 12,
+                    }}
+                  >
+                    {/* Cabecera: Título + Cliente/Obra + Caja de Valor Pactado */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        flexWrap: "wrap",
+                        gap: 8,
+                      }}
+                    >
+                      <View style={{ flex: 1, minWidth: 190 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 5,
+                              backgroundColor: "#ffffff",
+                              borderWidth: 1,
+                              borderColor: semaforoPlan.border,
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 999,
+                            }}
+                          >
+                            <View
+                              style={{
+                                width: 7,
+                                height: 7,
+                                borderRadius: 4,
+                                backgroundColor: semaforoPlan.stripe,
+                              }}
+                            />
+                            <Text style={{ fontSize: 10, fontWeight: "800", color: semaforoPlan.text }}>
+                              {semaforoPlan.texto}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                              backgroundColor: "#ffffff",
+                              borderWidth: 1,
+                              borderColor: tema.colors.primaryBorder,
+                              paddingHorizontal: 7,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                            }}
+                          >
+                            <Ionicons name="repeat-outline" size={11} color="#b45309" />
+                            <Text style={{ fontSize: 10, fontWeight: "800", color: "#b45309" }}>
+                              Cada {pl.frecuencia_meses} meses
+                            </Text>
+                          </View>
+                        </View>
+
+                        <Text
+                          style={{
+                            fontSize: 15,
+                            fontWeight: "800",
+                            color: tema.colors.text,
+                            marginTop: 5,
+                          }}
+                        >
+                          {pl.titulo_plan}
+                        </Text>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: semaforoPlan.text, marginTop: 1 }}>
                           {pl.razon_social}
                           {pl.nombre_proyecto_origen ? ` • ${pl.nombre_proyecto_origen}` : ""}
                         </Text>
                       </View>
 
-                      <View style={[styles.badgeSemaforoFecha, { backgroundColor: bgSem }]}>
-                        <View style={[styles.puntoSemaforo, { backgroundColor: colorSem }]} />
-                        <Text style={[styles.badgeSemaforoTexto, { color: colorSem }]}>
-                          {textoSem}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Fila sutil de Metadata (Frecuencia, Modalidad, Costo) */}
-                    <View style={styles.planMetaFila}>
-                      <View style={styles.planMetaTag}>
-                        <Ionicons name="repeat-outline" size={12} color="#b45309" />
-                        <Text style={styles.planMetaTagTexto}>Cada {pl.frecuencia_meses} meses</Text>
-                      </View>
-
-                      <View style={styles.planMetaTagNeutro}>
-                        <Text style={styles.planMetaTagNeutroTexto}>
-                          {pl.modalidad === "POR_KIT"
-                            ? `Kit: ${pl.nombre_kit || "Asignado"}`
-                            : pl.modalidad === "POR_CONTRATO"
-                              ? `Contrato: ${pl.codigo_contrato || "SLA"}`
-                              : `Mixto (${pl.codigo_contrato || "SLA"})`}
-                        </Text>
-                      </View>
-
                       {pl.costo_pactado > 0 && (
-                        <Text style={styles.planValorPactadoTexto}>
-                          {formatearCLP(pl.costo_pactado)}
-                        </Text>
+                        <View
+                          style={{
+                            backgroundColor: "#ffffff",
+                            borderWidth: 1,
+                            borderColor: semaforoPlan.divider,
+                            borderRadius: 9,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            alignItems: "flex-end",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 9,
+                              fontWeight: "800",
+                              color: tema.colors.textMuted,
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            Valor Pactado
+                          </Text>
+                          <Text style={{ fontSize: 14, fontWeight: "900", color: semaforoPlan.text }}>
+                            {formatearCLP(pl.costo_pactado)}
+                          </Text>
+                        </View>
                       )}
                     </View>
 
-                    {/* Fechas y Estado de Kit (Limpio, sin cajas saturadas) */}
-                    <View style={styles.clienteDetalleCaja}>
-                      <View style={styles.clienteDetalleFila}>
-                        <View style={styles.clienteDetalleItem}>
-                          <Ionicons name="calendar-outline" size={13} color="#9ca3af" />
-                          <Text style={styles.clienteDetalleTexto}>
-                            Última: {pl.fecha_ultima_mantencion ? formatearFecha(pl.fecha_ultima_mantencion) : "—"}
+                    {/* Ficha blanca interna: Contacto Directo + Fechas + Kit/Contrato + Stock */}
+                    <View
+                      style={{
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: semaforoPlan.divider,
+                        borderRadius: 9,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                        marginTop: 8,
+                        gap: 7,
+                      }}
+                    >
+                      {/* Fila destacada con los datos de contacto del cliente para llamar/escribir */}
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          backgroundColor: "#f8fafc",
+                          borderWidth: 1,
+                          borderColor: "#e2e8f0",
+                          borderRadius: 7,
+                          paddingHorizontal: 8,
+                          paddingVertical: 6,
+                          gap: 8,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10, flex: 1 }}>
+                          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                            <Ionicons name="person-circle-outline" size={15} color={tema.colors.primaryDark} />
+                            <Text style={{ fontSize: 11.5, fontWeight: "800", color: tema.colors.text }}>
+                              {datosContactoPlan.nombreContacto}
+                            </Text>
+                          </View>
+
+                          {datosContactoPlan.telefono ? (
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              <Ionicons name="call-outline" size={13} color="#16a34a" />
+                              <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#166534" }}>
+                                {datosContactoPlan.telefono}
+                              </Text>
+                            </View>
+                          ) : (
+                            <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
+                              Sin teléfono
+                            </Text>
+                          )}
+
+                          {datosContactoPlan.correo ? (
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                              <Ionicons name="mail-outline" size={13} color={tema.colors.textMuted} />
+                              <Text style={{ fontSize: 11, color: tema.colors.textSecondary }} numberOfLines={1}>
+                                {datosContactoPlan.correo}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        {/* Botones rápidos de llamada / WhatsApp / Correo directo desde la tarjeta */}
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                          {Boolean(datosContactoPlan.telefono) && (
+                            <>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  abrirModalContacto(pl, "Teléfono");
+                                  lanzarAccionComunicacionDirecta(pl, "llamar");
+                                }}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  backgroundColor: "#f0fdf4",
+                                  borderWidth: 1,
+                                  borderColor: "#86efac",
+                                  borderRadius: 6,
+                                  paddingHorizontal: 7,
+                                  paddingVertical: 3,
+                                }}
+                              >
+                                <Ionicons name="call" size={11} color="#16a34a" />
+                                <Text style={{ fontSize: 10, fontWeight: "800", color: "#166534" }}>
+                                  Llamar
+                                </Text>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                onPress={() => {
+                                  abrirModalContacto(pl, "WhatsApp");
+                                  lanzarAccionComunicacionDirecta(pl, "whatsapp");
+                                }}
+                                style={{
+                                  flexDirection: "row",
+                                  alignItems: "center",
+                                  gap: 3,
+                                  backgroundColor: "#f0fdf4",
+                                  borderWidth: 1,
+                                  borderColor: "#86efac",
+                                  borderRadius: 6,
+                                  paddingHorizontal: 7,
+                                  paddingVertical: 3,
+                                }}
+                              >
+                                <Ionicons name="logo-whatsapp" size={11} color="#16a34a" />
+                                <Text style={{ fontSize: 10, fontWeight: "800", color: "#166534" }}>
+                                  WhatsApp
+                                </Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
+                      </View>
+
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 8,
+                        }}
+                      >
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <Ionicons name="calendar-outline" size={13} color={tema.colors.textMuted} />
+                          <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                            Última:{" "}
+                            <Text style={{ fontWeight: "700", color: tema.colors.text }}>
+                              {pl.fecha_ultima_mantencion ? formatearFecha(pl.fecha_ultima_mantencion) : "—"}
+                            </Text>
+                          </Text>
+                          <Ionicons name="arrow-forward-outline" size={12} color={tema.colors.textMuted} />
+                          <Text style={{ fontSize: 11, fontWeight: "800", color: semaforoPlan.text }}>
+                            Próxima: {formatearFecha(pl.fecha_proxima_mantencion)}
                           </Text>
                         </View>
-                        <View style={styles.clienteDetalleItem}>
-                          <Ionicons name="arrow-forward-outline" size={12} color="#9ca3af" />
-                          <Text style={[styles.clienteDetalleTexto, { fontWeight: "700", color: colorSem }]}>
-                            Próxima: {formatearFecha(pl.fecha_proxima_mantencion)}
+
+                        <View
+                          style={{
+                            backgroundColor: "#f1f5f9",
+                            borderWidth: 1,
+                            borderColor: "#e2e8f0",
+                            paddingHorizontal: 7,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#334155" }}>
+                            {pl.modalidad === "POR_KIT"
+                              ? `Kit: ${pl.nombre_kit || "Asignado"}`
+                              : pl.modalidad === "POR_CONTRATO"
+                                ? `Contrato: ${pl.codigo_contrato || "SLA"}`
+                                : `Mixto (${pl.codigo_contrato || "SLA"})`}
                           </Text>
                         </View>
                       </View>
 
                       {(pl.modalidad === "POR_KIT" || pl.modalidad === "MIXTO") && (
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                           <Ionicons
-                            name={pl.kit_stock_ok !== false ? "checkmark-circle-outline" : "alert-circle-outline"}
+                            name={pl.kit_stock_ok !== false ? "checkmark-circle" : "alert-circle"}
                             size={13}
                             color={pl.kit_stock_ok !== false ? "#16a34a" : "#d97706"}
                           />
                           <Text
                             style={{
                               fontSize: 11,
-                              color: pl.kit_stock_ok !== false ? "#16a34a" : "#b45309",
-                              fontWeight: "500",
+                              color: pl.kit_stock_ok !== false ? "#166534" : "#b45309",
+                              fontWeight: "700",
                             }}
                           >
                             {pl.kit_stock_ok !== false
                               ? "Stock de kit disponible en bodega"
-                              : "Verificar stock antes de agendar"}
+                              : "Verificar stock de kit antes de agendar"}
                           </Text>
+                        </View>
+                      )}
+
+                      {/* Bitácora expandible de seguimientos */}
+                      {pl.seguimientos && pl.seguimientos.length > 0 && (
+                        <View style={{ borderTopWidth: 1, borderTopColor: "#f3f4f6", paddingTop: 4 }}>
+                          <TouchableOpacity
+                            onPress={() =>
+                              establecerPlanesExpandidos((prev) => ({
+                                ...prev,
+                                [pl.id_plan]: !prev[pl.id_plan],
+                              }))
+                            }
+                          >
+                            <Text style={styles.linkHistorial}>
+                              {expandido ? "▼ Ocultar" : "▶ Ver"} bitácora ({pl.seguimientos.length} contacto
+                              {pl.seguimientos.length > 1 ? "s" : ""})
+                            </Text>
+                          </TouchableOpacity>
+                          {expandido &&
+                            pl.seguimientos.map((s) => (
+                              <View key={s.id_seguimiento} style={styles.itemSeguimiento}>
+                                <Text style={styles.itemSeguimientoTop}>
+                                  {s.canal_contacto} •{" "}
+                                  <Text style={{ fontWeight: "700", color: tema.colors.primaryDark }}>
+                                    {s.resultado_contacto}
+                                  </Text>{" "}
+                                  ({formatearFecha(s.fecha_contacto)})
+                                </Text>
+                                {s.observaciones ? (
+                                  <Text style={styles.itemSeguimientoObs}>{s.observaciones}</Text>
+                                ) : null}
+                              </View>
+                            ))}
                         </View>
                       )}
                     </View>
 
-                    {/* Bitácora expandible de seguimientos */}
-                    {pl.seguimientos && pl.seguimientos.length > 0 && (
-                      <View style={{ marginTop: 6 }}>
-                        <TouchableOpacity
-                          onPress={() =>
-                            establecerPlanesExpandidos((prev) => ({
-                              ...prev,
-                              [pl.id_plan]: !prev[pl.id_plan],
-                            }))
-                          }
-                        >
-                          <Text style={styles.linkHistorial}>
-                            {expandido ? "▼ Ocultar" : "▶ Ver"} bitácora ({pl.seguimientos.length} contacto{pl.seguimientos.length > 1 ? "s" : ""})
-                          </Text>
-                        </TouchableOpacity>
-                        {expandido &&
-                          pl.seguimientos.map((s) => (
-                            <View key={s.id_seguimiento} style={styles.itemSeguimiento}>
-                              <Text style={styles.itemSeguimientoTop}>
-                                {s.canal_contacto} •{" "}
-                                <Text style={{ fontWeight: "700", color: tema.colors.primaryDark }}>
-                                  {s.resultado_contacto}
-                                </Text>{" "}
-                                ({formatearFecha(s.fecha_contacto)})
-                              </Text>
-                              {s.observaciones ? (
-                                <Text style={styles.itemSeguimientoObs}>{s.observaciones}</Text>
-                              ) : null}
-                            </View>
-                          ))}
-                      </View>
-                    )}
-
-                    {/* Botón Contactar Cliente / Agendar (Elegante, equilibrado) */}
-                    <View style={styles.accionesTarjetaFila}>
-                      <TouchableOpacity
-                        style={styles.btnAccionPrincipal}
+                    {/* Botón de acción principal */}
+                    <View style={{ marginTop: 10 }}>
+                      <Boton
+                        title="Contactar Cliente / Agendar Mantención"
+                        variant="primary"
+                        size="sm"
+                        icon="call-outline"
                         onPress={() => abrirModalContacto(pl)}
-                      >
-                        <Ionicons name="call-outline" size={14} color="#ffffff" />
-                        <Text style={styles.btnAccionPrincipalTexto}>
-                          Contactar Cliente / Agendar Mantención
-                        </Text>
-                      </TouchableOpacity>
+                        style={{ minHeight: 38 }}
+                        fullWidth
+                      />
                     </View>
-                  </View>
+                  </Tarjeta>
                 );
-              })}
-            </>
-          )
+              })
+            )}
+          </>
         )}
       </ScrollView>
+
+      {/* =====================================================================
+          MODAL 1: REGISTRAR / EDITAR FICHA DE CLIENTE (DISEÑO POR BLOQUES SIN BANCO)
+          ===================================================================== */}
+      <VistaModal
+        visible={modoFormCliente}
+        onClose={() => establecerModoFormCliente(false)}
+        title={editandoClienteId ? "Editar Ficha de Cliente" : "Registrar Nuevo Cliente"}
+        subtitle="Identificación tributaria (RUT), rubro comercial y contacto principal de obra o faena"
+        maxWidth={620}
+      >
+        {/* BLOQUE 1: IDENTIFICACIÓN DE LA EMPRESA */}
+        <View
+          style={{
+            backgroundColor: "#f8fafc",
+            borderWidth: 1,
+            borderColor: tema.colors.border,
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 10,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name="business-outline" size={16} color={tema.colors.primaryDark} />
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontWeight: "800",
+                  color: tema.colors.text,
+                  textTransform: "uppercase",
+                }}
+              >
+                1. Identificación de la Empresa
+              </Text>
+            </View>
+
+            {estadoValidacionRutCliente.estado === "valido" && (
+              <Insignia label="RUT Válido" tone="ok" size="sm" />
+            )}
+            {estadoValidacionRutCliente.estado === "duplicado" && (
+              <Insignia label="RUT Duplicado" tone="danger" size="sm" />
+            )}
+            {estadoValidacionRutCliente.estado === "invalido" && (
+              <Insignia label="Revisar DV de RUT" tone="warn" size="sm" />
+            )}
+          </View>
+
+          <View style={styles.filaDosCol}>
+            <View style={{ flex: 1, minWidth: 160 }}>
+              <CampoTexto
+                label="RUT Cliente"
+                required
+                icon="card-outline"
+                placeholder="Ej: 76.123.456-7"
+                value={cliRut}
+                onChangeText={establecerCliRut}
+                error={
+                  estadoValidacionRutCliente.estado === "duplicado"
+                    ? estadoValidacionRutCliente.mensaje
+                    : undefined
+                }
+                helper={
+                  estadoValidacionRutCliente.estado === "invalido"
+                    ? estadoValidacionRutCliente.mensaje
+                    : undefined
+                }
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+            <View style={{ flex: 1.5, minWidth: 200 }}>
+              <CampoTexto
+                label="Razón Social / Empresa"
+                required
+                icon="business-outline"
+                placeholder="Ej: Inmobiliaria Pacífico SpA"
+                value={cliRazonSocial}
+                onChangeText={establecerCliRazonSocial}
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+          </View>
+
+          <CampoTexto
+            label="Giro o Rubro Comercial"
+            icon="briefcase-outline"
+            placeholder="Ej: Construcción e Ingeniería Civil"
+            value={cliGiro}
+            onChangeText={establecerCliGiro}
+            containerStyle={{ marginBottom: 6 }}
+          />
+
+          {/* Sugerencias rápidas de 1 toque para el Giro Comercial */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {GIROS_SUGERIDOS.map((giroSug) => {
+              const esSeleccionado = cliGiro.trim().toLowerCase() === giroSug.toLowerCase();
+              return (
+                <TouchableOpacity
+                  key={giroSug}
+                  activeOpacity={0.8}
+                  onPress={() => establecerCliGiro(giroSug)}
+                  style={{
+                    paddingHorizontal: 9,
+                    paddingVertical: 4,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    backgroundColor: esSeleccionado ? tema.colors.primaryLight : "#ffffff",
+                    borderColor: esSeleccionado ? tema.colors.primary : tema.colors.borderDark,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: esSeleccionado ? "800" : "600",
+                      color: esSeleccionado ? tema.colors.primaryDark : tema.colors.textSecondary,
+                    }}
+                  >
+                    {giroSug}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* BLOQUE 2: CONTACTO OPERATIVO, UBICACIÓN Y VINCULACIÓN A OBRA */}
+        <View
+          style={{
+            backgroundColor: "#f8fafc",
+            borderWidth: 1,
+            borderColor: tema.colors.border,
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <Ionicons name="person-circle-outline" size={17} color={tema.colors.primaryDark} />
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "800",
+                color: tema.colors.text,
+                textTransform: "uppercase",
+              }}
+            >
+              2. Contacto Operativo y Ubicación
+            </Text>
+          </View>
+
+          <View style={styles.filaDosCol}>
+            <View style={{ flex: 1, minWidth: 170 }}>
+              <CampoTexto
+                label="Nombre de Contacto"
+                icon="person-outline"
+                placeholder="Ej: Rodrigo Sepúlveda"
+                value={cliContacto}
+                onChangeText={establecerCliContacto}
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 160 }}>
+              <CampoTexto
+                label="Teléfono / WhatsApp"
+                icon="call-outline"
+                placeholder="Ej: +56 9 8765 4321"
+                value={cliTelefono}
+                onChangeText={establecerCliTelefono}
+                keyboardType="phone-pad"
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+          </View>
+
+          <View style={styles.filaDosCol}>
+            <View style={{ flex: 1, minWidth: 180 }}>
+              <CampoTexto
+                label="Correo Electrónico"
+                icon="mail-outline"
+                placeholder="operaciones@empresa.cl"
+                value={cliCorreo}
+                onChangeText={establecerCliCorreo}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+            <View style={{ flex: 1.3, minWidth: 200 }}>
+              <CampoTexto
+                label="Dirección Principal / Faena"
+                icon="location-outline"
+                placeholder="Av. Las Condes 9100, Las Condes"
+                value={cliDireccion}
+                onChangeText={establecerCliDireccion}
+                containerStyle={{ marginBottom: 8 }}
+              />
+            </View>
+          </View>
+
+          {proyectos.length > 0 && (
+            <Selector
+              label="Vincular a Proyecto / Obra Existente (Opcional)"
+              options={opcionesVincularProyectoCliente}
+              value={cliProyectoVincularId}
+              onChange={establecerCliProyectoVincularId}
+              placeholder="Sin vincular a obra por ahora"
+              containerStyle={{ marginBottom: 0 }}
+            />
+          )}
+        </View>
+
+        {errorFormCliente ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={16} color="#dc2626" />
+            <Text style={styles.errorBannerTexto}>{errorFormCliente}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.formBotonesRow}>
+          <Boton
+            title="Cancelar"
+            variant="outline"
+            size="sm"
+            onPress={() => establecerModoFormCliente(false)}
+            style={{ flex: 1, minHeight: 40 }}
+          />
+          <Boton
+            title={
+              guardandoCliente
+                ? "Guardando..."
+                : editandoClienteId
+                  ? "Guardar Cambios"
+                  : "Registrar Cliente"
+            }
+            variant="primary"
+            size="sm"
+            icon="save-outline"
+            disabled={guardandoCliente || estadoValidacionRutCliente.estado === "duplicado"}
+            onPress={guardarCliente}
+            style={{ flex: 1.4, minHeight: 40 }}
+          />
+        </View>
+      </VistaModal>
+
+      {/* =====================================================================
+          MODAL 2: PROGRAMAR NUEVO PLAN DE MANTENCIÓN PERIÓDICA
+          ===================================================================== */}
+      <VistaModal
+        visible={modoFormPlan}
+        onClose={() => establecerModoFormPlan(false)}
+        title="Programar Plan de Mantención Periódica"
+        subtitle="Frecuencia automática cada 3, 6, 10 o 12 meses vinculada a Kit o Contrato SLA"
+        maxWidth={620}
+      >
+        <View
+          style={{
+            backgroundColor: "#f8fafc",
+            borderWidth: 1,
+            borderColor: tema.colors.border,
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 12,
+          }}
+        >
+          <Selector
+            label="1. Cliente Asociado"
+            required
+            options={opcionesSelectorClientes}
+            value={planClienteId ? String(planClienteId) : ""}
+            onChange={(val) => {
+              const idNum = Number(val);
+              establecerPlanClienteId(idNum);
+              const cliElegido = clientes.find((c) => c.id_cliente === idNum);
+              if (cliElegido && (!planTitulo || planTitulo.startsWith("Mantención Preventiva"))) {
+                establecerPlanTitulo(`Mantención Preventiva – ${cliElegido.razon_social}`);
+              }
+            }}
+            placeholder="Seleccionar cliente activo..."
+          />
+
+          <Selector
+            label="2. Proyecto u Obra Relacionada (Opcional)"
+            options={opcionesSelectorProyectos}
+            value={planProyectoOrigenId ? String(planProyectoOrigenId) : ""}
+            onChange={(val) => establecerPlanProyectoOrigenId(val ? Number(val) : null)}
+            placeholder="General por Cliente (Sin obra específica)"
+            containerStyle={{ marginBottom: 4 }}
+          />
+        </View>
+
+        <Text style={styles.label}>3. Nombre del Plan o Servicio de Mantención *</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ej: Mantención Trimestral Climatización y Tableros"
+          placeholderTextColor="#9ca3af"
+          value={planTitulo}
+          onChangeText={establecerPlanTitulo}
+        />
+
+        <Text style={styles.label}>4. Frecuencia de Mantención (Meses) *</Text>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+          {FRECUENCIAS_PRESET.map((m) => {
+            const esActivo = Number(planFrecuenciaMeses) === m;
+            return (
+              <TouchableOpacity
+                key={m}
+                style={[styles.frecuenciaChip, esActivo && styles.frecuenciaChipActivo]}
+                onPress={() => establecerPlanFrecuenciaMeses(String(m))}
+              >
+                <Ionicons
+                  name="repeat-outline"
+                  size={14}
+                  color={esActivo ? "#ffffff" : tema.colors.primary}
+                />
+                <Text style={[styles.frecuenciaChipTexto, esActivo && styles.frecuenciaChipTextoActivo]}>
+                  Cada {m} meses
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Text style={{ fontSize: 12, color: "#4b5563", fontWeight: "600" }}>Otro:</Text>
+            <TextInput
+              style={[styles.input, { width: 60, marginBottom: 0, textAlign: "center", height: 36 }]}
+              keyboardType="numeric"
+              value={planFrecuenciaMeses}
+              onChangeText={establecerPlanFrecuenciaMeses}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.label}>5. Modalidad de Asignación *</Text>
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          {(
+            [
+              { id: "POR_KIT", label: "Por Kit de Insumos", icon: "cube-outline" as const },
+              { id: "POR_CONTRATO", label: "Por Contrato / SLA", icon: "document-text-outline" as const },
+              { id: "MIXTO", label: "Mixto (Kit + SLA)", icon: "flash-outline" as const },
+            ] as const
+          ).map((mod) => {
+            const sel = planModalidad === mod.id;
+            return (
+              <TouchableOpacity
+                key={mod.id}
+                style={[
+                  styles.modalidadBtn,
+                  sel && styles.modalidadBtnActivo,
+                  { flexDirection: "row", justifyContent: "center", gap: 5 },
+                ]}
+                onPress={() => establecerPlanModalidad(mod.id)}
+              >
+                <Ionicons
+                  name={mod.icon}
+                  size={14}
+                  color={sel ? tema.colors.primaryDark : "#4b5563"}
+                />
+                <Text style={[styles.modalidadBtnTexto, sel && styles.modalidadBtnTextoActivo]}>
+                  {mod.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {(planModalidad === "POR_KIT" || planModalidad === "MIXTO") && (
+          <Selector
+            label="Kit Predeterminado para la Mantención"
+            required
+            options={opcionesSelectorKits}
+            value={planKitId ? String(planKitId) : ""}
+            onChange={(val) => {
+              const kitElegido = kits.find((k) => String(k.id_kit_proyecto) === val);
+              if (kitElegido) seleccionarKitEnPlan(kitElegido);
+            }}
+            placeholder="Seleccionar kit de materiales..."
+          />
+        )}
+
+        {(planModalidad === "POR_CONTRATO" || planModalidad === "MIXTO") && (
+          <View style={styles.subCajaConfig}>
+            <Text style={styles.label}>Código / N° de Contrato o SLA:</Text>
+            <TextInput
+              style={[styles.input, { marginBottom: 0 }]}
+              placeholder="Ej: CTR-MANT-2026-014"
+              placeholderTextColor="#9ca3af"
+              value={planCodigoContrato}
+              onChangeText={establecerPlanCodigoContrato}
+            />
+          </View>
+        )}
+
+        <View style={styles.filaDosCol}>
+          <View style={{ flex: 1, minWidth: 150 }}>
+            <Text style={styles.label}>Costo / Valor Pactado ($ CLP)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="numeric"
+              value={planCostoPactado}
+              onChangeText={establecerPlanCostoPactado}
+            />
+          </View>
+          <View style={{ flex: 1, minWidth: 160 }}>
+            <Text style={styles.label}>Próxima Mantención Calculada</Text>
+            <View style={styles.fechaCalculadaCaja}>
+              <Ionicons name="calendar" size={16} color={tema.colors.primary} />
+              <Text style={styles.fechaCalculadaTexto}>
+                {formatearFecha(fechaProximaCalculada)} (+{planFrecuenciaMeses || 3}m)
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <Text style={styles.label}>Notas o Alcance Técnico del Seguimiento</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ej: Incluye limpieza de serpentines, reapriete de bornes y medición de carga..."
+          placeholderTextColor="#9ca3af"
+          value={planNotas}
+          onChangeText={establecerPlanNotas}
+        />
+
+        {errorFormPlan ? (
+          <View style={styles.errorBanner}>
+            <Ionicons name="alert-circle" size={16} color="#dc2626" />
+            <Text style={styles.errorBannerTexto}>{errorFormPlan}</Text>
+          </View>
+        ) : null}
+
+        <View style={styles.formBotonesRow}>
+          <Boton
+            title="Cancelar"
+            variant="outline"
+            size="sm"
+            onPress={() => establecerModoFormPlan(false)}
+            style={{ flex: 1, minHeight: 40 }}
+          />
+          <Boton
+            title={guardandoPlan ? "Programando..." : "Activar Plan"}
+            variant="primary"
+            size="sm"
+            icon="checkmark-circle-outline"
+            disabled={guardandoPlan}
+            onPress={guardarPlanMantencion}
+            style={{ flex: 1.4, minHeight: 40 }}
+          />
+        </View>
+      </VistaModal>
+
+      {/* =====================================================================
+          MODAL 3: CONTACTAR CLIENTE Y AGENDAR FAENA DE MANTENCIÓN (REDISEÑADO)
+          ===================================================================== */}
+      <VistaModal
+        visible={Boolean(planContactando)}
+        onClose={() => establecerPlanContactando(null)}
+        title="Contactar Cliente y Agendar Mantención"
+        subtitle={
+          planContactando
+            ? `${planContactando.razon_social} • ${planContactando.titulo_plan}`
+            : ""
+        }
+        maxWidth={600}
+      >
+        {planContactando && (() => {
+          const infoContacto = obtenerDatosContactoPlan(planContactando);
+          const diasPlan = planContactando.dias_restantes ?? 30;
+          const esPlanVencido = diasPlan < 0;
+
+          return (
+            <>
+              {/* BLOQUE 1: FICHA DE CONTACTO DIRECTO DEL CLIENTE + BOTONES DE LLAMADA / WHATSAPP / CORREO */}
+              <View
+                style={{
+                  backgroundColor: esPlanVencido ? "#fef2f2" : "#fffbeb",
+                  borderWidth: 1.5,
+                  borderColor: esPlanVencido ? "#fca5a5" : "#fcd34d",
+                  borderLeftWidth: 5,
+                  borderLeftColor: esPlanVencido ? "#dc2626" : "#d97706",
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 12,
+                  gap: 8,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    gap: 8,
+                  }}
+                >
+                  <View style={{ flex: 1, minWidth: 180 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons
+                        name="person-circle"
+                        size={18}
+                        color={esPlanVencido ? "#991b1b" : "#92400e"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: "900",
+                          color: tema.colors.text,
+                        }}
+                      >
+                        {infoContacto.nombreContacto}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 11.5,
+                        fontWeight: "700",
+                        color: esPlanVencido ? "#991b1b" : "#92400e",
+                        marginTop: 1,
+                      }}
+                    >
+                      {planContactando.razon_social}
+                      {infoContacto.rut ? ` • RUT: ${infoContacto.rut}` : ""}
+                    </Text>
+                  </View>
+
+                  <Insignia
+                    label={
+                      esPlanVencido
+                        ? `Vencida hace ${Math.abs(diasPlan)}d`
+                        : diasPlan === 0
+                          ? "Vence Hoy"
+                          : `Próxima en ${diasPlan}d`
+                    }
+                    tone={esPlanVencido ? "danger" : "warn"}
+                    size="sm"
+                  />
+                </View>
+
+                {/* Datos de Teléfono, Correo y Dirección en caja blanca limpia */}
+                <View
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderWidth: 1,
+                    borderColor: esPlanVencido ? "#fecaca" : "#fde68a",
+                    borderRadius: 9,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    gap: 5,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 14 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="call" size={14} color="#16a34a" />
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: tema.colors.text }}>
+                        {infoContacto.telefono || "Sin teléfono registrado"}
+                      </Text>
+                    </View>
+
+                    {infoContacto.correo ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                        <Ionicons name="mail" size={14} color={tema.colors.primaryDark} />
+                        <Text style={{ fontSize: 12, fontWeight: "600", color: tema.colors.textSecondary }}>
+                          {infoContacto.correo}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {infoContacto.direccion ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                      <Ionicons name="location-outline" size={14} color={tema.colors.textMuted} />
+                      <Text style={{ fontSize: 11.5, color: tema.colors.textSecondary }} numberOfLines={1}>
+                        {infoContacto.direccion}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Botones de Acción de Comunicación en 1 Toque */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => lanzarAccionComunicacionDirecta(planContactando, "llamar")}
+                    style={{
+                      flex: 1,
+                      minWidth: 110,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1.5,
+                      borderColor: "#16a34a",
+                      borderRadius: 8,
+                      paddingVertical: 7,
+                      paddingHorizontal: 10,
+                    }}
+                  >
+                    <Ionicons name="call-outline" size={15} color="#16a34a" />
+                    <Text style={{ fontSize: 12, fontWeight: "800", color: "#166534" }}>
+                      Llamar Ahora
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => lanzarAccionComunicacionDirecta(planContactando, "whatsapp")}
+                    style={{
+                      flex: 1,
+                      minWidth: 115,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      backgroundColor: "#f0fdf4",
+                      borderWidth: 1.5,
+                      borderColor: "#16a34a",
+                      borderRadius: 8,
+                      paddingVertical: 7,
+                      paddingHorizontal: 10,
+                    }}
+                  >
+                    <Ionicons name="logo-whatsapp" size={15} color="#16a34a" />
+                    <Text style={{ fontSize: 12, fontWeight: "800", color: "#166534" }}>
+                      Abrir WhatsApp
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => lanzarAccionComunicacionDirecta(planContactando, "correo")}
+                    style={{
+                      flex: 1,
+                      minWidth: 110,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: tema.colors.borderDark,
+                      borderRadius: 8,
+                      paddingVertical: 7,
+                      paddingHorizontal: 10,
+                    }}
+                  >
+                    <Ionicons name="mail-outline" size={15} color={tema.colors.primaryDark} />
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text }}>
+                      Enviar Correo
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* BLOQUE 2: REGISTRO DE LA GESTIÓN Y AGENDAMIENTO */}
+              <View
+                style={{
+                  backgroundColor: "#f8fafc",
+                  borderWidth: 1,
+                  borderColor: tema.colors.border,
+                  borderRadius: 12,
+                  padding: 12,
+                  marginBottom: 12,
+                }}
+              >
+                <Text style={styles.label}>1. Canal de Contacto Utilizado:</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {(
+                    [
+                      { id: "Teléfono", icon: "call-outline" as const },
+                      { id: "WhatsApp", icon: "logo-whatsapp" as const },
+                      { id: "Correo", icon: "mail-outline" as const },
+                      { id: "Visita", icon: "walk-outline" as const },
+                    ] as const
+                  ).map((c) => {
+                    const activo = segCanal === c.id;
+                    return (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[
+                          styles.selectorChip,
+                          activo && styles.selectorChipActivo,
+                          { flexDirection: "row", alignItems: "center", gap: 5 },
+                        ]}
+                        onPress={() => establecerSegCanal(c.id)}
+                      >
+                        <Ionicons
+                          name={c.icon}
+                          size={13}
+                          color={activo ? "#818cf8" : "#4b5563"}
+                        />
+                        <Text
+                          style={[
+                            styles.selectorChipTexto,
+                            activo && styles.selectorChipTextoActivo,
+                          ]}
+                        >
+                          {c.id}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Text style={styles.label}>2. Resultado de la Gestión:</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {RESULTADOS_CONTACTO.map((r) => {
+                    const activo = segResultado === r;
+                    return (
+                      <TouchableOpacity
+                        key={r}
+                        style={[styles.selectorChip, activo && styles.selectorChipActivo]}
+                        onPress={() => {
+                          establecerSegResultado(r);
+                          if (r === "Visita Confirmada") establecerSegGenerarFaena(true);
+                          if (r === "Pospuesto por Cliente" || r === "Pendiente Contacto") {
+                            establecerSegGenerarFaena(false);
+                          }
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.selectorChipTexto,
+                            activo && styles.selectorChipTextoActivo,
+                          ]}
+                        >
+                          {r}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <Pressable
+                  style={[
+                    styles.toggleGenerarFaenaCaja,
+                    segGenerarFaena && styles.toggleGenerarFaenaCajaActivo,
+                  ]}
+                  onPress={() => establecerSegGenerarFaena((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={segGenerarFaena ? "checkbox" : "square-outline"}
+                    size={18}
+                    color={segGenerarFaena ? tema.colors.primary : "#9ca3af"}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toggleGenerarTitulo}>
+                      Crear Faena de Mantención y avanzar ciclo (+{planContactando.frecuencia_meses} meses)
+                    </Text>
+                    <Text style={styles.toggleGenerarSub}>
+                      Fecha actual: {formatearFecha(planContactando.fecha_proxima_mantencion)} → Próximo ciclo:{" "}
+                      <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                        {formatearFecha(
+                          sumarMesesFecha(
+                            planContactando.fecha_proxima_mantencion,
+                            planContactando.frecuencia_meses
+                          )
+                        )}
+                      </Text>
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <CampoTexto
+                  label="3. Observaciones / Acuerdos con el Cliente"
+                  icon="chatbubble-ellipses-outline"
+                  value={segObservaciones}
+                  onChangeText={establecerSegObservaciones}
+                  placeholder="Ej: Cliente confirma visita para el viernes a las 09:00 hrs..."
+                  containerStyle={{ marginBottom: 6 }}
+                />
+
+                {/* Plantillas rápidas de respuesta en 1 toque */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {[
+                    `Confirma visita técnica con ${infoContacto.nombreContacto}`,
+                    "Solicita reagendar para la próxima semana",
+                    "Sin respuesta telefónica, se envía mensaje por WhatsApp",
+                  ].map((plantilla) => (
+                    <TouchableOpacity
+                      key={plantilla}
+                      onPress={() => establecerSegObservaciones(plantilla)}
+                      style={{
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: tema.colors.borderDark,
+                        borderRadius: 999,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: "600", color: tema.colors.textSecondary }}>
+                        + {plantilla}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.formBotonesRow}>
+                <Boton
+                  title="Cancelar"
+                  variant="outline"
+                  size="sm"
+                  onPress={() => establecerPlanContactando(null)}
+                  style={{ flex: 1, minHeight: 40 }}
+                />
+                <Boton
+                  title={
+                    guardandoSeguimiento
+                      ? "Procesando..."
+                      : segGenerarFaena
+                        ? "Confirmar y Generar Faena"
+                        : "Guardar Contacto"
+                  }
+                  variant="primary"
+                  size="sm"
+                  icon="checkmark-circle-outline"
+                  disabled={guardandoSeguimiento}
+                  onPress={confirmarSeguimientoContacto}
+                  style={{ flex: 1.5, minHeight: 40 }}
+                />
+              </View>
+            </>
+          );
+        })()}
+      </VistaModal>
     </>
   );
 
@@ -1481,7 +2658,7 @@ const styles = StyleSheet.create({
     borderColor: "#e5e7eb",
   },
   headerOscuro: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     paddingHorizontal: 18,
     paddingVertical: 14,
     flexDirection: "row",
@@ -1515,14 +2692,14 @@ const styles = StyleSheet.create({
   },
   headerSubtitulo: {
     fontSize: 11,
-    color: "#a8a29e",
+    color: "#94a3b8",
     marginTop: 2,
   },
   btnCerrar: {
     width: 32,
     height: 32,
     borderRadius: 8,
-    backgroundColor: "#292524",
+    backgroundColor: "#1e293b",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -1890,7 +3067,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#f9fafb",
   },
   selectorChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   selectorChipTexto: {
@@ -1965,7 +3142,7 @@ const styles = StyleSheet.create({
     minWidth: 180,
   },
   kitCardChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   kitCardChipTitulo: {

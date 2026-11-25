@@ -42,9 +42,9 @@ export const estilos = StyleSheet.create({
     flex: 1,
   },
   pestanaBarraContenedor: {
-    backgroundColor: "#1c1917", // Dark Titanium Technical Chassis
+    backgroundColor: "#0f172a", // Dark Titanium Technical Chassis
     borderBottomWidth: 1,
-    borderBottomColor: "#292524",
+    borderBottomColor: "#1e293b",
   },
   pestanaScrollContenido: {
     paddingHorizontal: tema.spacing.sm,
@@ -59,16 +59,16 @@ export const estilos = StyleSheet.create({
     minHeight: 46,
   },
   pestanaElementoActivo: {
-    borderBottomColor: "#f59e0b",
+    borderBottomColor: "#818cf8",
   },
   pestanaEtiqueta: {
     fontSize: tema.fontSize.xs,
     fontWeight: "600",
-    color: "#a8a29e",
+    color: "#94a3b8",
     marginLeft: 6,
   },
   pestanaEtiquetaActivo: {
-    color: "#f59e0b",
+    color: "#818cf8",
     fontWeight: "bold",
   },
   pestanaContenido: {
@@ -101,6 +101,7 @@ export const estilos = StyleSheet.create({
   },
   buscarEntrada: {
     flex: 1,
+    minWidth: 0,
     fontSize: tema.fontSize.sm,
     color: tema.colors.text,
   },
@@ -1610,6 +1611,132 @@ export const estilos = StyleSheet.create({
   bodegaUbicacionNota: {
     fontSize: tema.fontSize.xs,
     color: tema.colors.textSecondary,
+  },
+  // Estilos para bandeja de aprobación administrativa y notificaciones de solicitudes
+  scrumBandejaBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: tema.colors.primaryLight,
+    borderWidth: 1,
+    borderColor: tema.colors.primaryBorder,
+    borderRadius: tema.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: tema.spacing.md,
+  },
+  scrumBandejaTexto: {
+    flex: 1,
+    fontSize: tema.fontSize.xs,
+    color: tema.colors.primaryDeep,
+    lineHeight: 17,
+  },
+  solicitudContadoresFila: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: tema.spacing.md,
+  },
+  solicitudContadorTarjeta: {
+    flex: 1,
+    minWidth: 110,
+    backgroundColor: tema.colors.card,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    borderRadius: tema.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  solicitudContadorTarjetaActiva: {
+    borderColor: tema.colors.primary,
+    backgroundColor: tema.colors.primaryLight,
+  },
+  solicitudContadorValor: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: tema.colors.text,
+  },
+  solicitudContadorEtiqueta: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: tema.colors.textMuted,
+    marginTop: 2,
+  },
+  aprobadaAviso: {
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: tema.colors.okLight,
+    borderWidth: 1,
+    borderColor: tema.colors.okBorder,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  aprobadaAvisoTexto: {
+    flex: 1,
+    fontSize: tema.fontSize.xs,
+    fontWeight: "600",
+    color: tema.colors.okDark,
+  },
+  anuladaAviso: {
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: tema.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: tema.colors.borderDark,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  anuladaAvisoTexto: {
+    flex: 1,
+    fontSize: tema.fontSize.xs,
+    fontWeight: "600",
+    color: tema.colors.textSecondary,
+  },
+  bloqueadoAccionAviso: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: tema.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+  },
+  bloqueadoAccionTexto: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: tema.colors.textMuted,
+  },
+  solicitudLineaTarjeta: {
+    backgroundColor: tema.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    borderRadius: tema.radius.md,
+    padding: 10,
+    marginBottom: 10,
+  },
+  solicitudLineaCabecera: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  solicitudLineaTitulo: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: tema.colors.text,
+  },
+  solicitudLineaCantidadFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    marginTop: 4,
   },
 });
 

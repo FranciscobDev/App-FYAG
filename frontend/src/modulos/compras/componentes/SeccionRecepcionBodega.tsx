@@ -36,6 +36,14 @@ export interface PropiedadesSeccionRecepcionBodega {
   seleccionadoFacturaNumero: any;
   seleccionadoOcCodigo: any;
   tieneRecepcionDiscrepancy: any;
+  ultimoEscaneoRecepcion?: {
+    tipo: "ok" | "alerta";
+    sku?: string;
+    nombre?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null;
+  onLimpiarUltimoEscaneo?: () => void;
   width: any;
 }
 
@@ -54,6 +62,8 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
   seleccionadoFacturaNumero,
   seleccionadoOcCodigo,
   tieneRecepcionDiscrepancy,
+  ultimoEscaneoRecepcion,
+  onLimpiarUltimoEscaneo,
   width,
 }) => {
   const ordenesPendientes = ordenesCompra.filter(
@@ -66,6 +76,11 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
     (acc: number, o: any) =>
       acc + o.items.filter((it: any) => (it.receivedQuantity || 0) < it.quantity).length,
     0
+  );
+
+  const esMovilEstrecho = (width || 400) < 440;
+  const [vistaRecepcion, setVistaRecepcion] = React.useState<"cola" | "recibidas">(
+    ordenesPendientes.length > 0 ? "cola" : "cola"
   );
 
   // Auto-seleccionar la primera OC pendiente si no hay ninguna seleccionada
@@ -83,249 +98,327 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
 
   return (
     <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-      {/* 1. FRANJA DE RESUMEN OPERATIVO DE RECEPCIÓN */}
-      <View
-        style={{
-          flexDirection: "row",
-          flexWrap: "wrap",
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
+      {/* 1. CABECERA COMPACTA INDUSTRIAL + ACCIÓN DE ESCANEO */}
+      <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
         <View
           style={{
-            flex: 1,
-            minWidth: 140,
-            backgroundColor: tema.colors.card,
-            borderRadius: tema.radius.md,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: tema.colors.primaryBorder,
             flexDirection: "row",
+            justifyContent: "space-between",
             alignItems: "center",
+            flexWrap: "wrap",
             gap: 10,
           }}
         >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              backgroundColor: tema.colors.primaryLight,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="cart-outline" size={20} color={tema.colors.primaryDark} />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: tema.colors.primaryLight,
+                borderWidth: 1,
+                borderColor: tema.colors.primaryBorder,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="checkbox-outline" size={20} color={tema.colors.primaryDark} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                Estación de Recepción — Bodega
+              </Text>
+              <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                {ordenesPendientes.length > 0 ? (
+                  <>
+                    <Text style={{ fontWeight: "800", color: tema.colors.warnDark }}>
+                      {ordenesPendientes.length} OC por recibir
+                    </Text>{" "}
+                    ({totalLineasPorVerificar} ítems por verificar)
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                      Recepción al día
+                    </Text>{" "}
+                    • {ordenesCompletadas.length} OC recibidas en historial
+                  </>
+                )}
+              </Text>
+            </View>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
-              {ordenesPendientes.length}
-            </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
-              OC por Recibir
-            </Text>
-          </View>
-        </View>
 
-        <View
-          style={{
-            flex: 1,
-            minWidth: 140,
-            backgroundColor: tema.colors.card,
-            borderRadius: tema.radius.md,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: tema.colors.border,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              backgroundColor: tema.colors.warnLight,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="cube-outline" size={20} color={tema.colors.warnDark} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
-              {totalLineasPorVerificar}
-            </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
-              Ítems por Verificar
-            </Text>
-          </View>
+          <Boton
+            title="Escanear QR / Barras"
+            variant="primary"
+            size="sm"
+            icon="qr-code-outline"
+            onPress={() => manejarAbrirEscaner()}
+            style={{ minHeight: 40 }}
+            fullWidth={esMovilEstrecho}
+          />
         </View>
+      </Tarjeta>
 
-        <View
-          style={{
-            flex: 1,
-            minWidth: 140,
-            backgroundColor: tema.colors.card,
-            borderRadius: tema.radius.md,
-            padding: 12,
-            borderWidth: 1,
-            borderColor: tema.colors.border,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
-              backgroundColor: tema.colors.okLight,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Ionicons name="checkmark-done-outline" size={20} color={tema.colors.okDark} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
-              {ordenesCompletadas.length}
-            </Text>
-            <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
-              OC Recibidas
-            </Text>
-          </View>
-        </View>
+      {/* 2. PESTAÑAS KPI COMPACTAS EN 1 SOLA FILA SIMÉTRICA (SIN TARJETA SUELTA ABAJO) */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+        {[
+          {
+            id: "cola" as const,
+            titulo: "OC por Recibir",
+            valor: ordenesPendientes.length,
+            sub: `${totalLineasPorVerificar} ítems pend.`,
+            icon: "cart-outline" as const,
+            bg: ordenesPendientes.length > 0 ? "#fffbeb" : "#f1f5f9",
+            border: ordenesPendientes.length > 0 ? "#fcd34d" : "#cbd5e1",
+            borderActivo: ordenesPendientes.length > 0 ? "#d97706" : "#475569",
+            textColor: ordenesPendientes.length > 0 ? "#92400e" : "#334155",
+            clickable: true,
+          },
+          {
+            id: "items" as const,
+            titulo: "Por Verificar",
+            valor: totalLineasPorVerificar,
+            sub: "Líneas de OC",
+            icon: "cube-outline" as const,
+            bg: "#fffbeb",
+            border: "#fcd34d",
+            borderActivo: "#d97706",
+            textColor: "#92400e",
+            clickable: false,
+          },
+          {
+            id: "recibidas" as const,
+            titulo: "OC Recibidas",
+            valor: ordenesCompletadas.length,
+            sub: "Ingresadas OK",
+            icon: "checkmark-done-circle-outline" as const,
+            bg: "#f0fdf4",
+            border: "#86efac",
+            borderActivo: "#16a34a",
+            textColor: "#166534",
+            clickable: true,
+          },
+        ].map((kpi) => {
+          const activo =
+            (kpi.id === "cola" && vistaRecepcion === "cola") ||
+            (kpi.id === "recibidas" && vistaRecepcion === "recibidas");
+          return (
+            <TouchableOpacity
+              key={kpi.id}
+              activeOpacity={kpi.clickable ? 0.8 : 1}
+              onPress={() => {
+                if (kpi.id === "cola") setVistaRecepcion("cola");
+                if (kpi.id === "recibidas") setVistaRecepcion("recibidas");
+              }}
+              style={{
+                flex: 1,
+                minWidth: 105,
+                backgroundColor: kpi.bg,
+                borderWidth: activo ? 2 : 1,
+                borderColor: activo ? kpi.borderActivo : kpi.border,
+                borderLeftWidth: 5,
+                borderLeftColor: kpi.borderActivo,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "800",
+                    color: kpi.textColor,
+                    textTransform: "uppercase",
+                  }}
+                  numberOfLines={1}
+                >
+                  {kpi.titulo}
+                </Text>
+                <Ionicons name={kpi.icon} size={14} color={kpi.textColor} />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                  {kpi.valor}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: activo ? "800" : "600",
+                    color: kpi.textColor,
+                  }}
+                  numberOfLines={1}
+                >
+                  {activo ? "● Activa" : kpi.sub}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* 2. COLA DE ÓRDENES DE COMPRA PENDIENTES DE RECEPCIÓN */}
-      <View style={estilos.ocSeleccionarSeccion}>
-        <View style={estilos.ocSeleccionarEncabezado}>
-          <Ionicons name="receipt-outline" size={16} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-          <Text style={estilos.ocSeleccionarEtiqueta}>
-            1. Seleccionar Orden de Compra en Cola ({ordenesPendientes.length}):
-          </Text>
-        </View>
+      {/* 3. COLA DE ÓRDENES DE COMPRA PENDIENTES DE RECEPCIÓN */}
+      {vistaRecepcion === "cola" && (
+        <View style={estilos.ocSeleccionarSeccion}>
+          <View style={estilos.ocSeleccionarEncabezado}>
+            <Ionicons name="receipt-outline" size={16} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+            <Text style={estilos.ocSeleccionarEtiqueta}>
+              1. Ordenes de Compra en Cola de Recepción ({ordenesPendientes.length}):
+            </Text>
+          </View>
 
-        {ordenesPendientes.length === 0 ? (
-          <EstadoVacio
-            icon="checkmark-done-circle-outline"
-            title="Sin órdenes pendientes de recepción"
-            description="Todas las órdenes de compra enviadas ya fueron recibidas e ingresadas a bodega."
-            containerStyle={{ marginVertical: 16 }}
-          />
-        ) : (
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              gap: 12,
-              marginBottom: 16,
-            }}
-          >
-            {ordenesPendientes.map((o: any) => {
-              const esSeleccionado = seleccionadoOcCodigo === o.code;
-              const esPartial = o.status === "recibida_parcial";
-              const totalPendientesOc = o.items.reduce(
-                (acc: number, it: any) => acc + Math.max(0, it.quantity - (it.receivedQuantity || 0)),
-                0
-              );
+          {ordenesPendientes.length === 0 ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                backgroundColor: "#f0fdf4",
+                borderWidth: 1.5,
+                borderColor: "#86efac",
+                borderLeftWidth: 6,
+                borderLeftColor: "#16a34a",
+                borderRadius: 12,
+                padding: 14,
+                marginVertical: 6,
+              }}
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: "#dcfce7",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="checkmark-done" size={20} color="#16a34a" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: "800", color: "#166534" }}>
+                  Sin órdenes pendientes de recepción
+                </Text>
+                <Text style={{ fontSize: 12, color: "#15803d", marginTop: 2 }}>
+                  Todas las órdenes de compra enviadas ya fueron recibidas e ingresadas a bodega.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              {ordenesPendientes.map((o: any) => {
+                const esSeleccionado = seleccionadoOcCodigo === o.code;
+                const esPartial = o.status === "recibida_parcial";
+                const totalPendientesOc = o.items.reduce(
+                  (acc: number, it: any) => acc + Math.max(0, it.quantity - (it.receivedQuantity || 0)),
+                  0
+                );
 
-              return (
-                <TouchableOpacity
-                  key={o.code}
-                  onPress={() => establecerSeleccionadoOcCodigo(o.code)}
-                  style={[
-                    estilos.ocSeleccionarChip,
-                    {
+                return (
+                  <TouchableOpacity
+                    key={o.code}
+                    onPress={() => establecerSeleccionadoOcCodigo(o.code)}
+                    style={{
                       flex: 1,
                       minWidth: 250,
-                      marginRight: 0,
                       padding: 12,
-                    },
-                    esSeleccionado && estilos.ocSeleccionarChipActivo,
-                  ]}
-                  activeOpacity={0.85}
-                >
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      flexWrap: "wrap",
-                      gap: 6,
+                      backgroundColor: "#fffbeb",
+                      borderColor: esSeleccionado ? "#d97706" : "#fcd34d",
+                      borderWidth: esSeleccionado ? 2 : 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: "#d97706",
+                      borderRadius: 12,
                     }}
+                    activeOpacity={0.85}
                   >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Ionicons
-                        name={esSeleccionado ? "radio-button-on" : "radio-button-off"}
-                        size={16}
-                        color={esSeleccionado ? tema.colors.primary : tema.colors.textMuted}
-                      />
-                      <Text
-                        style={[
-                          estilos.ocSeleccionarCodigo,
-                          esSeleccionado && estilos.ocSeleccionarCodigoActivo,
-                        ]}
-                      >
-                        {o.code}
-                      </Text>
-                    </View>
-                    <Insignia
-                      label={esPartial ? "Parcial" : "Enviada"}
-                      tone={esPartial ? "warn" : "info"}
-                      size="sm"
-                    />
-                  </View>
-
-                  <Text
-                    style={[
-                      estilos.ocSeleccionarProveedor,
-                      { marginTop: 4, fontWeight: "700" },
-                      esSeleccionado && estilos.ocSeleccionarProveedorActivo,
-                    ]}
-                  >
-                    {o.supplier}
-                  </Text>
-                  <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginTop: 2 }}>
-                    Entrega esperada: {o.expectedDate}
-                  </Text>
-
-                  <View
-                    style={{
-                      marginTop: 8,
-                      paddingTop: 8,
-                      borderTopWidth: 1,
-                      borderTopColor: tema.colors.borderLight,
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: 6,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textSecondary }}>
-                      {o.items.length} {o.items.length === 1 ? "insumo" : "insumos"} ({totalPendientesOc} un. pend.)
-                    </Text>
-                    <Text
+                    <View
                       style={{
-                        fontSize: 11,
-                        fontWeight: "700",
-                        color: esSeleccionado ? tema.colors.primaryDark : tema.colors.textMuted,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        flexWrap: "wrap",
+                        gap: 6,
                       }}
                     >
-                      {esSeleccionado ? "En verificación ✓" : "Tocar para verificar →"}
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Ionicons
+                          name={esSeleccionado ? "radio-button-on" : "radio-button-off"}
+                          size={16}
+                          color={esSeleccionado ? tema.colors.primaryDark : tema.colors.textMuted}
+                        />
+                        <Text style={{ fontSize: 14, fontWeight: "800", color: "#92400e" }}>
+                          {o.code}
+                        </Text>
+                      </View>
+                      <Insignia
+                        label={esPartial ? "Parcial" : "En Espera"}
+                        tone="warn"
+                        size="sm"
+                      />
+                    </View>
+
+                    <Text
+                      style={{
+                        marginTop: 4,
+                        fontSize: 14,
+                        fontWeight: "800",
+                        color: tema.colors.text,
+                      }}
+                    >
+                      {o.supplier}
                     </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-      </View>
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 2 }}>
+                      📅 Entrega esperada: {o.expectedDate}
+                    </Text>
+
+                    <View
+                      style={{
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTopWidth: 1,
+                        borderTopColor: "#fde68a",
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: 6,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#92400e" }}>
+                        {o.items.length} {o.items.length === 1 ? "insumo" : "insumos"} ({totalPendientesOc} un. pend.)
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "800",
+                          color: esSeleccionado ? tema.colors.primaryDark : tema.colors.textSecondary,
+                        }}
+                      >
+                        {esSeleccionado ? "● En verificación" : "Tocar para verificar →"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* 3. ESTACIÓN DE VERIFICACIÓN Y CONTROL DE CALIDAD */}
       {activoRecepcionOrden && (
@@ -360,13 +453,75 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
             </View>
 
             <Boton
-              variant="secondary"
+              variant="primary"
               size="sm"
-              title="Verificar Bulto"
+              title="Escanear QR / Barras"
               icon="qr-code-outline"
               onPress={() => manejarAbrirEscaner()}
+              style={{ minHeight: 40 }}
             />
           </View>
+
+          {/* Resultado del último escaneo óptico en Recepción (H33) */}
+          {ultimoEscaneoRecepcion && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+                padding: 12,
+                borderRadius: tema.radius.md,
+                marginBottom: 12,
+                backgroundColor:
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.okLight
+                    : tema.colors.dangerLight,
+                borderWidth: 1,
+                borderColor:
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.ok
+                    : tema.colors.danger,
+              }}
+            >
+              <Ionicons
+                name={
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? "checkmark-circle"
+                    : "alert-circle"
+                }
+                size={20}
+                color={
+                  ultimoEscaneoRecepcion.tipo === "ok"
+                    ? tema.colors.okDark
+                    : tema.colors.danger
+                }
+              />
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color:
+                      ultimoEscaneoRecepcion.tipo === "ok"
+                        ? tema.colors.okDark
+                        : tema.colors.danger,
+                  }}
+                >
+                  {ultimoEscaneoRecepcion.tipo === "ok"
+                    ? `Lectura óptica exitosa (${ultimoEscaneoRecepcion.tiempoTexto})`
+                    : `Lectura bloqueada (${ultimoEscaneoRecepcion.tiempoTexto})`}
+                </Text>
+                <Text style={{ fontSize: 12, color: tema.colors.text, marginTop: 2 }}>
+                  {ultimoEscaneoRecepcion.mensaje}
+                </Text>
+              </View>
+              {onLimpiarUltimoEscaneo && (
+                <TouchableOpacity onPress={onLimpiarUltimoEscaneo} style={{ padding: 4 }}>
+                  <Ionicons name="close" size={16} color={tema.colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Selector de Factura de Compra Vinculada */}
           <View style={estilos.facturaSeleccionarContenedor}>
@@ -870,36 +1025,114 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
         </Tarjeta>
       )}
 
-      {/* 4. HISTORIAL DE ÚLTIMAS ÓRDENES RECIBIDAS */}
+      {/* 4. HISTORIAL DE ÚLTIMAS ÓRDENES RECIBIDAS CON SEMÁFORO VERDE */}
       {ordenesCompletadas.length > 0 && (
-        <View style={{ marginTop: 22 }}>
-          <Text style={estilos.ocSeleccionarEtiqueta}>
-            Últimas Órdenes Recibidas ({ordenesCompletadas.length}):
-          </Text>
-          <View style={{ marginTop: 8 }}>
-            {ordenesCompletadas.slice(0, 4).map((oc: any) => (
-              <Tarjeta key={oc.id} variant="outlined" style={{ marginBottom: 8, padding: 12 }}>
+        <View style={{ marginTop: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+            <Ionicons name="checkmark-done-circle-outline" size={16} color="#16a34a" style={{ marginRight: 6 }} />
+            <Text style={estilos.ocSeleccionarEtiqueta}>
+              Órdenes de Compra Recibidas en Bodega ({ordenesCompletadas.length}):
+            </Text>
+          </View>
+          <View style={{ gap: 10 }}>
+            {ordenesCompletadas.map((oc: any) => (
+              <Tarjeta
+                key={oc.id}
+                variant="outlined"
+                style={{
+                  padding: 12,
+                  backgroundColor: "#f0fdf4",
+                  borderColor: "#86efac",
+                  borderWidth: 1.5,
+                  borderLeftWidth: 6,
+                  borderLeftColor: "#16a34a",
+                  borderRadius: 12,
+                }}
+              >
                 <View
                   style={{
                     flexDirection: "row",
                     justifyContent: "space-between",
-                    alignItems: "center",
+                    alignItems: "flex-start",
                     flexWrap: "wrap",
-                    gap: 6,
+                    gap: 8,
                   }}
                 >
                   <View style={{ flex: 1, minWidth: 180 }}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.text }}>
-                      {oc.code} • {oc.supplier}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <Text style={{ fontSize: 14, fontWeight: "800", color: "#166534" }}>
+                        {oc.code}
+                      </Text>
+                      {oc.invoiceNumber && (
+                        <Insignia label={`FAC-${oc.invoiceNumber}`} tone="info" size="sm" />
+                      )}
+                      <Insignia label="Recibida OK" tone="ok" icon="checkmark-circle-outline" size="sm" />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: "800", color: tema.colors.text, marginTop: 2 }}>
+                      {oc.supplier}
                     </Text>
-                    <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginTop: 2 }}>
-                      {oc.items.length} insumos • Fecha OC: {oc.date}
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 2 }}>
+                      📦 {oc.items.length} insumo(s) ingresados • 📅 Fecha OC: {oc.date}
                     </Text>
                   </View>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    {oc.invoiceNumber && <Insignia label={`FAC-${oc.invoiceNumber}`} tone="info" size="sm" />}
-                    <Insignia label="Recibida" tone="ok" size="sm" />
+
+                  <View
+                    style={{
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: "#86efac",
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      alignItems: "flex-end",
+                    }}
+                  >
+                    <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                      Total OC
+                    </Text>
+                    <Text style={{ fontSize: 14, fontWeight: "900", color: "#166534", marginTop: 1 }}>
+                      {formatearCLP(oc.total || 0)}
+                    </Text>
                   </View>
+                </View>
+
+                {/* Resumen compacto de insumos recibidos */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    gap: 6,
+                    backgroundColor: "#ffffff",
+                    borderWidth: 1,
+                    borderColor: "#bbf7d0",
+                    borderRadius: 8,
+                    padding: 8,
+                    marginTop: 8,
+                  }}
+                >
+                  {oc.items.map((it: any, idx: number) => (
+                    <View
+                      key={`${it.sku}_${idx}`}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: tema.colors.surfaceAlt,
+                        borderWidth: 1,
+                        borderColor: tema.colors.border,
+                        borderRadius: 6,
+                        paddingHorizontal: 7,
+                        paddingVertical: 3,
+                        gap: 5,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#166534" }}>
+                        {it.receivedQuantity ?? it.quantity} {it.unit}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: tema.colors.text }} numberOfLines={1}>
+                        {it.name}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               </Tarjeta>
             ))}

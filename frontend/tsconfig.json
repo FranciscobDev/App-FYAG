@@ -3,6 +3,7 @@
   "compilerOptions": {
     "strict": false,
     "moduleResolution": "bundler",
+    "skipLibCheck": true,
     "paths": {
       "@/*": [
         "./src/*"

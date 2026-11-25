@@ -43,6 +43,11 @@ import {
 import { estilos } from "./estilos";
 import { SeccionOrdenesCompra, SeccionFacturasProveedor, SeccionRecepcionBodega, SeccionDirectorioTerceros, ModalesCompras } from "./componentes";
 import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+  ResultadoResolucionCodigoBodega,
+} from "@/modulos/inventario/escanerBodegaUtils";
+import {
   aplicarEntregaChecklistEnOrden,
   calcularSaldoPendienteLineaOc,
   construirChecklistInicialDesdeOc,
@@ -159,14 +164,43 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
   };
 
   const manejarGuardarCompraOrden = (asDraft = true) => {
+    if (editandoPo && editandoPo.status !== "borrador") {
+      establecerPoError("Solo se pueden editar órdenes en estado Borrador.");
+      return;
+    }
+
     const sup = proveedores.find((s) => s.id === seleccionadoProveedorId);
     if (!sup) {
       establecerPoError("Seleccione un proveedor válido.");
       return;
     }
     if (poElementos.length === 0) {
-      establecerPoError("Debe incluir al menos un insumo en la orden.");
+      establecerPoError("Debe incluir al menos una línea de compra en la orden.");
       return;
+    }
+
+    const skusRegistrados = new Set<string>();
+    for (const item of poElementos) {
+      if (!item.sku) {
+        establecerPoError("Cada línea debe tener un insumo seleccionado.");
+        return;
+      }
+      if (skusRegistrados.has(item.sku)) {
+        establecerPoError(
+          `El insumo ${item.sku} está repetido en las líneas. Ajusta la cantidad en una sola fila.`
+        );
+        return;
+      }
+      skusRegistrados.add(item.sku);
+
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        establecerPoError(`La cantidad para ${item.sku} debe ser mayor a 0.`);
+        return;
+      }
+      if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+        establecerPoError(`El precio unitario para ${item.sku} no puede ser negativo.`);
+        return;
+      }
     }
 
     const elementosHastaEnviar: ItemOrdenCompra[] = poElementos.map((it) => {
@@ -174,60 +208,49 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       return {
         sku: it.sku,
         name: p ? p.name : it.sku,
-        quantity: it.quantity,
-        unitPrice: it.unitPrice,
+        quantity: Math.round(it.quantity),
+        unitPrice: Math.round(it.unitPrice),
         unit: p ? p.unit : "un",
       };
     });
 
-    if (editandoPo) {
-      const resEdit = actualizarOrdenCompra(editandoPo.id, {
-        supplierId: sup.id,
-        supplier: sup.businessName,
-        supplierRut: sup.rut,
-        isAutoMinStock: poEsAutomaticoMinimo,
-        items: elementosHastaEnviar,
-        expectedDate: poEsperadoFecha,
-        notes: poNotas,
-      });
-
-      if (!resEdit.success) {
-        establecerPoError(resEdit.error || "Error al actualizar la orden en borrador.");
-        return;
-      }
-
-      if (!asDraft) {
-        aprobarYEnviarOrden(editandoPo.id);
-        mostrarAviso(
-          `Orden ${editandoPo.code} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
-        );
-      } else {
-        mostrarAviso(`Borrador ${editandoPo.code} actualizado correctamente.`);
-      }
-      establecerPoModal(false);
-      return;
-    }
-
-    const resultado = crearOrdenCompra({
+    const estadoDestino = asDraft ? ("borrador" as const) : ("enviada" as const);
+    const datosOrden = {
       supplierId: sup.id,
       supplier: sup.businessName,
       supplierRut: sup.rut,
-      status: asDraft ? "borrador" : "enviada",
+      status: estadoDestino,
       isAutoMinStock: poEsAutomaticoMinimo,
       items: elementosHastaEnviar,
       expectedDate: poEsperadoFecha,
-      notes: poNotas,
-    });
+      notes: poNotas.trim(),
+    };
 
-    if (resultado.success) {
+    if (editandoPo) {
+      const resultadoEdicion = actualizarOrdenCompra(editandoPo.id, datosOrden);
+      if (resultadoEdicion.success) {
+        mostrarAviso(
+          asDraft
+            ? `Borrador ${editandoPo.code} actualizado correctamente.`
+            : `Orden ${editandoPo.code} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+        );
+        establecerPoModal(false);
+      } else {
+        establecerPoError(resultadoEdicion.error || "Error al actualizar la orden de compra.");
+      }
+      return;
+    }
+
+    const resultadoCreacion = crearOrdenCompra(datosOrden);
+    if (resultadoCreacion.success) {
       mostrarAviso(
         asDraft
-          ? `Orden ${resultado.code || ""} guardada en estado Borrador.`
-          : `Orden ${resultado.code || ""} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+          ? `Orden ${resultadoCreacion.code || ""} guardada en estado Borrador.`
+          : `Orden ${resultadoCreacion.code || ""} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
       );
       establecerPoModal(false);
     } else {
-      establecerPoError(resultado.error || "Error al crear la orden de compra.");
+      establecerPoError(resultadoCreacion.error || "Error al crear la orden de compra.");
     }
   };
 
@@ -404,13 +427,21 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     scanned?: boolean;
   }[]>([]);
 
-  // Escáner QR / Barras con la cámara de la tablet
+  // Escáner QR / Barras con la cámara de la tablet (H33)
   const [escanerAbrir, establecerEscanerAbrir] = useState(false);
   const [scanningTargetSku, establecerScanningTargetSku] = useState<string | null>(null);
+  const [ultimoEscaneoRecepcion, establecerUltimoEscaneoRecepcion] = useState<{
+    tipo: "ok" | "alerta";
+    sku?: string;
+    nombre?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null>(null);
 
   useEffect(() => {
     if (activoRecepcionOrden) {
       establecerRecepcionListaChequeo(construirChecklistInicialDesdeOc(activoRecepcionOrden));
+      establecerUltimoEscaneoRecepcion(null);
 
       // Vincular automáticamente la factura asociada si ya existe registrada
       const linkedInv = facturasCompra.find((inv) => inv.orderCode === activoRecepcionOrden.code);
@@ -427,29 +458,50 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     establecerEscanerAbrir(true);
   };
 
-  const manejarEscanearCodigo = (scannedCode: string) => {
+  const manejarEscanearCodigo = (
+    scannedCode: string,
+    meta?: ResultadoResolucionCodigoBodega
+  ) => {
     establecerEscanerAbrir(false);
-    const clean = scannedCode.trim();
+    const resolucion =
+      meta && meta.valido && meta.producto
+        ? meta
+        : resolverCodigoEscaneadoBodega(scannedCode, productos);
+    const tiempoTexto = formatearTiempoEscaneo(resolucion.tiempoMs);
 
     // 1. Validar si el código existe en el catálogo maestro
-    const matchedProducto = productos.find((p) => p.sku === clean || p.barcode === clean);
-    if (!matchedProducto) {
-      mostrarAviso(`El código "${clean}" no existe en el catálogo del sistema.`);
+    if (!resolucion.valido || !resolucion.producto) {
+      const msg =
+        resolucion.mensajeError ||
+        `El código "${scannedCode.trim()}" no existe en el catálogo del sistema. Flujo detenido.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
+    const matchedProducto = resolucion.producto;
     if (!activoRecepcionOrden) return;
 
     // 2. Validar si el insumo pertenece a la OC activa
     const poElemento = activoRecepcionOrden.items.find((it) => it.sku === matchedProducto.sku);
     if (!poElemento) {
-      mostrarAviso(
-        `El insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`
-      );
+      const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        sku: matchedProducto.sku,
+        nombre: matchedProducto.name,
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
-    // 3. Marcar como verificado y autocompletar la cantidad pendiente como conforme
+    // 3. Autocompletar el SKU sin digitar, marcar como escaneado y completar saldo pendiente conforme
     const pendiente = Math.max(0, poElemento.quantity - (poElemento.receivedQuantity || 0));
     establecerRecepcionListaChequeo((prev) =>
       prev.map((c) =>
@@ -458,7 +510,17 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           : c
       )
     );
-    mostrarAviso(`✓ Insumo identificado y validado: ${matchedProducto.name} (${matchedProducto.sku})`);
+    const etiquetaFormato =
+      resolucion.formatoDetectado === "QR_H47" ? "QR H47" : "Código";
+    const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto}.`;
+    establecerUltimoEscaneoRecepcion({
+      tipo: "ok",
+      sku: matchedProducto.sku,
+      nombre: matchedProducto.name,
+      tiempoTexto,
+      mensaje: msgOk,
+    });
+    mostrarAviso(`✓ ${msgOk}`);
   };
 
   // Alerta de discrepancia en recepción física vs esperada o vs factura asociada
@@ -709,11 +771,6 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     icon: "checkmark-circle-outline",
                   },
                   {
-                    id: "facturas" as PestanaCompras,
-                    label: `Facturas (${facturasCompra.length})`,
-                    icon: "receipt-outline",
-                  },
-                  {
                     id: "ordenes" as PestanaCompras,
                     label: `Órdenes de Compra (${ordenesCompra.length})`,
                     icon: "cart-outline",
@@ -729,11 +786,6 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     id: "recepcion" as PestanaCompras,
                     label: `Recepción en Bodega (${pendienteRecepcionOrdenes.length} pend.)`,
                     icon: "checkmark-circle-outline",
-                  },
-                  {
-                    id: "facturas" as PestanaCompras,
-                    label: `Facturas (${facturasCompra.length})`,
-                    icon: "receipt-outline",
                   },
                 ]
               ).map((tab) => {
@@ -824,6 +876,8 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           seleccionadoFacturaNumero={seleccionadoFacturaNumero}
           seleccionadoOcCodigo={seleccionadoOcCodigo}
           tieneRecepcionDiscrepancy={tieneRecepcionDiscrepancy}
+          ultimoEscaneoRecepcion={ultimoEscaneoRecepcion}
+          onLimpiarUltimoEscaneo={() => establecerUltimoEscaneoRecepcion(null)}
           width={width}
         />
 
@@ -907,9 +961,11 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           poEsperadoFecha={poEsperadoFecha}
           poModal={poModal}
           poNotas={poNotas}
+          aprobarYEnviarOrden={aprobarYEnviarOrden}
           productos={productos}
           proveedores={proveedores}
           scanningTargetSku={scanningTargetSku}
+          sugerenciaSkusRecepcion={activoRecepcionOrden?.items.map((it) => it.sku) || []}
           seleccionadoProveedorId={seleccionadoProveedorId}
           tarifaModalOrden={tarifaModalOrden}
           thirdPartyPestana={thirdPartyPestana}

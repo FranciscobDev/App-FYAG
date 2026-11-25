@@ -1164,7 +1164,7 @@ export interface FiltrosDinamicosCardex {
   insumoQuery?: string;
   skuExacto?: string;
   tipoMovimiento?: string;
-  rangoFechas?: "todos" | "7d" | "30d" | "personalizado";
+  rangoFechas?: "todos" | "7d" | "30d" | "mes_actual" | "personalizado";
   fechaDesde?: string;
   fechaHasta?: string;
   proyectoCodigo?: string;

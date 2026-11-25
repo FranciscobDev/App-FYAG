@@ -35,12 +35,14 @@ import { PantallaDevoluciones } from "@/modulos/devoluciones/PantallaDevolucione
 export type RutaBodega =
   | "home"
   | "egreso"
+  | "solicitudes"
   | "recepcion"
   | "devoluciones"
   | "inventario"
   | "conteo"
   | "mermas"
-  | "herramientas";
+  | "herramientas"
+  | "proveedores";
 
 export interface ElementoNavBodega {
   id: RutaBodega;
@@ -79,6 +81,7 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
 
   // Contadores dinámicos para badges de bodega
   const pendienteEgressConteo = solicitudesMaterial.filter((r) => r.status === "aprobada").length;
+  const pendienteSolicitudesConteo = solicitudesMaterial.filter((r) => r.status === "pendiente").length;
   const pendienteRecepcionesConteo = recepcionesPendientes.filter((p) => p.status === "por_confirmar").length;
   const pendienteDevolucionesConteo = ordenesDevolucion.filter((r) => r.status === "en_transito").length;
 
@@ -99,6 +102,14 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           icon: "arrow-up-circle-outline",
           badge: pendienteEgressConteo > 0 ? String(pendienteEgressConteo) : undefined,
           badgeTone: "primary",
+        },
+        {
+          id: "solicitudes",
+          label: "Solicitudes de Material",
+          description: "Crear pedidos a Administración y revisar comprobantes o rechazos",
+          icon: "clipboard-outline",
+          badge: pendienteSolicitudesConteo > 0 ? String(pendienteSolicitudesConteo) : undefined,
+          badgeTone: "info",
         },
         {
           id: "recepcion",
@@ -150,6 +161,12 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           description: "Asignar herramientas a técnicos y verificar estado al retorno",
           icon: "construct-outline",
         },
+        {
+          id: "proveedores",
+          label: "Proveedores y Clientes",
+          description: "Consulta de fichas técnicas de terceros (bancos restringidos)",
+          icon: "people-outline",
+        },
       ],
     },
   ];
@@ -191,6 +208,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
             hideTabBar={true}
             title="Egreso y Despacho"
             subtitle="Entrega física de materiales a técnicos con guía de salida"
+          />
+        );
+      case "solicitudes":
+        return (
+          <PantallaInventario
+            key="solicitudes"
+            initialTab="solicitudes"
+            hideTabBar={true}
+            title="Solicitudes de Material"
+            subtitle="Enviar pedidos a Administración, ver comprobantes numerados y rechazos"
           />
         );
       case "conteo":
@@ -237,6 +264,16 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
         return <PantallaHerramientas />;
       case "devoluciones":
         return <PantallaDevoluciones />;
+      case "proveedores":
+        return (
+          <PantallaCompras
+            key="proveedores"
+            initialTab="terceros"
+            hideTabBar={true}
+            title="Proveedores y Clientes"
+            subtitle="Consulta de fichas técnicas de terceros (sección bancaria protegida para bodega)"
+          />
+        );
       default:
         return <PanelBodega onNavigate={(tab) => establecerActivoRoute(tab as RutaBodega)} />;
     }
@@ -286,9 +323,24 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
           </View>
         </View>
 
-        {/* Acciones Rápidas Superior: Campana en la esquina */}
+        {/* Acciones rápidas superiores: Campana de notificaciones en la esquina */}
         <View style={estilos.superiorDerecha}>
-          <CampanaNotificaciones variant="dark" />
+          <CampanaNotificaciones
+            variant="dark"
+            onNavigateToObject={(entityType) => {
+              if (entityType === "solicitud") {
+                establecerActivoRoute("solicitudes");
+              } else if (entityType === "insumo") {
+                establecerActivoRoute("inventario");
+              } else if (entityType === "orden_compra") {
+                establecerActivoRoute("recepcion");
+              } else if (entityType === "herramienta") {
+                establecerActivoRoute("herramientas");
+              } else {
+                establecerActivoRoute("home");
+              }
+            }}
+          />
         </View>
       </View>
 
@@ -396,7 +448,7 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
                           <Ionicons
                             name={item.icon}
                             size={18}
-                            color={esActivo ? tema.colors.warnDark : tema.colors.textSecondary}
+                            color={esActivo ? tema.colors.primaryDark : tema.colors.textSecondary}
                           />
                         </View>
                         <View style={estilos.navegacionTextoColumna}>
@@ -506,13 +558,13 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
         >
           <View style={estilos.usuarioMenuTarjeta} onStartShouldSetResponder={() => true}>
             <View style={estilos.usuarioMenuEncabezado}>
-              <View style={[estilos.avatarGrande, { backgroundColor: tema.colors.warnDark }]}>
+              <View style={[estilos.avatarGrande, { backgroundColor: tema.colors.primaryDark }]}>
                 <Text style={estilos.avatarGrandeTexto}>{usuario.initials}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={estilos.usuarioMenuNombre}>{usuario.name}</Text>
                 <Text style={estilos.usuarioMenuRut}>{usuario.rut}</Text>
-                <Insignia label="Bodeguero Central" tone="warn" size="sm" style={{ marginTop: 4 }} />
+                <Insignia label="Bodeguero Central" tone="primary" size="sm" style={{ marginTop: 4 }} />
               </View>
             </View>
 
@@ -534,7 +586,7 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
                 <Ionicons
                   name={r === "admin" ? "briefcase" : r === "warehouse" ? "cube" : "hammer"}
                   size={18}
-                  color={r === rolActual ? tema.colors.warnDark : tema.colors.textMuted}
+                  color={r === rolActual ? tema.colors.primaryDark : tema.colors.textMuted}
                 />
                 <Text
                   style={[
@@ -545,7 +597,7 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
                   {ROLES[r].label}
                 </Text>
                 {r === rolActual && (
-                  <Ionicons name="checkmark" size={16} color={tema.colors.warnDark} />
+                  <Ionicons name="checkmark" size={16} color={tema.colors.primaryDark} />
                 )}
               </TouchableOpacity>
             ))}
@@ -587,9 +639,9 @@ const estilos = StyleSheet.create({
   barraSuperior: {
     minHeight: 64,
     paddingVertical: 8,
-    backgroundColor: "#1c1917", // Dark Titanium Bar
+    backgroundColor: "#1e1b4b", // Indigo Night Bar
     borderBottomWidth: 1.5,
-    borderBottomColor: "#292524",
+    borderBottomColor: "#312e81",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -631,7 +683,7 @@ const estilos = StyleSheet.create({
   },
   bodegaSubtitulo: {
     fontSize: 11,
-    color: "#a8a29e",
+    color: "#c7d2fe",
   },
   superiorDerecha: {
     flexDirection: "row",
@@ -640,9 +692,9 @@ const estilos = StyleSheet.create({
   designBoton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: tema.colors.warnLight,
+    backgroundColor: tema.colors.primaryLight,
     borderWidth: 1,
-    borderColor: tema.colors.warnBorder,
+    borderColor: tema.colors.primaryBorder,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: tema.radius.full,
@@ -651,7 +703,7 @@ const estilos = StyleSheet.create({
   designBotonTexto: {
     fontSize: 12,
     fontWeight: "700",
-    color: tema.colors.warnDark,
+    color: tema.colors.primaryDark,
     marginLeft: 4,
   },
   usuarioInsigniaBoton: {
@@ -667,7 +719,7 @@ const estilos = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: tema.colors.warnDark,
+    backgroundColor: tema.colors.primaryDark,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -805,7 +857,7 @@ const estilos = StyleSheet.create({
   navegacionElementoActivo: {
     backgroundColor: "#fffbeb",
     borderLeftWidth: 3,
-    borderLeftColor: tema.colors.warnDark,
+    borderLeftColor: tema.colors.primaryDark,
   },
   navegacionIconoCaja: {
     width: 32,
@@ -836,7 +888,7 @@ const estilos = StyleSheet.create({
     flex: 1,
   },
   navegacionEtiquetaActivo: {
-    color: tema.colors.warnDark,
+    color: tema.colors.primaryDark,
     fontWeight: "bold",
   },
   navegacionDescripcion: {
@@ -930,7 +982,7 @@ const estilos = StyleSheet.create({
     marginBottom: 4,
   },
   rolSwitchBotonActual: {
-    backgroundColor: tema.colors.warnLight,
+    backgroundColor: tema.colors.primaryLight,
   },
   rolSwitchTexto: {
     fontSize: tema.fontSize.xs,
@@ -940,7 +992,7 @@ const estilos = StyleSheet.create({
     flex: 1,
   },
   rolSwitchTextoActual: {
-    color: tema.colors.warnDark,
+    color: tema.colors.primaryDark,
     fontWeight: "bold",
   },
   cerrarSesionBoton: {

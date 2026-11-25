@@ -10,13 +10,26 @@ import clienteRoutes from './routes/clienteRoutes';
 import parametrosRoutes from './routes/parametrosRoutes';
 import ordenCompraRoutes from './routes/ordenCompraRoutes';
 import solicitudRoutes from './routes/solicitudRoutes';
+import sincronizacionRoutes from './routes/sincronizacionRoutes';
+import devolucionRoutes from './routes/devolucionRoutes';
+import { LIMITE_JSON_SINCRONIZACION } from './services/sincronizacionService';
 import verificarToken from './middleware/authMiddleware';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
 export const app = express();
 
 app.use(cors());
-app.use(express.json());
+
+// El lote de sincronización lleva fotos en base64: tiene su propio límite de cuerpo (más alto) y se
+// parsea DESPUÉS de validar el token, para no leer cuerpos grandes de peticiones sin sesión.
+const analizadorJsonGeneral = express.json();
+app.use((req, res, next) => {
+    if (req.originalUrl.startsWith('/api/sincronizacion')) {
+        next();
+        return;
+    }
+    analizadorJsonGeneral(req, res, next);
+});
 
 // Log de peticiones entrantes para diagnóstico en desarrollo
 app.use((req, _res, next) => {
@@ -42,5 +55,25 @@ app.use('/api/clientes', verificarToken, clienteRoutes);
 app.use('/api/parametros', verificarToken, parametrosRoutes);
 app.use('/api/ordenes-compra', verificarToken, ordenCompraRoutes);
 app.use('/api/solicitudes', verificarToken, solicitudRoutes);
+app.use('/api/devoluciones', verificarToken, devolucionRoutes);
+app.use(
+    '/api/sincronizacion',
+    verificarToken,
+    express.json({ limit: LIMITE_JSON_SINCRONIZACION }),
+    sincronizacionRoutes
+);
+
+// Cuerpo demasiado grande o JSON inválido -> respuesta clara (el móvil conserva sus datos pendientes)
+app.use((error: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (error?.type === 'entity.too.large') {
+        res.status(413).json({ codigo: 'PAYLOAD_TOO_LARGE', mensaje: 'La petición es demasiado grande. Envía menos fotos por lote (máx. 5 MB cada una).' });
+        return;
+    }
+    if (error?.type === 'entity.parse.failed') {
+        res.status(400).json({ mensaje: 'El cuerpo de la petición no es un JSON válido' });
+        return;
+    }
+    next(error);
+});
 
 export default app;

@@ -102,8 +102,8 @@ const estilos = StyleSheet.create({
     borderBottomWidth: 1,
   },
   contenedorOscuro: {
-    backgroundColor: "#1c1917", // Dark Titanium Technical Chassis
-    borderBottomColor: "#292524",
+    backgroundColor: "#1e1b4b", // Indigo Night Technical Chassis
+    borderBottomColor: "#312e81",
     marginBottom: 0,
   },
   contenedorOscuroCompacto: {
@@ -184,7 +184,7 @@ const estilos = StyleSheet.create({
     marginTop: 2,
   },
   subtituloOscuro: {
-    color: "#a8a29e",
+    color: "#c7d2fe",
   },
   derechaAccionColumna: {
     flexDirection: "row",

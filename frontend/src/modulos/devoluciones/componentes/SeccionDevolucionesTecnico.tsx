@@ -385,6 +385,29 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                     </View>
                   )}
 
+                  {/* Si está en tránsito, mostrar aviso de bloqueo de cierre del proyecto */}
+                  {esTransit && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: "#fffbeb",
+                        borderWidth: 1,
+                        borderColor: "#fcd34d",
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 7,
+                        marginTop: 8,
+                        gap: 6,
+                      }}
+                    >
+                      <Ionicons name="lock-closed-outline" size={14} color="#b45309" />
+                      <Text style={{ fontSize: 11, color: "#92400e", flex: 1, fontWeight: "600" }}>
+                        En tránsito: bloquea el cierre del proyecto {ret.projectCode} hasta confirmar recepción física en Bodega.
+                      </Text>
+                    </View>
+                  )}
+
                   {!esTransit && ret.receivedBy && (
                     <Text style={estilos.recibidoPieTexto}>
                       ✓ Recibido en bodega por {ret.receivedBy} el {formatearFecha(ret.receivedAt || ret.date)}
