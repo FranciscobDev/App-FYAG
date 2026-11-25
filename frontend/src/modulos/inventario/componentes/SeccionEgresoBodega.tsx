@@ -538,7 +538,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
               paddingVertical: 10,
               borderRadius: tema.radius.md,
               backgroundColor:
-                proyectoFiltroCodigo === "TODOS" ? "#1c1917" : tema.colors.card,
+                proyectoFiltroCodigo === "TODOS" ? "#0f172a" : tema.colors.card,
               borderWidth: 1.5,
               borderColor:
                 proyectoFiltroCodigo === "TODOS"
@@ -570,7 +570,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                   paddingHorizontal: 14,
                   paddingVertical: 10,
                   borderRadius: tema.radius.md,
-                  backgroundColor: activo ? "#1c1917" : tema.colors.card,
+                  backgroundColor: activo ? "#0f172a" : tema.colors.card,
                   borderWidth: 1.5,
                   borderColor: activo ? tema.colors.primary : tema.colors.borderDark,
                   minWidth: 210,
@@ -580,13 +580,13 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                   <Ionicons
                     name="folder-open-outline"
                     size={14}
-                    color={activo ? "#f59e0b" : tema.colors.primaryDark}
+                    color={activo ? "#818cf8" : tema.colors.primaryDark}
                   />
                   <Text
                     style={{
                       fontSize: 12,
                       fontWeight: "800",
-                      color: activo ? "#f59e0b" : tema.colors.primaryDark,
+                      color: activo ? "#818cf8" : tema.colors.primaryDark,
                     }}
                   >
                     {proy.projectCode}
