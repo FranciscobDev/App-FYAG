@@ -28,6 +28,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
     solicitudesMaterial,
     ordenesDevolucion,
     recepcionesPendientes,
+    herramientas,
   } = usarAplicacion();
 
   const [escanerAbrir, establecerEscanerAbrir] = useState(false);
@@ -156,6 +157,24 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
           </View>
           <Text style={[estilos.rapidoAccionEtiqueta, { color: tema.colors.primaryDark }]}>
             Solicitudes ({solicitudesMaterial.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[estilos.rapidoAccionBoton, { backgroundColor: "#fef3c7" }]}
+          onPress={() => onNavigate && onNavigate("herramientas")}
+          activeOpacity={0.8}
+        >
+          <View style={estilos.rapidoAccionSuperiorFila}>
+            <Ionicons name="construct-outline" size={26} color="#b45309" />
+            <Insignia
+              label={String(herramientas.filter((h) => h.status === "asignada").length)}
+              tone="warn"
+              size="sm"
+            />
+          </View>
+          <Text style={[estilos.rapidoAccionEtiqueta, { color: "#92400e" }]}>
+            Préstamo Herramientas
           </Text>
         </TouchableOpacity>
       </View>

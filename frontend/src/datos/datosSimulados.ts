@@ -1357,6 +1357,19 @@ export const HERRAMIENTAS: Herramienta[] = [
     nextMaintenanceDate: "2026-11-20", // Al día
     loans: [
       {
+        id: "ln_1b",
+        toolId: "tool_1",
+        technicianRut: TECNICOS[2].rut,
+        technicianName: "Constanza Leiva Núñez",
+        projectCode: "OB-2026-009",
+        projectName: "Bodega Logística Quilicura",
+        loanDate: "10-10-2026",
+        returnDate: "18-10-2026",
+        initialCondition: "Operativo con maletín y set de brocas SDS",
+        returnCondition: "bueno",
+        returnNotes: "Retorno con accesorios completos y prueba operativa OK",
+      },
+      {
         id: "ln_1",
         toolId: "tool_1",
         technicianRut: USUARIOS.technician.rut,
