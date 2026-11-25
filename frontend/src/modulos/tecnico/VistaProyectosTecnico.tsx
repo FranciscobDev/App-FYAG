@@ -291,8 +291,8 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Text style={estilos.cacheBannerTitulo}>
                   {operaSinConexion
-                    ? "Modo Avión / Sin Conexión — Cargado desde caché local"
-                    : `Caché local lista (${ordenadoProyectos.length} proyectos respaldados en el dispositivo)`}
+                    ? "Sin conexión — Mostrando respaldo local del dispositivo"
+                    : `Respaldo local actualizado (${ordenadoProyectos.length} proyectos disponibles sin conexión)`}
                 </Text>
                 <Text style={estilos.cacheBannerSub}>
                   {origenDatos === "cache"
@@ -321,15 +321,13 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                   modoAvionScrum && estilos.botonScrumAvionTextoActivo,
                 ]}
               >
-                {modoAvionScrum ? "Salir Modo Avión" : "Probar Modo Avión"}
+                {modoAvionScrum ? "Reconectar Red" : "Modo Sin Conexión"}
               </Text>
             </TouchableOpacity>
           </View>
 
           <Text style={estilos.scrumNota}>
-            [SCRUM] Activa modo avión en el celular (o usa el botón de prueba) para comprobar que la
-            lista guardada localmente carga sin errores y permite filtrar por estado y ordenar por
-            fecha límite.
+            Tus proyectos asignados quedan respaldados localmente para consultar estados y fechas límite incluso en faenas sin señal.
           </Text>
         </View>
 

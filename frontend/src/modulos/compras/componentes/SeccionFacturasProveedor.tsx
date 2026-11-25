@@ -602,7 +602,7 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
               <View style={estilos.existenciaAvisoCaja}>
                 <Ionicons name="information-circle" size={18} color={tema.colors.info} style={{ marginRight: 6 }} />
                 <Text style={estilos.existenciaAvisoTexto}>
-                  Aviso: El stock físico disponible y el PMP se consolidan al confirmar la recepción conforme de la mercancía (H33) usando el costo neto unitario de la factura.
+                  Aviso: El stock físico disponible y el PMP se consolidan al confirmar la recepción conforme de la mercancía usando el costo neto unitario de la factura.
                 </Text>
               </View>
             </View>

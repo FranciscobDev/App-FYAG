@@ -618,7 +618,7 @@ export const PantallaProyectos: React.FC = () => {
                       : tema.colors.textSecondary,
                 }}
               >
-                Control Presupuestario (H27)
+                Control Presupuestario
               </Text>
             </TouchableOpacity>
 
@@ -658,7 +658,7 @@ export const PantallaProyectos: React.FC = () => {
                       : tema.colors.textSecondary,
                 }}
               >
-                Rentabilidad Final (H34)
+                Rentabilidad Final
               </Text>
             </TouchableOpacity>
           </View>
@@ -1112,7 +1112,7 @@ const ModalFormulario: React.FC<ModalProps> = ({
             <View style={styles.scrumBanner}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <Ionicons name="information-circle" size={16} color="#92400e" />
-                <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
+                <Text style={styles.scrumBannerTitulo}>Control de Estados de Proyecto</Text>
               </View>
               <Text style={styles.scrumBannerTexto}>
                 Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.

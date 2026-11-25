@@ -151,7 +151,7 @@ export const SeccionCatalogoCardex: React.FC<PropiedadesSeccionCatalogoCardex> =
                     color: modoVista === "tabla" ? tema.colors.primaryDark : "#475569",
                   }}
                 >
-                  Tabla Catálogo Stock [FRONT-1]
+                  Tabla Catálogo de Stock
                 </Text>
               </TouchableOpacity>
 

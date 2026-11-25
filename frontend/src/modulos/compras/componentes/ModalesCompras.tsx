@@ -800,8 +800,8 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
             ? [scanningTargetSku, ...(sugerenciaSkusRecepcion || [])]
             : sugerenciaSkusRecepcion
         }
-        title={scanningTargetSku ? `Escanear Insumo SKU: ${scanningTargetSku}` : "Escanear Insumo de la OC (H33)"}
-        subtitle="Reconoce etiquetas QR de H47 o códigos de barras en menos de 2 s y autocompleta el SKU"
+        title={scanningTargetSku ? `Escanear Insumo SKU: ${scanningTargetSku}` : "Escanear Insumo de la Orden de Compra"}
+        subtitle="Reconoce etiquetas QR o códigos de barras y autocompleta el SKU automáticamente"
       />
     </>
   );

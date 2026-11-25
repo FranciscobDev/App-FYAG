@@ -536,7 +536,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       establecerFaltanteExistenciaErrores(res.missingItems || []);
     } else {
       mostrarAviso(
-        "Solicitud creada en estado Pendiente: el stock solicitado pasó a Comprometido en el catálogo (H6) y se notificó al Administrador."
+        "Solicitud creada en estado Pendiente: el stock solicitado pasó a Comprometido en el catálogo y se notificó al Administrador."
       );
       establecerNuevoSolicitudModal(false);
     }
@@ -796,7 +796,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // Escaneo directo desde la pantalla de Conteo Físico (H19) para abrir el modal con SKU autocompletado
   const manejarEscanearParaConteoDirecto = () => {
     abrirEscaner(
-      "Escanear Insumo para Conteo Físico (H19)",
+      "Escanear Insumo para Conteo Físico",
       (code, meta) => {
         const res =
           meta && meta.valido && meta.producto

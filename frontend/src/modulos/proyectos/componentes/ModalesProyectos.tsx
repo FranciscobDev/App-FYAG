@@ -554,7 +554,7 @@ export const ModalesProyectos: React.FC<PropiedadesModalesProyectos> = ({
               <Text style={estilos.costoVistaPreviaValor}>{formatearCLP(seleccionadoProyecto.hourlyRate || 18500)} / HH</Text>
             </View>
             <View style={estilos.costoVistaPreviaFila}>
-              <Text style={estilos.costoVistaPreviaEtiqueta}>Costo Total a Imputar (H27):</Text>
+              <Text style={estilos.costoVistaPreviaEtiqueta}>Costo Total a Imputar:</Text>
               <Text style={estilos.costoVistaPreviaTotal}>
                 {formatearCLP(adminManualHoras * (seleccionadoProyecto.hourlyRate || 18500))}
               </Text>

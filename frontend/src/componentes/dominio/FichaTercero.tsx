@@ -381,10 +381,10 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
           <View style={estilos.scrumInfo}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               <Ionicons name="git-compare-outline" size={18} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-              <Text style={estilos.scrumTitulo}>[SCRUM] Verificación de Ficha (FRONT-2)</Text>
+              <Text style={estilos.scrumTitulo}>Vista de Permisos por Perfil</Text>
             </View>
             <Text style={estilos.scrumSubtitulo}>
-              Compara la vista entre Administrador (gestiona cuentas bancarias y edición) y Bodeguero (banco oculto y solo lectura).
+              Compara los campos visibles según el rol: Administrador (edición y datos bancarios) y Bodeguero (consulta operativa sin información bancaria).
             </Text>
           </View>
 

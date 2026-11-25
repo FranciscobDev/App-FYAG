@@ -392,10 +392,10 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
         <View style={estilos.encabezado}>
           <View style={{ flex: 1 }}>
             <View style={estilos.etiquetaTicketFila}>
-              <Insignia label="[FRONT-2]" tone="info" size="sm" />
+              <Insignia label="Avance de Obra" tone="info" size="sm" />
               <Insignia label="Terreno Móvil" tone="mute" size="sm" />
               {avancePorcentaje === 50 && (
-                <Insignia label="[SCRUM 50%]" tone="ok" size="sm" />
+                <Insignia label="Hito 50%" tone="ok" size="sm" />
               )}
             </View>
             <Text style={estilos.titulo}>Reporte de Avance en Terreno</Text>

@@ -149,7 +149,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
 
             <View style={{ flexDirection: "row", gap: 8, marginLeft: "auto" }}>
               <Boton
-                title="[SCRUM] Comparar Vistas"
+                title="Comparar Vistas por Rol"
                 variant="secondary"
                 size="sm"
                 icon="git-compare-outline"
@@ -358,7 +358,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
             <View>
               <Text style={{ fontSize: 16, fontWeight: "700", color: "#0f172a" }}>
                 {mostrarModalScrum
-                  ? "[SCRUM] Comparativa de Ficha Técnica"
+                  ? "Comparativa de Ficha Técnica por Rol"
                   : `Ficha de ${fichaModalEntidad?.tipo || "Tercero"}`}
               </Text>
               <Text style={{ fontSize: 12, color: "#64748b" }}>

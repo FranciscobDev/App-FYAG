@@ -43,18 +43,18 @@ export interface QrScannerModalProps {
 }
 
 const ETIQUETA_MODULO: Record<ModuloOrigenEscaner, string> = {
-  recepcion: "H33 • Recepción Bodega",
-  salida: "H5 • Salida / Despacho",
-  conteo: "H19 • Conteo Físico",
-  catalogo: "H47 • Catálogo Insumos",
+  recepcion: "Recepción de Bodega",
+  salida: "Salida y Despacho",
+  conteo: "Conteo Físico",
+  catalogo: "Catálogo de Insumos",
 };
 
 export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
   visible,
   onClose,
   onScanResult,
-  title = "Escáner Óptico de Bodega (Tablet)",
-  subtitle = "Apunte con la cámara de la tablet al código QR (H47) o código de barras del insumo",
+  title = "Escáner Óptico de Bodega",
+  subtitle = "Apunte con la cámara hacia el código QR o código de barras del insumo",
   productos,
   validarExistencia,
   moduloOrigen,
@@ -203,7 +203,7 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
           nombre: resultado.producto.name,
           formato:
             resultado.formatoDetectado === "QR_H47"
-              ? "QR H47"
+              ? "Código QR"
               : resultado.formatoDetectado === "CODIGO_BARRAS"
                 ? "Código de Barras"
                 : "SKU",
@@ -373,7 +373,7 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
         lista.push({
           id: `h47_${prod.sku}`,
           etiqueta: prod.name,
-          subetiqueta: `QR H47 • ${prod.sku}`,
+          subetiqueta: `QR • ${prod.sku}`,
           codigo: regH47.payloadEmbebido,
           esH47: true,
         });
@@ -539,7 +539,7 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
                   <Ionicons name="qr-code-outline" size={56} color="rgba(255,255,255,0.45)" />
                 )}
                 <Text style={estilos.viewfinderHint}>
-                  Alinee la etiqueta QR (H47) o código de barras
+                  Alinee la etiqueta QR o el código de barras en el recuadro
                 </Text>
               </View>
 
@@ -559,16 +559,16 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Entrada directa para pistola láser USB/Bluetooth o pegado de payload QR H47 */}
+            {/* Entrada directa para pistola láser USB/Bluetooth o ingreso manual de código */}
             <View style={estilos.entradaManualCaja}>
               <Text style={estilos.simEncabezado}>
-                Lector USB / Pegar Código QR (H47) o Barras:
+                Lector USB o Ingreso Manual de Código QR / Barras:
               </Text>
               <View style={[estilos.entradaFila, esMovilEstrecho && { flexDirection: "column" }]}>
                 <TextInput
                   value={entradaManual}
                   onChangeText={establecerEntradaManual}
-                  placeholder='Ej: ELE-CBL-0012, 7801234567890 o JSON {"sku":...}'
+                  placeholder="Ej: ELE-CBL-0012 o código de barras"
                   placeholderTextColor={tema.colors.textLight}
                   style={estilos.entradaTexto}
                   onSubmitEditing={() => procesarCodigoDetectado(entradaManual, 280)}
@@ -587,10 +587,10 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
               </View>
             </View>
 
-            {/* Pruebas rápidas con etiquetas reales H47 y prueba de código inexistente */}
+            {/* Accesos rápidos de etiquetas del catálogo */}
             <View style={estilos.simulatorSeccion}>
               <Text style={estilos.simEncabezado}>
-                Lectura Rápida de Etiquetas H47 / Barras (Pruebas Tablet):
+                Accesos Rápidos de Etiquetas QR / Barras:
               </Text>
               <View style={estilos.chipsFila}>
                 {muestrasRapidas.map((item) => (

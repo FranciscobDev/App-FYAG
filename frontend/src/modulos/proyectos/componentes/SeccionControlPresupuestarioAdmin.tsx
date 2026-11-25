@@ -238,7 +238,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
     establecerInputMaterialExtra("");
     establecerInputHorasExtra("");
     if (mostrarAviso) {
-      mostrarAviso("Impacto financiero aplicado en vivo al semáforo y margen H27.");
+      mostrarAviso("Impacto financiero aplicado en vivo al semáforo y margen estimado.");
     }
   };
 
@@ -249,7 +249,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
         <View style={estilos.heroFila}>
           <View style={{ flex: 1, minWidth: 220 }}>
             <View style={estilos.insigniasFila}>
-              <Insignia label="Control Presupuestario H27" tone="primary" size="sm" />
+              <Insignia label="Control Presupuestario" tone="primary" size="sm" />
               <Insignia label="Cálculo en Vivo" tone="ok" size="sm" />
             </View>
             <Text style={estilos.heroTitulo}>
@@ -307,7 +307,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
             },
           ]}
         >
-          <Text style={estilos.kpiEtiqueta}>Margen Estimado (H27)</Text>
+          <Text style={estilos.kpiEtiqueta}>Margen Estimado</Text>
           <Text
             style={[
               estilos.kpiValor,
@@ -528,7 +528,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                         },
                       ]}
                     >
-                      <Text style={estilos.metricaLbl}>Margen Estimado H27</Text>
+                      <Text style={estilos.metricaLbl}>Margen Estimado</Text>
                       <Text
                         style={[
                           estilos.metricaVal,
@@ -562,7 +562,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                   {/* Acciones de Auditoría H27 e Impacto en Vivo */}
                   <View style={estilos.accionesFila}>
                     <Boton
-                      title="Ver Fórmula H27 e Impacto en Vivo"
+                      title="Ver Desglose Financiero y Proyección"
                       variant="primary"
                       size="sm"
                       icon="calculator-outline"
@@ -597,8 +597,8 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
         onClose={() => establecerProyectoDetalleId(null)}
         title={
           resumenDetalle
-            ? `Control Presupuestario H27 — ${resumenDetalle.proyecto.code}`
-            : "Control Presupuestario H27"
+            ? `Control Presupuestario — ${resumenDetalle.proyecto.code}`
+            : "Control Presupuestario"
         }
         subtitle={resumenDetalle ? resumenDetalle.proyecto.name : ""}
       >
@@ -644,7 +644,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                 <View style={estilos.formulaEncabezado}>
                   <Ionicons name="calculator" size={16} color={tema.colors.primaryDark} />
                   <Text style={estilos.formulaTitulo}>
-                    Desglose Auditable — Fórmula de Margen H27
+                    Desglose del Margen Estimado
                   </Text>
                 </View>
 
@@ -740,8 +740,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                   Probar Impacto Financiero en Vivo (Materiales y Mano de Obra)
                 </Text>
                 <Text style={estilos.simuladorSub}>
-                  Suma un egreso de materiales o nuevas horas hombre para ver cómo cambia al
-                  instante el semáforo, la barra de consumo y el margen H27:
+                  Suma un egreso de materiales o nuevas horas hombre para proyectar el impacto en el semáforo, la barra de consumo y el margen estimado:
                 </Text>
 
                 <View style={estilos.simBotonesRapidos}>

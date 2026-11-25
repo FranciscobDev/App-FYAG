@@ -78,7 +78,7 @@ export const SeccionInformeProyectos: React.FC<PropiedadesSeccionInformeProyecto
                             <Text style={estilos.tarjetaStatValor}>{formatearCLP(proj.budget)}</Text>
                           </View>
                           <View style={{ alignItems: "flex-end" }}>
-                            <Text style={estilos.tarjetaStatEtiqueta}>COSTO REAL H27</Text>
+                            <Text style={estilos.tarjetaStatEtiqueta}>COSTO REAL</Text>
                             <Text style={[estilos.tarjetaStatValor, { color: tema.colors.dangerDark }]}>
                               {formatearCLP(proj.costReal)}
                             </Text>
@@ -118,7 +118,7 @@ export const SeccionInformeProyectos: React.FC<PropiedadesSeccionInformeProyecto
                       <Text style={[estilos.thCelda, { width: 90 }]}>Código</Text>
                       <Text style={[estilos.thCelda, { width: 190 }]}>Proyecto & Cliente</Text>
                       <Text style={[estilos.thCelda, { width: 110, textAlign: "right" }]}>Presupuesto ($)</Text>
-                      <Text style={[estilos.thCelda, { width: 110, textAlign: "right" }]}>Costo Real H27</Text>
+                      <Text style={[estilos.thCelda, { width: 110, textAlign: "right" }]}>Costo Real</Text>
                       <Text style={[estilos.thCelda, { width: 95, textAlign: "right" }]}>Costo HH ($)</Text>
                       <Text style={[estilos.thCelda, { width: 95, textAlign: "right" }]}>Costo Mat ($)</Text>
                       <Text style={[estilos.thCelda, { width: 110, textAlign: "right" }]}>Margen ($)</Text>

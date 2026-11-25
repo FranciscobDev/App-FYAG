@@ -534,15 +534,14 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                     modoOfflineScrum && estilos.botonModoOfflineTextoActivo,
                   ]}
                 >
-                  {modoOfflineScrum ? "Salir Offline" : "Probar Offline"}
+                  {modoOfflineScrum ? "Conectar Red" : "Modo Sin Conexión"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <Text style={estilos.scrumGuiaTexto}>
-            [SCRUM] Desconecta el internet del celular (o usa "Probar Offline") para verificar los
-            saldos asignados y cuánto material falta retirar de bodega sin perder información.
+            Consulta los saldos asignados y el material pendiente por retirar en bodega incluso sin conexión a internet, con respaldo local automático.
           </Text>
         </View>
 

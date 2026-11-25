@@ -142,7 +142,7 @@ export const PantallaHorasManualesAdmin: React.FC = () => {
       establecerFormularioError(resultado.error || "Error al registrar las horas del técnico.");
     } else {
       establecerFormularioExito(
-        `✓ ${horasValor} HH asignadas con éxito al técnico ${seleccionadoTecnico.name} en el proyecto ${seleccionadoProyecto.code} (${formatearCLP(costoManoObra)} imputados a H27/H28).`
+        `✓ ${horasValor} HH asignadas con éxito al técnico ${seleccionadoTecnico.name} en el proyecto ${seleccionadoProyecto.code} (${formatearCLP(costoManoObra)} imputados a costos del proyecto).`
       );
       setTimeout(() => establecerFormularioExito(""), 5000);
     }
@@ -423,7 +423,7 @@ export const PantallaHorasManualesAdmin: React.FC = () => {
                 Costo M.O. Real a Imputar: {formatearCLP(costoManoObra)} CLP
               </Text>
               <Text style={estilos.financialFootnote}>
-                Alimenta directamente el Costo Real H27 y la Liquidación Financiera H28 de {seleccionadoProyecto?.code}.
+                Alimenta directamente el costo real y la liquidación financiera de {seleccionadoProyecto?.code}.
               </Text>
             </View>
           </Tarjeta>
@@ -559,7 +559,7 @@ export const PantallaHorasManualesAdmin: React.FC = () => {
             <View style={estilos.adminModalAviso}>
               <Ionicons name="shield-checkmark" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
               <Text style={estilos.adminModalAvisoTexto}>
-                Permiso de Administrador: Los cambios recalcularán automáticamente el Costo Real H27 y Rentabilidad H28 del proyecto.
+                Permiso de Administrador: Los cambios recalcularán automáticamente el costo real y la rentabilidad del proyecto.
               </Text>
             </View>
 
@@ -625,7 +625,7 @@ export const PantallaHorasManualesAdmin: React.FC = () => {
                 style={{ marginRight: 8, flex: 1 }}
               />
               <Boton
-                title="Guardar Ajuste (H27/H28)"
+                title="Guardar Ajuste de Horas"
                 variant="primary"
                 onPress={manejarConfirmarEditarHora}
                 style={{ flex: 2, height: 46 }}

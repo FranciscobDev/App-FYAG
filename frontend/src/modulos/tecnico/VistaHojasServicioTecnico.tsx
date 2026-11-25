@@ -274,7 +274,7 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
       establecerSinConexionDetectada(true);
       if (onCambioConexion) onCambioConexion(true);
       establecerAvisoSistema(
-        "Modo Avión SCRUM activo: llena un checklist con foto, recarga o cierra la app y al volver todo seguirá intacto en disco."
+        "Modo sin conexión activo: los checklists y fotografías se guardarán en el dispositivo y se sincronizarán automáticamente al reconectar."
       );
       setTimeout(() => establecerAvisoSistema(""), 5000);
     } else {
@@ -554,8 +554,8 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
               <View style={{ flex: 1 }}>
                 <Text style={estilos.discoTitulo}>
                   {operaSinConexion
-                    ? "Modo Avión / Sin Conexión — Persistencia en Disco Activa"
-                    : "Disco Local Respaldado y Subida Automática Lista"}
+                    ? "Sin conexión — Respaldo local activo"
+                    : "Almacenamiento local respaldado y sincronización automática activa"}
                 </Text>
                 <Text style={estilos.discoSub}>
                   Último guardado en disco:{" "}
@@ -604,16 +604,14 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
                     modoAvionScrum && estilos.botonScrumAvionTextoActivo,
                   ]}
                 >
-                  {modoAvionScrum ? "Reconectar Red" : "Modo Avión"}
+                  {modoAvionScrum ? "Reconectar Red" : "Modo Sin Conexión"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <Text style={estilos.scrumNota}>
-            [SCRUM] Llena un checklist con foto en Modo Avión, fuerza el cierre/recarga de la app,
-            reabre para verificar que los datos y fotos siguen intactos y reconecta a internet para
-            ver la subida automática.
+            Los checklists y fotografías se almacenan de inmediato en el dispositivo y se sincronizan automáticamente al recuperar la conexión.
           </Text>
         </View>
 

@@ -194,7 +194,7 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
         {
           id: "proyectos",
           label: "Proyectos y Obras",
-          description: "Presupuestos, costos reales H27/H28 y liquidación final",
+          description: "Presupuestos, costos reales y liquidación final",
           icon: "business-outline",
         },
         {

@@ -207,7 +207,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
           disponible: nuevoDisponible,
         };
         setMensajeScrum(
-          `[SCRUM OK] Insumo "${itemActual.sku} - ${itemActual.nombre}" ajustado a ${nuevoDisponible} ${itemActual.unidad} (Mínimo: ${itemActual.stockMinimo}). ¡Fila resaltada en Amarillo/Ámbar!`
+          `Insumo "${itemActual.sku} - ${itemActual.nombre}" actualizado a ${nuevoDisponible} ${itemActual.unidad} (mínimo: ${itemActual.stockMinimo}). Marcado en alerta por bajo stock.`
         );
         return actualizados;
       }
@@ -227,7 +227,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
           disponible: 0,
         };
         setMensajeScrum(
-          `[SCRUM OK] Insumo "${itemActual.sku}" ajustado a 0 ${itemActual.unidad}. ¡Fila resaltada en Rojo!`
+          `Insumo "${itemActual.sku}" actualizado a 0 ${itemActual.unidad}. Marcado como agotado.`
         );
         return actualizados;
       }
@@ -238,20 +238,20 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
 
   const restablecerStockOriginal = () => {
     setInsumos(datosPorDefecto);
-    setMensajeScrum("[SCRUM] Catálogo restablecido con los valores estándar del sistema.");
+    setMensajeScrum("Catálogo restablecido con los valores estándar del inventario.");
   };
 
   return (
     <View style={estilos.contenedorPrincipal}>
       {/* =====================================================================
-          BARRA SCRUM: Herramienta Interactiva de Verificación [FRONT-1]
+          BARRA DE MONITOREO DE STOCK
           ===================================================================== */}
       {mostrarSimuladorScrum && (
         <View style={estilos.barraScrum}>
           <View style={estilos.scrumHeaderFila}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="flask-outline" size={18} color="#b45309" style={{ marginRight: 6 }} />
-              <Text style={estilos.scrumTitulo}>[SCRUM] Verificación de Catálogo de Stock (FRONT-1)</Text>
+              <Ionicons name="analytics-outline" size={18} color="#b45309" style={{ marginRight: 6 }} />
+              <Text style={estilos.scrumTitulo}>Control de Niveles de Stock</Text>
             </View>
             <View style={estilos.scrumBadgesContenedor}>
               <View style={[estilos.miniBadge, { backgroundColor: "#fee2e2" }]}>
@@ -273,7 +273,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
           </View>
 
           <Text style={estilos.scrumSubtitulo}>
-            Comprueba el filtro en vivo al tipear y el resaltado automático en filas donde disponible &lt;= stock_mínimo.
+            Filtra el catálogo en tiempo real y revisa las alertas automáticas cuando el disponible es menor o igual al stock mínimo.
           </Text>
 
           <View style={estilos.scrumBotonesFila}>

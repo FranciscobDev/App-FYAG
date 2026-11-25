@@ -117,16 +117,16 @@ export const SeccionSolicitudesMaterial: React.FC<PropiedadesSeccionSolicitudesM
           {/* Guía visual del flujo SCRUM según el rol activo */}
           {rolActual === "admin" ? (
             <View style={estilos.scrumBandejaBanner}>
-              <Insignia label="SCRUM" tone="warn" size="sm" />
+              <Insignia label="Guía" tone="info" size="sm" />
               <Text style={estilos.scrumBandejaTexto}>
-                Bandeja de Aprobación: revisa las solicitudes pendientes, exige motivo obligatorio al rechazar o aprueba para visualizar el comprobante numerado y notificar al bodeguero solicitante.
+                Bandeja de Aprobación: revisa las solicitudes pendientes, ingresa un motivo al rechazar o aprueba para emitir el comprobante numerado y notificar al bodeguero.
               </Text>
             </View>
           ) : rolActual === "warehouse" ? (
             <View style={estilos.scrumBandejaBanner}>
-              <Insignia label="SCRUM" tone="warn" size="sm" />
+              <Insignia label="Guía" tone="info" size="sm" />
               <Text style={estilos.scrumBandejaTexto}>
-                Solicitudes del Bodeguero: las acciones &ldquo;Editar&rdquo; y &ldquo;Anular&rdquo; están activas únicamente cuando el estado es Pendiente; en solicitudes Aprobadas, Rechazadas o Anuladas aparecen bloqueadas.
+                Solicitudes de Bodega: puedes editar o anular únicamente solicitudes en estado Pendiente; las Aprobadas, Rechazadas o Anuladas quedan en solo lectura.
               </Text>
             </View>
           ) : null}

@@ -299,7 +299,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
       const sufijoSync =
         resultado.syncStatus === "pendiente"
           ? " Guardado OFFLINE (pendiente de sincronización)."
-          : " Sincronizado con el servidor (H27/H28).";
+          : " Sincronizado con el servidor central.";
       establecerHorasExito(
         `Jornada registrada: ${(resultado.hours || 0.5).toFixed(1)} HH (${formatearCLP(
           costoReal
@@ -330,7 +330,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
     const evaluacion = evaluarVentanaEdicionHoras(h.createdAt, plazoMaximoHoras, rolActual);
     if (!evaluacion.puedeEditar) {
       establecerHorasError(
-        `Edición bloqueada: el registro superó la ventana permitida de ${plazoMaximoHoras} h (H41).`
+        `Edición bloqueada: el registro superó la ventana permitida de ${plazoMaximoHoras} h.`
       );
       return;
     }
@@ -446,16 +446,14 @@ export const SeccionCronometroHorasTecnico: React.FC<
                     modoOfflineScrum && estilos.botonScrumOfflineTextoActivo,
                   ]}
                 >
-                  {modoOfflineScrum ? "Salir Offline" : "Probar Offline"}
+                  {modoOfflineScrum ? "Conectar Red" : "Modo Sin Conexión"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
 
           <Text style={estilos.scrumNota}>
-            [SCRUM] Inicia un proyecto en la app (con o sin internet), detén el cronómetro para
-            verificar el cálculo en bloques de 0,5 h, edita dentro de {plazoMaximoHoras} h y
-            sincroniza al reconectar.
+            Las horas trabajadas se calculan en bloques de 0,5 h, se respaldan en el dispositivo y pueden editarse dentro de las primeras {plazoMaximoHoras} h antes de quedar bloqueadas.
           </Text>
         </View>
 
@@ -475,7 +473,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
             ]}
           >
             <Text style={[estilos.kpiLbl, { color: tema.colors.primaryDark }]}>
-              Costo M.O. (H27)
+              Costo Mano de Obra
             </Text>
             <Text style={[estilos.kpiVal, { color: tema.colors.primaryDark }]}>
               {formatearCLP(resumenDashboard.totalCosto)}
@@ -628,7 +626,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
               <View style={estilos.enVivoCalculoDivisor} />
               <View style={estilos.enVivoCalculoColumna}>
                 <Text style={estilos.enVivoCalculoValor}>{formatearCLP(costoEnVivo)}</Text>
-                <Text style={estilos.enVivoCalculoDescripcion}>Costo M.O. (H27)</Text>
+                <Text style={estilos.enVivoCalculoDescripcion}>Costo Mano de Obra</Text>
               </View>
               <View style={estilos.enVivoCalculoDivisor} />
               <View style={estilos.enVivoCalculoColumna}>
@@ -732,7 +730,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
               <View style={estilos.automaticoProyectoTarifaFila}>
                 <Text style={estilos.automaticoProyectoTarifaEtiqueta}>Tarifa M.O. imputable:</Text>
                 <Text style={estilos.automaticoProyectoTarifaDestacado}>
-                  {formatearCLP(actualProyecto?.hourlyRate || 18500)} / HH (H27 / H28)
+                  {formatearCLP(actualProyecto?.hourlyRate || 18500)} / HH
                 </Text>
               </View>
             </View>
@@ -764,7 +762,7 @@ export const SeccionCronometroHorasTecnico: React.FC<
           </View>
           <Text style={estilos.historialReglaAviso}>
             Puedes editar en bloques de 0,5 h dentro de las primeras {plazoMaximoHoras} horas desde
-            el registro. Vencido el plazo, el registro queda bloqueado automáticamente (H41).
+            el registro. Vencido el plazo, el registro queda bloqueado automáticamente.
           </Text>
         </View>
 
