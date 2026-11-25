@@ -37,15 +37,21 @@ import {
 } from '../services/facturaCalculoService';
 import {
     aplicarReservaComprometidoEnCatalogoH6,
+    calcularRemanenteContenedorGranel,
     calcularResumenLineaSalidaFisica,
     calcularResumenSolicitudSalidaFisica,
     construirComprobanteYNotificacionAprobacion,
     construirNotificacionRechazoSolicitud,
+    contrastarSaldoInsumoConUltimaLineaCardex,
     ejecutarSalidaFisicaSolicitudEnMemoria,
     esProyectoActivoParaSolicitud,
+    filtrarYOrdenarCardexSoloLectura,
+    formatearCantidadMovimientoBodega,
+    generarContenidoExcelCardex,
     generarNumeroComprobanteSolicitud,
     liberarReservaComprometidoEnCatalogoH6,
     obtenerEstadoAccionesBodegueroSolicitud,
+    sanitizarEntradaCantidadBodega,
     validarFormularioNuevaSolicitudInsumos,
 } from '../services/solicitudInsumosService';
 import {
@@ -3123,6 +3129,377 @@ test('[DB][SCRUM] tablas salidas_bodega (solicitud_id, proyecto_id, tecnico_reti
     assert.equal(tablaSalidasBodega[0].id_salida, 701, 'la salida #701 permanece intacta en salidas_bodega');
 });
 
+test('[FRONT-1][SCRUM] vista de Cardex de solo lectura con filtros dinámicos, tabla cronológica de saldos/PMP y exportación a Excel: muestra trazabilidad completa sin opciones de edición y contrasta el saldo actual del insumo con la última línea del Cardex', () => {
+    const catalogoInsumos = [
+        {
+            sku: 'ELE-CBL-0012',
+            name: 'Cable THHN 12 AWG rollo 100 m',
+            stock: 185.45,
+            pmp: 635,
+            unitCost: 650,
+            unit: 'm',
+        },
+        {
+            sku: 'ELE-DIS-0016',
+            name: 'Disyuntor termomagnético 16 A',
+            stock: 12,
+            pmp: 4520,
+            unitCost: 4590,
+            unit: 'un',
+        },
+    ];
+
+    // Movimientos desordenados para verificar que la tabla los ordena cronológicamente
+    const movimientosCardex = [
+        {
+            id: 'cdx-01',
+            sku: 'ELE-DIS-0016',
+            productName: 'Disyuntor termomagnético 16 A',
+            date: '12-10-2026 14:30',
+            type: 'salida_obra',
+            typeLabel: 'Salida a obra',
+            reference: 'SOL-2026-0407',
+            projectCode: 'OB-2026-014',
+            projectName: 'Edificio Los Aromos',
+            qtyIn: 0,
+            qtyOut: 10,
+            balance: 12,
+            pmp: 4520,
+            totalValue: 54240,
+            userName: 'Camila Vera Soto',
+            userRole: 'Bodeguero',
+            userRut: '15.321.654-2',
+        },
+        {
+            id: 'cdx-02',
+            sku: 'ELE-DIS-0016',
+            productName: 'Disyuntor termomagnético 16 A',
+            date: '10-10-2026 11:15',
+            type: 'entrada_compra',
+            typeLabel: 'Entrada por compra',
+            reference: 'OC-2026-092',
+            qtyIn: 20,
+            qtyOut: 0,
+            balance: 22,
+            pmp: 4520,
+            totalValue: 99440,
+            userName: 'Camila Vera Soto',
+            userRole: 'Bodeguero',
+            userRut: '15.321.654-2',
+        },
+        {
+            id: 'cdx-05b',
+            sku: 'ELE-CBL-0012',
+            productName: 'Cable THHN 12 AWG',
+            date: '14-10-2026 11:00',
+            type: 'ajuste_conteo',
+            typeLabel: 'Ajuste por conteo físico',
+            reference: 'CNT-2026-004',
+            qtyIn: 0,
+            qtyOut: 0,
+            balance: 185.45,
+            pmp: 635,
+            totalValue: 117760,
+            userName: 'Javier Muñoz Contreras',
+            userRole: 'Administrador',
+            userRut: '12.456.789-5',
+        },
+        {
+            id: 'cdx-05a',
+            sku: 'ELE-CBL-0012',
+            productName: 'Cable THHN 12 AWG',
+            date: '05-10-2026 09:15',
+            type: 'entrada_compra',
+            typeLabel: 'Entrada por compra',
+            reference: 'FAC-2026-880',
+            qtyIn: 250,
+            qtyOut: 0,
+            balance: 250,
+            pmp: 635,
+            totalValue: 158750,
+            userName: 'Camila Vera Soto',
+            userRole: 'Bodeguero',
+            userRut: '15.321.654-2',
+        },
+        {
+            id: 'cdx-05',
+            sku: 'ELE-CBL-0012',
+            productName: 'Cable THHN 12 AWG',
+            date: '12-10-2026 10:20',
+            type: 'salida_obra',
+            typeLabel: 'Salida a obra (granel)',
+            reference: 'SOL-2026-0402',
+            projectCode: 'OB-2026-014',
+            projectName: 'Edificio Los Aromos',
+            qtyIn: 0,
+            qtyOut: 64.55,
+            balance: 185.45,
+            pmp: 635,
+            totalValue: 117760,
+            userName: 'Camila Vera Soto',
+            userRole: 'Bodeguero',
+            userRut: '15.321.654-2',
+        },
+    ];
+
+    // 1. Verificar que la vista de Cardex es estrictamente de solo lectura y ordena cronológicamente los movimientos
+    const vistaCable = filtrarYOrdenarCardexSoloLectura(movimientosCardex, {
+        insumoQuery: 'ELE-CBL-0012',
+        ordenCronologico: 'asc',
+    });
+
+    assert.equal(vistaCable.soloLectura, true, 'la vista de Cardex debe ser de solo lectura');
+    assert.equal(vistaCable.permiteEditar, false, 'no debe ofrecer opciones de edición');
+    assert.equal(vistaCable.permiteEliminar, false, 'no debe ofrecer opciones de eliminación');
+    assert.equal(vistaCable.movimientosOrdenados.length, 3);
+    assert.deepEqual(
+        vistaCable.movimientosOrdenados.map((m) => m.id),
+        ['cdx-05a', 'cdx-05', 'cdx-05b'],
+        'debe ordenar la tabla cronológicamente de más antiguo (05-10) a más reciente (14-10)'
+    );
+    assert.deepEqual(
+        vistaCable.movimientosOrdenados.map((m) => m.balance),
+        [250, 185.45, 185.45],
+        'muestra la evolución cronológica del saldo después de cada movimiento (250 -> 185.45 -> 185.45)'
+    );
+
+    // 2. Verificar filtros dinámicos por tipo de movimiento y por rango de fechas (7 días)
+    const soloSalidasObra = filtrarYOrdenarCardexSoloLectura(movimientosCardex, {
+        tipoMovimiento: 'salida_obra',
+        ordenCronologico: 'asc',
+    });
+    assert.equal(soloSalidasObra.movimientosOrdenados.length, 2);
+    assert.ok(soloSalidasObra.movimientosOrdenados.every((m) => m.type === 'salida_obra'));
+
+    const ultimos7Dias = filtrarYOrdenarCardexSoloLectura(movimientosCardex, {
+        insumoQuery: 'ELE-CBL-0012',
+        rangoFechas: '7d',
+        ordenCronologico: 'asc',
+    });
+    assert.deepEqual(
+        ultimos7Dias.movimientosOrdenados.map((m) => m.id),
+        ['cdx-05', 'cdx-05b'],
+        'el filtro de últimos 7 días excluye el movimiento del 05-10 y conserva los del 12-10 y 14-10'
+    );
+
+    // 3. [SCRUM] Contrastar el saldo actual del insumo con la última línea del Cardex
+    const contrasteCable = contrastarSaldoInsumoConUltimaLineaCardex(
+        catalogoInsumos[0],
+        movimientosCardex
+    );
+    assert.equal(contrasteCable.sku, 'ELE-CBL-0012');
+    assert.equal(contrasteCable.saldoActualInsumo, 185.45);
+    assert.equal(contrasteCable.saldoUltimaLineaCardex, 185.45);
+    assert.equal(contrasteCable.ultimaLineaCardex?.id, 'cdx-05b', 'la última línea cronológica es cdx-05b del 14-10-2026');
+    assert.equal(contrasteCable.diferenciaSaldo, 0);
+    assert.equal(
+        contrasteCable.coincideSaldoConUltimaLinea,
+        true,
+        'el saldo actual del insumo ELE-CBL-0012 (185.45 m) coincide exactamente con la última línea del Cardex (185.45 m)'
+    );
+    assert.equal(contrasteCable.coincidePmpConUltimaLinea, true);
+
+    const contrasteDisyuntor = contrastarSaldoInsumoConUltimaLineaCardex(
+        catalogoInsumos[1],
+        movimientosCardex
+    );
+    assert.equal(contrasteDisyuntor.saldoActualInsumo, 12);
+    assert.equal(contrasteDisyuntor.saldoUltimaLineaCardex, 12);
+    assert.equal(contrasteDisyuntor.ultimaLineaCardex?.id, 'cdx-01', 'la última línea cronológica es cdx-01 (22 - 10 = 12)');
+    assert.equal(contrasteDisyuntor.coincideSaldoConUltimaLinea, true);
+
+    // 4. Verificar exportación a Excel con todas las columnas de trazabilidad (saldo, PMP, valorizado, responsable)
+    const excelExport = generarContenidoExcelCardex(vistaCable.movimientosOrdenados);
+    assert.ok(excelExport.nombreArchivo.endsWith('.csv'));
+    assert.equal(excelExport.filas.length, 3);
+    assert.ok(excelExport.encabezados.includes('Saldo Posterior'));
+    assert.ok(excelExport.encabezados.includes('PMP Posterior (CLP)'));
+    assert.ok(excelExport.contenidoCsvExcel.includes('ELE-CBL-0012'));
+    assert.ok(excelExport.contenidoCsvExcel.includes('185.45'));
+});
+
+test('[FRONT-2][SCRUM] formularios de movimiento de bodega admiten hasta 3 decimales en insumos a granel, muestran unidad de medida y capacidad restante del contenedor, y prueban egreso fraccionado desde la interfaz de bodega', () => {
+    // 1. Validar sanitización de entrada numérica en formularios de movimiento (hasta 3 decimales en granel vs enteros en discretos)
+    const entradaGranel3Dec = sanitizarEntradaCantidadBodega('12,3759', true, 3);
+    assert.equal(entradaGranel3Dec.textoSanitizado, '12.375', 'trunca a máximo 3 decimales y normaliza coma a punto');
+    assert.equal(entradaGranel3Dec.valorNumerico, 12.375);
+    assert.equal(entradaGranel3Dec.decimalesIngresados, 3);
+    assert.equal(entradaGranel3Dec.excedeMaxDecimales, true);
+
+    const entradaDiscreta = sanitizarEntradaCantidadBodega('15.5', false, 3);
+    assert.equal(entradaDiscreta.decimalesIngresados, 0, 'insumo discreto no admite decimales');
+
+    assert.equal(
+        formatearCantidadMovimientoBodega(173.075, true, 'm', true),
+        '173.075 m',
+        'formatea con 3 decimales exactos y unidad de medida'
+    );
+
+    // 2. Catálogo con insumos a granel y contenedor (carrete de cable de 500 m y bidón de aceite de 20 l)
+    const catalogoBodegaGranel = [
+        {
+            sku: 'ELE-CBL-0012',
+            name: 'Cable THHN 12 AWG rollo 500 m',
+            unit: 'm',
+            stock: 185.45,
+            committed: 25.0,
+            isBulk: true,
+            containerCapacity: 500,
+            pmp: 635,
+        },
+        {
+            sku: 'CHE-LUB-0005',
+            name: 'Aceite lubricante compresor POE 68',
+            unit: 'l',
+            stock: 14.75,
+            committed: 2.5,
+            isBulk: true,
+            containerCapacity: 20,
+            pmp: 14600,
+        },
+    ];
+
+    const solicitudAprobadaGranel = {
+        id: 'sol_granel_01',
+        code: 'SOL-2026-0510',
+        status: 'aprobada',
+        receiptNumber: 'COMP-2026-0510',
+        projectCode: 'OB-2026-014',
+        projectName: 'Edificio Los Aromos',
+        technicianName: 'Alejandro Rojas Pino',
+        technicianRut: '17.894.562-1',
+        items: [
+            {
+                sku: 'ELE-CBL-0012',
+                name: 'Cable THHN 12 AWG rollo 500 m',
+                quantity: 25.0,
+                deliveredQuantity: 0,
+                unit: 'm',
+            },
+            {
+                sku: 'CHE-LUB-0005',
+                name: 'Aceite lubricante compresor POE 68',
+                quantity: 2.5,
+                deliveredQuantity: 0,
+                unit: 'l',
+            },
+        ],
+        timeline: [],
+    };
+
+    // 3. [SCRUM] Prueba 1 de egreso fraccionado con 3 decimales desde la interfaz de bodega:
+    //    - Retira 12.375 m de Cable THHN 12 AWG (de 25.000 m autorizados)
+    //    - Retira 1.125 l de Aceite lubricante POE 68 (de 2.500 l autorizados)
+    const resumenVivoPaso1 = calcularResumenSolicitudSalidaFisica(
+        solicitudAprobadaGranel,
+        {
+            'ELE-CBL-0012': 12.375,
+            'CHE-LUB-0005': 1.125,
+        },
+        catalogoBodegaGranel
+    );
+
+    const lineaCablePaso1 = resumenVivoPaso1.lineas[0];
+    assert.equal(lineaCablePaso1.esGranel, true);
+    assert.equal(lineaCablePaso1.maxDecimales, 3);
+    assert.equal(lineaCablePaso1.unit, 'm');
+    assert.equal(lineaCablePaso1.entregandoAhora, 12.375);
+    assert.equal(lineaCablePaso1.saldoPendienteRestante, 12.625, '25.000 - 12.375 = 12.625 m pendientes en la solicitud');
+    // Stock respaldo = 185.45 disp + 25.0 comp = 210.45 m -> tras egresar 12.375 m queda un remanente exacto de 198.075 m en el contenedor de 500 m
+    assert.equal(lineaCablePaso1.stockRespaldoParaEgreso, 210.45);
+    assert.equal(lineaCablePaso1.remanenteExactoBodegaDespues, 198.075, '210.450 - 12.375 = 198.075 m remanentes');
+    assert.equal(lineaCablePaso1.remanenteEnContenedorActual, 198.075);
+    assert.equal(lineaCablePaso1.capacidadNominalContenedor, 500);
+    assert.ok(
+        lineaCablePaso1.etiquetaUnidadYRemanente.includes('198.075 m'),
+        'muestra unidad de medida y remanente exacto en pantalla (198.075 m)'
+    );
+    assert.ok(
+        lineaCablePaso1.etiquetaCapacidadContenedor?.includes('198.075 / 500 m'),
+        'muestra la capacidad restante del contenedor en pantalla (198.075 / 500 m)'
+    );
+
+    const lineaAceitePaso1 = resumenVivoPaso1.lineas[1];
+    assert.equal(lineaAceitePaso1.unit, 'l');
+    assert.equal(lineaAceitePaso1.entregandoAhora, 1.125);
+    assert.equal(lineaAceitePaso1.saldoPendienteRestante, 1.375, '2.500 - 1.125 = 1.375 l pendientes en la solicitud');
+    // Stock respaldo = 14.75 disp + 2.5 comp = 17.25 l -> tras egresar 1.125 l queda un remanente exacto de 16.125 l en el bidón de 20 l
+    assert.equal(lineaAceitePaso1.remanenteExactoBodegaDespues, 16.125);
+    assert.ok(lineaAceitePaso1.etiquetaCapacidadContenedor?.includes('16.125 / 20 l'));
+
+    // Ejecutar el primer egreso fraccionado
+    const ejecucionFraccionada1 = ejecutarSalidaFisicaSolicitudEnMemoria({
+        solicitud: solicitudAprobadaGranel,
+        itemsToDispatch: [
+            { sku: 'ELE-CBL-0012', quantity: 12.375 },
+            { sku: 'CHE-LUB-0005', quantity: 1.125 },
+        ],
+        technicianRut: '17.894.562-1',
+        technicianName: 'Alejandro Rojas Pino',
+        authorName: 'Camila Vera Soto',
+        catalogo: catalogoBodegaGranel,
+        dispatchCode: 'DESP-2026-GRN-01',
+    });
+
+    assert.equal(ejecucionFraccionada1.success, true);
+    assert.equal(ejecucionFraccionada1.esEntregaCompleta, false, 'es un egreso parcial fraccionado');
+    assert.equal(ejecucionFraccionada1.solicitudActualizada?.items[0].deliveredQuantity, 12.375);
+    assert.equal(ejecucionFraccionada1.solicitudActualizada?.items[1].deliveredQuantity, 1.125);
+    assert.equal(
+        ejecucionFraccionada1.catalogoActualizado[0].committed,
+        12.625,
+        'el stock comprometido del cable baja exactamente de 25.000 a 12.625 m'
+    );
+    assert.equal(
+        ejecucionFraccionada1.catalogoActualizado[1].committed,
+        1.375,
+        'el stock comprometido del aceite baja exactamente de 2.500 a 1.375 l'
+    );
+
+    // 4. [SCRUM] Prueba 2 de egreso fraccionado completando el remanente exacto de 3 decimales (12.625 m y 1.375 l)
+    const ejecucionFraccionada2 = ejecutarSalidaFisicaSolicitudEnMemoria({
+        solicitud: ejecucionFraccionada1.solicitudActualizada!,
+        itemsToDispatch: [
+            { sku: 'ELE-CBL-0012', quantity: 12.625 },
+            { sku: 'CHE-LUB-0005', quantity: 1.375 },
+        ],
+        technicianRut: '17.894.562-1',
+        technicianName: 'Alejandro Rojas Pino',
+        authorName: 'Camila Vera Soto',
+        catalogo: ejecucionFraccionada1.catalogoActualizado,
+        dispatchCode: 'DESP-2026-GRN-02',
+    });
+
+    assert.equal(ejecucionFraccionada2.success, true);
+    assert.equal(ejecucionFraccionada2.esEntregaCompleta, true, 'completa el 100% de la solicitud tras el segundo egreso fraccionado');
+    assert.equal(ejecucionFraccionada2.solicitudActualizada?.status, 'entregada');
+    assert.equal(ejecucionFraccionada2.solicitudActualizada?.items[0].deliveredQuantity, 25);
+    assert.equal(ejecucionFraccionada2.solicitudActualizada?.items[1].deliveredQuantity, 2.5);
+    assert.equal(ejecucionFraccionada2.catalogoActualizado[0].committed, 0);
+    assert.equal(ejecucionFraccionada2.catalogoActualizado[1].committed, 0);
+
+    // 5. Verificar cálculo de remanente de contenedor también en Merma y Conteo Físico con 3 decimales
+    const remanenteMerma = calcularRemanenteContenedorGranel(
+        ejecucionFraccionada2.catalogoActualizado[0],
+        {
+            cantidadMovimiento: 0.45,
+            tipoMovimiento: 'merma',
+        }
+    );
+    assert.equal(remanenteMerma.remanenteExactoDespues, 185, '185.450 - 0.450 = 185.000 m');
+    assert.ok(remanenteMerma.etiquetaUnidadYRemanente.includes('185.000 m'));
+
+    const remanenteConteo = calcularRemanenteContenedorGranel(
+        ejecucionFraccionada2.catalogoActualizado[1],
+        {
+            tipoMovimiento: 'conteo',
+            cantidadContadaFisica: 14.125,
+        }
+    );
+    assert.equal(remanenteConteo.remanenteExactoDespues, 14.125);
+    assert.equal(remanenteConteo.deltaMovimiento, -0.625, '14.125 - 14.750 = -0.625 l');
+    assert.ok(remanenteConteo.etiquetaCapacidadContenedor?.includes('14.125 / 20 l'));
+});
 
 
 
@@ -3134,3 +3511,56 @@ test('[DB][SCRUM] tablas salidas_bodega (solicitud_id, proyecto_id, tecnico_reti
 
 
 
+
+
+
+test('[BACK-2][SCRUM] 3 salidas fraccionadas de un rollo de cable en metros: descuenta exacto con 3 decimales, comprueba el remanente y bloquea excesos o más de 3 decimales', async () => {
+    const estado = { comprometido: 200, restante: 100, entregada: 0, egresos: 0 };
+    const cliente = {
+        query: async (sql: string, params: unknown[] = []) => {
+            const q = sql.replace(/\s+/g, ' ').trim();
+            if (q.startsWith('SELECT id_solicitud, proyecto_id, bodeguero_id, estado::text AS estado, nro_comprobante FROM solicitudes_insumos'))
+                return { rows: [{ id_solicitud: 960, proyecto_id: 15, bodeguero_id: 2, estado: 'Aprobada', nro_comprobante: 'COMP-2026-060' }] };
+            if (q.startsWith('SELECT sl.id_solicitud_linea, sl.id_articulo'))
+                return { rows: [{ id_solicitud_linea: 1, id_articulo: 700, sku: 'CAB-700', nombre_articulo: 'Cable 6 AWG (m)', precio_unitario: 1000, cantidad_solicitada: 200, cantidad_entregada: estado.entregada }] };
+            if (q.startsWith('SELECT COALESCE(cantidad_disponible, 0)::float8 AS cantidad_disponible, COALESCE(cantidad_comprometida'))
+                return { rows: [{ cantidad_disponible: 0, cantidad_comprometida: estado.comprometido, pmp: 1000 }] };
+            if (q.startsWith('SELECT id_contenedor, cantidad_restante'))
+                return { rows: [{ id_contenedor: 9, cantidad_restante: estado.restante }] };
+            if (q.startsWith('INSERT INTO egresos_bodega')) return { rows: [{ id_egreso: 800 + estado.egresos++ }] };
+            if (q.startsWith('UPDATE articulos_stock SET cantidad_comprometida')) { estado.comprometido = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            if (q.startsWith('UPDATE contenedor_stock SET cantidad_restante')) { estado.restante = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            if (q.startsWith('UPDATE solicitud_lineas SET cantidad_entregada')) { estado.entregada = Number(params[1]); return { rowCount: 1, rows: [] }; }
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    const egreso = (cant: number) =>
+        registrarEgresoSolicitudEnTransaccion(cliente, 960, {
+            bodeguero_id: 2,
+            tecnico_retira_rut: '16.543.210-9',
+            tecnico_retira_nombre: 'Sebastián Mora',
+            items: [{ id_articulo: 700, cantidad_egreso: cant }],
+        });
+
+    // 3 salidas fraccionadas: 12.350 + 7.125 + 30.500 = 49.975 m
+    await egreso(12.35);
+    await egreso(7.125);
+    await egreso(30.5);
+    assert.equal(estado.restante, 50.025, 'remanente del rollo: 100 - 49.975');
+    assert.equal(estado.comprometido, 150.025, 'comprometido descontado con exactitud decimal');
+
+    // Más de 3 decimales: se rechaza sin descontar nada
+    await assert.rejects(
+        () => egreso(0.0005),
+        (err: any) => String(err?.message).includes('máximo 3 decimales')
+    );
+
+    // Excede el remanente del rollo (50.025 m): bloquea y no descuenta
+    await assert.rejects(
+        () => egreso(60),
+        (err: any) => String(err?.message).includes('supera el remanente del contenedor (50.025)')
+    );
+    assert.equal(estado.restante, 50.025, 'un egreso rechazado no altera el remanente');
+    assert.equal(estado.comprometido, 150.025, 'un egreso rechazado no altera el comprometido');
+});

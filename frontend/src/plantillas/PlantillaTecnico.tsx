@@ -50,7 +50,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
 
   const [activoPestana, establecerActivoPestana] = useState<PestanaTecnico>("proyectos");
   const [seleccionadoProyectoForPestana, establecerSeleccionadoProyectoForPestana] = useState<Proyecto | null>(null);
-  const [registerInicialSubPestana, establecerRegisterInicialSubPestana] = useState<"avance" | "horas" | "sobrante">("avance");
+  const [registerInicialSubPestana, establecerRegisterInicialSubPestana] = useState<"avance" | "sobrante">("avance");
   const [esSinConexion, establecerEsSinConexion] = useState(false);
   const [sinConexionRed, establecerSinConexionRed] = useState(false);
   const [pendienteSincronizacionConteo, establecerPendienteSincronizacionConteo] = useState(0);
@@ -86,7 +86,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
             onNavigateTab={(tab, proj, subTab) => {
               if (proj) establecerSeleccionadoProyectoForPestana(proj);
               if (tab === "registrar") {
-                establecerRegisterInicialSubPestana(subTab || "horas");
+                establecerRegisterInicialSubPestana(subTab === "sobrante" ? "sobrante" : "avance");
                 establecerActivoPestana("registrar");
               } else if (tab === "insumos") {
                 establecerActivoPestana("insumos");
@@ -102,7 +102,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
             initialProjectId={seleccionadoProyectoForPestana?.id}
             onNavigateTab={(tab, subTab) => {
               if (tab === "registrar") {
-                establecerRegisterInicialSubPestana(subTab || "sobrante");
+                establecerRegisterInicialSubPestana(subTab === "avance" ? "avance" : "sobrante");
                 establecerActivoPestana("registrar");
               } else if (tab === "proyectos") {
                 establecerActivoPestana("proyectos");
@@ -251,7 +251,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <Ionicons
             name={activoPestana === "proyectos" ? "hammer" : "hammer-outline"}
             size={22}
-            color={activoPestana === "proyectos" ? "#f59e0b" : "#78716c"}
+            color={activoPestana === "proyectos" ? "#a5b4fc" : "#818cf8"}
           />
           <Text
             style={[
@@ -277,7 +277,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <Ionicons
             name={activoPestana === "insumos" ? "cube" : "cube-outline"}
             size={22}
-            color={activoPestana === "insumos" ? "#f59e0b" : "#78716c"}
+            color={activoPestana === "insumos" ? "#a5b4fc" : "#818cf8"}
           />
           <Text
             style={[
@@ -303,7 +303,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <Ionicons
             name={activoPestana === "registrar" ? "add-circle" : "add-circle-outline"}
             size={24}
-            color={activoPestana === "registrar" ? "#f59e0b" : "#78716c"}
+            color={activoPestana === "registrar" ? "#a5b4fc" : "#818cf8"}
           />
           <Text
             style={[
@@ -330,7 +330,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
             <Ionicons
               name={activoPestana === "alertas" ? "notifications" : "notifications-outline"}
               size={22}
-              color={activoPestana === "alertas" ? "#f59e0b" : "#78716c"}
+              color={activoPestana === "alertas" ? "#a5b4fc" : "#818cf8"}
             />
             {activoAlertasConteo > 0 && (
               <View style={estilos.alertaInsigniaPunto}>
@@ -367,13 +367,13 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         >
           <View style={estilos.usuarioMenuTarjeta} onStartShouldSetResponder={() => true}>
             <View style={estilos.usuarioMenuEncabezado}>
-              <View style={[estilos.avatarGrande, { backgroundColor: "#1c1917", borderWidth: 2, borderColor: tema.colors.primary }]}>
-                <Text style={[estilos.avatarGrandeTexto, { color: "#f59e0b" }]}>{usuario.initials}</Text>
+              <View style={[estilos.avatarGrande, { backgroundColor: "#1e1b4b", borderWidth: 2, borderColor: tema.colors.primary }]}>
+                <Text style={[estilos.avatarGrandeTexto, { color: "#a5b4fc" }]}>{usuario.initials}</Text>
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={estilos.usuarioMenuNombre}>{usuario.name}</Text>
                 <Text style={estilos.usuarioMenuRut}>{usuario.rut}</Text>
-                <Insignia label="Técnico Especialista" tone="warn" size="sm" style={{ marginTop: 4 }} />
+                <Insignia label="Técnico Especialista" tone="primary" size="sm" style={{ marginTop: 4 }} />
               </View>
             </View>
 
@@ -448,9 +448,9 @@ const estilos = StyleSheet.create({
   barraSuperior: {
     minHeight: 58,
     paddingVertical: 8,
-    backgroundColor: "#1c1917", // Dark Titanium Technical Bar
+    backgroundColor: "#1e1b4b", // Indigo Night Technical Bar
     borderBottomWidth: 1.5,
-    borderBottomColor: "#292524",
+    borderBottomColor: "#312e81",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -478,7 +478,7 @@ const estilos = StyleSheet.create({
   },
   usuarioNombre: {
     fontSize: 10,
-    color: "#a8a29e",
+    color: "#c7d2fe",
   },
   superiorDerecha: {
     flexDirection: "row",
@@ -494,9 +494,9 @@ const estilos = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "#292524",
+    backgroundColor: "#312e81",
     borderWidth: 1.5,
-    borderColor: "#f59e0b",
+    borderColor: "#a5b4fc",
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 6,
@@ -504,7 +504,7 @@ const estilos = StyleSheet.create({
   avatarTexto: {
     fontSize: tema.fontSize.caption,
     fontWeight: tema.fontWeight.semibold,
-    color: "#f59e0b",
+    color: "#a5b4fc",
   },
   principalContenido: {
     flex: 1,
@@ -518,9 +518,9 @@ const estilos = StyleSheet.create({
   },
   inferiorNavegacion: {
     flexDirection: "row",
-    backgroundColor: "#1c1917", // Dark Titanium
+    backgroundColor: "#1e1b4b", // Indigo Night
     borderTopWidth: 1.5,
-    borderTopColor: "#292524",
+    borderTopColor: "#312e81",
     paddingBottom: 6,
     paddingTop: 4,
     height: 60,
@@ -534,18 +534,18 @@ const estilos = StyleSheet.create({
   },
   navegacionPestanaActivo: {
     borderTopWidth: 2,
-    borderTopColor: "#f59e0b",
+    borderTopColor: "#a5b4fc",
     marginTop: -4,
     paddingTop: 2,
   },
   navegacionPestanaEtiqueta: {
     fontSize: 10,
     fontWeight: tema.fontWeight.semibold,
-    color: "#78716c",
+    color: "#818cf8",
     marginTop: 2,
   },
   navegacionPestanaEtiquetaActivo: {
-    color: "#f59e0b",
+    color: "#a5b4fc",
     fontWeight: "bold",
   },
   alertaInsigniaPunto: {

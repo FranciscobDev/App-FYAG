@@ -771,11 +771,6 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     icon: "checkmark-circle-outline",
                   },
                   {
-                    id: "facturas" as PestanaCompras,
-                    label: `Facturas (${facturasCompra.length})`,
-                    icon: "receipt-outline",
-                  },
-                  {
                     id: "ordenes" as PestanaCompras,
                     label: `Órdenes de Compra (${ordenesCompra.length})`,
                     icon: "cart-outline",
@@ -791,11 +786,6 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     id: "recepcion" as PestanaCompras,
                     label: `Recepción en Bodega (${pendienteRecepcionOrdenes.length} pend.)`,
                     icon: "checkmark-circle-outline",
-                  },
-                  {
-                    id: "facturas" as PestanaCompras,
-                    label: `Facturas (${facturasCompra.length})`,
-                    icon: "receipt-outline",
                   },
                 ]
               ).map((tab) => {

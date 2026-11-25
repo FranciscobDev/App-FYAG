@@ -73,7 +73,7 @@ export const estilos = StyleSheet.create({
     marginBottom: tema.spacing.md,
     backgroundColor: tema.colors.card,
     borderWidth: 1.5,
-    borderColor: "#f59e0b",
+    borderColor: "#a5b4fc",
     borderRadius: tema.radius.lg,
     padding: tema.spacing.md,
     shadowColor: "#000",
@@ -103,7 +103,7 @@ export const estilos = StyleSheet.create({
   recepcionInsigniaHint: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#b45309",
+    color: "#4338ca",
   },
   crearRecepcionHeroTitulo: {
     fontSize: tema.fontSize.md,
@@ -218,7 +218,7 @@ export const estilos = StyleSheet.create({
     marginBottom: tema.spacing.md,
     backgroundColor: tema.colors.card,
     borderWidth: 1.5,
-    borderColor: "#f59e0b",
+    borderColor: "#a5b4fc",
     borderRadius: tema.radius.lg,
     padding: tema.spacing.md,
     shadowColor: "#000",
@@ -248,7 +248,7 @@ export const estilos = StyleSheet.create({
   pasoPastillaHint: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#b45309",
+    color: "#4338ca",
     marginLeft: 8,
   },
   crearOrdenHeroTitulo: {

@@ -670,27 +670,67 @@ export const PantallaAdministracion: React.FC = () => {
             </View>
           )}
 
-          {/* Selector Simplificado de 3 Pestañas */}
-          <View style={estilos.pestanaBarra}>
+          {/* Selector Compacto de 3 Pestañas en 1 Fila Limpia */}
+          <View
+            style={{
+              flexDirection: "row",
+              backgroundColor: "#ffffff",
+              borderRadius: 12,
+              padding: 4,
+              borderWidth: 1,
+              borderColor: tema.colors.borderDark,
+              marginBottom: 12,
+              gap: 4,
+            }}
+          >
             {[
-              { id: "usuarios", label: "Usuarios y Roles", icon: "people-outline" },
-              { id: "auditoria", label: "Bitácora de Auditoría", icon: "shield-checkmark-outline" },
-              { id: "parametros", label: "Parámetros y Respaldos", icon: "options-outline" },
+              {
+                id: "usuarios",
+                label: `Usuarios (${usuariosSistema.length})`,
+                icon: "people-outline",
+              },
+              {
+                id: "auditoria",
+                label: `Auditoría (${registrosAuditoria.length})`,
+                icon: "shield-checkmark-outline",
+              },
+              {
+                id: "parametros",
+                label: "Parámetros y BD",
+                icon: "options-outline",
+              },
             ].map((tab) => {
               const esActivo = activoPestana === tab.id;
               return (
                 <TouchableOpacity
                   key={tab.id}
-                  style={[estilos.pestanaBoton, esActivo && estilos.pestanaBotonActivo]}
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
+                    paddingVertical: 10,
+                    paddingHorizontal: 6,
+                    borderRadius: 9,
+                    backgroundColor: esActivo ? "#0f172a" : "transparent",
+                  }}
                   onPress={() => establecerActivoPestana(tab.id as AdminTab)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                 >
                   <Ionicons
                     name={tab.icon as keyof typeof Ionicons.glyphMap}
-                    size={18}
-                    color={esActivo ? tema.colors.primaryDark : tema.colors.textSecondary}
+                    size={15}
+                    color={esActivo ? "#818cf8" : tema.colors.textSecondary}
                   />
-                  <Text style={[estilos.pestanaBotonTexto, esActivo && estilos.pestanaBotonTextoActivo]}>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: esActivo ? "800" : "600",
+                      color: esActivo ? "#ffffff" : tema.colors.textSecondary,
+                    }}
+                    numberOfLines={1}
+                  >
                     {tab.label}
                   </Text>
                 </TouchableOpacity>

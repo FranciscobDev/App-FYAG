@@ -116,172 +116,177 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
           </View>
         )}
 
-        {/* 1. ENCABEZADO DE BANDEJA DE DEVOLUCIONES EN TRÁNSITO */}
-        <View style={estilosLocales.bannerCabecera}>
-          <View style={estilosLocales.bannerIzquierda}>
-            <View style={estilosLocales.bannerIcono}>
-              <Ionicons name="car-outline" size={20} color={tema.colors.primaryDark} />
+        {/* 1. CABECERA COMPACTA INDUSTRIAL + UNIDADES POR REINGRESAR EN VIVO */}
+        <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: tema.colors.primaryLight,
+                  borderWidth: 1,
+                  borderColor: tema.colors.primaryBorder,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="car-outline" size={20} color={tema.colors.primaryDark} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                  Retornos de Obra — Bodega
+                </Text>
+                <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                  Por reingresar:{" "}
+                  <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                    {metricas.totalUnidadesPorReingresar} unidades
+                  </Text>{" "}
+                  en {metricas.enTransitoConteo} envío(s) en tránsito
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={estilosLocales.bannerTitulo}>
-                Bandeja de Devoluciones en Tránsito (Bodega)
-              </Text>
-              <Text style={estilosLocales.bannerSubtitulo}>
-                Verifica físicamente la cantidad real recibida de cada sobrante de obra. Al
-                confirmar, cambia a Recibida, reingresa al stock/Cardex y se refleja en el móvil
-                del técnico.
-              </Text>
-            </View>
-          </View>
 
-          <Insignia
-            label={
-              inTransitConteo > 0
-                ? `${inTransitConteo} pendiente${inTransitConteo === 1 ? "" : "s"}`
-                : "Bandeja al día"
-            }
-            tone={inTransitConteo > 0 ? "warn" : "ok"}
-            size="md"
-          />
+            <Insignia
+              label={
+                inTransitConteo > 0
+                  ? `${inTransitConteo} en tránsito`
+                  : "Bandeja al día"
+              }
+              tone={inTransitConteo > 0 ? "warn" : "ok"}
+              size="md"
+            />
+          </View>
+        </Tarjeta>
+
+        {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS (FILTRAN CON 1 TOQUE, SIN CHIPS DUPLICADOS) */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[
+            {
+              id: "en_transito" as FiltroEstadoBodega,
+              titulo: "En Tránsito",
+              valor: metricas.enTransitoConteo,
+              sub: `${metricas.totalUnidadesPorReingresar} u. por contar`,
+              icon: "car-outline" as const,
+              bg: "#fffbeb",
+              border: "#fcd34d",
+              borderActivo: "#d97706",
+              textColor: "#92400e",
+            },
+            {
+              id: "recibida" as FiltroEstadoBodega,
+              titulo: "Recibidas",
+              valor: metricas.recibidasConteo,
+              sub: "Reingresadas OK",
+              icon: "checkmark-done-circle-outline" as const,
+              bg: "#f0fdf4",
+              border: "#86efac",
+              borderActivo: "#16a34a",
+              textColor: "#166534",
+            },
+            {
+              id: "con_discrepancia" as FiltroEstadoBodega,
+              titulo: "Discrepancias",
+              valor: metricas.conDiscrepanciaConteo,
+              sub: "Con diferencia",
+              icon: "alert-circle-outline" as const,
+              bg: metricas.conDiscrepanciaConteo > 0 ? "#fef2f2" : "#f1f5f9",
+              border: metricas.conDiscrepanciaConteo > 0 ? "#fca5a5" : "#cbd5e1",
+              borderActivo: metricas.conDiscrepanciaConteo > 0 ? "#dc2626" : "#475569",
+              textColor: metricas.conDiscrepanciaConteo > 0 ? "#991b1b" : "#334155",
+            },
+            {
+              id: "todas" as FiltroEstadoBodega,
+              titulo: "Todas",
+              valor: filtradoTransitDevoluciones.length,
+              sub: "Historial total",
+              icon: "layers-outline" as const,
+              bg: "#f1f5f9",
+              border: "#cbd5e1",
+              borderActivo: "#334155",
+              textColor: "#0f172a",
+            },
+          ].map((kpi) => {
+            const activo = filtroEstado === kpi.id;
+            return (
+              <TouchableOpacity
+                key={kpi.id}
+                activeOpacity={0.8}
+                onPress={() => establecerFiltroEstado(kpi.id)}
+                style={{
+                  flexBasis: "48%",
+                  flexGrow: 1,
+                  minWidth: 140,
+                  backgroundColor: kpi.bg,
+                  borderWidth: activo ? 2 : 1,
+                  borderColor: activo ? kpi.borderActivo : kpi.border,
+                  borderLeftWidth: 5,
+                  borderLeftColor: kpi.borderActivo,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "800",
+                      color: kpi.textColor,
+                      textTransform: "uppercase",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {kpi.titulo}
+                  </Text>
+                  <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginTop: 2,
+                  }}
+                >
+                  <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                    {kpi.valor}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: activo ? "800" : "600",
+                      color: kpi.textColor,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {activo ? "● Vista activa" : kpi.sub}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* 2. DASHBOARD DE 4 KPIs RESPONSIVOS */}
-        <View style={estilosLocales.kpiGrilla}>
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              metricas.enTransitoConteo > 0 && {
-                backgroundColor: tema.colors.warnLight,
-                borderColor: tema.colors.warnBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                estilosLocales.kpiLbl,
-                metricas.enTransitoConteo > 0 && { color: tema.colors.warnDark },
-              ]}
-            >
-              En Tránsito
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiVal,
-                metricas.enTransitoConteo > 0 && { color: tema.colors.warnDark },
-              ]}
-            >
-              {metricas.enTransitoConteo}
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiSub,
-                metricas.enTransitoConteo > 0 && { color: tema.colors.warnDark },
-              ]}
-            >
-              Esperando conteo físico
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.primaryDark }]}>
-              Por Reingresar
-            </Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.primaryDark }]}>
-              {metricas.totalUnidadesPorReingresar}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.primaryDark }]}>
-              Unidades declaradas
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.okLight, borderColor: "#bbf7d0" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.okDark }]}>Recibidas</Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.okDark }]}>
-              {metricas.recibidasConteo}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.okDark }]}>
-              Reingresadas a stock
-            </Text>
-          </View>
-
-          <View style={[estilosLocales.kpiCaja, esMovilEstrecho && estilosLocales.kpiCajaMovil]}>
-            <Text style={estilosLocales.kpiLbl}>Discrepancias</Text>
-            <Text
-              style={[
-                estilosLocales.kpiVal,
-                metricas.conDiscrepanciaConteo > 0 && { color: tema.colors.danger },
-              ]}
-            >
-              {metricas.conDiscrepanciaConteo}
-            </Text>
-            <Text style={estilosLocales.kpiSub}>Con alerta a Admin</Text>
-          </View>
-        </View>
-
-        {/* 3. BUSCADOR Y CHIPS DE FILTRO DINÁMICO */}
+        {/* 3. BUSCADOR COMPACTO */}
         <View style={estilosLocales.filtrosCaja}>
           <CampoBusqueda
             value={transitBuscar}
             onChangeText={establecerTransitBuscar}
             placeholder="Buscar por código DEV, proyecto, técnico o RUT..."
           />
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(
-              [
-                {
-                  id: "en_transito",
-                  label: `En Tránsito (${metricas.enTransitoConteo})`,
-                },
-                {
-                  id: "todas",
-                  label: `Todas (${filtradoTransitDevoluciones.length})`,
-                },
-                {
-                  id: "recibida",
-                  label: `Recibidas (${metricas.recibidasConteo})`,
-                },
-                {
-                  id: "con_discrepancia",
-                  label: `Con Discrepancia (${metricas.conDiscrepanciaConteo})`,
-                },
-              ] as const
-            ).map((chip) => {
-              const activo = filtroEstado === chip.id;
-              return (
-                <TouchableOpacity
-                  key={chip.id}
-                  onPress={() => establecerFiltroEstado(chip.id)}
-                  style={[estilosLocales.filtroChip, activo && estilosLocales.filtroChipActivo]}
-                >
-                  <Text
-                    style={[
-                      estilosLocales.filtroChipTexto,
-                      activo && estilosLocales.filtroChipTextoActivo,
-                    ]}
-                  >
-                    {chip.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </View>
 
-        {/* 4. LISTADO RESPONSIVO DE DEVOLUCIONES (1 COL MÓVIL / 2 COLS PANTALLA ANCHA) */}
+        {/* 4. LISTADO RESPONSIVO DE DEVOLUCIONES CON SEMÁFORO DE SUPERFICIE */}
         {devolucionesVisibles.length === 0 ? (
           <EstadoVacio
             icon="car-outline"
@@ -310,20 +315,46 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
               const esTransit = ret.status === "en_transito";
               const conDiferencia = tieneDiscrepanciaDevolucion(ret);
 
+              const fondoSem = esTransit
+                ? "#fffbeb"
+                : conDiferencia
+                ? "#fef2f2"
+                : "#f0fdf4";
+              const bordeSem = esTransit
+                ? "#fcd34d"
+                : conDiferencia
+                ? "#fca5a5"
+                : "#86efac";
+              const franjaSem = esTransit
+                ? "#d97706"
+                : conDiferencia
+                ? "#dc2626"
+                : "#16a34a";
+
               return (
                 <Tarjeta
                   key={ret.id}
-                  variant={esTransit ? "elevated" : "default"}
+                  variant="outlined"
                   style={[
-                    estilosLocales.devolucionTarjeta,
+                    {
+                      padding: 12,
+                      gap: 10,
+                      backgroundColor: fondoSem,
+                      borderColor: bordeSem,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: franjaSem,
+                      borderRadius: 12,
+                    },
                     esPantallaAncha && estilosLocales.devolucionTarjetaAncha,
-                    esTransit && estilosLocales.devolucionTarjetaTransito,
                   ]}
                 >
                   <View style={estilosLocales.tarjetaSuperior}>
                     <View style={{ flex: 1, minWidth: 160 }}>
                       <View style={estilosLocales.codigoFila}>
-                        <Text style={estilosLocales.codigoTexto}>{ret.code}</Text>
+                        <Text style={[estilosLocales.codigoTexto, { fontSize: 15, fontWeight: "800" }]}>
+                          {ret.code}
+                        </Text>
                         <InsigniaEstado status={ret.status} size="sm" />
                         {conDiferencia && (
                           <Insignia label="Discrepancia" tone="danger" size="sm" />
@@ -333,17 +364,26 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
                         {ret.projectCode} • {ret.projectName}
                       </Text>
                       <Text style={estilosLocales.tecnicoTexto}>
-                        Técnico:{" "}
+                        👤{" "}
                         <Text style={{ fontWeight: "700", color: tema.colors.text }}>
                           {ret.technicianName}
                         </Text>{" "}
-                        ({ret.technicianRut}) • {formatearFecha(ret.date)}
+                        ({ret.technicianRut}) • 📅 {formatearFecha(ret.date)}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Detalle de insumos declarados vs recibidos reales */}
-                  <View style={estilosLocales.elementosCaja}>
+                  {/* Detalle compacto de insumos declarados vs recibidos reales */}
+                  <View
+                    style={{
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: bordeSem,
+                      borderRadius: 9,
+                      padding: 10,
+                      gap: 6,
+                    }}
+                  >
                     <Text style={estilosLocales.elementosTitulo}>
                       Insumos en Devolución ({ret.items?.length || 0}):
                     </Text>
@@ -393,13 +433,13 @@ export const SeccionDevolucionesBodega: React.FC<PropiedadesSeccionDevolucionesB
                     <Boton
                       title="Confirmar Cantidad Real Recibida"
                       variant="primary"
-                      size="md"
+                      size="sm"
                       icon="checkmark-circle-outline"
                       onPress={() => manejarAbrirConfirmarDevolucion(ret)}
-                      style={{ minHeight: 46 }}
+                      style={{ minHeight: 40 }}
                     />
                   ) : (
-                    <View style={estilosLocales.recibidaBanner}>
+                    <View style={[estilosLocales.recibidaBanner, { backgroundColor: "#ffffff" }]}>
                       <Ionicons name="checkmark-done" size={16} color={tema.colors.ok} />
                       <Text style={estilosLocales.recibidaTexto}>
                         Recibida por {ret.receivedBy || "Bodega Central"}
@@ -537,7 +577,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {

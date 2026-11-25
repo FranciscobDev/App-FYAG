@@ -2,7 +2,6 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": false,
-    "ignoreDeprecations": "6.0",
     "moduleResolution": "bundler",
     "skipLibCheck": true,
     "paths": {
@@ -14,7 +13,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx"
-  ],
+, "../backend/solicitudesTecnico.integracion.test.ts"  ],
   "exclude": [
     "node_modules",
     "src/declaraciones.d.ts"

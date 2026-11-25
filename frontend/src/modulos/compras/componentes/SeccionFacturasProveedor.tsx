@@ -1,10 +1,11 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -15,7 +16,11 @@ import {
   Boton,
   Tarjeta,
   CampoTexto,
+  EstadoVacio,
+  CampoBusqueda,
+  VistaModal,
 } from "@/componentes/comunes";
+import { Selector, OpcionSelector } from "@/componentes/formularios/Selector";
 import {
   FacturaCompra,
   ItemFacturaCompra,
@@ -54,6 +59,8 @@ export interface PropiedadesSeccionFacturasProveedor {
   proveedores: any[];
 }
 
+type FiltroEstadoFactura = "todas" | "conformes" | "registradas" | "discrepancias";
+
 export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProveedor> = ({
   activoPestana,
   calculatedFacturaElementos,
@@ -80,12 +87,147 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
   productos,
   proveedores,
 }) => {
+  const { width } = useWindowDimensions();
+  const esMovilEstrecho = width < 440;
+
+  const [mostrarFormulario, setMostrarFormulario] = useState<boolean>(false);
+  const [filtroFactura, setFiltroFactura] = useState<FiltroEstadoFactura>("todas");
+  const [busquedaFactura, setBusquedaFactura] = useState<string>("");
+  const [descuentosExpandidos, setDescuentosExpandidos] = useState<Record<number, boolean>>({});
+  const prevTotalFacturasRef = useRef<number>(facturasCompra.length);
+
+  useEffect(() => {
+    if (facturasCompra.length > prevTotalFacturasRef.current) {
+      setMostrarFormulario(false);
+      setDescuentosExpandidos({});
+    }
+    prevTotalFacturasRef.current = facturasCompra.length;
+  }, [facturasCompra.length]);
+
+  const opcionesProveedor = useMemo<OpcionSelector<string>[]>(
+    () =>
+      proveedores
+        .filter((s: any) => !s.disabled)
+        .map((s: any) => ({
+          label: s.tradeName || s.businessName,
+          value: String(s.id),
+          hint: `RUT: ${s.rut || "Sin RUT"}${s.category ? ` • ${s.category}` : ""}`,
+          icon: "business-outline",
+        })),
+    [proveedores]
+  );
+
+  const opcionesProductos = useMemo<OpcionSelector<string>[]>(
+    () =>
+      productos
+        .filter((p: any) => !p.disabled)
+        .map((p: any) => ({
+          label: `${p.sku} • ${p.name}`,
+          value: String(p.sku),
+          hint: `Stock: ${p.stock} ${p.unit} • Costo ref: ${formatearCLP(p.unitCost)}`,
+          icon: "cube-outline",
+        })),
+    [productos]
+  );
+
+  const metricasFacturas = useMemo(() => {
+    let conformes = 0;
+    let registradas = 0;
+    let discrepancias = 0;
+    let montoTotal = 0;
+    let ahorroTotal = 0;
+
+    facturasCompra.forEach((f) => {
+      montoTotal += Number(f.total || 0);
+      ahorroTotal += Number(f.totalDiscounts || 0);
+      if (f.hasReceptionDiscrepancy) {
+        discrepancias += 1;
+      } else if (f.status === "recepcion_conforme") {
+        conformes += 1;
+      } else {
+        registradas += 1;
+      }
+    });
+
+    return {
+      total: facturasCompra.length,
+      conformes,
+      registradas,
+      discrepancias,
+      montoTotal: Math.round(montoTotal),
+      ahorroTotal: Math.round(ahorroTotal),
+    };
+  }, [facturasCompra]);
+
+  const facturasFiltradas = useMemo(() => {
+    const q = busquedaFactura.trim().toLowerCase();
+    return facturasCompra.filter((f) => {
+      if (filtroFactura === "discrepancias" && !f.hasReceptionDiscrepancy) return false;
+      if (
+        filtroFactura === "conformes" &&
+        (f.hasReceptionDiscrepancy || f.status !== "recepcion_conforme")
+      ) {
+        return false;
+      }
+      if (
+        filtroFactura === "registradas" &&
+        (f.hasReceptionDiscrepancy || f.status === "recepcion_conforme")
+      ) {
+        return false;
+      }
+
+      if (q) {
+        const coincideNum = (f.number || "").toLowerCase().includes(q);
+        const coincideOc = (f.orderCode || "").toLowerCase().includes(q);
+        const coincideProv =
+          (f.supplierName || "").toLowerCase().includes(q) ||
+          (f.supplierRut || "").toLowerCase().includes(q);
+        if (!coincideNum && !coincideOc && !coincideProv) return false;
+      }
+      return true;
+    });
+  }, [facturasCompra, filtroFactura, busquedaFactura]);
+
+  const obtenerEstiloSemaforoFactura = (fac: FacturaCompra) => {
+    if (fac.hasReceptionDiscrepancy) {
+      return {
+        fondoTarjeta: "#fef2f2",
+        bordeTarjeta: "#fca5a5",
+        franjaLateral: "#dc2626",
+        colorTexto: "#991b1b",
+        divisorColor: "#fecaca",
+        etiqueta: "Con Discrepancia",
+        tone: "danger" as const,
+      };
+    }
+    if (fac.status === "recepcion_conforme") {
+      return {
+        fondoTarjeta: "#f0fdf4",
+        bordeTarjeta: "#86efac",
+        franjaLateral: "#16a34a",
+        colorTexto: "#166534",
+        divisorColor: "#bbf7d0",
+        etiqueta: "Recepción Conforme",
+        tone: "ok" as const,
+      };
+    }
+    return {
+      fondoTarjeta: "#fffbeb",
+      bordeTarjeta: "#fcd34d",
+      franjaLateral: "#d97706",
+      colorTexto: "#92400e",
+      divisorColor: "#fde68a",
+      etiqueta: "Registrada",
+      tone: "warn" as const,
+    };
+  };
+
   const ordenesDelProveedor = ordenesCompra.filter(
     (oc) =>
       oc.status !== "anulada" &&
       (oc.supplierId === invProveedorId ||
         oc.supplierRut?.replace(/[.\s-]/g, "") ===
-          proveedores.find((p: any) => p.id === invProveedorId)?.rut?.replace(/[.\s-]/g, ""))
+        proveedores.find((p: any) => p.id === invProveedorId)?.rut?.replace(/[.\s-]/g, ""))
   );
 
   const cargarLineasDesdeOc = (oc: OrdenCompra, usarCantidadRecibida: boolean) => {
@@ -109,113 +251,292 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
     }
   };
 
+  const opcionesOcProveedor = useMemo<OpcionSelector<string>[]>(
+    () => [
+      {
+        label: "Sin OC (Factura directa)",
+        value: "",
+        hint: "Ingreso manual sin vínculo a orden de compra",
+        icon: "document-text-outline",
+      },
+      ...ordenesDelProveedor.map((oc) => {
+        const totalRecibido = oc.items.reduce(
+          (acc, it) => acc + Number(it.receivedQuantity || 0),
+          0
+        );
+        const totalPedido = oc.items.reduce(
+          (acc, it) => acc + Number(it.quantity || 0),
+          0
+        );
+        return {
+          label: `${oc.code} (${oc.status.replace("_", " ").toUpperCase()})`,
+          value: oc.code,
+          hint: `Recibido: ${totalRecibido}/${totalPedido} un • Neto OC: ${formatearCLP(oc.subtotal)}`,
+          icon: "receipt-outline" as const,
+        };
+      }),
+    ],
+    [ordenesDelProveedor]
+  );
+
   return (
     <>
       {/* =====================================================================
-          2. TAB FACTURAS CON CASCADA E IVA (BODEGUERO Y ADMIN)
+          2. TAB FACTURAS CON CASCADA E IVA (DASHBOARD COMPACTO + SEMÁFORO)
           ===================================================================== */}
       {activoPestana === "facturas" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          <Tarjeta variant="elevated">
-            <Text style={estilos.seccionTitulo}>Ingreso de Factura de Compra (Bodeguero)</Text>
-            <Text style={estilos.seccionSubtitulo}>
-              Valida duplicados por proveedor, calcula hasta 3 descuentos sucesivos en cascada, Neto, IVA (19%), PMP y detecta discrepancias con la recepción en vivo.
-            </Text>
-
-            <View style={estilos.formularioFilaTwo}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={estilos.campoEtiqueta}>Proveedor:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                  {proveedores
-                    .filter((s: any) => !s.disabled)
-                    .map((s: any) => (
-                      <TouchableOpacity
-                        key={s.id}
-                        onPress={() => establecerInvProveedorId(s.id)}
-                        style={[
-                          estilos.chipBoton,
-                          invProveedorId === s.id && estilos.chipBotonActivo,
-                        ]}
-                      >
-                        <Text style={[estilos.chipTexto, invProveedorId === s.id && estilos.chipTextoActivo]}>
-                          {s.tradeName || s.businessName}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                </ScrollView>
+          {/* 1. CABECERA COMPACTA INDUSTRIAL + BOTÓN DESPLEGAR FORMULARIO */}
+          <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    backgroundColor: tema.colors.primaryLight,
+                    borderWidth: 1,
+                    borderColor: tema.colors.primaryBorder,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="receipt-outline" size={20} color={tema.colors.primaryDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                    Facturas de Proveedor — Conciliación OC
+                  </Text>
+                  <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                    Total facturado:{" "}
+                    <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                      {formatearCLP(metricasFacturas.montoTotal)}
+                    </Text>
+                    {metricasFacturas.ahorroTotal > 0
+                      ? ` • Ahorro cascada: -${formatearCLP(metricasFacturas.ahorroTotal)}`
+                      : ` • ${metricasFacturas.total} factura(s)`}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <View style={estilos.formularioFilaTwo}>
-              <CampoTexto
-                label="Número de Factura"
-                value={invNumero}
-                onChangeText={establecerInvNumero}
-                placeholder="Ej: FAC-89301"
-                containerStyle={{ flex: 1, marginRight: 8 }}
-              />
-              <CampoTexto
-                label="OC Relacionada (Opcional)"
-                value={invOrdenCodigo}
-                onChangeText={establecerInvOrdenCodigo}
-                placeholder="Ej: OC-2026-101"
-                containerStyle={{ flex: 1 }}
+              <Boton
+                title="Ingresar Factura"
+                variant="primary"
+                size="sm"
+                icon="add-outline"
+                onPress={() => setMostrarFormulario(true)}
+                style={{ minHeight: 40 }}
+                fullWidth={esMovilEstrecho}
               />
             </View>
+          </Tarjeta>
 
-            {/* Selector rápido de Órdenes de Compra del proveedor seleccionado */}
-            {ordenesDelProveedor.length > 0 && (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={estilos.campoEtiqueta}>
-                  Vincular con OC del proveedor (clic para asociar y cargar líneas):
+          {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {[
+              {
+                id: "conformes" as FiltroEstadoFactura,
+                titulo: "Conformes",
+                valor: metricasFacturas.conformes,
+                sub: "Conciliadas OC",
+                icon: "checkmark-done-circle-outline" as const,
+                bg: "#f0fdf4",
+                border: "#86efac",
+                borderActivo: "#16a34a",
+                textColor: "#166534",
+              },
+              {
+                id: "registradas" as FiltroEstadoFactura,
+                titulo: "Registradas",
+                valor: metricasFacturas.registradas,
+                sub: "Por conciliar",
+                icon: "time-outline" as const,
+                bg: "#fffbeb",
+                border: "#fcd34d",
+                borderActivo: "#d97706",
+                textColor: "#92400e",
+              },
+              {
+                id: "discrepancias" as FiltroEstadoFactura,
+                titulo: "Discrepancias",
+                valor: metricasFacturas.discrepancias,
+                sub: "Diferencia OC",
+                icon: "alert-circle-outline" as const,
+                bg: metricasFacturas.discrepancias > 0 ? "#fef2f2" : "#f1f5f9",
+                border: metricasFacturas.discrepancias > 0 ? "#fca5a5" : "#cbd5e1",
+                borderActivo: metricasFacturas.discrepancias > 0 ? "#dc2626" : "#475569",
+                textColor: metricasFacturas.discrepancias > 0 ? "#991b1b" : "#334155",
+              },
+              {
+                id: "todas" as FiltroEstadoFactura,
+                titulo: "Todas",
+                valor: metricasFacturas.total,
+                sub: "Historial total",
+                icon: "layers-outline" as const,
+                bg: "#f1f5f9",
+                border: "#cbd5e1",
+                borderActivo: "#334155",
+                textColor: "#0f172a",
+              },
+            ].map((kpi) => {
+              const activo = filtroFactura === kpi.id;
+              return (
+                <TouchableOpacity
+                  key={kpi.id}
+                  activeOpacity={0.8}
+                  onPress={() => setFiltroFactura(kpi.id)}
+                  style={{
+                    flexBasis: "48%",
+                    flexGrow: 1,
+                    minWidth: 140,
+                    backgroundColor: kpi.bg,
+                    borderWidth: activo ? 2 : 1,
+                    borderColor: activo ? kpi.borderActivo : kpi.border,
+                    borderLeftWidth: 5,
+                    borderLeftColor: kpi.borderActivo,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "800",
+                        color: kpi.textColor,
+                        textTransform: "uppercase",
+                      }}
+                      numberOfLines={1}
+                    >
+                      {kpi.titulo}
+                    </Text>
+                    <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                  </View>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                      marginTop: 2,
+                    }}
+                  >
+                    <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                      {kpi.valor}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: activo ? "800" : "600",
+                        color: kpi.textColor,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {activo ? "● Vista activa" : kpi.sub}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* 3. MODAL DEDICADO DE INGRESO DE FACTURA CON SELECTORES DESPLEGABLES Y CASCADA ACORDEÓN */}
+          <VistaModal
+            visible={mostrarFormulario}
+            onClose={() => setMostrarFormulario(false)}
+            title="Nuevo Ingreso de Factura de Compra"
+            subtitle="Conciliación con OC, descuentos en cascada (D1 → D2 → D3), IVA (19%) y recálculo de PMP"
+            maxWidth={640}
+          >
+            {/* SECCIÓN 1: DATOS DEL DOCUMENTO Y PROVEEDOR */}
+            <View
+              style={{
+                backgroundColor: "#f8fafc",
+                borderWidth: 1,
+                borderColor: tema.colors.border,
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                <Ionicons name="document-text-outline" size={16} color={tema.colors.primaryDark} />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color: tema.colors.text,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  1. Datos del Documento
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
-                  {ordenesDelProveedor.map((oc) => {
-                    const esOcActiva =
-                      invOrdenCodigo.trim().toUpperCase() === oc.code.trim().toUpperCase();
-                    const totalRecibido = oc.items.reduce(
-                      (acc, it) => acc + Number(it.receivedQuantity || 0),
-                      0
-                    );
-                    const totalPedido = oc.items.reduce(
-                      (acc, it) => acc + Number(it.quantity || 0),
-                      0
-                    );
-                    return (
-                      <TouchableOpacity
-                        key={oc.id}
-                        onPress={() => cargarLineasDesdeOc(oc, false)}
-                        style={[
-                          estilos.ocSeleccionarChip,
-                          esOcActiva && estilos.ocSeleccionarChipActivo,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            estilos.ocSeleccionarCodigo,
-                            esOcActiva && estilos.ocSeleccionarCodigoActivo,
-                          ]}
-                        >
-                          {oc.code} ({oc.status.replace("_", " ").toUpperCase()})
-                        </Text>
-                        <Text
-                          style={[
-                            estilos.ocSeleccionarProveedor,
-                            esOcActiva && estilos.ocSeleccionarProveedorActivo,
-                          ]}
-                        >
-                          Recibido: {totalRecibido}/{totalPedido} un • Neto OC: {formatearCLP(oc.subtotal)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
               </View>
-            )}
 
-            {/* Aviso de validación de duplicados */}
+              <Selector
+                label="Proveedor Emisor"
+                required
+                options={opcionesProveedor}
+                value={String(invProveedorId || "")}
+                onChange={(nuevoId) => {
+                  establecerInvProveedorId(nuevoId);
+                  establecerInvOrdenCodigo("");
+                }}
+                placeholder="Seleccionar proveedor homologado..."
+              />
+
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 160 }}>
+                  <CampoTexto
+                    label="Número de Factura"
+                    required
+                    value={invNumero}
+                    onChangeText={establecerInvNumero}
+                    placeholder="Ej: FAC-89301"
+                    containerStyle={{ marginBottom: 4 }}
+                  />
+                </View>
+
+                <View style={{ flex: 1.2, minWidth: 190 }}>
+                  <Selector
+                    label="Vincular OC (Autocompleta)"
+                    options={opcionesOcProveedor}
+                    value={
+                      ordenesDelProveedor.find(
+                        (oc) => oc.code.trim().toUpperCase() === invOrdenCodigo.trim().toUpperCase()
+                      )?.code || ""
+                    }
+                    onChange={(codigoSeleccionado) => {
+                      if (!codigoSeleccionado) {
+                        establecerInvOrdenCodigo("");
+                        return;
+                      }
+                      const ocElegida = ordenesDelProveedor.find((o) => o.code === codigoSeleccionado);
+                      if (ocElegida) {
+                        cargarLineasDesdeOc(ocElegida, false);
+                      } else {
+                        establecerInvOrdenCodigo(codigoSeleccionado);
+                      }
+                    }}
+                    placeholder="Sin OC (Factura directa)"
+                    containerStyle={{ marginBottom: 4 }}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* AVISO DE VALIDACIÓN DE DUPLICADOS */}
             {esFacturaDuplicate && (
-              <View style={estilos.duplicateAvisoCaja}>
+              <View style={[estilos.duplicateAvisoCaja, { marginBottom: 10 }]}>
                 <Ionicons name="alert-circle" size={16} color={tema.colors.danger} />
                 <Text style={estilos.duplicateAvisoTexto}>
                   Atención: Ya existe la Factura N° {invNumero} registrada para este proveedor.
@@ -226,87 +547,114 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
             {/* AVISO EN VIVO DE DISCREPANCIA CON LA RECEPCIÓN DE LA OC */}
             {ordenCompraVinculadaFactura && discrepanciaFacturaRecepcion?.tieneDiscrepancia && (
               <View
-                style={[
-                  estilos.discrepancyBanner,
-                  {
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    backgroundColor: "#FEF2F2",
-                    borderColor: "#EF4444",
-                    borderWidth: 1.5,
-                    padding: 12,
-                  },
-                ]}
+                style={{
+                  backgroundColor: "#fef2f2",
+                  borderColor: "#fca5a5",
+                  borderWidth: 1.5,
+                  borderLeftWidth: 5,
+                  borderLeftColor: "#dc2626",
+                  borderRadius: 10,
+                  padding: 10,
+                  marginBottom: 12,
+                  gap: 4,
+                }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
-                  <Ionicons
-                    name="warning"
-                    size={18}
-                    color={tema.colors.danger}
-                    style={{ marginRight: 6 }}
-                  />
-                  <Text
-                    style={[
-                      estilos.discrepancyBannerTexto,
-                      { color: tema.colors.danger, fontWeight: "bold", fontSize: 13 },
-                    ]}
-                  >
-                    Aviso de Discrepancia con la Recepción ({ordenCompraVinculadaFactura.code})
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="warning" size={16} color={tema.colors.danger} />
+                  <Text style={{ color: tema.colors.danger, fontWeight: "800", fontSize: 12 }}>
+                    Discrepancia con Recepción ({ordenCompraVinculadaFactura.code})
                   </Text>
                 </View>
                 {discrepanciaFacturaRecepcion.detalles.map((det, dIdx) => (
-                  <Text
-                    key={dIdx}
-                    style={{
-                      fontSize: 12,
-                      color: "#991B1B",
-                      marginBottom: 3,
-                      lineHeight: 17,
-                    }}
-                  >
+                  <Text key={dIdx} style={{ fontSize: 11, color: "#991B1B" }}>
                     • {det.mensaje}
                   </Text>
                 ))}
-                <View style={{ flexDirection: "row", marginTop: 6, gap: 8, flexWrap: "wrap" }}>
+                <View style={{ flexDirection: "row", marginTop: 4 }}>
                   <Boton
-                    title="Ajustar cantidades a Recepción Conforme"
+                    title="Ajustar a Recepción Conforme"
                     variant="outline"
                     size="sm"
                     onPress={() => cargarLineasDesdeOc(ordenCompraVinculadaFactura, true)}
+                    style={{ backgroundColor: "#ffffff", minHeight: 32 }}
                   />
                 </View>
               </View>
             )}
 
-            {/* Banner verde cuando la factura coincide exactamente con la recepción */}
+            {/* BANNER VERDE CUANDO LA FACTURA COINCIDE CON LA RECEPCIÓN */}
             {ordenCompraVinculadaFactura && !discrepanciaFacturaRecepcion?.tieneDiscrepancia && (
               <View
-                style={[
-                  estilos.pmpImpactTarjeta,
-                  {
-                    flexDirection: "row",
-                    alignItems: "center",
-                    marginBottom: 10,
-                    padding: 10,
-                  },
-                ]}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  backgroundColor: "#f0fdf4",
+                  borderWidth: 1,
+                  borderColor: "#86efac",
+                  borderLeftWidth: 4,
+                  borderLeftColor: "#16a34a",
+                  borderRadius: 8,
+                  marginBottom: 12,
+                  padding: 9,
+                  gap: 6,
+                }}
               >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color={tema.colors.okDark}
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[estilos.pmpImpactTexto, { flex: 1, fontWeight: "600" }]}>
-                  Conciliación conforme con {ordenCompraVinculadaFactura.code}: las cantidades e insumos facturados coinciden con la recepción en bodega.
+                <Ionicons name="checkmark-circle" size={16} color={tema.colors.okDark} />
+                <Text style={{ fontSize: 11, color: "#166534", flex: 1, fontWeight: "700" }}>
+                  Conciliación conforme con {ordenCompraVinculadaFactura.code}: cantidades coinciden con bodega.
                 </Text>
               </View>
             )}
 
-            {/* Insumos con hasta 3 descuentos en cascada */}
-            <Text style={estilos.formularioSeccionEtiqueta}>
-              Ítems con Desglose en Vivo de 3 Descuentos en Cascada (%):
-            </Text>
+            {/* SECCIÓN 2: ÍTEMS FACTURADOS CON SELECTOR Y DESCUENTOS EN CASCADA PLEGABLES */}
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="cube-outline" size={16} color={tema.colors.primaryDark} />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "800",
+                    color: tema.colors.text,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  2. Ítems Facturados ({invElementos.length})
+                </Text>
+              </View>
+
+              <Boton
+                title="Agregar Ítem"
+                variant="outline"
+                size="sm"
+                icon="add-outline"
+                onPress={() => {
+                  const siguienteP =
+                    productos.find((p: any) => !invElementos.some((i: any) => i.sku === p.sku)) ||
+                    productos[0];
+                  if (!siguienteP) return;
+                  establecerInvElementos((prev: any[]) => [
+                    ...prev,
+                    {
+                      sku: siguienteP.sku,
+                      quantity: 1,
+                      grossPrice: siguienteP.unitCost,
+                      disc1: 0,
+                      disc2: 0,
+                      disc3: 0,
+                    },
+                  ]);
+                }}
+                style={{ minHeight: 32, paddingHorizontal: 10 }}
+              />
+            </View>
+
             {invElementos.map((item: any, idx: number) => {
               const producto = productos.find((p: any) => p.sku === item.sku);
               const desglose = calcularLineaFacturaCascada({
@@ -322,82 +670,119 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                 pmpActual: producto?.pmp || producto?.unitCost || item.grossPrice,
               });
               const calculo = calculatedFacturaElementos[idx] || desglose;
-              const curExistencia = producto?.stock || 0;
-              const curPmp = producto?.pmp || producto?.unitCost || 0;
               const itemOcVinculado = ordenCompraVinculadaFactura?.items.find(
                 (i) => i.sku.trim().toUpperCase() === String(item.sku || "").trim().toUpperCase()
               );
+              const tieneDescuentos =
+                Number(item.disc1) > 0 || Number(item.disc2) > 0 || Number(item.disc3) > 0;
+              const mostrarCascada = Boolean(descuentosExpandidos[idx]) || tieneDescuentos;
 
               return (
-                <View key={idx} style={estilos.facturaElementoTarjeta}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                    <Text style={estilos.elementoSkuTexto}>
-                      Ítem #{idx + 1}: {desglose.name} ({desglose.sku})
-                    </Text>
-                    <Pressable
-                      onPress={() => {
-                        if (invElementos.length > 1) {
-                          establecerInvElementos((prev: any[]) => prev.filter((_: any, i: number) => i !== idx));
-                        }
+                <View
+                  key={idx}
+                  style={{
+                    backgroundColor: "#f8fafc",
+                    borderWidth: 1,
+                    borderColor: tema.colors.borderDark,
+                    borderLeftWidth: 4,
+                    borderLeftColor: tema.colors.primary,
+                    borderRadius: 10,
+                    padding: 10,
+                    marginBottom: 10,
+                  }}
+                >
+                  {/* Fila Superior: N° Ítem + Selector desplegable de Insumo + Eliminar */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <View
+                      style={{
+                        backgroundColor: tema.colors.primaryLight,
+                        borderWidth: 1,
+                        borderColor: tema.colors.primaryBorder,
+                        borderRadius: 6,
+                        paddingHorizontal: 7,
+                        paddingVertical: 4,
                       }}
-                      hitSlop={6}
                     >
-                      <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
-                    </Pressable>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: tema.colors.primaryDark }}>
+                        #{idx + 1}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Selector
+                        label={`Insumo Ítem #${idx + 1}`}
+                        options={opcionesProductos}
+                        value={String(item.sku || "")}
+                        onChange={(nuevoSku) => {
+                          const prod = productos.find((p: any) => p.sku === nuevoSku);
+                          establecerInvElementos((prev: any[]) =>
+                            prev.map((it: any, i: number) =>
+                              i === idx
+                                ? {
+                                  ...it,
+                                  sku: nuevoSku,
+                                  grossPrice: prod ? prod.unitCost : it.grossPrice,
+                                }
+                                : it
+                            )
+                          );
+                        }}
+                        placeholder="Seleccionar insumo del catálogo..."
+                        containerStyle={{ marginBottom: 0 }}
+                      />
+                    </View>
+
+                    {invElementos.length > 1 && (
+                      <Pressable
+                        onPress={() =>
+                          establecerInvElementos((prev: any[]) =>
+                            prev.filter((_: any, i: number) => i !== idx)
+                          )
+                        }
+                        hitSlop={8}
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 8,
+                          backgroundColor: "#fef2f2",
+                          borderWidth: 1,
+                          borderColor: "#fca5a5",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={16} color={tema.colors.danger} />
+                      </Pressable>
+                    )}
                   </View>
 
-                  {/* Selector de insumo del catálogo */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={{ marginVertical: 6 }}
-                  >
-                    {productos.map((p: any) => {
-                      const activoSku = p.sku === item.sku;
-                      return (
-                        <TouchableOpacity
-                          key={p.sku}
-                          onPress={() =>
-                            establecerInvElementos((prev: any[]) =>
-                              prev.map((it: any, i: number) =>
-                                i === idx
-                                  ? { ...it, sku: p.sku, grossPrice: it.grossPrice || p.unitCost }
-                                  : it
-                              )
-                            )
-                          }
-                          style={[
-                            estilos.estadoChip,
-                            activoSku && estilos.estadoChipActivo,
-                            { paddingVertical: 4, paddingHorizontal: 10 },
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              estilos.estadoChipTexto,
-                              activoSku && estilos.estadoChipTextoActivo,
-                              { fontSize: 11 },
-                            ]}
-                          >
-                            {p.sku} • {p.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-
                   {itemOcVinculado && (
-                    <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginBottom: 4 }}>
-                      Referencia {ordenCompraVinculadaFactura?.code}: Solicitado {itemOcVinculado.quantity} {itemOcVinculado.unit} | Recibido Conforme:{" "}
-                      <Text style={{ fontWeight: "bold", color: tema.colors.okDark }}>
-                        {itemOcVinculado.receivedQuantity ?? 0} {itemOcVinculado.unit}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: tema.colors.border,
+                        borderRadius: 6,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        marginBottom: 8,
+                      }}
+                    >
+                      <Ionicons name="checkmark-done-outline" size={13} color={tema.colors.okDark} />
+                      <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                        Ref. {ordenCompraVinculadaFactura?.code}: Pedido {itemOcVinculado.quantity}{" "}
+                        {itemOcVinculado.unit} • Recibido en bodega:{" "}
+                        <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                          {itemOcVinculado.receivedQuantity ?? 0} {itemOcVinculado.unit}
+                        </Text>
                       </Text>
-                      {(itemOcVinculado.defectiveQuantity ?? 0) > 0
-                        ? ` | En Cuarentena: ${itemOcVinculado.defectiveQuantity} ${itemOcVinculado.unit}`
-                        : ""}
-                    </Text>
+                    </View>
                   )}
 
+                  {/* Fila de Cantidad y Precio Bruto Unitario */}
                   <View style={[estilos.descuentoFila, { marginBottom: 6 }]}>
                     <View style={estilos.discColumna}>
                       <Text style={estilos.discEtiqueta}>Cantidad ({desglose.unit})</Text>
@@ -406,181 +791,199 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                         onChangeText={(v: any) => {
                           const valor = Number(v) || 0;
                           establecerInvElementos((prev: any[]) =>
-                            prev.map((it: any, i: number) => (i === idx ? { ...it, quantity: valor } : it))
+                            prev.map((it: any, i: number) =>
+                              i === idx ? { ...it, quantity: valor } : it
+                            )
                           );
                         }}
                         keyboardType="numeric"
-                        style={[estilos.discEntrada, { height: 38 }]}
+                        style={[estilos.discEntrada, { height: 36, backgroundColor: "#ffffff" }]}
                       />
                     </View>
 
                     <View style={[estilos.discColumna, { marginRight: 0 }]}>
-                      <Text style={estilos.discEtiqueta}>Precio Bruto Unitario ($ CLP)</Text>
+                      <Text style={estilos.discEtiqueta}>Precio Bruto Unit. ($)</Text>
                       <TextInput
                         value={String(item.grossPrice)}
                         onChangeText={(v: any) => {
                           const valor = Number(v) || 0;
                           establecerInvElementos((prev: any[]) =>
-                            prev.map((it: any, i: number) => (i === idx ? { ...it, grossPrice: valor } : it))
+                            prev.map((it: any, i: number) =>
+                              i === idx ? { ...it, grossPrice: valor } : it
+                            )
                           );
                         }}
                         keyboardType="numeric"
-                        style={[estilos.discEntrada, { height: 38 }]}
+                        style={[estilos.discEntrada, { height: 36, backgroundColor: "#ffffff" }]}
                       />
                     </View>
                   </View>
 
-                  <View style={estilos.descuentoFila}>
-                    <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>Desc. 1 (%)</Text>
-                      <TextInput
-                        value={String(item.disc1)}
-                        onChangeText={(v: any) => {
-                          const val = Math.min(100, Math.max(0, Number(v) || 0));
-                          establecerInvElementos((prev: any[]) =>
-                            prev.map((it: any, i: number) => (i === idx ? { ...it, disc1: val } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={[estilos.discEntrada, { height: 36 }]}
-                      />
-                    </View>
-
-                    <View style={estilos.discColumna}>
-                      <Text style={estilos.discEtiqueta}>Desc. 2 (% sobre Paso 1)</Text>
-                      <TextInput
-                        value={String(item.disc2)}
-                        onChangeText={(v: any) => {
-                          const val = Math.min(100, Math.max(0, Number(v) || 0));
-                          establecerInvElementos((prev: any[]) =>
-                            prev.map((it: any, i: number) => (i === idx ? { ...it, disc2: val } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={[estilos.discEntrada, { height: 36 }]}
-                      />
-                    </View>
-
-                    <View style={[estilos.discColumna, { marginRight: 0 }]}>
-                      <Text style={estilos.discEtiqueta}>Desc. 3 (% sobre Paso 2)</Text>
-                      <TextInput
-                        value={String(item.disc3)}
-                        onChangeText={(v: any) => {
-                          const val = Math.min(100, Math.max(0, Number(v) || 0));
-                          establecerInvElementos((prev: any[]) =>
-                            prev.map((it: any, i: number) => (i === idx ? { ...it, disc3: val } : it))
-                          );
-                        }}
-                        keyboardType="numeric"
-                        style={[estilos.discEntrada, { height: 36 }]}
-                      />
-                    </View>
-                  </View>
-
-                  {/* DESGLOSE EN VIVO PASO A PASO DE LOS 3 DESCUENTOS EN CASCADA */}
-                  <View
+                  {/* Botón Acordeón para Descuentos en Cascada (D1 → D2 → D3) */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setDescuentosExpandidos((prev) => ({
+                        ...prev,
+                        [idx]: !mostrarCascada,
+                      }))
+                    }
                     style={{
-                      backgroundColor: tema.colors.card,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor: tieneDescuentos ? "#f0fdf4" : "#ffffff",
                       borderWidth: 1,
-                      borderColor: tema.colors.borderLight,
-                      borderRadius: tema.radius.sm,
-                      padding: 8,
-                      marginTop: 8,
+                      borderColor: tieneDescuentos ? "#86efac" : tema.colors.border,
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      marginBottom: mostrarCascada ? 6 : 0,
                     }}
                   >
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: "bold",
-                        color: tema.colors.text,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Desglose en Vivo de Cascada Unitaria (Efectivo acumulado: {desglose.effectiveDiscountPct}%):
-                    </Text>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
-                      <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
-                        0. P. Bruto: <Text style={{ fontWeight: "600", color: tema.colors.text }}>{formatearCLP(desglose.grossPrice)}</Text>
-                      </Text>
-                      <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
-                        1. Tras D1 ({desglose.discount1Pct}% / -{formatearCLP(desglose.discount1UnitAmount)}):{" "}
-                        <Text style={{ fontWeight: "600", color: tema.colors.text }}>{formatearCLP(desglose.priceAfterDisc1)}</Text>
-                      </Text>
-                      <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
-                        2. Tras D2 ({desglose.discount2Pct}% / -{formatearCLP(desglose.discount2UnitAmount)}):{" "}
-                        <Text style={{ fontWeight: "600", color: tema.colors.text }}>{formatearCLP(desglose.priceAfterDisc2)}</Text>
-                      </Text>
-                      <Text style={{ fontSize: 11, color: tema.colors.primaryDark }}>
-                        3. Tras D3 ({desglose.discount3Pct}% / -{formatearCLP(desglose.discount3UnitAmount)}):{" "}
-                        <Text style={{ fontWeight: "bold" }}>{formatearCLP(desglose.netUnitPrice)}</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons
+                        name="pricetag-outline"
+                        size={14}
+                        color={tieneDescuentos ? tema.colors.okDark : tema.colors.textSecondary}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: tieneDescuentos ? "#166534" : tema.colors.textSecondary,
+                        }}
+                      >
+                        Descuentos en Cascada (D1 → D2 → D3)
                       </Text>
                     </View>
-                  </View>
 
-                  <View style={[estilos.calculatedElementoPie, { flexWrap: "wrap", gap: 6 }]}>
-                    <Text style={{ fontSize: 11, color: tema.colors.textMuted }}>
-                      Subtotal Bruto: {formatearCLP(desglose.subtotalGross)}
-                    </Text>
-                    <Text style={{ fontSize: 11, color: tema.colors.okDark, fontWeight: "600" }}>
-                      Ahorro Cascada: -{formatearCLP(desglose.totalDiscountLine)}
-                    </Text>
-                    <Text style={estilos.calculoNetoUnidad}>
-                      P. Neto Unitario: {formatearCLP(calculo.netUnitPrice)}
-                    </Text>
-                    <Text style={estilos.calculoSubtotal}>
-                      Subtotal Neto: {formatearCLP(calculo.subtotalNet)}
-                    </Text>
-                  </View>
-
-                  {/* Tarjeta con el PMP resultante en vivo */}
-                  <View style={estilos.pmpImpactTarjeta}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Ionicons name="trending-up" size={14} color={tema.colors.primaryDark} style={{ marginRight: 4 }} />
-                      <Text style={estilos.pmpImpactTitulo}>Proyección de PMP en Bodega (Fórmula Ponderada):</Text>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      {desglose.effectiveDiscountPct > 0 ? (
+                        <Text style={{ fontSize: 11, fontWeight: "800", color: tema.colors.okDark }}>
+                          -{desglose.effectiveDiscountPct}% (-{formatearCLP(desglose.totalDiscountLine)})
+                        </Text>
+                      ) : (
+                        <Text style={{ fontSize: 10, color: tema.colors.textMuted }}>
+                          Sin descuento
+                        </Text>
+                      )}
+                      <Ionicons
+                        name={mostrarCascada ? "chevron-up-outline" : "chevron-down-outline"}
+                        size={14}
+                        color={tema.colors.textMuted}
+                      />
                     </View>
-                    <Text style={estilos.pmpImpactTexto}>
-                      Stock Actual: {curExistencia} {producto?.unit || "un"} @ {formatearCLP(curPmp)} + Ingreso: {desglose.quantity} {desglose.unit} @ {formatearCLP(desglose.netUnitPrice)} → Nuevo PMP:{" "}
-                      <Text style={{ fontWeight: "bold", color: tema.colors.primaryDark }}>
-                        {formatearCLP(desglose.projectedPmp)}
+                  </TouchableOpacity>
+
+                  {/* Inputs de 3 Descuentos (solo visibles cuando se expanden o tienen valor > 0) */}
+                  {mostrarCascada && (
+                    <View style={[estilos.descuentoFila, { marginTop: 2 }]}>
+                      <View style={estilos.discColumna}>
+                        <Text style={estilos.discEtiqueta} numberOfLines={1}>
+                          D1 (%)
+                        </Text>
+                        <TextInput
+                          value={String(item.disc1)}
+                          onChangeText={(v: any) => {
+                            const val = Math.min(100, Math.max(0, Number(v) || 0));
+                            establecerInvElementos((prev: any[]) =>
+                              prev.map((it: any, i: number) =>
+                                i === idx ? { ...it, disc1: val } : it
+                              )
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={[estilos.discEntrada, { height: 34, backgroundColor: "#ffffff" }]}
+                        />
+                      </View>
+
+                      <View style={estilos.discColumna}>
+                        <Text style={estilos.discEtiqueta} numberOfLines={1}>
+                          D2 (%)
+                        </Text>
+                        <TextInput
+                          value={String(item.disc2)}
+                          onChangeText={(v: any) => {
+                            const val = Math.min(100, Math.max(0, Number(v) || 0));
+                            establecerInvElementos((prev: any[]) =>
+                              prev.map((it: any, i: number) =>
+                                i === idx ? { ...it, disc2: val } : it
+                              )
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={[estilos.discEntrada, { height: 34, backgroundColor: "#ffffff" }]}
+                        />
+                      </View>
+
+                      <View style={[estilos.discColumna, { marginRight: 0 }]}>
+                        <Text style={estilos.discEtiqueta} numberOfLines={1}>
+                          D3 (%)
+                        </Text>
+                        <TextInput
+                          value={String(item.disc3)}
+                          onChangeText={(v: any) => {
+                            const val = Math.min(100, Math.max(0, Number(v) || 0));
+                            establecerInvElementos((prev: any[]) =>
+                              prev.map((it: any, i: number) =>
+                                i === idx ? { ...it, disc3: val } : it
+                              )
+                            );
+                          }}
+                          keyboardType="numeric"
+                          style={[estilos.discEntrada, { height: 34, backgroundColor: "#ffffff" }]}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Barra compacta de Subtotal Neto y PMP proyectado */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      marginTop: 8,
+                      gap: 6,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Ionicons name="trending-up" size={13} color={tema.colors.primaryDark} />
+                      <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                        Neto Unit:{" "}
+                        <Text style={{ fontWeight: "700", color: tema.colors.text }}>
+                          {formatearCLP(calculo.netUnitPrice)}
+                        </Text>{" "}
+                        • PMP:{" "}
+                        <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                          {formatearCLP(desglose.projectedPmp)}
+                        </Text>
                       </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, fontWeight: "900", color: tema.colors.primaryDark }}>
+                      Subtotal: {formatearCLP(calculo.subtotalNet)}
                     </Text>
                   </View>
                 </View>
               );
             })}
 
-            <Boton
-              title="+ Agregar otro ítem"
-              variant="outline"
-              size="sm"
-              onPress={() => {
-                const siguienteP =
-                  productos.find((p: any) => !invElementos.some((i: any) => i.sku === p.sku)) ||
-                  productos[0];
-                if (!siguienteP) return;
-                establecerInvElementos((prev: any[]) => [
-                  ...prev,
-                  {
-                    sku: siguienteP.sku,
-                    quantity: 1,
-                    grossPrice: siguienteP.unitCost,
-                    disc1: 0,
-                    disc2: 0,
-                    disc3: 0,
-                  },
-                ]);
-              }}
-              style={{ marginVertical: 8 }}
-            />
-
-            {/* RESUMEN FINANCIERO EN VIVO (COINCIDE 1:1 CON EL BACKEND) */}
-            <View style={estilos.financialResumenTarjeta}>
+            {/* RESUMEN FINANCIERO EN VIVO COMPACTO (TICKET CONTABLE) */}
+            <View style={[estilos.financialResumenTarjeta, { padding: 12, marginTop: 4 }]}>
               <View style={estilos.resumenLinea}>
-                <Text style={estilos.resumenEtiqueta}>Total Bruto (sin descuentos):</Text>
+                <Text style={estilos.resumenEtiqueta}>Total Bruto:</Text>
                 <Text style={estilos.resumenValor}>{formatearCLP(facturaSubtotalBruto)}</Text>
               </View>
               <View style={estilos.resumenLinea}>
-                <Text style={estilos.resumenEtiqueta}>Descuentos en Cascada Aplicados (D1 → D2 → D3):</Text>
+                <Text style={estilos.resumenEtiqueta}>Descuentos Cascada (D1 → D2 → D3):</Text>
                 <Text style={[estilos.resumenValor, { color: tema.colors.okDark }]}>
                   -{formatearCLP(facturaTotalDescuentos)}
                 </Text>
@@ -597,108 +1000,169 @@ export const SeccionFacturasProveedor: React.FC<PropiedadesSeccionFacturasProvee
                 <Text style={estilos.totalEtiquetaBig}>Total Factura:</Text>
                 <Text style={estilos.totalValorBig}>{formatearCLP(facturaTotal)}</Text>
               </View>
-
-              {/* Aviso explícito del impacto de stock */}
-              <View style={estilos.existenciaAvisoCaja}>
-                <Ionicons name="information-circle" size={18} color={tema.colors.info} style={{ marginRight: 6 }} />
-                <Text style={estilos.existenciaAvisoTexto}>
-                  Aviso: El stock físico disponible y el PMP se consolidan al confirmar la recepción conforme de la mercancía usando el costo neto unitario de la factura.
-                </Text>
-              </View>
             </View>
 
             {Boolean(invError) && <Text style={estilos.errorTexto}>{invError}</Text>}
 
-            <Boton
-              title="Registrar Factura"
-              variant="primary"
-              icon="save-outline"
-              disabled={esFacturaDuplicate}
-              onPress={manejarGuardarFactura}
-              style={{ marginTop: 12 }}
-            />
-          </Tarjeta>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                gap: 10,
+                marginTop: 12,
+              }}
+            >
+              <Boton
+                title="Cancelar"
+                variant="outline"
+                size="sm"
+                onPress={() => setMostrarFormulario(false)}
+                style={{ minHeight: 40, flex: 1 }}
+              />
+              <Boton
+                title="Registrar Factura"
+                variant="primary"
+                size="sm"
+                icon="save-outline"
+                disabled={esFacturaDuplicate}
+                onPress={manejarGuardarFactura}
+                style={{ minHeight: 40, flex: 1.5 }}
+              />
+            </View>
+          </VistaModal>
 
-          {/* HISTORIAL DE FACTURAS REGISTRADAS */}
-          {facturasCompra.length > 0 && (
-            <Tarjeta variant="outlined" style={{ marginTop: 16 }}>
-              <Text style={estilos.seccionTitulo}>
-                Facturas de Compra Registradas ({facturasCompra.length})
-              </Text>
-              <Text style={estilos.seccionSubtitulo}>
-                Trazabilidad de costos reales con descuentos en cascada, IVA y estado de recepción.
-              </Text>
-              {facturasCompra.map((fac) => (
-                <View
+          {/* 4. BUSCADOR Y LISTADO DE FACTURAS REGISTRADAS CON SEMÁFORO DE SUPERFICIE */}
+          <CampoBusqueda
+            value={busquedaFactura}
+            onChangeText={setBusquedaFactura}
+            placeholder="Buscar factura por N° FAC, código OC, proveedor o RUT..."
+            containerStyle={{ marginBottom: 12 }}
+          />
+
+          {facturasFiltradas.length === 0 ? (
+            <EstadoVacio
+              icon="receipt-outline"
+              title="Sin facturas en esta vista"
+              description={
+                busquedaFactura.trim()
+                  ? `No hay facturas que coincidan con "${busquedaFactura.trim()}".`
+                  : "No hay facturas registradas bajo este filtro del semáforo."
+              }
+              actionTitle={filtroFactura !== "todas" ? "Ver Todas las Facturas" : "Ingresar Factura"}
+              onAction={
+                filtroFactura !== "todas"
+                  ? () => setFiltroFactura("todas")
+                  : () => setMostrarFormulario(true)
+              }
+              containerStyle={{ marginVertical: 20 }}
+            />
+          ) : (
+            facturasFiltradas.map((fac) => {
+              const semaforo = obtenerEstiloSemaforoFactura(fac);
+              return (
+                <Tarjeta
                   key={fac.id}
+                  variant="outlined"
                   style={{
-                    borderTopWidth: 1,
-                    borderTopColor: tema.colors.borderLight,
-                    paddingVertical: 10,
+                    marginBottom: 10,
+                    padding: 12,
+                    backgroundColor: semaforo.fondoTarjeta,
+                    borderColor: semaforo.bordeTarjeta,
+                    borderWidth: 1.5,
+                    borderLeftWidth: 6,
+                    borderLeftColor: semaforo.franjaLateral,
+                    borderRadius: 12,
                   }}
                 >
                   <View
                     style={{
                       flexDirection: "row",
                       justifyContent: "space-between",
-                      alignItems: "center",
-                      flexWrap: "wrap",
-                      gap: 6,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={{ fontWeight: "bold", fontSize: 13, color: tema.colors.text }}>
-                        {fac.number}
-                      </Text>
-                      {fac.orderCode && <Insignia label={fac.orderCode} tone="info" size="sm" />}
-                      <Insignia
-                        label={
-                          fac.hasReceptionDiscrepancy
-                            ? "Con Discrepancia Recepción"
-                            : fac.status === "recepcion_conforme"
-                              ? "Recepción Conforme"
-                              : "Registrada"
-                        }
-                        tone={
-                          fac.hasReceptionDiscrepancy
-                            ? "danger"
-                            : fac.status === "recepcion_conforme"
-                              ? "ok"
-                              : "warn"
-                        }
-                        size="sm"
-                      />
-                    </View>
-                    <Text style={{ fontSize: 12, color: tema.colors.textMuted }}>
-                      {fac.supplierName} ({fac.supplierRut}) • {formatearFecha(fac.date)}
-                    </Text>
-                  </View>
-
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      marginTop: 6,
+                      alignItems: "flex-start",
                       flexWrap: "wrap",
                       gap: 8,
                     }}
                   >
-                    <Text style={{ fontSize: 12, color: tema.colors.textMuted }}>
-                      Descuentos Cascada: -{formatearCLP(fac.totalDiscounts || 0)}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: tema.colors.text }}>
-                      Neto: <Text style={{ fontWeight: "600" }}>{formatearCLP(fac.subtotalNet)}</Text>
-                    </Text>
-                    <Text style={{ fontSize: 12, color: tema.colors.text }}>
-                      IVA (19%): <Text style={{ fontWeight: "600" }}>{formatearCLP(fac.iva)}</Text>
-                    </Text>
-                    <Text style={{ fontSize: 12, fontWeight: "bold", color: tema.colors.primaryDark }}>
-                      Total: {formatearCLP(fac.total)}
-                    </Text>
+                    <View style={{ flex: 1, minWidth: 180 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        <Text style={{ fontSize: 15, fontWeight: "800", color: semaforo.colorTexto }}>
+                          {fac.number}
+                        </Text>
+                        {fac.orderCode && (
+                          <Insignia label={fac.orderCode} tone="info" size="sm" />
+                        )}
+                        <Insignia label={semaforo.etiqueta} tone={semaforo.tone} size="sm" />
+                      </View>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: "800",
+                          color: tema.colors.text,
+                          marginTop: 2,
+                        }}
+                      >
+                        {fac.supplierName}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                        RUT: {fac.supplierRut} • 📅 Fecha: {formatearFecha(fac.date)}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-              ))}
-            </Tarjeta>
+
+                  {/* Métricas financieras de la factura en 1 sola fila horizontal limpia */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: semaforo.divisorColor,
+                      borderRadius: 9,
+                      paddingVertical: 8,
+                      paddingHorizontal: 10,
+                      marginTop: 8,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Desc. Cascada
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: tema.colors.okDark, marginTop: 1 }}>
+                        -{formatearCLP(fac.totalDiscounts || 0)}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Neto
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text, marginTop: 1 }}>
+                        {formatearCLP(fac.subtotalNet)}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        IVA (19%)
+                      </Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text, marginTop: 1 }}>
+                        {formatearCLP(fac.iva)}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1.1, alignItems: "flex-end" }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Total Factura
+                      </Text>
+                      <Text style={{ fontSize: 14, fontWeight: "900", color: semaforo.colorTexto, marginTop: 1 }}>
+                        {formatearCLP(fac.total)}
+                      </Text>
+                    </View>
+                  </View>
+                </Tarjeta>
+              );
+            })
           )}
         </ScrollView>
       )}

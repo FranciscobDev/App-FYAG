@@ -22,7 +22,221 @@ export interface ProductoCatalogoH6Referencia {
   minStock: number;
   disabled?: boolean;
   isBulk?: boolean;
+  containerCapacity?: number;
 }
+
+// =========================================================================
+// [FRONT-2] UTILIDADES PARA INSUMOS A GRANEL (HASTA 3 DECIMALES Y CAPACIDAD RESTANTE DEL CONTENEDOR)
+// =========================================================================
+
+export interface RemanenteContenedorGranel {
+  sku: string;
+  name: string;
+  unit: string;
+  esGranel: boolean;
+  maxDecimales: number;
+  capacidadNominalContenedor: number | null;
+  stockBaseAntes: number;
+  deltaMovimiento: number;
+  remanenteExactoDespues: number;
+  remanenteEnContenedorActual: number;
+  contenedoresCompletosRestantes: number;
+  porcentajeRestanteContenedor: number;
+  etiquetaUnidadYRemanente: string;
+  etiquetaCapacidadContenedor: string | null;
+}
+
+/**
+ * [FRONT-2] Formatea una cantidad de movimiento de bodega mostrando hasta 3 decimales exactos
+ * para insumos a granel (o cuando tiene parte fraccionaria) y acompañándola opcionalmente de su unidad de medida.
+ */
+export const formatearCantidadMovimientoBodega = (
+  cantidad: number | string | undefined | null,
+  esGranel = false,
+  unidad?: string,
+  forzarTresDecimales = false
+): string => {
+  const num = Number(String(cantidad ?? 0).replace(",", "."));
+  const seguro = Number.isFinite(num) ? Number(num.toFixed(3)) : 0;
+  let textoNumero: string;
+  if (esGranel && forzarTresDecimales) {
+    textoNumero = seguro.toFixed(3);
+  } else if (esGranel || !Number.isInteger(seguro)) {
+    textoNumero = String(Number(seguro.toFixed(3)));
+  } else {
+    textoNumero = String(Math.trunc(seguro));
+  }
+  return unidad ? `${textoNumero} ${unidad}` : textoNumero;
+};
+
+/**
+ * [FRONT-2] Sanitiza la entrada de texto de un formulario de movimiento de bodega:
+ * - Si `esGranel` es true: admite separador decimal (`.` o `,`) y trunca hasta un máximo de 3 decimales,
+ *   conservando estados intermedios de escritura (`"12."`, `"0.25"`, `"4.125"`).
+ * - Si `esGranel` es false: admite únicamente dígitos enteros (0 decimales).
+ */
+export const sanitizarEntradaCantidadBodega = (
+  textoRaw: string | number,
+  esGranel = true,
+  maxDecimales = 3
+): {
+  textoSanitizado: string;
+  valorNumerico: number;
+  decimalesIngresados: number;
+  excedeMaxDecimales: boolean;
+} => {
+  const original = String(textoRaw ?? "").replace(/,/g, ".");
+  const limiteDec = esGranel ? Math.min(3, Math.max(0, maxDecimales)) : 0;
+  const soloPermitidos = original.replace(esGranel ? /[^0-9.]/g : /[^0-9]/g, "");
+
+  if (!esGranel) {
+    const enteroLimpio = soloPermitidos.replace(/^0+(\d)/, "$1");
+    const val = parseInt(enteroLimpio, 10);
+    return {
+      textoSanitizado: enteroLimpio,
+      valorNumerico: Number.isFinite(val) ? Math.max(0, val) : 0,
+      decimalesIngresados: 0,
+      excedeMaxDecimales: /\./.test(original),
+    };
+  }
+
+  const idxPunto = soloPermitidos.indexOf(".");
+  if (idxPunto === -1) {
+    const enteroLimpio = soloPermitidos.replace(/^0+(\d)/, "$1");
+    const val = parseFloat(enteroLimpio);
+    return {
+      textoSanitizado: enteroLimpio,
+      valorNumerico: Number.isFinite(val) ? Math.max(0, Number(val.toFixed(limiteDec))) : 0,
+      decimalesIngresados: 0,
+      excedeMaxDecimales: false,
+    };
+  }
+
+  const parteEnteraRaw = soloPermitidos.slice(0, idxPunto) || "0";
+  const parteEntera = parteEnteraRaw.replace(/^0+(\d)/, "$1") || "0";
+  const parteDecimalRaw = soloPermitidos.slice(idxPunto + 1).replace(/\./g, "");
+  const excedeMaxDecimales = parteDecimalRaw.length > limiteDec;
+  const parteDecimal = parteDecimalRaw.slice(0, limiteDec);
+  const textoSanitizado = `${parteEntera}.${parteDecimal}`;
+  const val = parseFloat(textoSanitizado);
+
+  return {
+    textoSanitizado,
+    valorNumerico: Number.isFinite(val) ? Math.max(0, Number(val.toFixed(limiteDec))) : 0,
+    decimalesIngresados: parteDecimal.length,
+    excedeMaxDecimales,
+  };
+};
+
+/**
+ * [FRONT-2] Calcula el remanente exacto en pantalla (hasta 3 decimales) y la capacidad restante
+ * del contenedor/carrete para formularios de movimiento de bodega (Egreso/Salida Física, Solicitud, Merma y Conteo Físico).
+ */
+export const calcularRemanenteContenedorGranel = (
+  producto: {
+    sku: string;
+    name: string;
+    unit: string;
+    stock: number;
+    committed?: number;
+    isBulk?: boolean;
+    containerCapacity?: number;
+  },
+  opciones: {
+    cantidadMovimiento?: number;
+    tipoMovimiento?: "egreso" | "solicitud" | "merma" | "conteo";
+    stockBaseOverride?: number;
+    cantidadContadaFisica?: number;
+  } = {}
+): RemanenteContenedorGranel => {
+  const esGranel = Boolean(producto.isBulk);
+  const maxDecimales = esGranel ? 3 : 0;
+  const unit = producto.unit || "un";
+  const capacidadNominal =
+    producto.containerCapacity && Number(producto.containerCapacity) > 0
+      ? Number(Number(producto.containerCapacity).toFixed(3))
+      : null;
+
+  const stockBaseAntes = Number(
+    Number(opciones.stockBaseOverride ?? producto.stock ?? 0).toFixed(3)
+  );
+  const tipo = opciones.tipoMovimiento || "egreso";
+  const cantMov = Number(Number(opciones.cantidadMovimiento ?? 0).toFixed(3));
+
+  let remanenteExactoDespues: number;
+  let deltaMovimiento: number;
+
+  if (tipo === "conteo" && opciones.cantidadContadaFisica !== undefined) {
+    remanenteExactoDespues = Math.max(
+      0,
+      Number(Number(opciones.cantidadContadaFisica).toFixed(3))
+    );
+    deltaMovimiento = Number((remanenteExactoDespues - stockBaseAntes).toFixed(3));
+  } else {
+    deltaMovimiento = -Math.max(0, cantMov);
+    remanenteExactoDespues = Math.max(
+      0,
+      Number((stockBaseAntes - Math.max(0, cantMov)).toFixed(3))
+    );
+  }
+
+  let remanenteEnContenedorActual = remanenteExactoDespues;
+  let contenedoresCompletosRestantes = 0;
+  let porcentajeRestanteContenedor = 100;
+
+  if (capacidadNominal && capacidadNominal > 0) {
+    if (remanenteExactoDespues <= 0) {
+      remanenteEnContenedorActual = 0;
+      contenedoresCompletosRestantes = 0;
+      porcentajeRestanteContenedor = 0;
+    } else if (remanenteExactoDespues <= capacidadNominal) {
+      remanenteEnContenedorActual = remanenteExactoDespues;
+      contenedoresCompletosRestantes =
+        Math.abs(remanenteExactoDespues - capacidadNominal) < 0.0005 ? 1 : 0;
+      porcentajeRestanteContenedor = Number(
+        Math.min(100, (remanenteEnContenedorActual / capacidadNominal) * 100).toFixed(1)
+      );
+    } else {
+      const resto = Number((remanenteExactoDespues % capacidadNominal).toFixed(3));
+      contenedoresCompletosRestantes = Math.floor(
+        Number((remanenteExactoDespues / capacidadNominal).toFixed(6))
+      );
+      remanenteEnContenedorActual = resto === 0 ? capacidadNominal : resto;
+      porcentajeRestanteContenedor = Number(
+        Math.min(100, (remanenteEnContenedorActual / capacidadNominal) * 100).toFixed(1)
+      );
+    }
+  }
+
+  const remanenteTexto = esGranel
+    ? remanenteExactoDespues.toFixed(3)
+    : String(Number(remanenteExactoDespues.toFixed(3)));
+  const contenedorActualTexto = esGranel
+    ? remanenteEnContenedorActual.toFixed(3)
+    : String(Number(remanenteEnContenedorActual.toFixed(3)));
+
+  const etiquetaUnidadYRemanente = `Remanente exacto en bodega: ${remanenteTexto} ${unit}`;
+  const etiquetaCapacidadContenedor = capacidadNominal
+    ? `Capacidad restante del contenedor: ${contenedorActualTexto} / ${capacidadNominal} ${unit} (${porcentajeRestanteContenedor}%) — Total remanente: ${remanenteTexto} ${unit}`
+    : null;
+
+  return {
+    sku: producto.sku,
+    name: producto.name,
+    unit,
+    esGranel,
+    maxDecimales,
+    capacidadNominalContenedor: capacidadNominal,
+    stockBaseAntes,
+    deltaMovimiento,
+    remanenteExactoDespues,
+    remanenteEnContenedorActual,
+    contenedoresCompletosRestantes,
+    porcentajeRestanteContenedor,
+    etiquetaUnidadYRemanente,
+    etiquetaCapacidadContenedor,
+  };
+};
 
 export interface LineaSolicitudInsumoInput {
   sku: string;
@@ -414,6 +628,9 @@ export interface ResumenLineaSalidaFisica {
   sku: string;
   name: string;
   unit: string;
+  esGranel: boolean;
+  maxDecimales: number;
+  capacidadNominalContenedor: number | null;
   saldoAutorizado: number;
   entregadoPrevio: number;
   saldoPendienteAntes: number;
@@ -424,6 +641,11 @@ export interface ResumenLineaSalidaFisica {
   stockDisponibleBodega: number;
   stockComprometidoBodega: number;
   stockRespaldoParaEgreso: number;
+  remanenteExactoBodegaDespues: number;
+  remanenteEnContenedorActual: number;
+  porcentajeRestanteContenedor: number;
+  etiquetaUnidadYRemanente: string;
+  etiquetaCapacidadContenedor: string | null;
   superaSaldoPendiente: boolean;
   superaStockBodega: boolean;
   esEntregaValida: boolean;
@@ -461,10 +683,17 @@ export const calcularResumenLineaSalidaFisica = (
   productoCatalogo?: {
     sku: string;
     name?: string;
+    unit?: string;
     stock: number;
     committed?: number;
+    isBulk?: boolean;
+    containerCapacity?: number;
   } | null
 ): ResumenLineaSalidaFisica => {
+  const esGranel = Boolean(productoCatalogo?.isBulk);
+  const maxDecimales = esGranel ? 3 : 0;
+  const unit = itemSolicitud.unit || productoCatalogo?.unit || "un";
+
   const saldoAutorizado = Math.max(0, Number(Number(itemSolicitud.quantity || 0).toFixed(3)));
   const entregadoPrevio = Math.max(0, Number(Number(itemSolicitud.deliveredQuantity || 0).toFixed(3)));
   const saldoPendienteAntes = Math.max(0, Number((saldoAutorizado - entregadoPrevio).toFixed(3)));
@@ -481,20 +710,40 @@ export const calcularResumenLineaSalidaFisica = (
   const reservaAplicable = Math.min(stockComprometidoBodega, saldoPendienteAntes);
   const stockRespaldoParaEgreso = Number((stockDisponibleBodega + reservaAplicable).toFixed(3));
 
+  const infoContenedor = calcularRemanenteContenedorGranel(
+    {
+      sku: itemSolicitud.sku,
+      name: itemSolicitud.name,
+      unit,
+      stock: stockRespaldoParaEgreso,
+      committed: stockComprometidoBodega,
+      isBulk: esGranel,
+      containerCapacity: productoCatalogo?.containerCapacity,
+    },
+    {
+      cantidadMovimiento: entregandoAhora,
+      tipoMovimiento: "egreso",
+      stockBaseOverride: stockRespaldoParaEgreso,
+    }
+  );
+
   const superaSaldoPendiente = entregandoAhora > saldoPendienteAntes;
   const superaStockBodega = entregandoAhora > stockRespaldoParaEgreso;
 
   let mensajeAlerta: string | null = null;
   if (superaSaldoPendiente) {
-    mensajeAlerta = `La cantidad a entregar de ${itemSolicitud.name} (${entregandoAhora} ${itemSolicitud.unit}) supera el saldo autorizado pendiente (${saldoPendienteAntes} ${itemSolicitud.unit}).`;
+    mensajeAlerta = `La cantidad a entregar de ${itemSolicitud.name} (${entregandoAhora} ${unit}) supera el saldo autorizado pendiente (${saldoPendienteAntes} ${unit}).`;
   } else if (superaStockBodega) {
-    mensajeAlerta = `Stock físico insuficiente para ${itemSolicitud.name} (${itemSolicitud.sku}): respaldado en bodega ${stockRespaldoParaEgreso} ${itemSolicitud.unit}, intentando egresar ${entregandoAhora} ${itemSolicitud.unit}.`;
+    mensajeAlerta = `Stock físico insuficiente para ${itemSolicitud.name} (${itemSolicitud.sku}): respaldado en bodega ${stockRespaldoParaEgreso} ${unit}, intentando egresar ${entregandoAhora} ${unit}.`;
   }
 
   return {
     sku: itemSolicitud.sku,
     name: itemSolicitud.name,
-    unit: itemSolicitud.unit,
+    unit,
+    esGranel,
+    maxDecimales,
+    capacidadNominalContenedor: infoContenedor.capacidadNominalContenedor,
     saldoAutorizado,
     entregadoPrevio,
     saldoPendienteAntes,
@@ -505,6 +754,11 @@ export const calcularResumenLineaSalidaFisica = (
     stockDisponibleBodega,
     stockComprometidoBodega,
     stockRespaldoParaEgreso,
+    remanenteExactoBodegaDespues: infoContenedor.remanenteExactoDespues,
+    remanenteEnContenedorActual: infoContenedor.remanenteEnContenedorActual,
+    porcentajeRestanteContenedor: infoContenedor.porcentajeRestanteContenedor,
+    etiquetaUnidadYRemanente: infoContenedor.etiquetaUnidadYRemanente,
+    etiquetaCapacidadContenedor: infoContenedor.etiquetaCapacidadContenedor,
     superaSaldoPendiente,
     superaStockBodega,
     esEntregaValida: !superaSaldoPendiente && !superaStockBodega,
@@ -513,7 +767,15 @@ export const calcularResumenLineaSalidaFisica = (
 };
 
 export const calcularResumenSolicitudSalidaFisica = <
-  TProd extends { sku: string; name?: string; stock: number; committed?: number }
+  TProd extends {
+    sku: string;
+    name?: string;
+    unit?: string;
+    stock: number;
+    committed?: number;
+    isBulk?: boolean;
+    containerCapacity?: number;
+  }
 >(
   solicitud: {
     id: string;
@@ -873,6 +1135,299 @@ export const ejecutarSalidaFisicaSolicitudEnMemoria = <
     registroEgresoInmutable,
   };
 };
+
+// =========================================================================
+// [FRONT-1] VISTA DE CARDEX DE SOLO LECTURA, TABLA CRONOLÓGICA, CONTRASTE [SCRUM] Y EXPORTACIÓN A EXCEL
+// =========================================================================
+
+export interface MovimientoCardexConsulta {
+  id: string;
+  sku: string;
+  productName: string;
+  date: string;
+  type: string;
+  typeLabel: string;
+  reference: string;
+  projectCode?: string;
+  projectName?: string;
+  qtyIn: number;
+  qtyOut: number;
+  balance: number;
+  pmp: number;
+  totalValue: number;
+  userName?: string;
+  userRole?: string;
+  userRut?: string;
+}
+
+export interface FiltrosDinamicosCardex {
+  insumoQuery?: string;
+  skuExacto?: string;
+  tipoMovimiento?: string;
+  rangoFechas?: "todos" | "7d" | "30d" | "mes_actual" | "personalizado";
+  fechaDesde?: string;
+  fechaHasta?: string;
+  proyectoCodigo?: string;
+  ordenCronologico?: "asc" | "desc";
+}
+
+export interface ContrasteSaldoInsumoCardex {
+  sku: string;
+  productName: string;
+  unit: string;
+  saldoActualInsumo: number;
+  pmpActualInsumo: number;
+  ultimaLineaCardex: MovimientoCardexConsulta | null;
+  saldoUltimaLineaCardex: number | null;
+  pmpUltimaLineaCardex: number | null;
+  diferenciaSaldo: number;
+  coincideSaldoConUltimaLinea: boolean;
+  coincidePmpConUltimaLinea: boolean;
+  totalMovimientosInsumo: number;
+  mensajeVerificacion: string;
+}
+
+export const parsearFechaMovimientoCardexMs = (fechaStr: string): number => {
+  const limpio = String(fechaStr || "").trim();
+  if (!limpio) return 0;
+
+  const matchDmy = /^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?/.exec(limpio);
+  if (matchDmy) {
+    const dia = Number(matchDmy[1]);
+    const mes = Number(matchDmy[2]) - 1;
+    const anio = Number(matchDmy[3]);
+    const hora = matchDmy[4] ? Number(matchDmy[4]) : 0;
+    const min = matchDmy[5] ? Number(matchDmy[5]) : 0;
+    return Date.UTC(anio, mes, dia, hora, min);
+  }
+
+  const matchYmd = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/.exec(limpio);
+  if (matchYmd) {
+    const anio = Number(matchYmd[1]);
+    const mes = Number(matchYmd[2]) - 1;
+    const dia = Number(matchYmd[3]);
+    const hora = matchYmd[4] ? Number(matchYmd[4]) : 0;
+    const min = matchYmd[5] ? Number(matchYmd[5]) : 0;
+    return Date.UTC(anio, mes, dia, hora, min);
+  }
+
+  const parsed = Date.parse(limpio);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+export const filtrarYOrdenarCardexSoloLectura = <T extends MovimientoCardexConsulta>(
+  movimientos: T[],
+  filtros: FiltrosDinamicosCardex = {},
+  fechaReferenciaMs?: number
+): {
+  soloLectura: true;
+  permiteEditar: false;
+  permiteEliminar: false;
+  movimientosOrdenados: T[];
+  movimientosCronologicoAsc: T[];
+  ultimaLineaCronologica: T | null;
+} => {
+  const queryInsumo = String(filtros.insumoQuery || "").trim().toLowerCase();
+  const skuExacto = String(filtros.skuExacto || "").trim().toUpperCase();
+  const tipoMov = String(filtros.tipoMovimiento || "todos").trim().toLowerCase();
+  const proyCod = String(filtros.proyectoCodigo || "todos").trim().toUpperCase();
+  const rango = filtros.rangoFechas || "todos";
+  const orden = filtros.ordenCronologico || "asc";
+
+  const todosTimestamps = movimientos
+    .map((m) => parsearFechaMovimientoCardexMs(m.date))
+    .filter((ts) => ts > 0);
+  const maxTs =
+    fechaReferenciaMs ??
+    (todosTimestamps.length > 0 ? Math.max(...todosTimestamps) : Date.now());
+
+  const desdeMs = filtros.fechaDesde ? parsearFechaMovimientoCardexMs(filtros.fechaDesde) : null;
+  const hastaMs = filtros.fechaHasta
+    ? parsearFechaMovimientoCardexMs(filtros.fechaHasta) + 24 * 60 * 60 * 1000 - 1
+    : null;
+
+  const filtrados = movimientos.filter((entry) => {
+    if (skuExacto && entry.sku.trim().toUpperCase() !== skuExacto) {
+      return false;
+    }
+    if (queryInsumo) {
+      const matchSku = entry.sku.toLowerCase().includes(queryInsumo);
+      const matchNombre = entry.productName.toLowerCase().includes(queryInsumo);
+      const matchRef = String(entry.reference || "").toLowerCase().includes(queryInsumo);
+      if (!matchSku && !matchNombre && !matchRef) return false;
+    }
+    if (tipoMov && tipoMov !== "todos" && entry.type.toLowerCase() !== tipoMov) {
+      return false;
+    }
+    if (proyCod && proyCod !== "TODOS") {
+      const entryProy = String(entry.projectCode || "").trim().toUpperCase();
+      if (entryProy !== proyCod) return false;
+    }
+
+    const entryTs = parsearFechaMovimientoCardexMs(entry.date);
+    if (rango === "7d" && entryTs > 0) {
+      const limite7d = maxTs - 7 * 24 * 60 * 60 * 1000;
+      if (entryTs < limite7d) return false;
+    } else if (rango === "30d" && entryTs > 0) {
+      const limite30d = maxTs - 30 * 24 * 60 * 60 * 1000;
+      if (entryTs < limite30d) return false;
+    }
+
+    if (desdeMs && entryTs > 0 && entryTs < desdeMs) return false;
+    if (hastaMs && entryTs > 0 && entryTs > hastaMs) return false;
+
+    return true;
+  });
+
+  const movimientosCronologicoAsc = [...filtrados].sort((a, b) => {
+    const tsA = parsearFechaMovimientoCardexMs(a.date);
+    const tsB = parsearFechaMovimientoCardexMs(b.date);
+    if (tsA !== tsB) return tsA - tsB;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const ultimaLineaCronologica =
+    movimientosCronologicoAsc.length > 0
+      ? movimientosCronologicoAsc[movimientosCronologicoAsc.length - 1]
+      : null;
+
+  const movimientosOrdenados =
+    orden === "asc"
+      ? movimientosCronologicoAsc
+      : [...movimientosCronologicoAsc].reverse();
+
+  return {
+    soloLectura: true,
+    permiteEditar: false,
+    permiteEliminar: false,
+    movimientosOrdenados,
+    movimientosCronologicoAsc,
+    ultimaLineaCronologica,
+  };
+};
+
+export const contrastarSaldoInsumoConUltimaLineaCardex = (
+  insumo: {
+    sku: string;
+    name: string;
+    stock: number;
+    pmp?: number;
+    unitCost?: number;
+    unit?: string;
+  },
+  movimientosCardex: MovimientoCardexConsulta[]
+): ContrasteSaldoInsumoCardex => {
+  const skuNorm = insumo.sku.trim().toUpperCase();
+  const { movimientosCronologicoAsc, ultimaLineaCronologica } = filtrarYOrdenarCardexSoloLectura(
+    movimientosCardex,
+    { skuExacto: skuNorm, ordenCronologico: "asc" }
+  );
+
+  const saldoActualInsumo = Number(Number(insumo.stock || 0).toFixed(3));
+  const pmpActualInsumo = Math.round(Number(insumo.pmp ?? insumo.unitCost ?? 0));
+  const unit = insumo.unit || "un";
+
+  if (!ultimaLineaCronologica) {
+    return {
+      sku: insumo.sku,
+      productName: insumo.name,
+      unit,
+      saldoActualInsumo,
+      pmpActualInsumo,
+      ultimaLineaCardex: null,
+      saldoUltimaLineaCardex: null,
+      pmpUltimaLineaCardex: null,
+      diferenciaSaldo: 0,
+      coincideSaldoConUltimaLinea: true,
+      coincidePmpConUltimaLinea: true,
+      totalMovimientosInsumo: 0,
+      mensajeVerificacion: `El insumo ${insumo.sku} (${insumo.name}) tiene saldo actual ${saldoActualInsumo} ${unit} sin movimientos históricos en Cardex.`,
+    };
+  }
+
+  const saldoUltimaLineaCardex = Number(Number(ultimaLineaCronologica.balance || 0).toFixed(3));
+  const pmpUltimaLineaCardex = Math.round(Number(ultimaLineaCronologica.pmp || 0));
+  const diferenciaSaldo = Number((saldoActualInsumo - saldoUltimaLineaCardex).toFixed(3));
+  const coincideSaldoConUltimaLinea = Math.abs(diferenciaSaldo) < 0.001;
+  const coincidePmpConUltimaLinea = Math.abs(pmpActualInsumo - pmpUltimaLineaCardex) <= 1;
+
+  const mensajeVerificacion = coincideSaldoConUltimaLinea
+    ? `Conciliación exacta verificada: el saldo actual del insumo ${insumo.sku} (${saldoActualInsumo} ${unit}) y su PMP ($${pmpActualInsumo}) coinciden con la última línea del Cardex (${ultimaLineaCronologica.reference} del ${ultimaLineaCronologica.date} -> Saldo: ${saldoUltimaLineaCardex} ${unit}, PMP: $${pmpUltimaLineaCardex}).`
+    : `Diferencia detectada en ${insumo.sku}: saldo actual en catálogo ${saldoActualInsumo} ${unit} vs. última línea del Cardex ${saldoUltimaLineaCardex} ${unit} (diferencia: ${diferenciaSaldo} ${unit}).`;
+
+  return {
+    sku: insumo.sku,
+    productName: insumo.name,
+    unit,
+    saldoActualInsumo,
+    pmpActualInsumo,
+    ultimaLineaCardex: ultimaLineaCronologica,
+    saldoUltimaLineaCardex,
+    pmpUltimaLineaCardex,
+    diferenciaSaldo,
+    coincideSaldoConUltimaLinea,
+    coincidePmpConUltimaLinea,
+    totalMovimientosInsumo: movimientosCronologicoAsc.length,
+    mensajeVerificacion,
+  };
+};
+
+export const generarContenidoExcelCardex = (
+  movimientos: MovimientoCardexConsulta[]
+): {
+  nombreArchivo: string;
+  encabezados: string[];
+  filas: string[][];
+  contenidoCsvExcel: string;
+} => {
+  const encabezados = [
+    "Fecha",
+    "SKU",
+    "Insumo",
+    "Tipo Movimiento",
+    "Referencia",
+    "Proyecto / Destino",
+    "Entrada (+)",
+    "Salida (-)",
+    "Saldo Posterior",
+    "PMP Posterior (CLP)",
+    "Valorizado Total (CLP)",
+    "Responsable",
+    "Rol",
+    "RUT Responsable",
+  ];
+
+  const filas = movimientos.map((m) => [
+    String(m.date || ""),
+    String(m.sku || ""),
+    String(m.productName || ""),
+    String(m.typeLabel || m.type || ""),
+    String(m.reference || ""),
+    String(m.projectName || m.projectCode || "Bodega Central"),
+    String(m.qtyIn ?? 0),
+    String(m.qtyOut ?? 0),
+    String(m.balance ?? 0),
+    String(Math.round(Number(m.pmp || 0))),
+    String(Math.round(Number(m.totalValue || Number(m.balance || 0) * Number(m.pmp || 0)))),
+    String(m.userName || "Camila Vera Soto"),
+    String(m.userRole || "Bodeguero"),
+    String(m.userRut || ""),
+  ]);
+
+  const escaparCelda = (val: string) => `"${String(val).replace(/"/g, '""')}"`;
+  const lineasCsv = [
+    encabezados.map(escaparCelda).join(";"),
+    ...filas.map((fila) => fila.map(escaparCelda).join(";")),
+  ];
+
+  return {
+    nombreArchivo: `cardex_valorizado_${new Date().toISOString().slice(0, 10)}.csv`,
+    encabezados,
+    filas,
+    contenidoCsvExcel: `\uFEFF${lineasCsv.join("\r\n")}`,
+  };
+};
+
 
 
 

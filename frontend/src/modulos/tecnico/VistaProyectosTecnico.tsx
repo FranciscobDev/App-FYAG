@@ -22,8 +22,6 @@ import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
 import {
   DistintivoEstadoProyecto,
-  IndicadorUltimaSincronizacion,
-  LeyendaAccesibilidadEstados,
 } from "@/componentes/DistintivoEstadoProyecto";
 import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
 import { Proyecto } from "@/nucleo/tipos";
@@ -32,13 +30,18 @@ import {
   leerMisProyectosCacheLocal,
   obtenerMisProyectosConCache,
 } from "./misProyectosApi";
+import {
+  evaluarSemaforoPlazo,
+  generarFechaPlazoDias,
+  PARAMETROS_SEMAFORO_H39,
+} from "./semaforoPlazosUtils";
 
 interface PropiedadesVistaProyectosTecnico {
   onSelectProject?: (project: Proyecto) => void;
   onNavigateTab?: (
     tab: string,
     project?: Proyecto,
-    subTab?: "avance" | "horas" | "sobrante"
+    subTab?: "avance" | "sobrante"
   ) => void;
   isOffline?: boolean;
   onCambioConexion?: (sinConexion: boolean) => void;
@@ -76,8 +79,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
   isOffline = false,
   onCambioConexion,
 }) => {
-  const { proyectos: proyectosContexto, sesionTrabajoActiva, iniciarSesionTrabajo } =
-    usarAplicacion();
+  const { proyectos: proyectosContexto } = usarAplicacion();
   const { usuario } = usarAutenticacion();
 
   const [modalAvanceProyecto, establecerModalAvanceProyecto] = useState<Proyecto | null>(null);
@@ -89,6 +91,12 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
   }, [usuario]);
 
   const [estadoFiltrar, establecerEstadoFiltrar] = useState<FiltroEstadoProyecto>("todos");
+  const [filtroSemaforo, establecerFiltroSemaforo] = useState<"todos" | "ok" | "warn" | "danger">("todos");
+  const [overridePlazoScrum, establecerOverridePlazoScrum] = useState<{
+    proyectoId: string;
+    dias: number;
+    etiqueta: string;
+  } | null>(null);
   const [ordenPlazoAscendente, establecerOrdenPlazoAscendente] = useState<boolean>(true);
   const [proyectosCargados, establecerProyectosCargados] = useState<Proyecto[]>([]);
   const [origenDatos, establecerOrigenDatos] = useState<"red" | "cache">("cache");
@@ -217,6 +225,44 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
 
   const ahoraMs = Date.now();
 
+  // Métricas globales del semáforo H39 (Normal > 5d, Amarillo ≤ 5d, Rojo ≤ 48h o vencido)
+  const metricasSemaforo = useMemo(() => {
+    let normales = 0;
+    let amarillos = 0;
+    let rojos = 0;
+
+    ordenadoProyectos.forEach((proj) => {
+      const deadlineEfectivo =
+        overridePlazoScrum && overridePlazoScrum.proyectoId === proj.id
+          ? generarFechaPlazoDias(overridePlazoScrum.dias)
+          : proj.deadline;
+      const evalSem = evaluarSemaforoPlazo(deadlineEfectivo, ahoraMs);
+      if (evalSem.tono === "danger") rojos += 1;
+      else if (evalSem.tono === "warn") amarillos += 1;
+      else if (evalSem.tono === "ok") normales += 1;
+    });
+
+    return {
+      todos: ordenadoProyectos.length,
+      normales,
+      amarillos,
+      rojos,
+    };
+  }, [ordenadoProyectos, overridePlazoScrum, ahoraMs]);
+
+  // Filtro compuesto por estado y por nivel de urgencia del semáforo H39
+  const filtradoProyectosSemaforo = useMemo(() => {
+    return filtradoProyectos.filter((proj) => {
+      if (filtroSemaforo === "todos") return true;
+      const deadlineEfectivo =
+        overridePlazoScrum && overridePlazoScrum.proyectoId === proj.id
+          ? generarFechaPlazoDias(overridePlazoScrum.dias)
+          : proj.deadline;
+      const evalSem = evaluarSemaforoPlazo(deadlineEfectivo, ahoraMs);
+      return evalSem.tono === filtroSemaforo;
+    });
+  }, [filtradoProyectos, filtroSemaforo, overridePlazoScrum, ahoraMs]);
+
   const chipsFiltro: { id: FiltroEstadoProyecto; label: string }[] = [
     { id: "todos", label: `Todos (${conteosEstado.todos})` },
     { id: "activo", label: `Activos (${conteosEstado.activo})` },
@@ -301,37 +347,220 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                 </Text>
               </View>
             </View>
+          </View>
+        </View>
 
+        {/* ========================================================================= */}
+        {/* 3. BARRA DE AUDITORÍA Y SIMULADOR DE PLAZOS [SCRUM H39]                  */}
+        {/* ========================================================================= */}
+        <View style={estilos.scrumSemaforoBarra}>
+          <View style={estilos.scrumSemaforoEncabezado}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+              <Ionicons name="speedometer-outline" size={17} color={tema.colors.primaryDark} />
+              <Text style={estilos.scrumSemaforoTitulo}>Semáforo de Plazos [H39]</Text>
+            </View>
+            <Insignia label="Caso SCRUM" tone="info" size="sm" />
+          </View>
+
+          <Text style={estilos.scrumSemaforoDescripcion}>
+            Reglas H39: Amarillo si faltan ≤ 5 días • Rojo si faltan ≤ 48 h o vencido • Normal si faltan &gt; 5 días.
+          </Text>
+
+          {/* Chips de métricas y filtro rápido por semáforo */}
+          <View style={estilos.kpiSemaforoFila}>
             <TouchableOpacity
-              onPress={alternarModoAvionScrum}
+              activeOpacity={0.7}
+              onPress={() => establecerFiltroSemaforo("todos")}
               style={[
-                estilos.botonScrumAvion,
-                modoAvionScrum && estilos.botonScrumAvionActivo,
+                estilos.kpiSemaforoChip,
+                filtroSemaforo === "todos" && estilos.kpiSemaforoChipActivo,
               ]}
-              activeOpacity={0.8}
             >
-              <Ionicons
-                name={modoAvionScrum ? "airplane" : "airplane-outline"}
-                size={14}
-                color={modoAvionScrum ? "#ffffff" : "#92400e"}
-              />
               <Text
                 style={[
-                  estilos.botonScrumAvionTexto,
-                  modoAvionScrum && estilos.botonScrumAvionTextoActivo,
+                  estilos.kpiSemaforoChipTexto,
+                  filtroSemaforo === "todos" && { color: "#ffffff" },
                 ]}
               >
-                {modoAvionScrum ? "Reconectar Red" : "Modo Sin Conexión"}
+                Todos ({metricasSemaforo.todos})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => establecerFiltroSemaforo("ok")}
+              style={[
+                estilos.kpiSemaforoChip,
+                {
+                  borderColor: "#86efac",
+                  backgroundColor: filtroSemaforo === "ok" ? "#15803d" : "#f0fdf4",
+                },
+              ]}
+            >
+              <View style={[estilos.puntoSemaforo, { backgroundColor: "#15803d" }]} />
+              <Text
+                style={[
+                  estilos.kpiSemaforoChipTexto,
+                  { color: filtroSemaforo === "ok" ? "#ffffff" : "#166534" },
+                ]}
+              >
+                Normal &gt; 5d ({metricasSemaforo.normales})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => establecerFiltroSemaforo("warn")}
+              style={[
+                estilos.kpiSemaforoChip,
+                {
+                  borderColor: "#fde68a",
+                  backgroundColor: filtroSemaforo === "warn" ? "#b45309" : "#fffbeb",
+                },
+              ]}
+            >
+              <View style={[estilos.puntoSemaforo, { backgroundColor: "#b45309" }]} />
+              <Text
+                style={[
+                  estilos.kpiSemaforoChipTexto,
+                  { color: filtroSemaforo === "warn" ? "#ffffff" : "#92400e" },
+                ]}
+              >
+                Amarillo ≤ 5d ({metricasSemaforo.amarillos})
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => establecerFiltroSemaforo("danger")}
+              style={[
+                estilos.kpiSemaforoChip,
+                {
+                  borderColor: "#fca5a5",
+                  backgroundColor: filtroSemaforo === "danger" ? "#b91c1c" : "#fef2f2",
+                },
+              ]}
+            >
+              <View style={[estilos.puntoSemaforo, { backgroundColor: "#b91c1c" }]} />
+              <Text
+                style={[
+                  estilos.kpiSemaforoChipTexto,
+                  { color: filtroSemaforo === "danger" ? "#ffffff" : "#991b1b" },
+                ]}
+              >
+                Rojo ≤ 48h ({metricasSemaforo.rojos})
               </Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={estilos.scrumNota}>
-            Tus proyectos asignados quedan respaldados localmente para consultar estados y fechas límite incluso en faenas sin señal.
-          </Text>
+          {/* Selector de prueba rápida SCRUM */}
+          <View style={estilos.simuladorBotonesFila}>
+            <Text style={estilos.simuladorEtiqueta}>Probar proyectos caso [SCRUM]:</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  const target = filtradoProyectos[0] || ordenadoProyectos[0];
+                  if (target) {
+                    establecerOverridePlazoScrum({
+                      proyectoId: target.id,
+                      dias: 6,
+                      etiqueta: "6 días (Normal / Verde)",
+                    });
+                    establecerAvisoExito(
+                      `✓ [SCRUM] Proyecto ${target.code} configurado a 6 días restantes: Tarjeta Normal.`
+                    );
+                  }
+                }}
+                style={[
+                  estilos.simuladorBoton,
+                  overridePlazoScrum?.dias === 6 && estilos.simuladorBotonActivoNormal,
+                ]}
+              >
+                <Text
+                  style={[
+                    estilos.simuladorBotonTexto,
+                    overridePlazoScrum?.dias === 6 && { color: "#ffffff" },
+                  ]}
+                >
+                  ● 6 días (Normal)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  const target = filtradoProyectos[0] || ordenadoProyectos[0];
+                  if (target) {
+                    establecerOverridePlazoScrum({
+                      proyectoId: target.id,
+                      dias: 4,
+                      etiqueta: "4 días (Amarillo / Alerta)",
+                    });
+                    establecerAvisoExito(
+                      `✓ [SCRUM] Proyecto ${target.code} configurado a 4 días restantes: Tarjeta Amarilla.`
+                    );
+                  }
+                }}
+                style={[
+                  estilos.simuladorBoton,
+                  overridePlazoScrum?.dias === 4 && estilos.simuladorBotonActivoAmarillo,
+                ]}
+              >
+                <Text
+                  style={[
+                    estilos.simuladorBotonTexto,
+                    overridePlazoScrum?.dias === 4 && { color: "#ffffff" },
+                  ]}
+                >
+                  ● 4 días (Amarillo)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  const target = filtradoProyectos[0] || ordenadoProyectos[0];
+                  if (target) {
+                    establecerOverridePlazoScrum({
+                      proyectoId: target.id,
+                      dias: 1,
+                      etiqueta: "1 día (Rojo / Crítico)",
+                    });
+                    establecerAvisoExito(
+                      `✓ [SCRUM] Proyecto ${target.code} configurado a 1 día restante (24h): Tarjeta Roja.`
+                    );
+                  }
+                }}
+                style={[
+                  estilos.simuladorBoton,
+                  overridePlazoScrum?.dias === 1 && estilos.simuladorBotonActivoRojo,
+                ]}
+              >
+                <Text
+                  style={[
+                    estilos.simuladorBotonTexto,
+                    overridePlazoScrum?.dias === 1 && { color: "#ffffff" },
+                  ]}
+                >
+                  ● 1 día (Rojo)
+                </Text>
+              </TouchableOpacity>
+
+              {overridePlazoScrum && (
+                <TouchableOpacity
+                  onPress={() => {
+                    establecerOverridePlazoScrum(null);
+                    establecerAvisoExito("✓ Simulación restablecida a los plazos predeterminados.");
+                  }}
+                  style={estilos.simuladorBotonReset}
+                >
+                  <Ionicons name="refresh-outline" size={13} color={tema.colors.textSecondary} />
+                  <Text style={estilos.simuladorBotonResetTexto}>Restablecer</Text>
+                </TouchableOpacity>
+              )}
+            </ScrollView>
+          </View>
         </View>
 
-        {/* 3. BARRA DE FILTROS POR ESTADO Y CONTROL DE ORDEN POR FECHA LÍMITE */}
+        {/* 4. BARRA DE FILTROS POR ESTADO Y CONTROL DE ORDEN POR FECHA LÍMITE */}
         <View style={estilos.controlesFila}>
           <ScrollView
             horizontal
@@ -378,46 +607,28 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
           </TouchableOpacity>
         </View>
 
-        {/* 4. LISTADO DE TARJETAS DE PROYECTO */}
+        {/* 5. LISTADO DE TARJETAS DE PROYECTO */}
         {cargando ? (
           <View style={estilos.cargandoContenedor}>
             <ActivityIndicator size="large" color={tema.colors.primary} />
             <Text style={estilos.cargandoTexto}>Cargando proyectos desde caché local...</Text>
           </View>
-        ) : filtradoProyectos.length === 0 ? (
+        ) : filtradoProyectosSemaforo.length === 0 ? (
           <EstadoVacio
             icon="folder-open-outline"
-            title="Sin proyectos en este estado"
-            description="No tienes obras o mantenciones asignadas que coincidan con el filtro seleccionado."
+            title="Sin proyectos en este estado o semáforo"
+            description="No hay proyectos que coincidan con los filtros seleccionados."
             containerStyle={{ marginVertical: 20 }}
           />
         ) : (
-          filtradoProyectos.map((proj) => {
-            // Semáforo de fecha límite:
-            // Amarillo si faltan <= 5 días, Rojo si faltan <= 48 horas o vencido
-            const plazoMs = obtenerTiempoPlazo(proj.deadline);
-            const tienePlazoValido = plazoMs !== Number.MAX_SAFE_INTEGER;
-            const diferenciaMs = tienePlazoValido ? plazoMs - ahoraMs : 0;
-            const diferenciaHoras = Math.floor(diferenciaMs / (1000 * 60 * 60));
-            const diferenciaDias = Math.ceil(diferenciaMs / (1000 * 60 * 60 * 24));
+          filtradoProyectosSemaforo.map((proj) => {
+            const deadlineEfectivo =
+              overridePlazoScrum && overridePlazoScrum.proyectoId === proj.id
+                ? generarFechaPlazoDias(overridePlazoScrum.dias)
+                : proj.deadline;
 
-            let semTono: "ok" | "warn" | "danger" = "ok";
-            let semEtiqueta = tienePlazoValido
-              ? `Quedan ${diferenciaDias} días`
-              : "Sin fecha límite";
-
-            if (tienePlazoValido) {
-              if (diferenciaMs <= 0) {
-                semTono = "danger";
-                semEtiqueta = "¡Plazo Vencido!";
-              } else if (diferenciaHoras <= 48) {
-                semTono = "danger";
-                semEtiqueta = `¡Crítico! Faltan ${diferenciaHoras} horas`;
-              } else if (diferenciaDias <= 5) {
-                semTono = "warn";
-                semEtiqueta = `Atención: Faltan ${diferenciaDias} días`;
-              }
-            }
+            const semaforo = evaluarSemaforoPlazo(deadlineEfectivo, ahoraMs);
+            const esOverrideActivo = overridePlazoScrum?.proyectoId === proj.id;
 
             return (
               <Tarjeta
@@ -425,8 +636,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                 variant="elevated"
                 style={[
                   estilos.proyectoTarjeta,
-                  semTono === "danger" && estilos.proyectoTarjetaPeligro,
-                  semTono === "warn" && estilos.proyectoTarjetaAdvertencia,
+                  semaforo.estilosTarjeta,
                 ]}
               >
                 {/* Encabezado de la tarjeta con distintivo de estado accesible */}
@@ -446,17 +656,11 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                     />
                   </View>
 
-                  {/* Semáforo de plazo */}
+                  {/* Semáforo de plazo según H39 */}
                   <Insignia
-                    label={semEtiqueta}
-                    tone={semTono}
-                    icon={
-                      semTono === "danger"
-                        ? "alert-circle"
-                        : semTono === "warn"
-                        ? "time-outline"
-                        : "calendar-outline"
-                    }
+                    label={semaforo.etiqueta}
+                    tone={semaforo.tono === "neutro" ? "mute" : semaforo.tono}
+                    icon={semaforo.icono}
                     size="sm"
                   />
                 </View>
@@ -475,7 +679,62 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                   </Text>
                 </View>
 
-                {/* Barra de avance físico 0-100% */}
+                {/* Banner de explicación del semáforo H39 en cada tarjeta */}
+                {semaforo.tono !== "neutro" && (
+                  <View
+                    style={[
+                      estilos.semaforoH39AvisoCaja,
+                      {
+                        backgroundColor:
+                          semaforo.tono === "danger"
+                            ? "#fee2e2"
+                            : semaforo.tono === "warn"
+                            ? "#fef3c7"
+                            : "#dcfce7",
+                        borderColor:
+                          semaforo.tono === "danger"
+                            ? "#fca5a5"
+                            : semaforo.tono === "warn"
+                            ? "#fde68a"
+                            : "#bbf7d0",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={semaforo.icono}
+                      size={15}
+                      color={
+                        semaforo.tono === "danger"
+                          ? "#b91c1c"
+                          : semaforo.tono === "warn"
+                          ? "#b45309"
+                          : "#15803d"
+                      }
+                    />
+                    <Text
+                      style={[
+                        estilos.semaforoH39AvisoTexto,
+                        {
+                          color:
+                            semaforo.tono === "danger"
+                              ? "#991b1b"
+                              : semaforo.tono === "warn"
+                              ? "#92400e"
+                              : "#166534",
+                        },
+                      ]}
+                    >
+                      {semaforo.tono === "danger"
+                        ? "Semáforo Rojo [H39]: Plazo crítico (≤ 48 h o vencido)"
+                        : semaforo.tono === "warn"
+                        ? "Semáforo Amarillo [H39]: En alerta (≤ 5 días restantes)"
+                        : "Semáforo Normal [H39]: En plazo (> 5 días restantes)"}
+                      {esOverrideActivo ? ` • ${overridePlazoScrum?.etiqueta}` : ""}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Barra de avance físico 0-100% teñida según el semáforo */}
                 <View style={estilos.progresoContenedor}>
                   <View style={estilos.progresoEncabezado}>
                     <Text style={estilos.progresoEtiqueta}>Avance físico de la obra</Text>
@@ -485,13 +744,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                     value={proj.progress}
                     max={100}
                     height={8}
-                    color={
-                      semTono === "danger"
-                        ? tema.colors.danger
-                        : semTono === "warn"
-                        ? tema.colors.warn
-                        : tema.colors.primary
-                    }
+                    color={semaforo.colorProgreso}
                   />
                 </View>
 
@@ -517,52 +770,26 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                     <Text
                       style={[
                         estilos.plazoValor,
-                        semTono === "danger" && {
-                          color: tema.colors.danger,
-                          fontWeight: "bold",
+                        {
+                          color: semaforo.colorTextoPlazo,
+                          fontWeight: semaforo.tono !== "neutro" ? "800" : "600",
                         },
                       ]}
                     >
-                      {tienePlazoValido ? formatearFecha(proj.deadline) : "Por definir"}
+                      {semaforo.tienePlazoValido
+                        ? formatearFecha(deadlineEfectivo)
+                        : "Por definir"}
                     </Text>
                   </View>
 
                   <View style={estilos.accionesGrupo}>
-                    {sesionTrabajoActiva?.projectId === proj.id ? (
-                      <Boton
-                        title="En Faena (HH)"
-                        variant="primary"
-                        size="sm"
-                        icon="timer"
-                        onPress={() =>
-                          onNavigateTab && onNavigateTab("registrar", proj, "horas")
-                        }
-                        style={{ marginRight: 6, height: 42 }}
-                      />
-                    ) : (
-                      <Boton
-                        title="Iniciar Faena"
-                        variant="outline"
-                        size="sm"
-                        icon="play-outline"
-                        onPress={() => {
-                          if (!sesionTrabajoActiva) {
-                            iniciarSesionTrabajo(proj.id);
-                          }
-                          if (onNavigateTab) {
-                            onNavigateTab("registrar", proj, "horas");
-                          }
-                        }}
-                        style={{ marginRight: 6, height: 42 }}
-                      />
-                    )}
                     <Boton
                       title="Avance"
                       variant="outline"
                       size="sm"
                       icon="trending-up-outline"
                       onPress={() => establecerModalAvanceProyecto(proj)}
-                      style={{ marginRight: 6, height: 42 }}
+                      style={{ marginRight: 6, minHeight: 42 }}
                     />
                     <Boton
                       title="Insumos"
@@ -570,7 +797,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                       size="sm"
                       icon="cube-outline"
                       onPress={() => onNavigateTab && onNavigateTab("insumos", proj)}
-                      style={{ height: 42 }}
+                      style={{ minHeight: 42 }}
                     />
                   </View>
                 </View>
@@ -579,6 +806,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
           })
         )}
       </ScrollView>
+
       {/* MODAL MÓVIL DE REPORTE DE AVANCE RÁPIDO */}
       {modalAvanceProyecto && (
         <Modal
@@ -671,17 +899,17 @@ const estilos = StyleSheet.create({
   enLineaChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: tema.radius.full,
     borderWidth: 1,
-    borderColor: "#44403c",
+    borderColor: "#334155",
   },
   enLineaChipTexto: {
     fontSize: 10,
     fontWeight: "bold",
-    color: "#e7e5e4",
+    color: "#e2e8f0",
     marginLeft: 4,
   },
   cacheBanner: {
@@ -769,7 +997,7 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
   },
   filtrarChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtrarChipTexto: {
@@ -810,17 +1038,153 @@ const estilos = StyleSheet.create({
   },
   proyectoTarjeta: {
     marginBottom: tema.spacing.md,
-    borderLeftWidth: 4,
-    borderLeftColor: tema.colors.primary,
+    borderRadius: tema.radius.lg,
+    overflow: "hidden",
   },
   proyectoTarjetaPeligro: {
     borderLeftColor: tema.colors.danger,
+    borderLeftWidth: 5,
     borderWidth: 1.5,
-    borderColor: tema.colors.danger,
+    borderColor: tema.colors.dangerBorder,
     backgroundColor: tema.colors.dangerLight,
   },
   proyectoTarjetaAdvertencia: {
     borderLeftColor: tema.colors.warn,
+    borderLeftWidth: 5,
+    borderWidth: 1.5,
+    borderColor: tema.colors.warnBorder,
+    backgroundColor: tema.colors.warnLight,
+  },
+  scrumSemaforoBarra: {
+    backgroundColor: tema.colors.card,
+    borderRadius: tema.radius.lg,
+    padding: 12,
+    marginBottom: tema.spacing.md,
+    borderWidth: 1,
+    borderColor: tema.colors.borderDark,
+    ...tema.shadows.subtle,
+  },
+  scrumSemaforoEncabezado: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  scrumSemaforoTitulo: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: tema.colors.text,
+  },
+  scrumSemaforoDescripcion: {
+    fontSize: 11,
+    color: tema.colors.textSecondary,
+    marginBottom: 8,
+    lineHeight: 15,
+  },
+  kpiSemaforoFila: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginBottom: 8,
+  },
+  kpiSemaforoChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: tema.radius.full,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    backgroundColor: tema.colors.surfaceAlt,
+    gap: 4,
+    minHeight: 28,
+  },
+  kpiSemaforoChipActivo: {
+    backgroundColor: "#0f172a",
+    borderColor: "#0f172a",
+  },
+  kpiSemaforoChipTexto: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: tema.colors.textSecondary,
+  },
+  puntoSemaforo: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  simuladorBotonesFila: {
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: tema.colors.borderLight,
+    gap: 6,
+  },
+  simuladorEtiqueta: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: tema.colors.textMuted,
+    textTransform: "uppercase",
+  },
+  simuladorBoton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: tema.radius.full,
+    borderWidth: 1,
+    borderColor: tema.colors.borderDark,
+    backgroundColor: tema.colors.surfaceAlt,
+    minHeight: 30,
+    justifyContent: "center",
+  },
+  simuladorBotonActivoNormal: {
+    backgroundColor: "#15803d",
+    borderColor: "#166534",
+  },
+  simuladorBotonActivoAmarillo: {
+    backgroundColor: "#b45309",
+    borderColor: "#92400e",
+  },
+  simuladorBotonActivoRojo: {
+    backgroundColor: "#b91c1c",
+    borderColor: "#991b1b",
+  },
+  simuladorBotonTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: tema.colors.textSecondary,
+  },
+  simuladorBotonReset: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: tema.radius.full,
+    backgroundColor: tema.colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    gap: 4,
+    minHeight: 30,
+  },
+  simuladorBotonResetTexto: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: tema.colors.textSecondary,
+  },
+  semaforoH39AvisoCaja: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: tema.radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginTop: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  semaforoH39AvisoTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+    flex: 1,
   },
   tarjetaSuperiorFila: {
     flexDirection: "row",

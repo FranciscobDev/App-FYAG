@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -24,6 +24,8 @@ import {
   formatearTiempoEscaneo,
   resolverCodigoEscaneadoBodega,
 } from "@/modulos/inventario/escanerBodegaUtils";
+import { listarTecnicosDeProyecto } from "@/modulos/proyectos/proyectosApi";
+import { repararTextoUtf8 } from "@/modulos/solicitudes/solicitudesApi";
 import { estilos } from "../estilos";
 
 export interface PropiedadesSeccionEgresoBodega {
@@ -49,16 +51,22 @@ export interface PropiedadesSeccionEgresoBodega {
   totalUnidadesHastaDespacho: any;
 }
 
+const normalizarRut = (rut?: string | null) =>
+  String(rut || "").replace(/[.\-\s]/g, "").toUpperCase();
+
+const extraerNumeroIdProyecto = (valor?: string | number | null) => {
+  const num = Number(String(valor || "").replace(/\D/g, ""));
+  return Number.isInteger(num) && num > 0 ? num : 0;
+};
+
 export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
   abrirEscaner,
   activoDespachoSolicitud,
   activoPestana,
   aprobadoSolicitudes,
-  despachoElementosEntries,
   despachoError,
   despachoQuantities,
   despachoTecnicoRut,
-  esCompletoDespacho,
   esDesktop,
   establecerDespachoTecnicoRut,
   manejarDespachoCantidadCambiar,
@@ -69,9 +77,26 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
   seleccionadoDespachoSolicitudId,
   seleccionadoDespachoTecnico,
   tecnicos,
-  totalUnidadesHastaDespacho,
 }) => {
-  const { solicitudesMaterial } = usarAplicacion();
+  const { solicitudesMaterial, proyectos } = usarAplicacion();
+
+// Fuente viva de solicitudes aprobadas listas para despachar
+  const solicitudesListasDespacho = useMemo(() => {
+    const desdeContexto = solicitudesMaterial.filter(
+      (r) => r.status === "aprobada"
+    );
+    if (desdeContexto.length > 0) return desdeContexto;
+    return Array.isArray(aprobadoSolicitudes) ? aprobadoSolicitudes : [];
+  }, [solicitudesMaterial, aprobadoSolicitudes]);
+  // Filtro por proyecto en la cola de despacho
+  const [proyectoFiltroCodigo, establecerProyectoFiltroCodigo] = useState<string>("TODOS");
+
+  // Técnicos reales obtenidos desde la BD para el proyecto de la solicitud activa
+  const [tecnicosProyectoBd, establecerTecnicosProyectoBd] = useState<
+    { rut: string; name: string; id_usuario?: number }[]
+  >([]);
+  const [cargandoTecnicosProyecto, establecerCargandoTecnicosProyecto] = useState(false);
+  const [errorConsultaTecnicos, establecerErrorConsultaTecnicos] = useState<string | null>(null);
 
   // Estado visual de lectura óptica QR/Barras en Salidas (H5)
   const [ultimoEscaneoSalida, establecerUltimoEscaneoSalida] = useState<{
@@ -87,25 +112,291 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
     establecerSkusEscaneadosSalida({});
   }, [seleccionadoDespachoSolicitudId]);
 
-  // Auto-seleccionar la primera solicitud pendiente de despacho para no dejar la pantalla vacía
+  // Agrupar proyectos que tienen solicitudes (aprobadas para despacho o pendientes de aprobación)
+  const proyectosConSolicitudes = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        projectCode: string;
+        projectName: string;
+        aprobadasCount: number;
+        pendientesAprobacionCount: number;
+        entregadasCount: number;
+      }
+    >();
+
+    solicitudesMaterial.forEach((sol: any) => {
+      const code = sol.projectCode || "SIN-PROY";
+      const numCode = extraerNumeroIdProyecto(code);
+      const proyInfo = proyectos?.find(
+        (p: any) =>
+          p.code === code ||
+          String(p.id) === String(sol.projectId) ||
+          (numCode > 0 && Number(p.id) === numCode)
+      );
+      const actual = mapa.get(code) || {
+        projectCode: code,
+        projectName: repararTextoUtf8(sol.projectName || proyInfo?.name || code),
+        aprobadasCount: 0,
+        pendientesAprobacionCount: 0,
+        entregadasCount: 0,
+      };
+
+      if (sol.status === "aprobada" || sol.status === "parcial") {
+        actual.aprobadasCount += 1;
+      } else if (sol.status === "pendiente") {
+        actual.pendientesAprobacionCount += 1;
+      } else if (sol.status === "entregada") {
+        actual.entregadasCount += 1;
+      }
+
+      mapa.set(code, actual);
+    });
+
+    return Array.from(mapa.values()).filter(
+      (item) => item.aprobadasCount > 0 || item.pendientesAprobacionCount > 0 || item.entregadasCount > 0
+    );
+  }, [solicitudesMaterial, proyectos]);
+
+  // Solicitudes aprobadas filtradas por el proyecto seleccionado
+  const solicitudesFiltradasPorProyecto = useMemo(() => {
+    if (proyectoFiltroCodigo === "TODOS") return solicitudesListasDespacho;
+    return solicitudesListasDespacho.filter((r: any) => r.projectCode === proyectoFiltroCodigo);
+  }, [solicitudesListasDespacho, proyectoFiltroCodigo]);
+
+  // Auto-seleccionar la primera solicitud pendiente cuando cambia el filtro o se completa una entrega
   useEffect(() => {
-    if (
-      activoPestana === "egreso" &&
-      aprobadoSolicitudes.length > 0 &&
-      !seleccionadoDespachoSolicitudId
-    ) {
-      manejarSeleccionarDespachoSolicitud(aprobadoSolicitudes[0].id);
+    if (activoPestana !== "egreso") return;
+
+    if (solicitudesFiltradasPorProyecto.length === 0) {
+      if (seleccionadoDespachoSolicitudId) {
+        manejarSeleccionarDespachoSolicitud("");
+      }
+      return;
     }
-  }, [activoPestana, aprobadoSolicitudes, seleccionadoDespachoSolicitudId]);
+
+    const sigueEnCola = solicitudesFiltradasPorProyecto.some(
+      (s: any) => s.id === seleccionadoDespachoSolicitudId
+    );
+    if (!sigueEnCola) {
+      manejarSeleccionarDespachoSolicitud(solicitudesFiltradasPorProyecto[0].id);
+    }
+  }, [activoPestana, solicitudesFiltradasPorProyecto, seleccionadoDespachoSolicitudId]);
+
+  // Evita que la estación inferior quede "pegada" si la solicitud ya fue despachada al 100%
+  const solicitudActivaValida =
+    solicitudesListasDespacho.find((r: any) => r.id === seleccionadoDespachoSolicitudId) ||
+    (activoDespachoSolicitud &&
+    solicitudesListasDespacho.some((r: any) => r.id === activoDespachoSolicitud.id)
+      ? activoDespachoSolicitud
+      : null);
+
+  // Consultar en PostgreSQL los técnicos asignados al proyecto de la solicitud activa
+  useEffect(() => {
+    if (activoPestana !== "egreso" || !solicitudActivaValida) {
+      establecerTecnicosProyectoBd([]);
+      establecerErrorConsultaTecnicos(null);
+      return;
+    }
+
+    const numDesdeCodigo = extraerNumeroIdProyecto(solicitudActivaValida.projectCode);
+    const numDesdeId = extraerNumeroIdProyecto(solicitudActivaValida.projectId);
+
+    const proyectoMatch = proyectos?.find(
+      (p: any) =>
+        String(p.id) === String(solicitudActivaValida.projectId) ||
+        p.code === solicitudActivaValida.projectCode ||
+        (numDesdeCodigo > 0 && Number(p.id) === numDesdeCodigo)
+    );
+
+    const idProyectoNum =
+      (proyectoMatch && extraerNumeroIdProyecto(proyectoMatch.id)) ||
+      (numDesdeId > 0 ? numDesdeId : numDesdeCodigo);
+
+    if (!idProyectoNum) {
+      establecerTecnicosProyectoBd([]);
+      establecerErrorConsultaTecnicos(null);
+      return;
+    }
+
+    let cancelado = false;
+    establecerCargandoTecnicosProyecto(true);
+    establecerErrorConsultaTecnicos(null);
+
+    listarTecnicosDeProyecto(idProyectoNum)
+      .then((res) => {
+        if (cancelado) return;
+        if (res.ok && Array.isArray(res.data)) {
+          const mapeados = res.data.map((t) => ({
+            id_usuario: t.id_usuario,
+            rut: t.rut && t.rut.trim() ? t.rut.trim() : `USR-${t.id_usuario}`,
+            name: t.nombre,
+          }));
+          establecerTecnicosProyectoBd(mapeados);
+          establecerErrorConsultaTecnicos(null);
+        } else {
+          establecerTecnicosProyectoBd([]);
+          establecerErrorConsultaTecnicos(res.error || "No se pudo consultar técnicos asignados");
+        }
+      })
+      .finally(() => {
+        if (!cancelado) {
+          establecerCargandoTecnicosProyecto(false);
+        }
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [
+    activoPestana,
+    solicitudActivaValida?.id,
+    solicitudActivaValida?.projectId,
+    solicitudActivaValida?.projectCode,
+    proyectos,
+  ]);
+
+  // Técnicos asociados exclusivamente al proyecto destino (desde BD + respaldo en memoria)
+  const tecnicosAsociadosProyecto = useMemo(() => {
+    if (!solicitudActivaValida) return [];
+
+    // 1. Prioridad: técnicos reales asignados al proyecto en PostgreSQL
+    if (tecnicosProyectoBd.length > 0) {
+      return tecnicosProyectoBd.map((tBd) => {
+        const coincidenciaLocal = (tecnicos || []).find(
+          (tl: any) =>
+            normalizarRut(tl.rut) === normalizarRut(tBd.rut) ||
+            tl.name?.trim().toLowerCase() === tBd.name?.trim().toLowerCase()
+        );
+        const esSolicitante =
+          solicitudActivaValida.technicianName?.trim().toLowerCase() ===
+          tBd.name?.trim().toLowerCase();
+
+        const rutFinal =
+          !tBd.rut.startsWith("USR-")
+            ? tBd.rut
+            : coincidenciaLocal?.rut ||
+              (esSolicitante && solicitudActivaValida.technicianRut) ||
+              tBd.rut;
+
+        return {
+          rut: rutFinal,
+          name: tBd.name,
+        };
+      });
+    }
+
+    // 2. Fallback: revisar technicianRuts en memoria local si existieran
+    const numDesdeCodigo = extraerNumeroIdProyecto(solicitudActivaValida.projectCode);
+    const proyectoDestino = proyectos?.find(
+      (p: any) =>
+        String(p.id) === String(solicitudActivaValida.projectId) ||
+        p.code === solicitudActivaValida.projectCode ||
+        (numDesdeCodigo > 0 && Number(p.id) === numDesdeCodigo)
+    );
+
+    const rutsAsignados = new Set(
+      (proyectoDestino?.technicianRuts ?? []).map(normalizarRut)
+    );
+
+    if (rutsAsignados.size > 0) {
+      const base = [...(tecnicos || [])];
+      if (
+        solicitudActivaValida.technicianRut &&
+        !base.some(
+          (t: any) => normalizarRut(t.rut) === normalizarRut(solicitudActivaValida.technicianRut)
+        )
+      ) {
+        base.unshift({
+          rut: solicitudActivaValida.technicianRut,
+          name: solicitudActivaValida.technicianName || "Técnico Solicitante",
+        });
+      }
+
+      const filtradosLocal = base.filter((t: any) => rutsAsignados.has(normalizarRut(t.rut)));
+      if (filtradosLocal.length > 0) return filtradosLocal;
+    }
+
+    // 3. Respaldo si el endpoint de técnicos del proyecto está restringido por rol (ej. 403)
+    if (errorConsultaTecnicos && solicitudActivaValida.technicianName) {
+      const coincidenciaSolicitante = (tecnicos || []).find(
+        (tl: any) =>
+          (solicitudActivaValida.technicianRut &&
+            normalizarRut(tl.rut) === normalizarRut(solicitudActivaValida.technicianRut)) ||
+          tl.name?.trim().toLowerCase() ===
+            solicitudActivaValida.technicianName?.trim().toLowerCase()
+      );
+      return [
+        {
+          rut:
+            solicitudActivaValida.technicianRut ||
+            coincidenciaSolicitante?.rut ||
+            "SOLICITANTE",
+          name: solicitudActivaValida.technicianName,
+        },
+      ];
+    }
+
+    return [];
+  }, [solicitudActivaValida, tecnicosProyectoBd, proyectos, tecnicos, errorConsultaTecnicos]);
+
+  // Mantener coherente el técnico receptor seleccionado con los técnicos asignados al proyecto
+  useEffect(() => {
+    if (activoPestana !== "egreso" || !solicitudActivaValida || cargandoTecnicosProyecto) return;
+
+    if (tecnicosAsociadosProyecto.length === 0) {
+      if (despachoTecnicoRut) {
+        establecerDespachoTecnicoRut("");
+      }
+      return;
+    }
+
+    const sigueValido = tecnicosAsociadosProyecto.some(
+      (t: any) => normalizarRut(t.rut) === normalizarRut(despachoTecnicoRut)
+    );
+
+    if (!sigueValido) {
+      const solicitanteAsignado = tecnicosAsociadosProyecto.find(
+        (t: any) =>
+          normalizarRut(t.rut) === normalizarRut(solicitudActivaValida.technicianRut) ||
+          t.name?.trim().toLowerCase() ===
+            solicitudActivaValida.technicianName?.trim().toLowerCase()
+      );
+      establecerDespachoTecnicoRut(
+        solicitanteAsignado ? solicitanteAsignado.rut : tecnicosAsociadosProyecto[0].rut
+      );
+    }
+  }, [
+    activoPestana,
+    solicitudActivaValida,
+    cargandoTecnicosProyecto,
+    tecnicosAsociadosProyecto,
+    despachoTecnicoRut,
+  ]);
 
   if (activoPestana !== "egreso") return null;
 
   const solicitudesEntregadas = solicitudesMaterial.filter((r) => r.status === "entregada");
-  const totalLineasPendientes = aprobadoSolicitudes.reduce(
+  const totalLineasPendientes = solicitudesListasDespacho.reduce(
     (acc: number, r: any) =>
       acc + r.items.filter((it: any) => (it.deliveredQuantity || 0) < it.quantity).length,
     0
   );
+
+  const proyectoSeleccionadoInfo = proyectosConSolicitudes.find(
+    (p) => p.projectCode === proyectoFiltroCodigo
+  );
+
+  const receptorActivoValido =
+    tecnicosAsociadosProyecto.find(
+      (t: any) => normalizarRut(t.rut) === normalizarRut(despachoTecnicoRut)
+    ) ||
+    (seleccionadoDespachoTecnico &&
+    tecnicosAsociadosProyecto.some(
+      (t: any) => normalizarRut(t.rut) === normalizarRut(seleccionadoDespachoTecnico.rut)
+    )
+      ? seleccionadoDespachoTecnico
+      : null);
 
   return (
     <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
@@ -146,7 +437,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 18, fontWeight: "800", color: tema.colors.text }}>
-              {aprobadoSolicitudes.length}
+              {solicitudesListasDespacho.length}
             </Text>
             <Text style={{ fontSize: 11, color: tema.colors.textMuted, fontWeight: "600" }}>
               Por Despachar
@@ -227,15 +518,126 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
         </View>
       </View>
 
-      {/* 2. COLA DE SOLICITUDES APROBADAS A DESPACHAR */}
+      {/* 2. PROYECTOS CON SOLICITUDES DE MATERIAL */}
       <Text style={estilos.formularioSeccionEtiqueta}>
-        1. Seleccionar Pedido Aprobado en Cola ({aprobadoSolicitudes.length}):
+1. Proyectos con Solicitudes ({proyectosConSolicitudes.length}):
       </Text>
-      {aprobadoSolicitudes.length === 0 ? (
+
+      {proyectosConSolicitudes.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginBottom: 14 }}
+          contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+        >
+          <TouchableOpacity
+            onPress={() => establecerProyectoFiltroCodigo("TODOS")}
+            activeOpacity={0.8}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              borderRadius: tema.radius.md,
+              backgroundColor:
+                proyectoFiltroCodigo === "TODOS" ? "#0f172a" : tema.colors.card,
+              borderWidth: 1.5,
+              borderColor:
+                proyectoFiltroCodigo === "TODOS"
+                  ? tema.colors.primary
+                  : tema.colors.borderDark,
+              justifyContent: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "800",
+                color:
+                  proyectoFiltroCodigo === "TODOS" ? "#f59e0b" : tema.colors.text,
+              }}
+            >
+              Todos los Proyectos ({solicitudesListasDespacho.length} listos)
+            </Text>
+          </TouchableOpacity>
+
+          {proyectosConSolicitudes.map((proy) => {
+            const activo = proyectoFiltroCodigo === proy.projectCode;
+            return (
+              <TouchableOpacity
+                key={proy.projectCode}
+                onPress={() => establecerProyectoFiltroCodigo(proy.projectCode)}
+                activeOpacity={0.8}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: tema.radius.md,
+                  backgroundColor: activo ? "#0f172a" : tema.colors.card,
+                  borderWidth: 1.5,
+                  borderColor: activo ? tema.colors.primary : tema.colors.borderDark,
+                  minWidth: 210,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons
+                    name="folder-open-outline"
+                    size={14}
+                    color={activo ? "#818cf8" : tema.colors.primaryDark}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "800",
+                      color: activo ? "#818cf8" : tema.colors.primaryDark,
+                    }}
+                  >
+                    {proy.projectCode}
+                  </Text>
+                  {proy.aprobadasCount > 0 ? (
+                    <Insignia label={`${proy.aprobadasCount} por despachar`} tone="ok" size="sm" />
+                  ) : proy.pendientesAprobacionCount > 0 ? (
+                    <Insignia
+                      label={`${proy.pendientesAprobacionCount} sin aprobar`}
+                      tone="warn"
+                      size="sm"
+                    />
+                  ) : (
+                    <Insignia label="Despachado" tone="mute" size="sm" />
+                  )}
+                </View>
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "600",
+                    color: activo ? "#ffffff" : tema.colors.text,
+                    marginTop: 3,
+                  }}
+                >
+                  {repararTextoUtf8(proy.projectName)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
+
+      {/* 3. COLA DE SOLICITUDES APROBADAS A DESPACHAR */}
+      <Text style={estilos.formularioSeccionEtiqueta}>
+2. Seleccionar Pedido Aprobado en Cola ({solicitudesFiltradasPorProyecto.length}):
+      </Text>
+
+      {solicitudesFiltradasPorProyecto.length === 0 ? (
         <EstadoVacio
           icon="checkmark-done-circle-outline"
-          title="Sin solicitudes pendientes de despacho"
-          description="Todos los pedidos aprobados ya fueron despachados físicamente."
+          title={
+            proyectoSeleccionadoInfo && proyectoSeleccionadoInfo.pendientesAprobacionCount > 0
+              ? `El proyecto ${proyectoSeleccionadoInfo.projectCode} tiene ${proyectoSeleccionadoInfo.pendientesAprobacionCount} solicitud(es) pendiente(s) de aprobación`
+              : "Sin solicitudes pendientes de despacho"
+          }
+          description={
+            proyectoSeleccionadoInfo && proyectoSeleccionadoInfo.pendientesAprobacionCount > 0
+              ? "Aprueba la solicitud en la pestaña 'Solicitudes' para habilitar su salida física en bodega."
+              : "Todos los pedidos aprobados para este filtro ya fueron despachados físicamente."
+          }
           containerStyle={{ marginVertical: 16 }}
         />
       ) : (
@@ -247,7 +649,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
             marginBottom: 18,
           }}
         >
-          {aprobadoSolicitudes.map((r: any) => {
+          {solicitudesFiltradasPorProyecto.map((r: any) => {
             const esSeleccionado = seleccionadoDespachoSolicitudId === r.id;
             const totalUnidadesPedido = r.items.reduce(
               (acc: number, it: any) => acc + Math.max(0, it.quantity - (it.deliveredQuantity || 0)),
@@ -298,7 +700,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 </View>
 
                 <Text style={[estilos.despachoSolicitudProyecto, { marginTop: 4 }]}>
-                  {r.projectName}
+                  {r.projectCode} • {repararTextoUtf8(r.projectName)}
                 </Text>
                 <Text style={estilos.despachoSolicitudMeta}>
                   Solicita: {r.technicianName} • {r.date}
@@ -336,16 +738,16 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
         </View>
       )}
 
-      {/* 3. ESTACIÓN DE REGISTRO DE SALIDA FÍSICA DEL PEDIDO ACTIVO */}
-      {activoDespachoSolicitud && (() => {
+      {/* 4. ESTACIÓN DE REGISTRO DE SALIDA FÍSICA DEL PEDIDO ACTIVO */}
+      {solicitudActivaValida && (() => {
         const resumenSolicitudVivo = calcularResumenSolicitudSalidaFisica(
-          activoDespachoSolicitud,
+          solicitudActivaValida,
           despachoQuantities || {},
           productos || []
         );
 
         const aplicarPorcentajeSobrePendiente = (factor: number) => {
-          activoDespachoSolicitud.items.forEach((it: any) => {
+          solicitudActivaValida.items.forEach((it: any) => {
             const prod = productos.find((p: any) => p.sku === it.sku);
             const resLin = calcularResumenLineaSalidaFisica(it, 0, prod);
             const maxPosible = Math.min(resLin.saldoPendienteAntes, resLin.stockRespaldoParaEgreso);
@@ -373,14 +775,14 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                     <Text style={estilos.despachoFormularioTitulo}>
-                      Registro de Salida Física: {activoDespachoSolicitud.code}
+                      Registro de Salida Física: {solicitudActivaValida.code}
                     </Text>
-                    {activoDespachoSolicitud.receiptNumber && (
-                      <Insignia label={`Aut. ${activoDespachoSolicitud.receiptNumber}`} tone="ok" size="sm" />
+                    {solicitudActivaValida.receiptNumber && (
+                      <Insignia label={`Aut. ${solicitudActivaValida.receiptNumber}`} tone="ok" size="sm" />
                     )}
                   </View>
                   <Text style={estilos.despachoFormularioSubtitulo}>
-                    Proyecto Destino: {activoDespachoSolicitud.projectName} ({activoDespachoSolicitud.projectCode})
+                    Proyecto Destino: {repararTextoUtf8(solicitudActivaValida.projectName)} ({solicitudActivaValida.projectCode})
                   </Text>
                 </View>
                 <Boton
@@ -412,12 +814,12 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                         }
 
                         const matchedProducto = resolucion.producto;
-                        const itemSolicitud = activoDespachoSolicitud.items.find(
+                        const itemSolicitud = solicitudActivaValida.items.find(
                           (it: any) => it.sku === matchedProducto.sku
                         );
 
                         if (!itemSolicitud) {
-                          const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la solicitud ${activoDespachoSolicitud.code}.`;
+                          const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la solicitud ${solicitudActivaValida.code}.`;
                           establecerUltimoEscaneoSalida({
                             tipo: "alerta",
                             sku: matchedProducto.sku,
@@ -428,7 +830,6 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                           return;
                         }
 
-                        // Autocompletar SKU y cantidad a retirar sin digitar
                         const resLinea = calcularResumenLineaSalidaFisica(
                           itemSolicitud,
                           0,
@@ -470,7 +871,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                       {
                         moduloOrigen: "salida",
                         validarExistencia: true,
-                        sugerenciaSkus: activoDespachoSolicitud.items.map((it: any) => it.sku),
+                        sugerenciaSkus: solicitudActivaValida.items.map((it: any) => it.sku),
                       }
                     )
                   }
@@ -560,41 +961,70 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                     Trazabilidad irreversible en Cardex:{" "}
                   </Text>
                   El egreso queda vinculado de forma permanente al proyecto{" "}
-                  <Text style={{ fontWeight: "700" }}>{activoDespachoSolicitud.projectCode}</Text> y al técnico que
+                  <Text style={{ fontWeight: "700" }}>{solicitudActivaValida.projectCode}</Text> y al técnico que
                   retira. Las correcciones posteriores se realizan mediante un movimiento de ajuste, nunca editando el
                   registro.
                 </Text>
               </View>
 
-              {/* Selector de Técnico que retira en bodega */}
+              {/* Selector de Técnico asociado al proyecto que retira en bodega */}
               <Text style={estilos.formularioSeccionEtiqueta}>
-                2. Seleccionar Técnico que Retira en Bodega:
+3. Seleccionar Técnico que Retira en Bodega (
+                {cargandoTecnicosProyecto
+                  ? "cargando..."
+                  : `${tecnicosAsociadosProyecto.length} asignados a ${solicitudActivaValida.projectCode}`}
+                ):
               </Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                {tecnicos.map((t: any) => {
-                  const esReceptor = despachoTecnicoRut === t.rut;
-                  return (
-                    <TouchableOpacity
-                      key={t.rut}
-                      onPress={() => establecerDespachoTecnicoRut(t.rut)}
-                      style={[
-                        estilos.tecnicoSeleccionarChip,
-                        esReceptor && estilos.tecnicoSeleccionarChipActivo,
-                      ]}
-                    >
-                      <Text
+              {cargandoTecnicosProyecto ? (
+                <Text style={{ fontSize: 12, color: tema.colors.textMuted, marginBottom: 14 }}>
+                  Consultando técnicos asignados al proyecto...
+                </Text>
+              ) : tecnicosAsociadosProyecto.length === 0 ? (
+                <View
+                  style={{
+                    backgroundColor: tema.colors.warnLight,
+                    borderWidth: 1,
+                    borderColor: tema.colors.warn,
+                    borderRadius: tema.radius.sm,
+                    padding: 10,
+                    marginBottom: 14,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="warning-outline" size={18} color={tema.colors.warnDark} />
+                  <Text style={{ flex: 1, fontSize: 12, color: tema.colors.warnDark, fontWeight: "600" }}>
+                    El proyecto {solicitudActivaValida.projectCode} no tiene técnicos asignados. Asigna al menos un técnico en el módulo de Proyectos para registrar el retiro.
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
+                  {tecnicosAsociadosProyecto.map((t: any) => {
+                    const esReceptor = normalizarRut(despachoTecnicoRut) === normalizarRut(t.rut);
+                    return (
+                      <TouchableOpacity
+                        key={t.rut}
+                        onPress={() => establecerDespachoTecnicoRut(t.rut)}
                         style={[
-                          estilos.tecnicoSeleccionarNombre,
-                          esReceptor && estilos.tecnicoSeleccionarNombreActivo,
+                          estilos.tecnicoSeleccionarChip,
+                          esReceptor && estilos.tecnicoSeleccionarChipActivo,
                         ]}
                       >
-                        {t.name}
-                      </Text>
-                      <Text style={estilos.tecnicoSeleccionarRut}>RUT: {t.rut}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+                        <Text
+                          style={[
+                            estilos.tecnicoSeleccionarNombre,
+                            esReceptor && estilos.tecnicoSeleccionarNombreActivo,
+                          ]}
+                        >
+                          {t.name}
+                        </Text>
+                        <Text style={estilos.tecnicoSeleccionarRut}>RUT: {t.rut}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
 
               {/* Controles rápidos de entrega parcial vs completar saldo restante */}
               <View
@@ -608,7 +1038,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 }}
               >
                 <Text style={[estilos.formularioSeccionEtiqueta, { marginBottom: 0 }]}>
-                  3. Saldo Autorizado vs. Entregado en Tiempo Real:
+4. Saldo Autorizado vs. Entregado en Tiempo Real:
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   <Boton
@@ -629,7 +1059,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
               </View>
 
               {/* Tabla de ítems a despachar con comparativa Autorizado vs Entregado en vivo */}
-              {activoDespachoSolicitud.items.map((it: any) => {
+              {solicitudActivaValida.items.map((it: any) => {
                 const prod = productos.find((p: any) => p.sku === it.sku);
                 const actualDespacho = Number(despachoQuantities[it.sku] || 0);
                 const resumenLinea = calcularResumenLineaSalidaFisica(it, actualDespacho, prod);
@@ -660,7 +1090,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                     >
                       <View style={{ flex: 1.5, minWidth: 180, marginRight: 8 }}>
                         <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                          <Text style={estilos.despachoElementoNombre}>{it.name}</Text>
+                          <Text style={estilos.despachoElementoNombre}>{repararTextoUtf8(it.name)}</Text>
                           {fueEscaneado && <Insignia label="Escaneado ✓" tone="ok" size="sm" />}
                         </View>
                         <Text style={estilos.despachoElementoSku}>
@@ -815,24 +1245,24 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 <View style={estilos.resumenFila}>
                   <Text style={estilos.resumenEtiqueta}>Comprobante Aut.:</Text>
                   <Text style={estilos.resumenValor}>
-                    {activoDespachoSolicitud.receiptNumber || activoDespachoSolicitud.code}
+                    {solicitudActivaValida.receiptNumber || solicitudActivaValida.code}
                   </Text>
                 </View>
                 <View style={estilos.resumenFila}>
                   <Text style={estilos.resumenEtiqueta}>Proyecto Destino:</Text>
                   <Text style={estilos.resumenValor}>
-                    {activoDespachoSolicitud.projectCode} • {activoDespachoSolicitud.projectName}
+                    {solicitudActivaValida.projectCode} • {repararTextoUtf8(solicitudActivaValida.projectName)}
                   </Text>
                 </View>
                 <View style={estilos.resumenFila}>
                   <Text style={estilos.resumenEtiqueta}>Solicitado por:</Text>
-                  <Text style={estilos.resumenValor}>{activoDespachoSolicitud.technicianName}</Text>
+                  <Text style={estilos.resumenValor}>{solicitudActivaValida.technicianName}</Text>
                 </View>
                 <View style={estilos.resumenFila}>
                   <Text style={estilos.resumenEtiqueta}>Retira en Bodega:</Text>
                   <Text style={[estilos.resumenValor, { fontWeight: "700", color: tema.colors.primary }]}>
-                    {seleccionadoDespachoTecnico
-                      ? `${seleccionadoDespachoTecnico.name} (${seleccionadoDespachoTecnico.rut})`
+                    {receptorActivoValido
+                      ? `${receptorActivoValido.name} (${receptorActivoValido.rut})`
                       : "Seleccionar técnico..."}
                   </Text>
                 </View>
@@ -911,7 +1341,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                 size="md"
                 disabled={
                   resumenSolicitudVivo.totalEntregandoAhoraUnidades === 0 ||
-                  !despachoTecnicoRut ||
+                  !receptorActivoValido ||
                   resumenSolicitudVivo.tieneErroresLinea
                 }
                 onPress={manejarInitiateDespacho}
@@ -923,7 +1353,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
         );
       })()}
 
-      {/* 4. HISTORIAL DE ÚLTIMOS DESPACHOS ENTREGADOS */}
+      {/* 5. HISTORIAL DE ÚLTIMOS DESPACHOS ENTREGADOS */}
       {solicitudesEntregadas.length > 0 && (
         <View style={{ marginTop: 22 }}>
           <Text style={estilos.formularioSeccionEtiqueta}>
@@ -942,7 +1372,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
               >
                 <View style={{ flex: 1, minWidth: 180 }}>
                   <Text style={{ fontSize: 13, fontWeight: "700", color: tema.colors.text }}>
-                    {sol.code} • {sol.projectName}
+                    {sol.code} • {repararTextoUtf8(sol.projectName)}
                   </Text>
                   <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginTop: 2 }}>
                     Retirado por: {sol.technicianName} • {sol.date}

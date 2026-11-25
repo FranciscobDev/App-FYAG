@@ -1061,7 +1061,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 6,
   },
   chipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   chipTexto: {
@@ -1111,7 +1111,7 @@ const estilosLocales = StyleSheet.create({
   tablaHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     paddingVertical: 10,
     paddingHorizontal: 12,
   },

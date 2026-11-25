@@ -118,7 +118,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
   const [insumos, setInsumos] = useState<InsumoStock[]>(datosPorDefecto);
   const [busqueda, setBusqueda] = useState<string>("");
   const [filtroAlerta, setFiltroAlerta] = useState<"todos" | "criticos" | "conformes">("todos");
-  const [mensajeScrum, setMensajeScrum] = useState<string | null>(null);
+  const [filaExpandidaId, setFilaExpandidaId] = useState<string | null>(null);
 
   // Sincronizar si cambian los datos de origen
   useEffect(() => {
@@ -133,7 +133,8 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
         !q ||
         item.nombre.toLowerCase().includes(q) ||
         item.sku.toLowerCase().includes(q) ||
-        (item.categoria && item.categoria.toLowerCase().includes(q));
+        (item.categoria && item.categoria.toLowerCase().includes(q)) ||
+        (item.ubicacion && item.ubicacion.toLowerCase().includes(q));
 
       if (!coincideTexto) return false;
 
@@ -166,6 +167,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
         badgeText: "#991b1b",
         badgeBorder: "#fecaca",
         badgeLabel: "🔴 Agotado",
+        badgeLabelCorto: "● Agotado",
         colorTextoStock: "#b91c1c",
       };
     }
@@ -177,6 +179,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
         badgeText: "#92400e",
         badgeBorder: "#fde68a",
         badgeLabel: "⚠️ Bajo Mínimo",
+        badgeLabelCorto: "▲ Bajo Mín",
         colorTextoStock: "#b45309",
       };
     }
@@ -187,146 +190,20 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
       badgeText: "#166534",
       badgeBorder: "#bbf7d0",
       badgeLabel: "✅ Conforme",
+      badgeLabelCorto: "● Conforme",
       colorTextoStock: "#15803d",
     };
-  };
-
-  // =========================================================================
-    // FUNCIONES DE PRUEBA [SCRUM]
-  // =========================================================================
-  const simularInsumoBajoMinimo = () => {
-    setInsumos((prev) => {
-      // Tomamos el primer insumo que esté conforme y lo dejamos bajo el mínimo
-      const indice = prev.findIndex((i) => i.disponible > i.stockMinimo);
-      if (indice >= 0) {
-        const itemActual = prev[indice];
-        const nuevoDisponible = Math.max(1, Math.floor(itemActual.stockMinimo * 0.4));
-        const actualizados = [...prev];
-        actualizados[indice] = {
-          ...itemActual,
-          disponible: nuevoDisponible,
-        };
-        setMensajeScrum(
-          `Insumo "${itemActual.sku} - ${itemActual.nombre}" actualizado a ${nuevoDisponible} ${itemActual.unidad} (mínimo: ${itemActual.stockMinimo}). Marcado en alerta por bajo stock.`
-        );
-        return actualizados;
-      }
-      setMensajeScrum("Todos los insumos ya están bajo el mínimo o sin stock.");
-      return prev;
-    });
-  };
-
-  const simularInsumoAgotado = () => {
-    setInsumos((prev) => {
-      const indice = prev.findIndex((i) => i.disponible > 0);
-      if (indice >= 0) {
-        const itemActual = prev[indice];
-        const actualizados = [...prev];
-        actualizados[indice] = {
-          ...itemActual,
-          disponible: 0,
-        };
-        setMensajeScrum(
-          `Insumo "${itemActual.sku}" actualizado a 0 ${itemActual.unidad}. Marcado como agotado.`
-        );
-        return actualizados;
-      }
-      setMensajeScrum("No hay insumos con stock positivo.");
-      return prev;
-    });
-  };
-
-  const restablecerStockOriginal = () => {
-    setInsumos(datosPorDefecto);
-    setMensajeScrum("Catálogo restablecido con los valores estándar del inventario.");
   };
 
   return (
     <View style={estilos.contenedorPrincipal}>
       {/* =====================================================================
-          BARRA DE MONITOREO DE STOCK
-          ===================================================================== */}
-      {mostrarSimuladorScrum && (
-        <View style={estilos.barraScrum}>
-          <View style={estilos.scrumHeaderFila}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="analytics-outline" size={18} color="#b45309" style={{ marginRight: 6 }} />
-              <Text style={estilos.scrumTitulo}>Control de Niveles de Stock</Text>
-            </View>
-            <View style={estilos.scrumBadgesContenedor}>
-              <View style={[estilos.miniBadge, { backgroundColor: "#fee2e2" }]}>
-                <Text style={[estilos.miniBadgeTexto, { color: "#991b1b" }]}>
-                  {estadisticas.sinStock} Agotados
-                </Text>
-              </View>
-              <View style={[estilos.miniBadge, { backgroundColor: "#fef3c7" }]}>
-                <Text style={[estilos.miniBadgeTexto, { color: "#92400e" }]}>
-                  {estadisticas.bajoMinimo} Bajo Mínimo
-                </Text>
-              </View>
-              <View style={[estilos.miniBadge, { backgroundColor: "#dcfce7" }]}>
-                <Text style={[estilos.miniBadgeTexto, { color: "#166534" }]}>
-                  {estadisticas.conformes} Conformes
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <Text style={estilos.scrumSubtitulo}>
-            Filtra el catálogo en tiempo real y revisa las alertas automáticas cuando el disponible es menor o igual al stock mínimo.
-          </Text>
-
-          <View style={estilos.scrumBotonesFila}>
-            <TouchableOpacity
-              style={[estilos.botonScrumAccion, { backgroundColor: "#fef3c7", borderColor: "#fde68a" }]}
-              onPress={simularInsumoBajoMinimo}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="warning-outline" size={14} color="#92400e" style={{ marginRight: 4 }} />
-              <Text style={[estilos.botonScrumTexto, { color: "#92400e" }]}>
-                Dejar 1 insumo bajo el mínimo
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[estilos.botonScrumAccion, { backgroundColor: "#fee2e2", borderColor: "#fecaca" }]}
-              onPress={simularInsumoAgotado}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="alert-circle-outline" size={14} color="#991b1b" style={{ marginRight: 4 }} />
-              <Text style={[estilos.botonScrumTexto, { color: "#991b1b" }]}>
-                Dejar 1 insumo en 0 (Crítico)
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[estilos.botonScrumAccion, { backgroundColor: "#f1f5f9", borderColor: "#cbd5e1" }]}
-              onPress={restablecerStockOriginal}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="refresh-outline" size={14} color="#475569" style={{ marginRight: 4 }} />
-              <Text style={[estilos.botonScrumTexto, { color: "#475569" }]}>
-                Restablecer Stock
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {Boolean(mensajeScrum) && (
-            <View style={estilos.cajaMensajeScrum}>
-              <Ionicons name="information-circle" size={15} color="#1e40af" style={{ marginRight: 6 }} />
-              <Text style={estilos.textoMensajeScrum}>{mensajeScrum}</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* =====================================================================
           TARJETA PRINCIPAL: CATÁLOGO DE STOCK
           ===================================================================== */}
-      <View style={estilos.tarjetaCatalogo}>
+      <View style={[estilos.tarjetaCatalogo, !esDesktop && estilos.tarjetaCatalogoMovil]}>
         {/* Encabezado y Barra de Filtro en Vivo */}
         <View style={estilos.encabezadoBarra}>
-          <View style={{ flex: 1, minWidth: 200, marginBottom: esDesktop ? 0 : 12 }}>
+          <View style={{ flex: 1, minWidth: 200, marginBottom: esDesktop ? 0 : 10 }}>
             <Text style={estilos.tituloPrincipal}>Catálogo de Stock - Bodega</Text>
             <Text style={estilos.subtituloPrincipal}>
               Control y supervisión de insumos en tiempo real con alerta visual de reposición
@@ -338,7 +215,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
             <Ionicons name="search-outline" size={18} color="#64748b" style={estilos.iconoBuscador} />
             <TextInput
               style={estilos.inputBuscador}
-              placeholder="Buscar por SKU o nombre..."
+              placeholder="Buscar por SKU, nombre o ubicación..."
               placeholderTextColor="#94a3b8"
               value={busqueda}
               onChangeText={setBusqueda}
@@ -353,7 +230,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
           </View>
         </View>
 
-        {/* Chips de Filtro Rápido */}
+        {/* Chips de Filtro Rápido Responsivos */}
         <View style={estilos.filtrosFila}>
           <TouchableOpacity
             style={[estilos.chipFiltro, filtroAlerta === "todos" && estilos.chipFiltroActivo]}
@@ -377,7 +254,7 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
                 filtroAlerta === "criticos" && estilos.chipFiltroCriticoTextoActivo,
               ]}
             >
-              ⚠️ Críticos / Bajo Mínimo ({estadisticas.totalCriticos})
+              ⚠️ Críticos ({estadisticas.totalCriticos})
             </Text>
           </TouchableOpacity>
 
@@ -400,73 +277,121 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
         </View>
 
         {/* =====================================================================
-            TABLA RESPONSIVA DE INSUMOS CON RESALTADO AUTOMÁTICO
+            TABLA RESPONSIVA DE INSUMOS (3 COLUMNAS EN MÓVIL / 6 EN DESKTOP)
             ===================================================================== */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={true} style={estilos.scrollHorizontal}>
-          <View style={estilos.contenedorTabla}>
-            {/* Cabecera de la Tabla */}
-            <View style={estilos.filaCabecera}>
-              <Text style={[estilos.textoTh, estilos.colSku]}>SKU</Text>
-              <Text style={[estilos.textoTh, estilos.colNombre]}>Insumo / Descripción</Text>
-              <Text style={[estilos.textoTh, estilos.colDisponible, { textAlign: "center" }]}>Disponible</Text>
-              <Text style={[estilos.textoTh, estilos.colStockMinimo, { textAlign: "center" }]}>Stock Mínimo</Text>
-              <Text style={[estilos.textoTh, estilos.colPmp, { textAlign: "right" }]}>PMP ($)</Text>
-              <Text style={[estilos.textoTh, estilos.colAlerta, { textAlign: "center" }]}>Estado Alerta</Text>
+        {!esDesktop ? (
+          <View style={estilos.contenedorTablaMovil}>
+            {/* Cabecera Compacta de 3 Columnas para Celular */}
+            <View style={estilos.filaCabeceraMovil}>
+              <Text style={[estilos.textoTh, estilos.colMovilInsumo]}>Insumo / SKU</Text>
+              <Text style={[estilos.textoTh, estilos.colMovilStock]}>Stock / Mín.</Text>
+              <Text style={[estilos.textoTh, estilos.colMovilPmp]}>PMP / Estado</Text>
             </View>
 
-            {/* Filas de la Tabla */}
+            {/* Filas Compactas sin Scroll Horizontal + Detalle Desplegable en 1 toque */}
             {insumosFiltrados.length > 0 ? (
               insumosFiltrados.map((item) => {
+                const keyId = item.id || item.sku;
                 const infoAlerta = obtenerEstiloFila(item.disponible, item.stockMinimo);
+                const expandida = filaExpandidaId === keyId;
+
                 return (
-                  <TouchableOpacity
-                    key={item.id || item.sku}
-                    style={[estilos.filaDatos, infoAlerta.filaEstilo, infoAlerta.bordeIzquierdo]}
-                    activeOpacity={onSelectInsumo ? 0.7 : 1}
-                    onPress={() => onSelectInsumo && onSelectInsumo(item)}
+                  <View
+                    key={keyId}
+                    style={[estilos.bloqueFilaMovil, infoAlerta.filaEstilo, infoAlerta.bordeIzquierdo]}
                   >
-                    <Text style={[estilos.textoTd, estilos.colSku, estilos.textoMono]}>{item.sku}</Text>
-                    <View style={estilos.colNombre}>
-                      <Text style={estilos.nombreInsumoTexto} numberOfLines={2}>
-                        {item.nombre}
-                      </Text>
-                      {Boolean(item.categoria) && (
-                        <Text style={estilos.categoriaInsumoTexto}>
-                          {item.categoria} {item.ubicacion ? `• Ubic: ${item.ubicacion}` : ""}
-                        </Text>
-                      )}
-                    </View>
-                    <Text
-                      style={[
-                        estilos.textoTd,
-                        estilos.colDisponible,
-                        { textAlign: "center", fontWeight: "700", color: infoAlerta.colorTextoStock },
-                      ]}
+                    <TouchableOpacity
+                      style={estilos.filaDatosMovil}
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        setFilaExpandidaId((prev) => (prev === keyId ? null : keyId))
+                      }
                     >
-                      {item.disponible} {item.unidad}
-                    </Text>
-                    <Text style={[estilos.textoTd, estilos.colStockMinimo, { textAlign: "center", color: "#64748b" }]}>
-                      {item.stockMinimo} {item.unidad}
-                    </Text>
-                    <Text style={[estilos.textoTd, estilos.colPmp, { textAlign: "right", fontWeight: "600" }]}>
-                      {formatearCLP(item.pmp)}
-                    </Text>
-                    <View style={[estilos.colAlerta, { alignItems: "center", justifyContent: "center" }]}>
-                      <View
-                        style={[
-                          estilos.badgeAlerta,
-                          {
-                            backgroundColor: infoAlerta.badgeBg,
-                            borderColor: infoAlerta.badgeBorder,
-                          },
-                        ]}
-                      >
-                        <Text style={[estilos.badgeAlertaTexto, { color: infoAlerta.badgeText }]}>
-                          {infoAlerta.badgeLabel}
+                      {/* Columna 1: Nombre + SKU + Ubicación */}
+                      <View style={estilos.colMovilInsumo}>
+                        <Text style={estilos.nombreInsumoMovil} numberOfLines={2}>
+                          {item.nombre}
+                        </Text>
+                        <View style={estilos.subLineaMovil}>
+                          <Text style={estilos.skuBadgeMovil}>{item.sku}</Text>
+                          {Boolean(item.ubicacion || item.categoria) && (
+                            <Text style={estilos.ubicacionTextoMovil} numberOfLines={1}>
+                              • {item.ubicacion || item.categoria}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* Columna 2: Disponible vs Stock Mínimo */}
+                      <View style={estilos.colMovilStock}>
+                        <Text
+                          style={[
+                            estilos.stockPrincipalMovil,
+                            { color: infoAlerta.colorTextoStock },
+                          ]}
+                        >
+                          {item.disponible} {item.unidad}
+                        </Text>
+                        <Text style={estilos.stockMinimoMovil}>
+                          Mín: {item.stockMinimo} {item.unidad}
                         </Text>
                       </View>
-                    </View>
-                  </TouchableOpacity>
+
+                      {/* Columna 3: PMP + Pill compacto de estado */}
+                      <View style={estilos.colMovilPmp}>
+                        <Text style={estilos.pmpPrincipalMovil}>{formatearCLP(item.pmp)}</Text>
+                        <View
+                          style={[
+                            estilos.badgeAlertaMovil,
+                            {
+                              backgroundColor: infoAlerta.badgeBg,
+                              borderColor: infoAlerta.badgeBorder,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              estilos.badgeAlertaTextoMovil,
+                              { color: infoAlerta.badgeText },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {infoAlerta.badgeLabelCorto}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Franja desplegable (Accordion sin modales) */}
+                    {expandida && (
+                      <View style={estilos.franjaDetalleMovil}>
+                        <View style={estilos.franjaDetalleInfo}>
+                          <Text style={estilos.franjaDetalleTexto}>
+                            <Text style={estilos.franjaDetalleLabel}>Categoría: </Text>
+                            {item.categoria || "General"}
+                            {"  •  "}
+                            <Text style={estilos.franjaDetalleLabel}>Ubicación: </Text>
+                            {item.ubicacion || "Bodega Central"}
+                          </Text>
+                        </View>
+                        {onSelectInsumo && (
+                          <TouchableOpacity
+                            style={estilos.botonVerCardexMovil}
+                            onPress={() => onSelectInsumo(item)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons
+                              name="swap-horizontal-outline"
+                              size={13}
+                              color={tema.colors.primaryDark}
+                              style={{ marginRight: 4 }}
+                            />
+                            <Text style={estilos.botonVerCardexTexto}>Ver Cardex</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    )}
+                  </View>
                 );
               })
             ) : (
@@ -481,7 +406,88 @@ export const CatalogoStock: React.FC<CatalogoStockProps> = ({
               </View>
             )}
           </View>
-        </ScrollView>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={true} style={estilos.scrollHorizontal}>
+            <View style={estilos.contenedorTabla}>
+              {/* Cabecera de la Tabla Desktop */}
+              <View style={estilos.filaCabecera}>
+                <Text style={[estilos.textoTh, estilos.colSku]}>SKU</Text>
+                <Text style={[estilos.textoTh, estilos.colNombre]}>Insumo / Descripción</Text>
+                <Text style={[estilos.textoTh, estilos.colDisponible, { textAlign: "center" }]}>Disponible</Text>
+                <Text style={[estilos.textoTh, estilos.colStockMinimo, { textAlign: "center" }]}>Stock Mínimo</Text>
+                <Text style={[estilos.textoTh, estilos.colPmp, { textAlign: "right" }]}>PMP ($)</Text>
+                <Text style={[estilos.textoTh, estilos.colAlerta, { textAlign: "center" }]}>Estado Alerta</Text>
+              </View>
+
+              {/* Filas de la Tabla Desktop */}
+              {insumosFiltrados.length > 0 ? (
+                insumosFiltrados.map((item) => {
+                  const infoAlerta = obtenerEstiloFila(item.disponible, item.stockMinimo);
+                  return (
+                    <TouchableOpacity
+                      key={item.id || item.sku}
+                      style={[estilos.filaDatos, infoAlerta.filaEstilo, infoAlerta.bordeIzquierdo]}
+                      activeOpacity={onSelectInsumo ? 0.7 : 1}
+                      onPress={() => onSelectInsumo && onSelectInsumo(item)}
+                    >
+                      <Text style={[estilos.textoTd, estilos.colSku, estilos.textoMono]}>{item.sku}</Text>
+                      <View style={estilos.colNombre}>
+                        <Text style={estilos.nombreInsumoTexto} numberOfLines={2}>
+                          {item.nombre}
+                        </Text>
+                        {Boolean(item.categoria) && (
+                          <Text style={estilos.categoriaInsumoTexto}>
+                            {item.categoria} {item.ubicacion ? `• Ubic: ${item.ubicacion}` : ""}
+                          </Text>
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          estilos.textoTd,
+                          estilos.colDisponible,
+                          { textAlign: "center", fontWeight: "700", color: infoAlerta.colorTextoStock },
+                        ]}
+                      >
+                        {item.disponible} {item.unidad}
+                      </Text>
+                      <Text style={[estilos.textoTd, estilos.colStockMinimo, { textAlign: "center", color: "#64748b" }]}>
+                        {item.stockMinimo} {item.unidad}
+                      </Text>
+                      <Text style={[estilos.textoTd, estilos.colPmp, { textAlign: "right", fontWeight: "600" }]}>
+                        {formatearCLP(item.pmp)}
+                      </Text>
+                      <View style={[estilos.colAlerta, { alignItems: "center", justifyContent: "center" }]}>
+                        <View
+                          style={[
+                            estilos.badgeAlerta,
+                            {
+                              backgroundColor: infoAlerta.badgeBg,
+                              borderColor: infoAlerta.badgeBorder,
+                            },
+                          ]}
+                        >
+                          <Text style={[estilos.badgeAlertaTexto, { color: infoAlerta.badgeText }]}>
+                            {infoAlerta.badgeLabel}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <View style={estilos.filaVacia}>
+                  <Ionicons name="search-outline" size={32} color="#94a3b8" style={{ marginBottom: 8 }} />
+                  <Text style={estilos.textoVacio}>
+                    No se encontraron insumos coincidentes con "{busqueda}".
+                  </Text>
+                  <TouchableOpacity onPress={() => setBusqueda("")} style={estilos.botonLimpiarBusqueda}>
+                    <Text style={estilos.botonLimpiarBusquedaTexto}>Limpiar búsqueda</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </ScrollView>
+        )}
       </View>
     </View>
   );
@@ -584,15 +590,20 @@ const estilos = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 2,
   },
+  tarjetaCatalogoMovil: {
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
   encabezadoBarra: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     flexWrap: "wrap",
-    marginBottom: 14,
+    marginBottom: 12,
   },
   tituloPrincipal: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
     color: "#0f172a",
     letterSpacing: -0.3,
@@ -624,29 +635,30 @@ const estilos = StyleSheet.create({
   },
   filtrosFila: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   chipFiltro: {
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: "#f1f5f9",
+    backgroundColor: "#f8fafc",
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
   chipFiltroActivo: {
-    backgroundColor: "#0f172a",
-    borderColor: "#0f172a",
+    backgroundColor: tema.colors.primaryLight,
+    borderColor: tema.colors.primary,
   },
   chipFiltroTexto: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#475569",
   },
   chipFiltroTextoActivo: {
-    color: "#ffffff",
+    color: tema.colors.primaryDark,
   },
   chipFiltroCriticoActivo: {
     backgroundColor: "#fef3c7",
@@ -662,6 +674,146 @@ const estilos = StyleSheet.create({
   chipFiltroConformeTextoActivo: {
     color: "#166534",
   },
+  // =========================================================================
+  // ESTILOS DE TABLA COMPACTA MÓVIL (100% ANCHO, 3 COLUMNAS, SIN RECORTES)
+  // =========================================================================
+  contenedorTablaMovil: {
+    width: "100%",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
+  },
+  filaCabeceraMovil: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  bloqueFilaMovil: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#e2e8f0",
+  },
+  filaDatosMovil: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    gap: 6,
+  },
+  colMovilInsumo: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  colMovilStock: {
+    width: 82,
+    alignItems: "flex-end",
+    textAlign: "right",
+  },
+  colMovilPmp: {
+    width: 88,
+    alignItems: "flex-end",
+    textAlign: "right",
+  },
+  nombreInsumoMovil: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0f172a",
+    lineHeight: 17,
+  },
+  subLineaMovil: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginTop: 4,
+    gap: 4,
+  },
+  skuBadgeMovil: {
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    fontSize: 11,
+    fontWeight: "700",
+    color: tema.colors.primaryDark,
+    backgroundColor: "#fef3c7",
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  ubicacionTextoMovil: {
+    fontSize: 11,
+    color: "#64748b",
+    flexShrink: 1,
+  },
+  stockPrincipalMovil: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  stockMinimoMovil: {
+    fontSize: 10,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  pmpPrincipalMovil: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1e293b",
+  },
+  badgeAlertaMovil: {
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  badgeAlertaTextoMovil: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  franjaDetalleMovil: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 8,
+    backgroundColor: "#f8fafc",
+    borderTopWidth: 1,
+    borderTopColor: "#f1f5f9",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  franjaDetalleInfo: {
+    flex: 1,
+    minWidth: 160,
+  },
+  franjaDetalleTexto: {
+    fontSize: 11,
+    color: "#475569",
+  },
+  franjaDetalleLabel: {
+    fontWeight: "700",
+    color: "#1e293b",
+  },
+  botonVerCardexMovil: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: tema.colors.primaryLight,
+    borderWidth: 1,
+    borderColor: tema.colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  botonVerCardexTexto: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: tema.colors.primaryDark,
+  },
+  // =========================================================================
+  // ESTILOS DE TABLA DESKTOP
+  // =========================================================================
   scrollHorizontal: {
     width: "100%",
   },

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Platform,
   ScrollView,
@@ -27,6 +27,7 @@ import {
 } from "@/componentes/comunes";
 import { MovimientoCardex, Producto, Proyecto, RegistroMerma } from "@/nucleo/tipos";
 import { estilos } from "./estilos";
+import { construirQueryCardex, descargarCardexExcel, obtenerCardexApi } from "./cardexApi";
 import { SeccionInformeMovimientos, SeccionInformeInventario, SeccionInformeProyectos, SeccionInformeMateriales, SeccionInformeGastos, SeccionInformeMermas } from "./componentes";
 import {
   exportarInformeExcelWeb,
@@ -56,7 +57,6 @@ export const PantallaInformes: React.FC = () => {
   const {
     productos,
     proyectos,
-    cardex,
     solicitudesMaterial,
     facturasCompra,
     registrosMerma,
@@ -149,10 +149,33 @@ export const PantallaInformes: React.FC = () => {
   };
 
   // =========================================================================
-  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD)
+  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD) - datos reales desde /api/cardex
   // =========================================================================
+  const [cardexApi, establecerCardexApi] = useState<MovimientoCardex[]>([]);
+  const queryCardex = useMemo(
+    () => construirQueryCardex(period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos),
+    [period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos]
+  );
+
+  useEffect(() => {
+    let cancelado = false;
+    obtenerCardexApi(queryCardex, proyectos)
+      .then((lista) => {
+        if (!cancelado) establecerCardexApi(lista);
+      })
+      .catch((err: Error) => {
+        if (!cancelado) {
+          establecerCardexApi([]);
+          mostrarAviso(err.message);
+        }
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [queryCardex, proyectos]);
+
   const filtradoCardex = useMemo(() => {
-    return cardex.filter((item) => {
+    return cardexApi.filter((item) => {
       const coincidenciasPeriod = esWithinPeriod(item.date);
       const coincidenciasTipo =
         seleccionadoMovementTipo === "todos" || item.type === seleccionadoMovementTipo;
@@ -170,7 +193,7 @@ export const PantallaInformes: React.FC = () => {
 
       return coincidenciasPeriod && coincidenciasTipo && coincidenciasProyecto && coincidenciasQuery;
     });
-  }, [cardex, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
+  }, [cardexApi, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
 
   const cardexTotals = useMemo(() => {
     let totalIn = 0;
@@ -387,6 +410,16 @@ export const PantallaInformes: React.FC = () => {
   // EXPORTACIÓN A EXCEL / CSV
   // =========================================================================
   const manejarExportar = (format: "pdf" | "excel") => {
+    // Cardex: el Excel sale del backend con los mismos filtros de la pantalla
+    if (format === "excel" && activoPestana === "movimientos") {
+      if (Platform.OS !== "web") {
+        mostrarAviso("La descarga del Excel del Cardex está disponible desde la versión web por ahora.");
+        return;
+      }
+      descargarCardexExcel(queryCardex).catch((err: Error) => mostrarAviso(err.message));
+      return;
+    }
+
     let headers: string[] = [];
     let filas: any[] = [];
     let filename = `reporte_${activoPestana}`;
@@ -1026,59 +1059,59 @@ export const PantallaInformes: React.FC = () => {
             </View>
 
             {/* TAB 1: MOVIMIENTOS */}
-      <SeccionInformeMovimientos
-        activoPestana={activoPestana}
-        cardexTotals={cardexTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoCardex={filtradoCardex}
-        width={width}
-      />
+            <SeccionInformeMovimientos
+              activoPestana={activoPestana}
+              cardexTotals={cardexTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoCardex={filtradoCardex}
+              width={width}
+            />
 
             {/* TAB 2: INVENTARIO */}
-      <SeccionInformeInventario
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProductos={filtradoProductos}
-        inventarioTotals={inventarioTotals}
-        width={width}
-      />
+            <SeccionInformeInventario
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProductos={filtradoProductos}
+              inventarioTotals={inventarioTotals}
+              width={width}
+            />
 
             {/* TAB 3: PROYECTOS */}
-      <SeccionInformeProyectos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProyectos={filtradoProyectos}
-        proyectosTotals={proyectosTotals}
-        width={width}
-      />
+            <SeccionInformeProyectos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProyectos={filtradoProyectos}
+              proyectosTotals={proyectosTotals}
+              width={width}
+            />
 
             {/* TAB 4: MATERIALES EN PROYECTOS */}
-      <SeccionInformeMateriales
-        activoPestana={activoPestana}
-        asignadoMateriales={asignadoMateriales}
-        asignadoMaterialesTotals={asignadoMaterialesTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        width={width}
-      />
+            <SeccionInformeMateriales
+              activoPestana={activoPestana}
+              asignadoMateriales={asignadoMateriales}
+              asignadoMaterialesTotals={asignadoMaterialesTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              width={width}
+            />
 
             {/* TAB 5: GASTOS Y COMPRAS DEL MES */}
-      <SeccionInformeGastos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoPurchases={filtradoPurchases}
-        purchasesTotals={purchasesTotals}
-        width={width}
-      />
+            <SeccionInformeGastos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoPurchases={filtradoPurchases}
+              purchasesTotals={purchasesTotals}
+              width={width}
+            />
 
             {/* TAB 6: MERMAS */}
-      <SeccionInformeMermas
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoWastes={filtradoWastes}
-        mermaTotals={mermaTotals}
-        productos={productos}
-        width={width}
-      />
+            <SeccionInformeMermas
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoWastes={filtradoWastes}
+              mermaTotals={mermaTotals}
+              productos={productos}
+              width={width}
+            />
           </Tarjeta>
         </ScrollView>
       </View>

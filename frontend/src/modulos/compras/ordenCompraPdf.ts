@@ -90,19 +90,19 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      border-bottom: 2px solid #d97706;
+      border-bottom: 2px solid #4f46e5;
       padding-bottom: 16px;
       margin-bottom: 18px;
     }
     .empresa-titulo {
       font-size: 18px;
       font-weight: 900;
-      color: #b45309;
+      color: #4338ca;
       margin: 0 0 4px 0;
     }
     .empresa-sub {
       font-size: 12px;
-      color: #44403c;
+      color: #334155;
       margin: 2px 0;
     }
     .folio-bloque {
@@ -111,13 +111,13 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
     .doc-tipo {
       font-size: 14px;
       font-weight: 800;
-      color: #1c1917;
+      color: #1e1b4b;
       letter-spacing: 0.5px;
     }
     .doc-codigo {
       font-size: 17px;
       font-weight: 900;
-      color: #d97706;
+      color: #4f46e5;
       margin: 4px 0;
     }
     .estado-pill {
@@ -127,13 +127,13 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
       border-radius: 999px;
       font-size: 11px;
       font-weight: 700;
-      background-color: #fef3c7;
-      color: #b45309;
-      border: 1px solid #fde68a;
+      background-color: #eef2ff;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
     }
     .caja-proveedor {
-      background-color: #fafaf9;
-      border: 1px solid #e7e5e4;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
       border-radius: 6px;
       padding: 12px 14px;
       margin-bottom: 16px;
@@ -142,24 +142,24 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
       display: block;
       font-size: 10px;
       font-weight: 700;
-      color: #78716c;
+      color: #64748b;
       letter-spacing: 0.6px;
       margin-bottom: 4px;
     }
     .proveedor-nombre {
       font-size: 15px;
       font-weight: 700;
-      color: #1c1917;
+      color: #1e1b4b;
       margin: 0;
     }
     .proveedor-meta {
       font-size: 12px;
-      color: #44403c;
+      color: #334155;
       margin: 3px 0 0 0;
     }
     .caja-notas {
-      background-color: #fef3c7;
-      border: 1px solid #fde68a;
+      background-color: #eef2ff;
+      border: 1px solid #c7d2fe;
       border-radius: 6px;
       padding: 10px 14px;
       margin-bottom: 16px;
@@ -167,7 +167,7 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
     .caja-notas p {
       margin: 0;
       font-size: 12px;
-      color: #78350f;
+      color: #312e81;
     }
     table {
       width: 100%;
@@ -176,7 +176,7 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
       margin-bottom: 18px;
     }
     th {
-      background-color: #1c1917;
+      background-color: #1e1b4b;
       color: #ffffff;
       font-size: 11px;
       font-weight: 700;
@@ -186,11 +186,11 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
     td {
       font-size: 12px;
       padding: 8px 10px;
-      border-bottom: 1px solid #e7e5e4;
+      border-bottom: 1px solid #e2e8f0;
     }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color: #44403c;
+      color: #334155;
       font-size: 11px;
     }
     .centro { text-align: center; }
@@ -203,23 +203,23 @@ export const generarHtmlOrdenCompra = (orden: OrdenCompra): string => {
     }
     .totales-tabla {
       width: 280px;
-      border-top: 2px solid #d6d3d1;
+      border-top: 2px solid #cbd5e1;
       padding-top: 10px;
     }
     .total-fila {
       display: flex;
       justify-content: space-between;
       font-size: 13px;
-      color: #44403c;
+      color: #334155;
       margin-bottom: 6px;
     }
     .total-final {
-      border-top: 1px solid #d6d3d1;
+      border-top: 1px solid #cbd5e1;
       padding-top: 8px;
       margin-top: 6px;
       font-size: 15px;
       font-weight: 900;
-      color: #b45309;
+      color: #4338ca;
     }
     .firmas {
       display: flex;

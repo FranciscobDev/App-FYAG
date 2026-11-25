@@ -200,13 +200,25 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
   const ivaOrden = Math.round(subtotalOrden * 0.19);
   const totalOrden = subtotalOrden + ivaOrden;
 
-  const opcionesProductos: OpcionSelectorBuscable<string>[] = productos.map((p: any) => ({
-    label: p.name,
-    value: p.sku,
-    hint: `SKU: ${p.sku} • Stock: ${p.stock} ${p.unit} • Ref: ${formatearCLP(p.unitCost)}`,
-    badge: p.unit,
-    icon: "cube-outline",
-  }));
+  const opcionesProveedores: OpcionSelectorBuscable<string>[] = proveedores
+    .filter((s: any) => !s.disabled)
+    .map((s: any) => ({
+      label: s.tradeName || s.businessName,
+      value: String(s.id),
+      hint: `RUT: ${s.rut || "Sin RUT"}${s.category ? ` • ${s.category}` : ""}`,
+      badge: s.ratingAvg ? `★ ${Number(s.ratingAvg).toFixed(1)}` : undefined,
+      icon: "business-outline",
+    }));
+
+  const opcionesProductos: OpcionSelectorBuscable<string>[] = productos
+    .filter((p: any) => !p.disabled)
+    .map((p: any) => ({
+      label: `${p.sku} • ${p.name}`,
+      value: String(p.sku),
+      hint: `Stock: ${p.stock} ${p.unit} (Mín: ${p.minStock ?? 0}) • Costo ref: ${formatearCLP(p.unitCost)}`,
+      badge: p.unit,
+      icon: "cube-outline",
+    }));
 
   const manejarCambiarProductoLinea = (indice: number, nuevoSku: string) => {
     const productoElegido = productos.find((p: any) => p.sku === nuevoSku);
@@ -270,109 +282,249 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
           MODALES DE APOYO
           ===================================================================== */}
 
-      {/* MODAL 1: FORMULARIO DE ORDEN DE COMPRA (SOLO EDITABLE EN BORRADOR) */}
+      {/* MODAL 1: FORMULARIO DE ORDEN DE COMPRA (DISEÑO INDUSTRIAL HOMOLOGADO CON FACTURAS) */}
       <VistaModal
         visible={poModal}
         onClose={() => establecerPoModal(false)}
         title={editandoPo ? `Editar Orden: ${editandoPo.code}` : "Nueva Orden de Compra"}
-        subtitle={esSoloLectura ? "Solo lectura (ya aprobada)" : "Editable solo en estado Borrador"}
+        subtitle={
+          esSoloLectura
+            ? "Modo solo lectura (la orden ya fue aprobada y enviada)"
+            : "Emisión a proveedor homologado, cálculo automático de Neto, IVA (19%) y proyección de stock"
+        }
+        maxWidth={640}
       >
         {esSoloLectura && (
-          <View style={estilos.ocSoloLecturaAviso}>
+          <View style={[estilos.ocSoloLecturaAviso, { marginBottom: 12 }]}>
             <Ionicons name="lock-closed-outline" size={16} color={tema.colors.warnDark} />
             <Text style={estilos.ocSoloLecturaTexto}>
-              La orden {editandoPo?.code} ya salió de Borrador y no admite modificaciones.
+              La orden {editandoPo?.code} ya salió de estado Borrador y no admite modificaciones.
             </Text>
           </View>
         )}
 
-        {/* 1. PROVEEDOR Y PLAZOS */}
-        <Text style={estilos.formularioSeccionEncabezado}>1. Proveedor y Plazo de Entrega</Text>
-        <Text style={estilos.campoEtiqueta}>Proveedor:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          {proveedores
-            .filter((s: any) => !s.disabled)
-            .map((s: any) => (
-              <TouchableOpacity
-                key={s.id}
-                disabled={esSoloLectura}
-                onPress={() => !esSoloLectura && establecerSeleccionadoProveedorId(s.id)}
-                style={[
-                  estilos.chipBoton,
-                  seleccionadoProveedorId === s.id && estilos.chipBotonActivo,
-                  esSoloLectura && { opacity: 0.7 },
-                ]}
-              >
-                <Text style={[estilos.chipTexto, seleccionadoProveedorId === s.id && estilos.chipTextoActivo]}>
-                  {s.businessName}
-                </Text>
-              </TouchableOpacity>
-            ))}
-        </ScrollView>
-
-        <TouchableOpacity
-          disabled={esSoloLectura}
-          onPress={() => !esSoloLectura && establecerPoEsAutomaticoMinimo(!poEsAutomaticoMinimo)}
-          style={[estilos.checkboxFila, esSoloLectura && { opacity: 0.7 }]}
+        {/* SECCIÓN 1: DATOS DEL PROVEEDOR Y CONDICIONES DE ENTREGA */}
+        <View
+          style={{
+            backgroundColor: "#f8fafc",
+            borderWidth: 1,
+            borderColor: tema.colors.border,
+            borderRadius: 12,
+            padding: 12,
+            marginBottom: 12,
+          }}
         >
-          <Ionicons
-            name={poEsAutomaticoMinimo ? "checkbox" : "square-outline"}
-            size={20}
-            color={tema.colors.primary}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
+            <Ionicons name="business-outline" size={16} color={tema.colors.primaryDark} />
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "800",
+                color: tema.colors.text,
+                textTransform: "uppercase",
+              }}
+            >
+              1. Proveedor y Plazo de Entrega
+            </Text>
+          </View>
+
+          <SelectorBuscable<string>
+            label="Proveedor Homologado"
+            required
+            options={opcionesProveedores}
+            value={String(seleccionadoProveedorId || "")}
+            onChange={(nuevoId) => !esSoloLectura && establecerSeleccionadoProveedorId(nuevoId)}
+            placeholder="Seleccionar proveedor..."
+            searchPlaceholder="Buscar proveedor por nombre, RUT o rubro..."
+            disabled={esSoloLectura}
           />
-          <Text style={estilos.checkboxTexto}>
-            Marcar como generada automáticamente por stock mínimo
-          </Text>
-        </TouchableOpacity>
 
-        <CampoTexto
-          label="Fecha Estimada de Entrega Requerida"
-          value={poEsperadoFecha}
-          onChangeText={establecerPoEsperadoFecha}
-          placeholder="YYYY-MM-DD"
-          disabled={esSoloLectura}
-        />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+            <View style={{ flex: 1, minWidth: 160 }}>
+              <CampoTexto
+                label="Fecha Estimada de Entrega"
+                required
+                value={poEsperadoFecha}
+                onChangeText={establecerPoEsperadoFecha}
+                placeholder="YYYY-MM-DD"
+                disabled={esSoloLectura}
+                containerStyle={{ marginBottom: 0 }}
+              />
+            </View>
 
-        {/* 2. ÍTEMS REQUERIDOS */}
-        <Text style={estilos.formularioSeccionEncabezado}>2. Líneas de Compra e Insumos</Text>
+            <View style={{ flex: 1.2, minWidth: 190 }}>
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: "700",
+                  color: tema.colors.textSecondary,
+                  marginBottom: 5,
+                }}
+              >
+                Origen de la Orden
+              </Text>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                disabled={esSoloLectura}
+                onPress={() => !esSoloLectura && establecerPoEsAutomaticoMinimo(!poEsAutomaticoMinimo)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  minHeight: 42,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                  borderWidth: 1.5,
+                  backgroundColor: poEsAutomaticoMinimo ? "#fffbeb" : "#ffffff",
+                  borderColor: poEsAutomaticoMinimo ? "#f59e0b" : tema.colors.borderDark,
+                  opacity: esSoloLectura ? 0.7 : 1,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                  <Ionicons
+                    name={poEsAutomaticoMinimo ? "flash" : "create-outline"}
+                    size={16}
+                    color={poEsAutomaticoMinimo ? "#b45309" : tema.colors.textSecondary}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "800",
+                      color: poEsAutomaticoMinimo ? "#92400e" : tema.colors.text,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {poEsAutomaticoMinimo ? "Automática (Stock Mín.)" : "Emisión Manual"}
+                  </Text>
+                </View>
+                <Ionicons
+                  name={poEsAutomaticoMinimo ? "checkbox" : "square-outline"}
+                  size={18}
+                  color={poEsAutomaticoMinimo ? tema.colors.primary : tema.colors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* SECCIÓN 2: LÍNEAS DE COMPRA E INSUMOS */}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 8,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Ionicons name="cube-outline" size={16} color={tema.colors.primaryDark} />
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "800",
+                color: tema.colors.text,
+                textTransform: "uppercase",
+              }}
+            >
+              2. Ítems Solicitados ({poElementos.length})
+            </Text>
+          </View>
+
+          {!esSoloLectura && (
+            <Boton
+              title="Agregar Ítem"
+              variant="outline"
+              size="sm"
+              icon="add-outline"
+              onPress={manejarAgregarLinea}
+              style={{ minHeight: 32, paddingHorizontal: 10 }}
+            />
+          )}
+        </View>
+
         {poElementos.map((item, idx) => {
           const prod = productos.find((p: any) => p.sku === item.sku);
           const opcionesDisponibles = opcionesProductos.filter(
             (op) => op.value === item.sku || !poElementos.some((el) => el.sku === op.value)
           );
           const totalLinea = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+          const stockActual = Number(prod?.stock ?? 0);
+          const stockMinimo = Number(prod?.minStock ?? 0);
+          const bajoMinimo = prod && stockActual <= stockMinimo;
+          const stockProyectado = stockActual + (Number(item.quantity) || 0);
 
           return (
-            <View key={`${item.sku}_${idx}`} style={estilos.ocLineaTarjeta}>
-              <View style={estilos.ocLineaEncabezado}>
-                <Text style={estilos.ocLineaTitulo}>Línea #{idx + 1}</Text>
-                <View style={estilos.ocLineaAccionesDerecha}>
-                  <Text style={estilos.ocLineaTotalTexto}>{formatearCLP(totalLinea)}</Text>
-                  {!esSoloLectura && (
-                    <TouchableOpacity
-                      onPress={() => manejarEliminarLinea(idx)}
-                      style={estilos.ocLineaEliminarBoton}
-                      accessibilityLabel={`Eliminar línea ${idx + 1}`}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={tema.colors.danger} />
-                    </TouchableOpacity>
-                  )}
+            <View
+              key={`${item.sku}_${idx}`}
+              style={{
+                backgroundColor: "#f8fafc",
+                borderWidth: 1,
+                borderColor: tema.colors.borderDark,
+                borderLeftWidth: 4,
+                borderLeftColor: bajoMinimo ? "#d97706" : tema.colors.primary,
+                borderRadius: 10,
+                padding: 10,
+                marginBottom: 10,
+              }}
+            >
+              {/* Fila Superior: N° Ítem + Selector Buscable de Insumo + Eliminar */}
+              <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 8 }}>
+                <View
+                  style={{
+                    backgroundColor: tema.colors.primaryLight,
+                    borderWidth: 1,
+                    borderColor: tema.colors.primaryBorder,
+                    borderRadius: 6,
+                    paddingHorizontal: 8,
+                    height: 40,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: tema.colors.primaryDark }}>
+                    #{idx + 1}
+                  </Text>
                 </View>
+
+                <View style={{ flex: 1 }}>
+                  <SelectorBuscable<string>
+                    label={`Insumo / Material Línea #${idx + 1}`}
+                    options={opcionesDisponibles}
+                    value={item.sku}
+                    onChange={(nuevoSku) => manejarCambiarProductoLinea(idx, nuevoSku)}
+                    placeholder="Seleccionar insumo del catálogo..."
+                    searchPlaceholder="Buscar por nombre o SKU..."
+                    disabled={esSoloLectura}
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                </View>
+
+                {!esSoloLectura && poElementos.length > 1 && (
+                  <Pressable
+                    onPress={() => manejarEliminarLinea(idx)}
+                    hitSlop={8}
+                    accessibilityLabel={`Eliminar línea ${idx + 1}`}
+                    style={{
+                      width: 38,
+                      height: 40,
+                      borderRadius: 8,
+                      backgroundColor: "#fef2f2",
+                      borderWidth: 1,
+                      borderColor: "#fca5a5",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={tema.colors.danger} />
+                  </Pressable>
+                )}
               </View>
 
-              <SelectorBuscable<string>
-                label="Insumo / Material"
-                options={opcionesDisponibles}
-                value={item.sku}
-                onChange={(nuevoSku) => manejarCambiarProductoLinea(idx, nuevoSku)}
-                placeholder="Seleccionar insumo..."
-                searchPlaceholder="Buscar por nombre o SKU..."
-                disabled={esSoloLectura}
-              />
-
-              <View style={estilos.ocLineaMontosFila}>
-                <View style={estilos.ocLineaCampoCol}>
-                  <Text style={estilos.ocLineaMiniEtiqueta}>
+              {/* Fila de Cantidad y Precio Unitario Neto */}
+              <View style={[estilos.descuentoFila, { marginBottom: 6 }]}>
+                <View style={estilos.discColumna}>
+                  <Text style={estilos.discEtiqueta}>
                     Cantidad ({prod ? prod.unit : "un"})
                   </Text>
                   <TextInput
@@ -380,83 +532,135 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
                     onChangeText={(v) => manejarActualizarNumeroLinea(idx, "quantity", v)}
                     keyboardType="numeric"
                     editable={!esSoloLectura}
-                    style={[estilos.poNumeroEntrada, { width: "100%" }]}
-                    placeholder="Cant."
+                    style={[estilos.discEntrada, { height: 36, backgroundColor: "#ffffff" }]}
+                    placeholder="0"
                   />
                 </View>
 
-                <View style={estilos.ocLineaCampoCol}>
-                  <Text style={estilos.ocLineaMiniEtiqueta}>Precio Unitario Neto (CLP)</Text>
+                <View style={[estilos.discColumna, { marginRight: 0 }]}>
+                  <Text style={estilos.discEtiqueta}>Precio Unitario Neto ($ CLP)</Text>
                   <TextInput
                     value={item.unitPrice === 0 ? "" : String(item.unitPrice)}
                     onChangeText={(v) => manejarActualizarNumeroLinea(idx, "unitPrice", v)}
                     keyboardType="numeric"
                     editable={!esSoloLectura}
-                    style={[estilos.poNumeroEntrada, { width: "100%" }]}
-                    placeholder="Precio neto"
+                    style={[estilos.discEntrada, { height: 36, backgroundColor: "#ffffff" }]}
+                    placeholder="0"
                   />
                 </View>
+              </View>
+
+              {/* Barra compacta de Stock actual/proyectado y Subtotal de Línea */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  backgroundColor: "#ffffff",
+                  borderWidth: 1,
+                  borderColor: bajoMinimo ? "#fcd34d" : tema.colors.primaryBorder,
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                  gap: 6,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                  <Ionicons
+                    name={bajoMinimo ? "alert-circle" : "layers-outline"}
+                    size={13}
+                    color={bajoMinimo ? "#d97706" : tema.colors.primaryDark}
+                  />
+                  <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                    Stock bodega:{" "}
+                    <Text
+                      style={{
+                        fontWeight: "800",
+                        color: bajoMinimo ? "#b45309" : tema.colors.text,
+                      }}
+                    >
+                      {stockActual} {prod?.unit || "un"}
+                    </Text>{" "}
+                    → Tras recibir:{" "}
+                    <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                      {stockProyectado} {prod?.unit || "un"}
+                    </Text>
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: "900", color: tema.colors.primaryDark }}>
+                  Subtotal: {formatearCLP(totalLinea)}
+                </Text>
               </View>
             </View>
           );
         })}
 
-        {!esSoloLectura && (
-          <Boton
-            title="+ Agregar Línea de Compra"
-            variant="outline"
-            size="sm"
-            onPress={manejarAgregarLinea}
-            style={{ marginVertical: 8 }}
-          />
-        )}
-
+        {/* OBSERVACIONES DE DESPACHO */}
         <CampoTexto
-          label="Observaciones o condiciones de despacho"
+          label="Observaciones o Condiciones de Despacho"
           value={poNotas}
           onChangeText={establecerPoNotas}
-          placeholder="Ej: Entregar en bodega central antes de las 16:00"
+          placeholder="Ej: Entregar en bodega central antes de las 16:00 hrs."
           disabled={esSoloLectura}
+          containerStyle={{ marginTop: 2, marginBottom: 8 }}
         />
 
-        {/* Resumen financiero en tiempo real */}
-        <View style={estilos.ocResumenVivoCaja}>
-          <View style={estilos.ocResumenFila}>
-            <Text style={estilos.ocResumenEtiqueta}>Subtotal Neto ({poElementos.length} líneas)</Text>
-            <Text style={estilos.ocResumenValor}>{formatearCLP(subtotalOrden)}</Text>
+        {/* RESUMEN FINANCIERO EN VIVO COMPACTO (TICKET CONTABLE) */}
+        <View style={[estilos.financialResumenTarjeta, { padding: 12, marginTop: 2 }]}>
+          <View style={estilos.resumenLinea}>
+            <Text style={estilos.resumenEtiqueta}>
+              Subtotal Neto ({poElementos.length} {poElementos.length === 1 ? "ítem" : "ítems"}):
+            </Text>
+            <Text style={estilos.resumenValor}>{formatearCLP(subtotalOrden)}</Text>
           </View>
-          <View style={estilos.ocResumenFila}>
-            <Text style={estilos.ocResumenEtiqueta}>IVA (19%)</Text>
-            <Text style={estilos.ocResumenValor}>{formatearCLP(ivaOrden)}</Text>
+          <View style={estilos.resumenLinea}>
+            <Text style={estilos.resumenEtiqueta}>IVA (19%):</Text>
+            <Text style={estilos.resumenValor}>{formatearCLP(ivaOrden)}</Text>
           </View>
-          <View style={estilos.ocResumenTotalFila}>
-            <Text style={estilos.ocResumenTotalEtiqueta}>Total c/ IVA</Text>
-            <Text style={estilos.ocResumenTotalValor}>{formatearCLP(totalOrden)}</Text>
+          <View style={[estilos.resumenLinea, estilos.resumenTotalLinea]}>
+            <Text style={estilos.totalEtiquetaBig}>Total Orden c/ IVA:</Text>
+            <Text style={estilos.totalValorBig}>{formatearCLP(totalOrden)}</Text>
           </View>
         </View>
 
         {Boolean(poError) && <Text style={estilos.errorTexto}>{poError}</Text>}
 
-        <View style={estilos.modalBotonesFila}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+            gap: 10,
+            marginTop: 12,
+          }}
+        >
           {esSoloLectura ? (
             <Boton
               title="Cerrar"
-              variant="secondary"
+              variant="outline"
+              size="sm"
               onPress={() => establecerPoModal(false)}
+              style={{ minHeight: 40, minWidth: 120 }}
             />
           ) : (
             <>
               <Boton
-                title={editandoPo ? "Guardar Cambios (Borrador)" : "Guardar Borrador"}
-                variant="secondary"
+                title={editandoPo ? "Guardar Borrador" : "Guardar Borrador"}
+                variant="outline"
+                size="sm"
+                icon="save-outline"
                 onPress={() => manejarGuardarCompraOrden(true)}
-                style={{ marginRight: 8 }}
+                style={{ minHeight: 40, flex: 1 }}
               />
               <Boton
-                title="Aprobar y Enviar"
+                title="Aprobar y Enviar OC"
                 variant="primary"
+                size="sm"
                 icon="paper-plane-outline"
                 onPress={() => manejarGuardarCompraOrden(false)}
+                style={{ minHeight: 40, flex: 1.4 }}
               />
             </>
           )}

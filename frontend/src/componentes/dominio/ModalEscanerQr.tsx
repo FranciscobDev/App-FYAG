@@ -586,51 +586,6 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
                 />
               </View>
             </View>
-
-            {/* Accesos rápidos de etiquetas del catálogo */}
-            <View style={estilos.simulatorSeccion}>
-              <Text style={estilos.simEncabezado}>
-                Accesos Rápidos de Etiquetas QR / Barras:
-              </Text>
-              <View style={estilos.chipsFila}>
-                {muestrasRapidas.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[estilos.simChip, item.esH47 && estilos.simChipH47]}
-                    onPress={() => procesarCodigoDetectado(item.codigo, 340)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name={item.esH47 ? "qr-code-outline" : "barcode-outline"}
-                      size={16}
-                      color={item.esH47 ? tema.colors.okDark : tema.colors.primaryDark}
-                    />
-                    <View style={{ flexShrink: 1 }}>
-                      <Text style={estilos.simChipTexto} numberOfLines={1}>
-                        {item.etiqueta}
-                      </Text>
-                      <Text style={estilos.simChipSub}>{item.subetiqueta}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-
-                {debeValidarExistencia && (
-                  <TouchableOpacity
-                    style={estilos.simChipError}
-                    onPress={() => procesarCodigoDetectado("QR-INEXISTENTE-999", 290)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="warning-outline" size={16} color={tema.colors.danger} />
-                    <View style={{ flexShrink: 1 }}>
-                      <Text style={[estilos.simChipTexto, { color: tema.colors.danger }]}>
-                        Probar Código Inexistente
-                      </Text>
-                      <Text style={estilos.simChipSub}>Valida detención con alerta</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
           </ScrollView>
 
           <Boton

@@ -36,9 +36,9 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
   let iconoColumna = esPendiente ? tema.colors.primaryDark : tema.colors.ok;
 
   if (esOscuro) {
-    bg = esPendiente ? "rgba(217, 119, 6, 0.25)" : "#292524";
-    borde = esPendiente ? "#d97706" : "#44403c";
-    textoColumna = esPendiente ? "#f59e0b" : "#e7e5e4";
+    bg = esPendiente ? "rgba(217, 119, 6, 0.25)" : "#1e293b";
+    borde = esPendiente ? "#d97706" : "#334155";
+    textoColumna = esPendiente ? "#f59e0b" : "#e2e8f0";
     iconoColumna = esPendiente ? "#f59e0b" : "#22c55e";
   }
 

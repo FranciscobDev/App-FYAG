@@ -42,9 +42,9 @@ export const estilos = StyleSheet.create({
     flex: 1,
   },
   pestanaBarraContenedor: {
-    backgroundColor: "#1c1917", // Dark Titanium Technical Chassis
+    backgroundColor: "#0f172a", // Dark Titanium Technical Chassis
     borderBottomWidth: 1,
-    borderBottomColor: "#292524",
+    borderBottomColor: "#1e293b",
   },
   pestanaScrollContenido: {
     paddingHorizontal: tema.spacing.sm,
@@ -59,16 +59,16 @@ export const estilos = StyleSheet.create({
     minHeight: 46,
   },
   pestanaElementoActivo: {
-    borderBottomColor: "#f59e0b",
+    borderBottomColor: "#818cf8",
   },
   pestanaEtiqueta: {
     fontSize: tema.fontSize.xs,
     fontWeight: "600",
-    color: "#a8a29e",
+    color: "#94a3b8",
     marginLeft: 6,
   },
   pestanaEtiquetaActivo: {
-    color: "#f59e0b",
+    color: "#818cf8",
     fontWeight: "bold",
   },
   pestanaContenido: {
@@ -101,6 +101,7 @@ export const estilos = StyleSheet.create({
   },
   buscarEntrada: {
     flex: 1,
+    minWidth: 0,
     fontSize: tema.fontSize.sm,
     color: tema.colors.text,
   },
