@@ -30,6 +30,23 @@ export interface ResultadoSolicitudApi<T> {
 
 export type UrgenciaSolicitud = "normal" | "alta" | "urgente";
 
+/** Corrige cadenas UTF-8 que fueron leídas como Latin-1 / Windows-1252 (ej. "ÃƒÂ³" -> "ó"). */
+export const repararTextoUtf8 = (texto?: string | null): string => {
+  if (!texto) return "";
+  let limpio = String(texto);
+  for (let i = 0; i < 2; i++) {
+    if (!/[ÃÂâ]/.test(limpio)) break;
+    try {
+      const decodificado = decodeURIComponent(escape(limpio));
+      if (decodificado === limpio) break;
+      limpio = decodificado;
+    } catch {
+      break;
+    }
+  }
+  return limpio;
+};
+
 async function peticion<T>(ruta: string, opciones?: RequestInit): Promise<ResultadoSolicitudApi<T>> {
   try {
     const res = await fetch(`${obtenerBaseUrlApi()}${ruta}`, {
@@ -54,16 +71,12 @@ const prefijoUrgencia = (urgencia: UrgenciaSolicitud): string =>
   urgencia === "urgente" ? "[URGENTE] " : urgencia === "alta" ? "[ALTA] " : "";
 
 const separarUrgencia = (descripcion: string | null): { urgencia: UrgenciaSolicitud; comentario: string } => {
-  const texto = descripcion ?? "";
+  const texto = repararTextoUtf8(descripcion);
   if (texto.startsWith("[URGENTE] ")) return { urgencia: "urgente", comentario: texto.slice(10) };
   if (texto.startsWith("[ALTA] ")) return { urgencia: "alta", comentario: texto.slice(7) };
   return { urgencia: "normal", comentario: texto };
 };
 
-/**
- * Guarda la solicitud en la base de datos (solicitudes_insumos). El servidor valida el estado del proyecto
- * y el stock disponible; si rechaza, la solicitud no existe.
- */
 export const crearSolicitudInsumosApi = (datos: {
   idProyecto: number;
   items: { sku: string; cantidad: number }[];
@@ -84,12 +97,23 @@ export const crearSolicitudInsumosApi = (datos: {
 export const listarSolicitudesApi = () => peticion<SolicitudServidor[]>("/solicitudes");
 
 const ESTADO_EN_APP: Record<string, SolicitudMaterial["status"]> = {
-  Pendiente: "pendiente",
-  Aprobada: "aprobada",
-  "En Proceso": "aprobada",
-  Rechazada: "rechazada",
-  Anulada: "anulada",
-  Completada: "entregada",
+  pendiente: "pendiente",
+  aprobada: "aprobada",
+  aprobado: "aprobada",
+  "en proceso": "aprobada",
+  en_proceso: "aprobada",
+  parcial: "pendiente",
+  rechazada: "rechazada",
+  rechazado: "rechazada",
+  anulada: "anulada",
+  anulado: "anulada",
+  completada: "entregada",
+  entregada: "entregada",
+};
+
+const normalizarEstadoSolicitud = (estado?: string | null): SolicitudMaterial["status"] => {
+  const clave = String(estado ?? "").trim().toLowerCase();
+  return ESTADO_EN_APP[clave] ?? "pendiente";
 };
 
 /** Convierte una solicitud de la base al modelo que usa la aplicación. */
@@ -106,20 +130,68 @@ export const solicitudDesdeApi = (
     code: `SOL-${anio}-${String(fila.id_solicitud).padStart(3, "0")}`,
     projectId: String(fila.id_proyecto),
     projectCode: proyecto?.code ?? `PROJ-${fila.id_proyecto}`,
-    projectName: proyecto?.name ?? fila.nombre_proyecto,
+    projectName: repararTextoUtf8(proyecto?.name ?? fila.nombre_proyecto),
     technicianRut: fila.tecnico_rut,
-    technicianName: fila.tecnico_nombre || "Técnico de Terreno",
+    technicianName: repararTextoUtf8(fila.tecnico_nombre) || "Técnico de Terreno",
     date: fecha,
     urgency: urgencia,
-    status: ESTADO_EN_APP[fila.estado_solicitud] ?? "pendiente",
+    status: normalizarEstadoSolicitud(fila.estado_solicitud),
     items: fila.lineas.map((l) => ({
       sku: l.sku ?? "",
-      name: l.nombre_articulo,
+      name: repararTextoUtf8(l.nombre_articulo),
       quantity: Number(l.cantidad_solicitada),
       unit: productos.find((p) => p.sku === l.sku)?.unit ?? "un",
     })),
     comment: comentario || undefined,
-    rejectionReason: fila.motivo_rechazo ?? undefined,
+    rejectionReason: fila.motivo_rechazo ? repararTextoUtf8(fila.motivo_rechazo) : undefined,
     receiptNumber: fila.nro_comprobante ?? undefined,
   };
 };
+
+/** Extrae el ID numérico desde "sol_4" o "4". */
+export const extraerIdSolicitudNumerico = (id: string): number =>
+  Number(String(id).replace(/\D/g, ""));
+
+export const aprobarSolicitudInsumosApi = (idSolicitud: number) =>
+  peticion<{
+    mensaje: string;
+    nro_comprobante?: string;
+    comprobante?: { nro_comprobante?: string };
+    solicitud?: { nro_comprobante?: string };
+  }>(`/solicitudes/${idSolicitud}/aprobar`, {
+    method: "POST",
+  });
+
+export const rechazarSolicitudInsumosApi = (idSolicitud: number, motivoRechazo: string) =>
+  peticion<{ mensaje: string }>(`/solicitudes/${idSolicitud}/rechazar`, {
+    method: "POST",
+    body: JSON.stringify({
+      motivo_rechazo: motivoRechazo,
+      motivo: motivoRechazo,
+    }),
+  });
+
+export const editarSolicitudInsumosApi = (
+  idSolicitud: number,
+  datos: {
+    idProyecto: number;
+    items: { sku: string; cantidad: number }[];
+    comentario?: string;
+    urgencia: UrgenciaSolicitud;
+  }
+) => {
+  const descripcion = `${prefijoUrgencia(datos.urgencia)}${datos.comentario ?? ""}`.trim();
+  return peticion<{ mensaje: string }>(`/solicitudes/${idSolicitud}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      id_proyecto: datos.idProyecto,
+      items: datos.items.map((i) => ({ sku: i.sku, cantidad_solicitada: i.cantidad })),
+      descripcion_solicitud: descripcion || null,
+    }),
+  });
+};
+
+export const anularSolicitudInsumosApi = (idSolicitud: number) =>
+  peticion<{ mensaje: string }>(`/solicitudes/${idSolicitud}/anular`, {
+    method: "POST",
+  });

@@ -10,8 +10,13 @@ import {
 } from "@/modulos/inventario/articulosApi";
 import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
 import {
+  anularSolicitudInsumosApi,
+  aprobarSolicitudInsumosApi,
   crearSolicitudInsumosApi,
+  editarSolicitudInsumosApi,
+  extraerIdSolicitudNumerico,
   listarSolicitudesApi,
+  rechazarSolicitudInsumosApi,
   solicitudDesdeApi,
 } from "@/modulos/solicitudes/solicitudesApi";
 import {
@@ -44,6 +49,7 @@ import {
   RecepcionPendiente,
   Producto,
   Proyecto,
+  DespachoMaterialProyecto,
   RegistroManoObraProyecto,
   FacturaCompra,
   OrdenCompra,
@@ -174,6 +180,15 @@ interface TipoContextoAplicacion {
     error?: string;
     dispatchCode?: string;
     esEntregaCompleta?: boolean;
+  };
+  confirmarRetiroSolicitudTecnico: (
+    requestId: string,
+    technicianRut: string,
+    technicianName: string
+  ) => {
+    success: boolean;
+    error?: string;
+    itemsConfirmados?: { sku: string; name: string; quantity: number; unit: string }[];
   };
 
   // Acciones de compras y órdenes
@@ -348,6 +363,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!devolucionesHidratadas) return;
     void guardarCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas", ordenesDevolucion);
   }, [devolucionesHidratadas, ordenesDevolucion]);
+
   const [devolucionesProveedor, setSupplierReturns] = useState<DevolucionProveedor[]>(DEVOLUCIONES_PROVEEDOR);
   const [devolucionesProvHidratadas, establecerDevolucionesProvHidratadas] = useState(false);
 
@@ -371,6 +387,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!devolucionesProvHidratadas) return;
     void guardarCache<DevolucionProveedor[]>("devoluciones_proveedor_compartidas", devolucionesProveedor);
   }, [devolucionesProvHidratadas, devolucionesProveedor]);
+
   const [cardex, setCardex] = useState<MovimientoCardex[]>(MOVIMIENTOS_CARDEX);
   const [tecnicos] = useState<Tecnico[]>(TECNICOS);
   const [alertas, setAlerts] = useState<AlertaPanel[]>(ALERTAS_PANEL);
@@ -398,6 +415,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!conteosHidratados) return;
     void guardarCache<ConteoFisico[]>("conteos_fisicos_compartidos", conteosFisicos);
   }, [conteosHidratados, conteosFisicos]);
+
   const [hojasServicio, setServiceSheets] = useState<HojaServicio[]>(HOJAS_SERVICIO);
   const [horasTecnico, setTechnicianHours] = useState<HoraTrabajoTecnico[]>(HORAS_TRABAJO_TECNICO);
   const [sesionTrabajoActiva, setActiveWorkSession] = useState<SesionTrabajoActiva | null>(null);
@@ -409,7 +427,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [listaNotificaciones, setNotificationsList] = useState<DetalleNotificacion[]>(DETALLES_NOTIFICACIONES);
 
   // 1. INVENTORY
-  // Catálogo desde la API al iniciar sesión. Los campos que la base no guarda se conservan en memoria.
   const { haySesion } = usarAutenticacion();
   useEffect(() => {
     if (!haySesion) return;
@@ -429,14 +446,36 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
-  // Proyectos desde la API. Para técnicos, el backend devuelve solo sus asignaciones activas.
+  // Proyectos desde la API (conservando despachos incorporados localmente tras retiros confirmados)
   useEffect(() => {
     if (!haySesion) return;
     let cancelado = false;
     const cargar = () => {
       listarProyectos().then((r) => {
         if (!r.ok || !r.data || cancelado) return;
-        setProjects(r.data.map(proyectoDesdeApi));
+        setProjects((prev) =>
+          r.data!.map((fila) => {
+            const desdeApi = proyectoDesdeApi(fila);
+            const existente = prev.find((p) => p.id === desdeApi.id);
+            if (!existente) return desdeApi;
+
+            const despachosApi = desdeApi.dispatches || [];
+            const idsApi = new Set(despachosApi.map((d) => d.id));
+            const despachosLocalesExtra = (existente.dispatches || []).filter(
+              (d) => !idsApi.has(d.id)
+            );
+
+            return {
+              ...desdeApi,
+              dispatches: [...despachosLocalesExtra, ...despachosApi],
+              costReal: Math.max(desdeApi.costReal, existente.costReal),
+              costRealMaterials: Math.max(
+                desdeApi.costRealMaterials || 0,
+                existente.costRealMaterials || 0
+              ),
+            };
+          })
+        );
       });
     };
     cargar();
@@ -447,27 +486,80 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
-  // Solicitudes de material desde la base de datos al iniciar sesión.
-  // Si el servidor no responde, se conserva la lista que ya está en pantalla.
+  // Solicitudes de material desde la base de datos (carga inicial + refresco cada 10 s).
   useEffect(() => {
     if (!haySesion) return;
     let cancelado = false;
-    listarSolicitudesApi().then((r) => {
-      if (!r.ok || !r.data || cancelado) return;
-      setMaterialRequests(
-        r.data.map((fila) =>
-          solicitudDesdeApi(
-            fila,
-            proyectos.find((p) => p.id === String(fila.id_proyecto)),
-            productos
-          )
-        )
-      );
-    });
+
+    const cargarSolicitudes = () => {
+      listarSolicitudesApi().then((r) => {
+        if (!r.ok || !r.data || cancelado) return;
+        setMaterialRequests((prev) =>
+          r.data!.map((fila) => {
+            const mapeada = solicitudDesdeApi(
+              fila,
+              proyectos.find((p) => p.id === String(fila.id_proyecto)),
+              productos
+            );
+            const existente = prev.find((s) => s.id === mapeada.id);
+
+            const yaDespachadaLocal =
+              existente &&
+              (existente.status === "entregada" ||
+                existente.items.some((it) => (it.deliveredQuantity || 0) > 0));
+
+            if (yaDespachadaLocal && mapeada.status !== "entregada") {
+              return {
+                ...mapeada,
+                status: existente.status,
+                receiptNumber: existente.receiptNumber || mapeada.receiptNumber,
+                approvedBy: existente.approvedBy || mapeada.approvedBy,
+                approvedAt: existente.approvedAt || mapeada.approvedAt,
+                items: mapeada.items.map((it) => {
+                  const itemLocal = existente.items.find((li) => li.sku === it.sku);
+                  const maxDelivered = Math.max(
+                    it.deliveredQuantity || 0,
+                    itemLocal?.deliveredQuantity || 0
+                  );
+                  return { ...it, deliveredQuantity: maxDelivered };
+                }),
+                timeline: existente.timeline,
+              };
+            }
+
+            if (
+              existente &&
+              existente.status !== "pendiente" &&
+              mapeada.status === "pendiente"
+            ) {
+              return {
+                ...mapeada,
+                status: existente.status,
+                receiptNumber: existente.receiptNumber || mapeada.receiptNumber,
+                approvedBy: existente.approvedBy || mapeada.approvedBy,
+                approvedAt: existente.approvedAt || mapeada.approvedAt,
+                rejectionReason: existente.rejectionReason || mapeada.rejectionReason,
+                timeline: existente.timeline,
+              };
+            }
+
+            return {
+              ...mapeada,
+              receiptNumber: existente?.receiptNumber || mapeada.receiptNumber,
+              timeline: existente?.timeline,
+            };
+          })
+        );
+      });
+    };
+
+    cargarSolicitudes();
+    const intervalo = setInterval(cargarSolicitudes, 10000);
     return () => {
       cancelado = true;
+      clearInterval(intervalo);
     };
-  }, [haySesion]);
+  }, [haySesion, proyectos, productos]);
 
   // Órdenes de Compra desde la API al iniciar sesión
   useEffect(() => {
@@ -503,7 +595,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  /** Registra alerta automática cuando un insumo alcanza o baja de su stock mínimo. */
   const verificarYGenerarOcAutomaticaPorStockMinimo = (productoEvaluado: Producto) => {
     if (productoEvaluado.disabled || productoEvaluado.stock > productoEvaluado.minStock) {
       return;
@@ -536,7 +627,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         verificarYGenerarOcAutomaticaPorStockMinimo(candidato);
       }
     }
-    // Cambio optimista en pantalla; si el servidor lo rechaza, se revierte
     setProducts((prev) => prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p)));
 
     const cuerpo = productoACuerpoArticulo(updates);
@@ -593,7 +683,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setWasteRecords((prev) => [newRecord, ...prev]);
 
-    // Descontar del stock
     setProducts((prev) =>
       prev.map((p) =>
         p.sku === data.sku
@@ -606,7 +695,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       stock: prod.isBulk ? Number(newStock.toFixed(3)) : newStock,
     });
 
-    // Movimiento en Cardex
     const cardexEntry: MovimientoCardex = {
       id: `cdx_${Date.now()}`,
       sku: data.sku,
@@ -666,7 +754,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setPhysicalCounts((prev) => [newCount, ...prev]);
 
-    // Si diferencia <= 5%, se ajusta directo
     if (!requiresApproval) {
       setProducts((prev) =>
         prev.map((p) => (p.sku === sku ? { ...p, stock: countedStock } : p))
@@ -691,7 +778,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       };
       setCardex((prev) => [cardexEntry, ...prev]);
     } else {
-      // Notificación al Administrador cuando la diferencia supera el umbral del 5 %
       const notifRetenido: DetalleNotificacion = {
         id: `notif_cnt_ret_${Date.now()}`,
         title: `Conteo Físico Retenido (> 5%): ${sku}`,
@@ -772,7 +858,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
     }
 
-    // La solicitud solo existe si la base de datos la guarda. El servidor valida stock y estado del proyecto.
     const respuesta = await crearSolicitudInsumosApi({
       idProyecto: Number(proj.id),
       items: items.map((it) => ({ sku: it.sku, cantidad: it.quantity })),
@@ -820,11 +905,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       ],
     };
 
-    // [FRONT-1 / H6] El stock solicitado pasa inmediatamente de Disponible a Comprometido
     setProducts((prev) => aplicarReservaComprometidoEnCatalogoH6(prev, items));
     setMaterialRequests((prev) => [newReq, ...prev]);
 
-    // Emitir alerta en vivo (H3) para la campana de notificaciones superior (web y móvil)
     const solicitanteNombre = requesterInfo?.name || (tech ? tech.name : "Técnico de Terreno");
     const totalUnidades = items.reduce((acc, it) => acc + Number(it.quantity || 0), 0);
     const nuevaNotifSolicitud: DetalleNotificacion = {
@@ -896,6 +979,25 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((req) => (req.id === id ? solicitudAprobada : req))
     );
 
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void aprobarSolicitudInsumosApi(idNum).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          return;
+        }
+        const folioReal =
+          res.data?.nro_comprobante ??
+          res.data?.comprobante?.nro_comprobante ??
+          res.data?.solicitud?.nro_comprobante;
+        if (folioReal) {
+          setMaterialRequests((prev) =>
+            prev.map((req) => (req.id === id ? { ...req, receiptNumber: folioReal } : req))
+          );
+        }
+      });
+    }
+
     setNotificationsList((prev) => [
       {
         id: `notif_apr_${Date.now()}`,
@@ -923,6 +1025,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!reason || reason.trim().length === 0) {
       return { success: false, error: "El rechazo exige motivo obligatorio." };
     }
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+
     setMaterialRequests((prev) =>
       prev.map((req) => {
         if (req.id !== id) return req;
@@ -945,6 +1049,16 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         };
       })
     );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void rechazarSolicitudInsumosApi(idNum, reason.trim()).then((res) => {
+        if (!res.ok && actual) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+        }
+      });
+    }
+
     return { success: true };
   };
 
@@ -996,6 +1110,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return acc + (prod ? prod.unitCost * it.quantity : 0);
     }, 0);
 
+    const urgenciaFinal = opciones?.urgency || actual.urgency;
+    const comentarioFinal = opciones?.comment !== undefined ? opciones.comment : actual.comment;
+
     setMaterialRequests((prev) =>
       prev.map((req) =>
         req.id === id
@@ -1005,8 +1122,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
               projectCode: proyectoDestino?.code || req.projectCode,
               projectName: proyectoDestino?.name || req.projectName,
               items,
-              urgency: opciones?.urgency || req.urgency,
-              comment: opciones?.comment !== undefined ? opciones.comment : req.comment,
+              urgency: urgenciaFinal,
+              comment: comentarioFinal,
               totalEstimatedValue: totalEstimado,
               timeline: [
                 ...(req.timeline || []),
@@ -1023,6 +1140,22 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           : req
       )
     );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void editarSolicitudInsumosApi(idNum, {
+        idProyecto: Number(proyectoIdDestino),
+        items: items.map((it) => ({ sku: it.sku, cantidad: it.quantity })),
+        comentario: comentarioFinal,
+        urgencia: urgenciaFinal,
+      }).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          setProducts(productos);
+        }
+      });
+    }
+
     return { success: true };
   };
 
@@ -1065,10 +1198,68 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           : req
       )
     );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void anularSolicitudInsumosApi(idNum).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          setProducts(productos);
+        }
+      });
+    }
+
     return { success: true };
   };
 
-  // [FRONT-1] Egreso / Registro de Salida Física de Materiales (Paso 6)
+  // Helper interno: registra el despacho en el proyecto para aumentar automáticamente Asignado y Retirado
+  const incrementarMaterialesEnProyecto = (
+    projectId: string,
+    itemsRetirados: { sku: string; name: string; quantity: number; unit: string }[],
+    referenciaCodigo: string,
+    receptorNombre: string
+  ) => {
+    if (!projectId || itemsRetirados.length === 0) return;
+    const fechaHoy = new Date().toISOString().slice(0, 10);
+
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+
+        let costoAdicional = 0;
+        const nuevosDespachos: DespachoMaterialProyecto[] = itemsRetirados.map((it, idx) => {
+          const prodCat = productos.find(
+            (prod) => prod.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+          );
+          const unitCost = prodCat?.pmp || prodCat?.unitCost || 0;
+          const totalCost = Math.round(unitCost * it.quantity);
+          costoAdicional += totalCost;
+
+          return {
+            id: `dsp_ret_${Date.now()}_${idx}_${it.sku}`,
+            date: fechaHoy,
+            dispatchCode: referenciaCodigo,
+            sku: it.sku,
+            productName: it.name || prodCat?.name || it.sku,
+            quantity: Number(it.quantity.toFixed(3)),
+            unit: it.unit || prodCat?.unit || "un",
+            unitCost,
+            totalCost,
+            deliveredTo: receptorNombre,
+          };
+        });
+
+        return {
+          ...p,
+          costReal: p.costReal + costoAdicional,
+          costRealMaterials: (p.costRealMaterials || 0) + costoAdicional,
+          dispatches: [...nuevosDespachos, ...(p.dispatches || [])],
+        };
+      })
+    );
+  };
+
+  // [FRONT-1] Egreso / Registro de Salida Física de Materiales desde Bodega (Paso 6)
   const despacharSolicitudMaterial = (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
@@ -1098,10 +1289,20 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const nowStr = resultado.registroEgresoInmutable.date;
     const dispatchCode = resultado.registroEgresoInmutable.dispatchCode;
 
-    // 1. Descontar stock en una sola transacción (consumiendo primero de comprometido y luego de disponible)
+    // 1. Descontar stock en catálogo y sincronizar cada artículo modificado con la BD
     setProducts(resultado.catalogoActualizado);
+    resultado.registroEgresoInmutable.items.forEach((itemD) => {
+      const prodAct = resultado.catalogoActualizado.find(
+        (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
+      );
+      if (prodAct?.id) {
+        void actualizarArticuloApi(prodAct.id, {
+          cantidad_disponible: prodAct.stock,
+        });
+      }
+    });
 
-    // 2. Registrar movimientos irreversibles en el Cardex vinculados al proyecto y al técnico que retira
+    // 2. Registrar movimientos irreversibles en el Cardex
     const nuevosMovimientosCardex: MovimientoCardex[] = resultado.registroEgresoInmutable.items.map((itemD) => {
       const prodActualizado = resultado.catalogoActualizado.find(
         (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
@@ -1132,23 +1333,39 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     });
     setCardex((prev) => [...nuevosMovimientosCardex, ...prev]);
 
-    // Actualizar cantidades entregadas en la solicitud
+    // 3. Actualizar cantidades entregadas en la solicitud y sumarlas al proyecto
+    const itemsParaSumarProyecto: { sku: string; name: string; quantity: number; unit: string }[] = [];
+    const updatedItems = req.items.map((it) => {
+      const itemD = itemsToDispatch.find((d) => d.sku === it.sku);
+      const addQty = itemD ? itemD.quantity : 0;
+      if (addQty > 0) {
+        itemsParaSumarProyecto.push({
+          sku: it.sku,
+          name: it.name,
+          quantity: addQty,
+          unit: it.unit,
+        });
+      }
+      return {
+        ...it,
+        deliveredQuantity: Number(((it.deliveredQuantity || 0) + addQty).toFixed(3)),
+      };
+    });
+
+    incrementarMaterialesEnProyecto(
+      req.projectId,
+      itemsParaSumarProyecto,
+      dispatchCode,
+      technicianName
+    );
+
+    const isFullyDelivered = updatedItems.every(
+      (it) => (it.deliveredQuantity || 0) >= it.quantity
+    );
+
     setMaterialRequests((prev) =>
       prev.map((r) => {
         if (r.id !== requestId) return r;
-        const updatedItems = r.items.map((it) => {
-          const itemD = itemsToDispatch.find((d) => d.sku === it.sku);
-          const addQty = itemD ? itemD.quantity : 0;
-          return {
-            ...it,
-            deliveredQuantity: (it.deliveredQuantity || 0) + addQty,
-          };
-        });
-
-        const isFullyDelivered = updatedItems.every(
-          (it) => (it.deliveredQuantity || 0) >= it.quantity
-        );
-
         const currentTimeline = r.timeline || [];
         const newTimelineStep = {
           id: `step_${Date.now()}`,
@@ -1168,7 +1385,141 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       })
     );
 
-    return { success: true };
+    return {
+      success: true,
+      dispatchCode,
+      esEntregaCompleta: isFullyDelivered,
+    };
+  };
+
+  // Confirmación directa de retiro por el Técnico en terreno (aumenta materiales asignados/retirados automáticamente)
+  const confirmarRetiroSolicitudTecnico = (
+    requestId: string,
+    technicianRut: string,
+    technicianName: string
+  ) => {
+    const req = solicitudesMaterial.find((r) => r.id === requestId);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status === "entregada") {
+      return { success: false, error: "El retiro de esta solicitud ya fue confirmado." };
+    }
+    if (req.status !== "aprobada") {
+      return {
+        success: false,
+        error: "La solicitud debe estar aprobada por administración antes de confirmar su retiro.",
+      };
+    }
+
+    const itemsPendientes = req.items
+      .map((it) => {
+        const previo = Number(it.deliveredQuantity || 0);
+        const pendiente = Number(Math.max(0, it.quantity - previo).toFixed(3));
+        return {
+          sku: it.sku,
+          name: it.name,
+          quantity: pendiente,
+          unit: it.unit,
+        };
+      })
+      .filter((it) => it.quantity > 0);
+
+    if (itemsPendientes.length === 0) {
+      return { success: false, error: "No quedan cantidades pendientes por retirar en esta solicitud." };
+    }
+
+    // 1. Aumentar automáticamente los productos asignados y retirados en el proyecto
+    incrementarMaterialesEnProyecto(
+      req.projectId,
+      itemsPendientes,
+      req.receiptNumber || req.code,
+      technicianName || req.technicianName
+    );
+
+    // 2. Descontar stock en catálogo y sincronizar con BD si aún no había sido rebajado en bodega
+    const nuevoCatalogo = productos.map((prod) => {
+      const itemRet = itemsPendientes.find(
+        (it) => it.sku.trim().toUpperCase() === prod.sku.trim().toUpperCase()
+      );
+      if (!itemRet) return prod;
+      const comprometidoActual = Number(prod.committed || 0);
+      const desdeComprometido = Math.min(comprometidoActual, itemRet.quantity);
+      const desdeDisponible = Math.max(0, itemRet.quantity - desdeComprometido);
+      const nuevoStock = Number(Math.max(0, prod.stock - desdeDisponible).toFixed(3));
+      const nuevoComprometido = Number(Math.max(0, comprometidoActual - desdeComprometido).toFixed(3));
+
+      if (prod.id && desdeDisponible > 0) {
+        void actualizarArticuloApi(prod.id, { cantidad_disponible: nuevoStock });
+      }
+      return {
+        ...prod,
+        stock: nuevoStock,
+        committed: nuevoComprometido,
+      };
+    });
+    setProducts(nuevoCatalogo);
+
+    // 3. Registrar trazabilidad en Cardex
+    const nowStr = new Date().toISOString().slice(0, 10);
+    const nuevosMovs: MovimientoCardex[] = itemsPendientes.map((it) => {
+      const prodAct = nuevoCatalogo.find(
+        (p) => p.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+      );
+      const balance = Number(((prodAct?.stock || 0) + (prodAct?.committed || 0)).toFixed(3));
+      const unitPmp = prodAct?.pmp || prodAct?.unitCost || 0;
+      return {
+        id: `cdx_ret_tec_${Date.now()}_${it.sku}`,
+        sku: it.sku,
+        productName: it.name,
+        date: nowStr,
+        type: "salida_obra",
+        typeLabel: `Retiro Confirmado por Técnico (${technicianName})`,
+        reference: `${req.code}${req.receiptNumber ? ` / ${req.receiptNumber}` : ""}`,
+        projectCode: req.projectCode,
+        projectName: req.projectName,
+        qtyIn: 0,
+        qtyOut: it.quantity,
+        balance,
+        pmp: unitPmp,
+        totalValue: Math.round(unitPmp * balance),
+        userName: technicianName || req.technicianName,
+        userRole: "Técnico",
+        userRut: technicianRut || req.technicianRut,
+      };
+    });
+    setCardex((prev) => [...nuevosMovs, ...prev]);
+
+    // 4. Marcar la solicitud como entregada
+    setMaterialRequests((prev) =>
+      prev.map((r) => {
+        if (r.id !== requestId) return r;
+        return {
+          ...r,
+          status: "entregada",
+          items: r.items.map((it) => ({
+            ...it,
+            deliveredQuantity: it.quantity,
+          })),
+          timeline: [
+            ...(r.timeline || []),
+            {
+              id: `tl_ret_tec_${Date.now()}`,
+              title: "Retiro Confirmado por Técnico",
+              description: `${technicianName} confirmó recepción en faena e incorporó los insumos al proyecto.`,
+              date: nowStr,
+              author: technicianName,
+              status: "completado",
+            },
+          ],
+        };
+      })
+    );
+
+    return {
+      success: true,
+      itemsConfirmados: itemsPendientes,
+    };
   };
 
   // 3. COMPRAS Y ÓRDENES DE COMPRA
@@ -1218,7 +1569,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setPurchaseOrders((prev) => [newOrder, ...prev]);
 
-    // Sincronizar con backend (genera numeración correlativa en BD y si se aprueba envía PDF por correo)
     const idProvNum = Number(String(newOrder.supplierId).replace(/\D/g, "")) || 1;
     void crearOrdenCompraApi({
       proveedor_id: idProvNum,
@@ -1339,7 +1689,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((o) => (o.id === orderId ? { ...o, status: "cerrada", rating } : o))
     );
 
-    // Update supplier average
     const order = ordenesCompra.find((o) => o.id === orderId);
     if (order && order.supplierId) {
       setSuppliers((prev) =>
@@ -1356,7 +1705,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const crearFactura = (invoice: FacturaCompra) => {
-    // Check duplicate invoice number per supplier
     const exists = facturasCompra.some(
       (inv) =>
         inv.supplierRut.replace(/[.\s-]/g, "") === invoice.supplierRut.replace(/[.\s-]/g, "") &&
@@ -1393,8 +1741,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       );
     }
 
-    // Si la recepción ya ocurrió (o es factura directa sin OC pendiente), consolida el PMP con el costo neto de la factura.
-    // Si la OC aún está en estado Enviada/Borrador sin recepción, el PMP y el stock se actualizan al confirmar la recepción conforme (H33).
     if (yaTieneRecepcion) {
       invoice.items.forEach((item) => {
         const prod = productos.find((p) => p.sku === item.sku);
@@ -1463,13 +1809,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       if (prod) {
         const prevStock = prod.stock;
         const prevPmp = prod.pmp || prod.unitCost || 0;
-        // Costo neto unitario proveniente de la factura (descuentos en cascada aplicados) o de la OC
         const incomingUnitCost = invItem?.netUnitPrice ?? poItem?.unitPrice ?? prod.unitCost;
 
         const newStock = Number((prevStock + item.received).toFixed(3));
         const newQuarantine = Number(((prod.quarantine || 0) + item.defective).toFixed(3));
 
-        // Recálculo del PMP Ponderado con el costo neto de la factura
         let newPmp = prevPmp;
         if (item.received > 0) {
           const totalPrevValue = prevStock * prevPmp;
@@ -1483,7 +1827,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           pmp: newPmp,
         });
 
-        // Add Cardex entry for received
         if (item.received > 0) {
           const newCardex: MovimientoCardex = {
             id: `kdx_${Date.now()}_${item.sku}`,
@@ -1521,7 +1864,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((o) => (o.code === ocCode ? resumenEntrega.ordenActualizada : o))
     );
 
-    // Persistir recepción parcial o completa en el backend si tiene ID numérico
     const idOrdenNum = Number(activePo.id);
     if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
       void registrarRecepcionOrdenCompraApi(
@@ -1543,12 +1885,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       });
     }
 
-    // Remove from pending receipts only if all items have arrived
     if (allCompleted) {
       setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
     }
 
-    // Discrepancy notification & alert to Administrator (incluye diferencia con lo facturado)
     const todasDiscrepancias = Array.from(new Set([...discrepancyDetails, ...resumenEntrega.discrepancias]));
     if (todasDiscrepancias.length > 0) {
       const alert: AlertaPanel = {
@@ -1642,7 +1982,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const asignarTecnicosAProyecto = (projectId: string, technicianRuts: string[]) => {
-    // Unique technicians
     const unique = Array.from(new Set(technicianRuts));
     actualizarProyecto(projectId, { technicianRuts: unique });
   };
@@ -1652,7 +1991,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!proj) return { success: false, blocks: ["Proyecto no encontrado."] };
 
     const blocks: string[] = [];
-    // 1. Check pending requests
     const pendingReqs = solicitudesMaterial.filter(
       (r) => r.projectId === id && (r.status === "pendiente" || r.status === "aprobada")
     );
@@ -1662,7 +2000,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       );
     }
 
-    // 2. Check returns in transit
     const transitReturns = ordenesDevolucion.filter(
       (r) => (r.projectId === id || r.projectCode === proj.code) && r.status === "en_transito"
     );
@@ -1779,7 +2116,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
-  // Baja lógica de herramienta / activo fijo (conserva historial de préstamos y mantenciones)
   const darDeBajaHerramienta = (
     toolId: string,
     motivo: string,
@@ -1838,7 +2174,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const proj = proyectos.find((p) => p.id === projectId);
     const code = `DEV-TEC-2026-${String(ordenesDevolucion.length + 104).padStart(3, "0")}`;
 
-    // Validate quantityReturned <= quantityRetrieved - quantityUsed
     for (const item of items) {
       const maxAllowed = item.quantityRetrieved - item.quantityUsed;
       if (item.quantityReturned > maxAllowed) {
@@ -1893,7 +2228,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           };
         });
 
-        // Re-integrate verified quantities into inventory stock
         let totalReturnedValue = 0;
         updatedItems.forEach((item) => {
           const qty = item.quantityReceivedReal ?? item.quantityReturned;
@@ -1902,7 +2236,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             const itemPmp = prod.pmp || prod.unitCost || 0;
             totalReturnedValue += qty * itemPmp;
             actualizarProducto(item.sku, { stock: Number((prod.stock + qty).toFixed(3)) });
-            // Add Cardex
             const newCardex: MovimientoCardex = {
               id: `kdx_ret_${Date.now()}_${item.sku}`,
               sku: item.sku,
@@ -1926,7 +2259,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           }
         });
 
-        // Ajustar costo real del proyecto (se descuenta el sobrante reingresado a bodega)
         if (r.projectCode && totalReturnedValue > 0) {
           setProjects((prevProj) =>
             prevProj.map((p) =>
@@ -1941,7 +2273,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           );
         }
 
-        // Notificar al Administrador si hubo diferencia entre lo declarado por el técnico y lo recibido
         if (returnDiscrepancies.length > 0) {
           const alert: AlertaPanel = {
             id: `alert_ret_${Date.now()}`,
@@ -1968,7 +2299,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           };
           setNotificationsList((prevN) => [notif, ...prevN]);
         } else {
-          // Notificación de recepción conforme reflejada para el Técnico y trazabilidad
           const notifOk: DetalleNotificacion = {
             id: `notif_ret_ok_${Date.now()}`,
             title: `Devolución Recibida: ${r.code}`,
@@ -2025,11 +2355,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setSupplierReturns((prev) => [newRet, ...prev]);
 
-    // Deduct from quarantine
     if (prod && (prod.quarantine || 0) >= quantity) {
       actualizarProducto(sku, { quarantine: Math.max(0, (prod.quarantine || 0) - quantity) });
 
-      // Cardex entry for trace of departure from quarantine
       const newCardex: MovimientoCardex = {
         id: `kdx_supret_${Date.now()}_${sku}`,
         sku,
@@ -2050,7 +2378,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       setCardex((k) => [newCardex, ...k]);
     }
 
-    // Alerta al Administrador para seguimiento hasta Nota de Crédito o reposición
     const alert: AlertaPanel = {
       id: `alert_supret_${Date.now()}`,
       title: `Devolución a Proveedor: ${sup?.businessName || "Proveedor"}`,
@@ -2100,7 +2427,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
 
     if (objetivo) {
-      // Si el proveedor resuelve mediante reposición física, reingresa al stock disponible y al Cardex
       if (resolutionType === "reemplazo_producto") {
         const prod = productos.find((p) => p.sku === objetivo.productSku);
         if (prod) {
@@ -2226,7 +2552,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setTechnicianHours((prev) => [newH, ...prev]);
 
-    // Imputar costo real de mano de obra en el proyecto (H27 / H28)
     const proj = proyectos.find((p) => p.id === entry.projectId);
     if (proj) {
       const hourlyRate = proj.hourlyRate || 18500;
@@ -2282,7 +2607,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     }
     const startTimeMs = new Date(sesionTrabajoActiva.startTime).getTime();
     const elapsedHours = (Date.now() - startTimeMs) / (1000 * 60 * 60);
-    // Redondeo automático a bloques de 0,5 h (mínimo 0,5 h y máximo 24,0 h)
     const roundedHours = Math.max(0.5, Math.min(24.0, Math.round(elapsedHours * 2) / 2));
     const estadoSync: "pendiente" | "sincronizado" = opciones?.offline
       ? "pendiente"
@@ -2357,7 +2681,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Registro de horas no encontrado." };
     }
 
-    // Check hours edit limit (H41): technician only up to configurable deadline, admin can always edit
     const createdTime = new Date(existing.createdAt).getTime();
     const nowTime = Date.now();
     const diffHours = (nowTime - createdTime) / (1000 * 60 * 60);
@@ -2386,7 +2709,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((h) => (h.id === id ? { ...h, hours, description } : h))
     );
 
-    // Sincronizar imputación en el proyecto (alimenta H27 y H28)
     if (proj && hourDiff !== 0) {
       setProjects((prev) =>
         prev.map((p) =>
@@ -2429,7 +2751,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Proyecto no encontrado." };
     }
 
-    // Comprobar tope diario de 24h para ese técnico en esa fecha
     const existingDayHours = horasTecnico
       .filter(
         (h) =>
@@ -2466,7 +2787,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setTechnicianHours((prev) => [newH, ...prev]);
 
-    // Imputar al proyecto (H27 y H28)
     const newLaborEntry: RegistroManoObraProyecto = {
       id: `hh_${Date.now()}`,
       date: data.date,
@@ -2496,7 +2816,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       )
     );
 
-    // Registro de auditoría
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -2523,7 +2842,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setTechnicianProgressReports((prev) => [newRep, ...prev]);
 
-    // Update project progress percentage (does NOT generate inventory dispatch)
     setProjects((prev) =>
       prev.map((p) =>
         p.id === report.projectId ? { ...p, progress: report.progressPct } : p
@@ -2559,7 +2877,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setSystemUsers((prev) => [newUser, ...prev]);
 
-    // Audit log
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -2581,7 +2898,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const targetUser = usuariosSistema.find((u) => u.id === userId);
     if (!targetUser) return { success: false, error: "Usuario no encontrado." };
 
-    // Strict Rule: Cannot disable the last active administrator
     if (!targetUser.disabled && targetUser.role === "admin") {
       const activeAdmins = usuariosSistema.filter((u) => u.role === "admin" && !u.disabled);
       if (activeAdmins.length <= 1) {
@@ -2597,7 +2913,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((u) => (u.id === userId ? { ...u, disabled: nextState } : u))
     );
 
-    // Audit log
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -2619,7 +2934,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const targetUser = usuariosSistema.find((u) => u.id === userId);
     if (!targetUser) return { success: false, error: "Usuario no encontrado." };
 
-    // Cannot anonymize the last active administrator
     if (targetUser.role === "admin" && !targetUser.disabled) {
       const activeAdmins = usuariosSistema.filter((u) => u.role === "admin" && !u.disabled);
       if (activeAdmins.length <= 1) {
@@ -2646,7 +2960,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       )
     );
 
-    // Audit log (immutable record of privacy exercise)
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -2744,7 +3057,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const ejecutarPruebaRestauracion = () => {
-    // Mark latest backup as tested
     setBackupLogs((prev) => {
       if (prev.length === 0) return prev;
       const [first, ...rest] = prev;
@@ -2831,6 +3143,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         modificarSolicitudMaterial,
         cancelarSolicitudMaterial,
         despacharSolicitudMaterial,
+        confirmarRetiroSolicitudTecnico,
         crearOrdenCompra,
         actualizarOrdenCompra,
         aprobarYEnviarOrden,

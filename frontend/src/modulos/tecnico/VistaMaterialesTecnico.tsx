@@ -61,7 +61,13 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
   const esMovilEstrecho = width < 440;
   const esPantallaAncha = width >= 840;
 
-  const { proyectos, productos, solicitudesMaterial, crearSolicitudMaterial } = usarAplicacion();
+  const {
+    proyectos,
+    productos,
+    solicitudesMaterial,
+    crearSolicitudMaterial,
+    confirmarRetiroSolicitudTecnico,
+  } = usarAplicacion();
   const { usuario } = usarAutenticacion();
 
   const identificadorUsuario = useMemo(() => {
@@ -97,6 +103,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
   const [solicitudItems, establecerSolicitudItems] = useState<ItemSolicitudLocal[]>([]);
   const [solicitudError, establecerSolicitudError] = useState("");
   const [enviandoSolicitud, establecerEnviandoSolicitud] = useState(false);
+  const [confirmandoRetiroId, establecerConfirmandoRetiroId] = useState<string | null>(null);
   const [notificacionExito, establecerNotificacionExito] = useState("");
   const [avisoOfflineAccion, establecerAvisoOfflineAccion] = useState("");
   const [busquedaCatalogo, establecerBusquedaCatalogo] = useState("");
@@ -110,7 +117,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
       const usarOffline = forzarOffline ?? (isOffline || modoOfflineScrum);
       establecerSincronizando(true);
 
-      // 1. Carga inmediata desde caché local para que en modo avión no exista espera ni error
       const cachePrevia = await leerInsumosProyectosCacheLocal(identificadorUsuario);
       if (cachePrevia && cachePrevia.proyectos.length > 0) {
         establecerSnapshotsProyectos(cachePrevia.proyectos);
@@ -118,7 +124,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
         establecerCargandoInicial(false);
       }
 
-      // 2. Consulta con respaldo automático en almacenamiento offline
       const resultado = await sincronizarInsumosProyectosConCache({
         identificadorUsuario,
         rutTecnico: usuario.rut,
@@ -180,14 +185,12 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
     };
   }, [ejecutarSincronizacion, isOffline, modoOfflineScrum, onCambioConexion]);
 
-  // Sincroniza selección de proyecto inicial si viene por prop
   useEffect(() => {
     if (initialProjectId) {
       establecerSeleccionadoProyectoId(initialProjectId);
     }
   }, [initialProjectId]);
 
-  // Asegura siempre un proyecto válido seleccionado
   const snapshotActual = useMemo(() => {
     if (snapshotsProyectos.length === 0) return null;
     return (
@@ -205,7 +208,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
   const totalPendiente = snapshotActual?.totalPendiente || 0;
   const porcentajeAbastecimiento = snapshotActual?.porcentajeAbastecimiento || 0;
 
-  // Resumen global de todos los proyectos del técnico (cuánto falta retirar en total)
   const totalPendienteGlobal = useMemo(
     () =>
       Number(
@@ -214,7 +216,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
     [snapshotsProyectos]
   );
 
-  // Filtrado de insumos del proyecto activo
   const insumosFiltrados = useMemo(() => {
     const q = busquedaInsumo.trim().toLowerCase();
     return asignadoElementos.filter((item) => {
@@ -239,12 +240,52 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
     };
   }, [asignadoElementos]);
 
-  // Alternar verificación SCRUM de modo sin internet
   const alternarModoOfflineScrum = async () => {
     const siguiente = !modoOfflineScrum;
     establecerModoOfflineScrum(siguiente);
     establecerAvisoOfflineAccion("");
     await ejecutarSincronizacion(siguiente || isOffline);
+  };
+
+  // Confirmar retiro de una solicitud aprobada y sumar automáticamente al proyecto
+  const manejarConfirmarRetiro = async (requestId: string, requestCode: string) => {
+    establecerConfirmandoRetiroId(requestId);
+    establecerAvisoOfflineAccion("");
+
+    const res = confirmarRetiroSolicitudTecnico(
+      requestId,
+      usuario.rut,
+      usuario.name || "Técnico de Terreno"
+    );
+
+    if (!res.success) {
+      establecerAvisoOfflineAccion(res.error || "No se pudo confirmar el retiro.");
+      establecerConfirmandoRetiroId(null);
+      return;
+    }
+
+    const resumenItems = (res.itemsConfirmados || [])
+      .map((it) => `${it.quantity} ${it.unit} de ${it.name}`)
+      .join(", ");
+
+    establecerNotificacionExito(
+      `Retiro confirmado para ${requestCode}. Se incorporaron automáticamente: ${resumenItems}.`
+    );
+
+    // Actualizar snapshot en pantalla y caché offline al instante
+    const actualizados = construirSnapshotsInsumosTecnico(
+      proyectos,
+      usuario.rut,
+      productos,
+      solicitudesMaterial
+    );
+    establecerSnapshotsProyectos(actualizados);
+    const nuevaMarca = await guardarInsumosProyectosCacheLocal(
+      identificadorUsuario,
+      actualizados
+    );
+    establecerGuardadoEn(nuevaMarca);
+    establecerConfirmandoRetiroId(null);
   };
 
   // Manejo de Modal de Solicitud de Materiales
@@ -379,7 +420,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
       establecerSolicitudUrgencia("normal");
       establecerBusquedaCatalogo("");
 
-      // Actualizar caché offline inmediatamente tras crear la solicitud
       const actualizados = construirSnapshotsInsumosTecnico(
         proyectos,
         usuario.rut,
@@ -669,7 +709,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                     </View>
                   </View>
 
-                  {/* Grilla KPI responsiva (2x2 en móvil estrecho, 4 en fila en tablet/desktop) */}
                   <View style={estilos.kpiGrilla}>
                     <View
                       style={[
@@ -751,7 +790,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                     </View>
                   </View>
 
-                  {/* Barra global de abastecimiento */}
                   <View style={estilos.supplyProgresoCaja}>
                     <View style={estilos.supplyEncabezado}>
                       <Text style={estilos.supplyEtiqueta}>Progreso de retiro en bodega</Text>
@@ -817,7 +855,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                 </ScrollView>
               </View>
 
-              {/* 6. LISTADO RESPONSIVO DE INSUMOS (1 COLUMNA MÓVIL / 2 COLUMNAS PANTALLA ANCHA) */}
+              {/* 6. LISTADO RESPONSIVO DE INSUMOS */}
               {insumosFiltrados.length === 0 ? (
                 <EstadoVacio
                   icon="cube-outline"
@@ -880,7 +918,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                           />
                         </View>
 
-                        {/* 3 columnas claras y responsivas: Asignado / Retirado / Falta retirar */}
                         <View style={estilos.elementoMetricsFila}>
                           <View style={estilos.elementoColumna}>
                             <Text style={estilos.elementoColumnaLbl}>Asignado</Text>
@@ -920,7 +957,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                           </View>
                         </View>
 
-                        {/* Barra de avance individual */}
                         <View style={estilos.barraIndividualCaja}>
                           <BarraProgreso
                             value={item.quantityRetrieved}
@@ -938,7 +974,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                 </View>
               )}
 
-              {/* 7. HISTORIAL DE SOLICITUDES A BODEGA (RESPALDADO OFFLINE) */}
+              {/* 7. HISTORIAL DE SOLICITUDES A BODEGA CON CONFIRMACIÓN DE RETIRO */}
               <View style={estilos.bloqueSolicitudes}>
                 <View style={estilos.seccionTituloConInsignia}>
                   <Text style={estilos.listaEncabezado}>Solicitudes Enviadas a Bodega</Text>
@@ -972,7 +1008,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                         icon: "checkmark-circle-outline",
                       },
                       entregada: {
-                        label: "Despachada",
+                        label: "Retiro Confirmado",
                         tone: "ok" as const,
                         icon: "cube-outline",
                       },
@@ -997,6 +1033,10 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                       alta: { label: "ALTA", color: tema.colors.warnDark },
                       normal: { label: "NORMAL", color: tema.colors.textMuted },
                     }[req.urgency] || { label: req.urgency, color: tema.colors.textMuted };
+
+                    const tienePendienteRetiro =
+                      req.status === "aprobada" &&
+                      req.items.some((it) => it.quantity - Number(it.deliveredQuantity || 0) > 0);
 
                     return (
                       <Tarjeta key={req.id} variant="default" style={estilos.solicitudTarjeta}>
@@ -1037,6 +1077,8 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                                 — {it.name}
                                 {req.status === "aprobada" && falta > 0
                                   ? ` (Faltan ${falta} ${it.unit} por retirar)`
+                                  : req.status === "entregada"
+                                  ? " (Incorporado a faena)"
                                   : ""}
                               </Text>
                             );
@@ -1046,6 +1088,35 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                         {req.comment ? (
                           <Text style={estilos.solicitudNota}>Nota: "{req.comment}"</Text>
                         ) : null}
+
+                        {tienePendienteRetiro && (
+                          <View style={estilos.confirmarRetiroCaja}>
+                            <View style={estilos.confirmarRetiroInfo}>
+                              <Ionicons
+                                name="checkmark-done-circle-outline"
+                                size={18}
+                                color={tema.colors.okDark}
+                              />
+                              <Text style={estilos.confirmarRetiroTexto}>
+                                Pedido aprobado en bodega. Confirma el retiro para sumar estos
+                                insumos automáticamente a tu faena.
+                              </Text>
+                            </View>
+                            <Boton
+                              title={
+                                confirmandoRetiroId === req.id
+                                  ? "Confirmando..."
+                                  : "Confirmar Retiro"
+                              }
+                              variant="primary"
+                              size="sm"
+                              icon="bag-check-outline"
+                              disabled={confirmandoRetiroId === req.id}
+                              onPress={() => manejarConfirmarRetiro(req.id, req.code)}
+                              style={estilos.botonConfirmarRetiro}
+                            />
+                          </View>
+                        )}
 
                         {req.status === "rechazada" && req.rejectionReason && (
                           <View style={estilos.solicitudRechazoCaja}>
@@ -1061,7 +1132,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                 )}
               </View>
 
-              {/* 8. BOTONES DE ACCIÓN RÁPIDA RESPONSIVOS (SIN CORTES DE TEXTO) */}
+              {/* 8. BOTONES DE ACCIÓN RÁPIDA RESPONSIVOS */}
               <View
                 style={[
                   estilos.inferiorAcciones,
@@ -1110,7 +1181,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
         maxWidth={540}
       >
         <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
-          {/* Nivel de prioridad / urgencia */}
           <Text style={estilos.modalCampoTitulo}>Nivel de Prioridad / Urgencia:</Text>
           <View style={estilos.urgenciaSelectorFila}>
             {(
@@ -1163,7 +1233,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
             })}
           </View>
 
-          {/* Lista de insumos seleccionados */}
           <Text style={[estilos.modalCampoTitulo, { marginTop: 14 }]}>
             Insumos a Pedir ({solicitudItems.length}):
           </Text>
@@ -1245,7 +1314,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
             })
           )}
 
-          {/* Agregar otro insumo del catálogo */}
           <View style={estilos.agregarInsumoSeccion}>
             <TouchableOpacity
               onPress={() => establecerMostrarCatalogoDesplegable(!mostrarCatalogoDesplegable)}
@@ -1306,7 +1374,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
             )}
           </View>
 
-          {/* Justificación o nota */}
           <View style={{ marginTop: 12 }}>
             <CampoTexto
               label="Motivo o Justificación del Pedido (opcional)"
@@ -1325,7 +1392,6 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
             </View>
           )}
 
-          {/* Botones del modal */}
           <View style={estilos.modalAccionesFila}>
             <Boton
               title="Cancelar"
@@ -1927,6 +1993,37 @@ const estilos = StyleSheet.create({
     color: tema.colors.textMuted,
     fontStyle: "italic",
     marginTop: 2,
+  },
+  confirmarRetiroCaja: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: tema.radius.md,
+    backgroundColor: tema.colors.okLight,
+    borderWidth: 1,
+    borderColor: "#bbf7d0",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  confirmarRetiroInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flex: 1,
+    minWidth: 200,
+  },
+  confirmarRetiroTexto: {
+    flex: 1,
+    fontSize: 11,
+    color: tema.colors.okDark,
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  botonConfirmarRetiro: {
+    minHeight: 38,
+    paddingHorizontal: 14,
   },
   solicitudRechazoCaja: {
     flexDirection: "row",
