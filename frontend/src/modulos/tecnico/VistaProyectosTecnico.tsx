@@ -337,8 +337,8 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
               <View style={{ flex: 1, marginLeft: 8 }}>
                 <Text style={estilos.cacheBannerTitulo}>
                   {operaSinConexion
-                    ? "Modo Avión / Sin Conexión — Cargado desde caché local"
-                    : `Caché local lista (${ordenadoProyectos.length} proyectos respaldados en el dispositivo)`}
+                    ? "Sin conexión — Mostrando respaldo local del dispositivo"
+                    : `Respaldo local actualizado (${ordenadoProyectos.length} proyectos disponibles sin conexión)`}
                 </Text>
                 <Text style={estilos.cacheBannerSub}>
                   {origenDatos === "cache"

@@ -792,7 +792,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                   icon="qr-code-outline"
                   onPress={() =>
                     abrirEscaner(
-                      "Escanear SKU para Salida Física (H5)",
+                      "Escanear SKU para Salida Física",
                       (scannedCode: any, meta: any) => {
                         const resolucion =
                           meta && meta.valido && meta.producto
@@ -858,7 +858,7 @@ export const SeccionEgresoBodega: React.FC<PropiedadesSeccionEgresoBodega> = ({
                         }));
 
                         const etiquetaFormato =
-                          resolucion.formatoDetectado === "QR_H47" ? "QR H47" : "Código";
+                          resolucion.formatoDetectado === "QR_H47" ? "código QR" : "código";
                         const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto} • Retiro: ${nuevaCantidad} ${itemSolicitud.unit}.`;
                         establecerUltimoEscaneoSalida({
                           tipo: "ok",

@@ -473,10 +473,11 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       flexDirection: "row",
                       justifyContent: "space-between",
                       alignItems: "flex-start",
+                      flexWrap: "wrap",
                       gap: 8,
                     }}
                   >
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, minWidth: 160 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                         <Text
                           style={{
@@ -511,7 +512,10 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                           fontWeight: "800",
                           color: tema.colors.text,
                           marginTop: 2,
+                          flexShrink: 1,
                         }}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
                       >
                         {s.businessName}
                       </Text>
@@ -612,6 +616,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                   <View
                     style={{
                       flexDirection: "row",
+                      flexWrap: "wrap",
                       alignItems: "center",
                       gap: 8,
                       marginTop: 10,

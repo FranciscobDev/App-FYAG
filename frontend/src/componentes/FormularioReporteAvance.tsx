@@ -392,6 +392,7 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
         <View style={estilos.encabezado}>
           <View style={{ flex: 1 }}>
             <View style={estilos.etiquetaTicketFila}>
+              <Insignia label="Avance de Obra" tone="info" size="sm" />
               <Insignia label="Terreno Móvil" tone="mute" size="sm" />
             </View>
             <Text style={estilos.titulo}>Reporte de Avance en Terreno</Text>

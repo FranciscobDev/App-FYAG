@@ -638,9 +638,9 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
               {/* 4. DASHBOARD DE MÉTRICAS DEL PROYECTO SELECCIONADO */}
               {actualProyecto && (
                 <Tarjeta variant="elevated" style={estilos.dashboardTarjeta}>
-                  <View style={estilos.dashboardCabecera}>
-                    <View style={{ flex: 1, minWidth: 190 }}>
-                      <View style={estilos.dashboardCodigoFila}>
+                  <View style={[estilos.dashboardCabecera, { flexWrap: "wrap", gap: 10 }]}>
+                    <View style={{ flex: 1, minWidth: 160 }}>
+                      <View style={[estilos.dashboardCodigoFila, { flexWrap: "wrap", gap: 6 }]}>
                         <Text style={estilos.dashboardCodigo}>{actualProyecto.code}</Text>
                         <Insignia
                           label={actualProyecto.kind.toUpperCase()}
@@ -648,8 +648,18 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                           size="sm"
                         />
                       </View>
-                      <Text style={estilos.proyectoNombre}>{actualProyecto.name}</Text>
-                      <Text style={estilos.proyectoCliente}>
+                      <Text
+                        style={[estilos.proyectoNombre, { flexShrink: 1 }]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        {actualProyecto.name}
+                      </Text>
+                      <Text
+                        style={[estilos.proyectoCliente, { flexShrink: 1 }]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
                         Cliente: {actualProyecto.client}
                         {actualProyecto.address ? ` • ${actualProyecto.address}` : ""}
                       </Text>
@@ -658,6 +668,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                     <View
                       style={[
                         estilos.resumenRetiroPill,
+                        { maxWidth: "100%" },
                         totalPendiente > 0
                           ? estilos.resumenRetiroPillPendiente
                           : estilos.resumenRetiroPillOk,
@@ -669,9 +680,11 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                         color={totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok}
                       />
                       <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                         style={[
                           estilos.resumenRetiroPillTexto,
-                          { color: totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok },
+                          { flexShrink: 1, color: totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok },
                         ]}
                       >
                         {totalPendiente > 0
@@ -763,8 +776,8 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                   </View>
 
                   <View style={estilos.supplyProgresoCaja}>
-                    <View style={estilos.supplyEncabezado}>
-                      <Text style={estilos.supplyEtiqueta}>Progreso de retiro en bodega</Text>
+                    <View style={[estilos.supplyEncabezado, { flexWrap: "wrap", gap: 6 }]}>
+                      <Text style={[estilos.supplyEtiqueta, { flexShrink: 1 }]}>Progreso de retiro en bodega</Text>
                       <Text style={estilos.supplyPorcentaje}>
                         {porcentajeAbastecimiento}% retirado
                       </Text>

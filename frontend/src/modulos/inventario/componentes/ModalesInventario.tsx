@@ -649,8 +649,8 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         }
         subtitle={
           editandoSolicitud
-            ? "Editable únicamente mientras permanezca en estado Pendiente • Valida stock disponible en vivo (H6)"
-            : "Muestra stock disponible en vivo, bloquea si supera disponible o proyecto inactivo y reserva stock en Comprometido (H6)"
+            ? "Editable únicamente mientras permanezca en estado Pendiente • Valida stock disponible en tiempo real"
+            : "Muestra stock disponible en tiempo real, valida existencias y proyecto activo, y reserva el stock en Comprometido"
         }
       >
         {(() => {
@@ -802,7 +802,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                         </Text>
                         {!superaDisp && !invalida && evalLinea && (
                           <Text style={{ fontSize: 11, color: tema.colors.okDark, marginTop: 2 }}>
-                            Reserva H6 tras confirmar → Remanente disponible:{" "}
+                            Reserva tras confirmar → Remanente disponible:{" "}
                             {formatearCantidadMovimientoBodega(
                               evalLinea.stockDisponibleRestanteH6,
                               esGranel,
@@ -1107,7 +1107,7 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           <TouchableOpacity
             onPress={() =>
               abrirEscaner(
-                "Escanear Insumo a Auditar (H19)",
+                "Escanear Insumo para Conteo Físico",
                 (code: any, meta: any) => {
                   const res =
                     meta && meta.valido && meta.producto

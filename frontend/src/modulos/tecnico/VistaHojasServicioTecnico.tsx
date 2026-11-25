@@ -274,7 +274,7 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
       establecerSinConexionDetectada(true);
       if (onCambioConexion) onCambioConexion(true);
       establecerAvisoSistema(
-        "Modo Avión SCRUM activo: llena un checklist con foto, recarga o cierra la app y al volver todo seguirá intacto en disco."
+        "Modo sin conexión activo: los checklists y fotografías se guardarán en el dispositivo y se sincronizarán automáticamente al reconectar."
       );
       setTimeout(() => establecerAvisoSistema(""), 5000);
     } else {
@@ -554,8 +554,8 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
               <View style={{ flex: 1 }}>
                 <Text style={estilos.discoTitulo}>
                   {operaSinConexion
-                    ? "Modo Avión / Sin Conexión — Persistencia en Disco Activa"
-                    : "Disco Local Respaldado y Subida Automática Lista"}
+                    ? "Sin conexión — Respaldo local activo"
+                    : "Almacenamiento local respaldado y sincronización automática activa"}
                 </Text>
                 <Text style={estilos.discoSub}>
                   Último guardado en disco:{" "}

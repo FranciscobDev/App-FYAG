@@ -99,7 +99,7 @@ export const VistaListadoProyectos: React.FC<PropiedadesVistaListadoProyectos> =
                 <View style={estilos.crearProyectoHeroIzquierda}>
                   <View style={estilos.heroInsigniaFila}>
                     <Insignia label="Obras" tone="primary" size="sm" />
-                    <Text style={estilos.heroInsigniaHint}>Monitoreo H27 y H28</Text>
+                    <Text style={estilos.heroInsigniaHint}>Monitoreo de Costos y Avance</Text>
                   </View>
                   <Text style={estilos.crearProyectoHeroTitulo}>Registrar Nueva Obra o Proyecto</Text>
                   <Text style={estilos.crearProyectoHeroDescripcion}>

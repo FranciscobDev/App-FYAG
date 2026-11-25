@@ -511,7 +511,7 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       )
     );
     const etiquetaFormato =
-      resolucion.formatoDetectado === "QR_H47" ? "QR H47" : "Código";
+      resolucion.formatoDetectado === "QR_H47" ? "código QR" : "código";
     const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto}.`;
     establecerUltimoEscaneoRecepcion({
       tipo: "ok",
