@@ -76,12 +76,12 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                 </View>
                 <Text style={estilos.seccionTitulo}>Formulario de Devolución de Sobrante</Text>
                 <Text style={estilos.seccionSubtitulo}>
-                  Fórmula estricta: Sobrante Máximo = Retirado − Usado en Terreno
+                  Fórmula estricta: Sobrante Máximo = Retirado − Usado − Ya declarado
                 </Text>
               </View>
               <View style={estilos.formulaInsignia}>
                 <Ionicons name="calculator-outline" size={14} color={tema.colors.primary} />
-                <Text style={estilos.formulaTexto}>Máx = Retirado − Usado</Text>
+                <Text style={estilos.formulaTexto}>Máx = Retirado − Usado − Declarado</Text>
               </View>
             </View>
 
@@ -119,9 +119,16 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
               </TouchableOpacity>
             </View>
 
+            {retElementos.length === 0 && (
+              <Text style={estilos.seccionSubtitulo}>
+                Seleccione un proyecto y agregue los insumos retirados para declarar su sobrante.
+              </Text>
+            )}
+
             {retElementos.map((item: any, idx: any) => {
               const producto = productos.find((p: any) => p.sku === item.sku);
-              const maxAllowed = Math.max(0, item.quantityRetrieved - item.quantityUsed);
+              // El máximo lo calcula el servidor (retirado − usado − ya declarado en tránsito o recibido)
+              const maxAllowed = Math.max(0, item.maximo ?? 0);
               const exceedsMaximo = item.quantityReturned > maxAllowed;
               const esInvalidoZero = item.quantityReturned <= 0;
 
@@ -129,9 +136,9 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                 <View key={idx} style={[estilos.devolucionElementoTarjeta, (exceedsMaximo || esInvalidoZero) && estilos.devolucionElementoTarjetaError]}>
                   <View style={estilos.elementoTarjetaSuperior}>
                     <View style={{ flex: 1 }}>
-                      <Text style={estilos.elementoNombreTexto}>{producto ? producto.name : item.sku}</Text>
+                      <Text style={estilos.elementoNombreTexto}>{item.name ?? (producto ? producto.name : item.sku)}</Text>
                       <Text style={estilos.elementoSkuTexto}>
-                        SKU: {item.sku} • Unidad: {producto ? producto.unit : "un"}
+                        SKU: {item.sku} • Unidad: {item.unit ?? (producto ? producto.unit : "un")}
                       </Text>
                     </View>
                     {retElementos.length > 1 && (
@@ -146,34 +153,18 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                     <View style={estilos.cuadraturaMetricasFila}>
                       <View style={estilos.cuadraturaColumna}>
                         <Text style={estilos.cuadraturaEtiqueta}>1. Retirado</Text>
-                        <TextInput
-                          value={String(item.quantityRetrieved)}
-                          onChangeText={(v: any) => {
-                            const valor = Number(v) || 0;
-                            establecerRetElementos((prev: any) =>
-                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityRetrieved: valor } : it))
-                            );
-                          }}
-                          keyboardType="numeric"
-                          style={estilos.cuadraturaEntrada}
-                        />
+                        <Text style={[estilos.cuadraturaEntrada, { textAlign: "center" }]}>
+                          {item.quantityRetrieved}
+                        </Text>
                       </View>
 
                       <Text style={estilos.operatorSign}>−</Text>
 
                       <View style={estilos.cuadraturaColumna}>
                         <Text style={estilos.cuadraturaEtiqueta}>2. Usado</Text>
-                        <TextInput
-                          value={String(item.quantityUsed)}
-                          onChangeText={(v: any) => {
-                            const valor = Number(v) || 0;
-                            establecerRetElementos((prev: any) =>
-                              prev.map((it: any, i: any) => (i === idx ? { ...it, quantityUsed: valor } : it))
-                            );
-                          }}
-                          keyboardType="numeric"
-                          style={estilos.cuadraturaEntrada}
-                        />
+                        <Text style={[estilos.cuadraturaEntrada, { textAlign: "center" }]}>
+                          {item.quantityUsed}
+                        </Text>
                       </View>
 
                       <Text style={estilos.operatorSign}>=</Text>
@@ -260,7 +251,7 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
                     <View style={estilos.blockAviso}>
                       <Ionicons name="alert-circle" size={16} color={tema.colors.danger} />
                       <Text style={estilos.exceedsAdvertencia}>
-                        ¡Bloqueo! La cantidad a devolver ({item.quantityReturned}) excede el sobrante máximo ({maxAllowed} = {item.quantityRetrieved} retirado − {item.quantityUsed} usado).
+                        ¡Bloqueo! La cantidad a devolver ({item.quantityReturned}) excede el sobrante máximo permitido por el servidor ({maxAllowed}).
                       </Text>
                     </View>
                   )}

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -14,6 +14,13 @@ import { Insignia } from "@/componentes/base/Insignia";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
 import { OrdenDevolucion, ItemOrdenDevolucion, DevolucionProveedor } from "@/nucleo/tipos";
+import {
+  DevolucionServidor,
+  SobranteInsumoServidor,
+  declararDevolucionTecnico,
+  listarMisDevoluciones,
+  obtenerSobranteProyecto,
+} from "./devolucionesApi";
 import { estilos } from "./estilos";
 import {
   SeccionDevolucionesTecnico,
@@ -23,11 +30,51 @@ import {
 } from "./componentes";
 
 interface ReturnItemForm {
+  id_articulo: number;
   sku: string;
+  name: string;
+  unit: string;
   quantityRetrieved: number;
   quantityUsed: number;
+  /** Máximo devolvible calculado por el servidor (retirado − usado − ya declarado). */
+  maximo: number;
   quantityReturned: number;
 }
+
+/** Convierte una devolución del servidor al modelo que usa el seguimiento. */
+const aOrdenDevolucion = (d: DevolucionServidor): OrdenDevolucion => ({
+  id: String(d.id_devolucion),
+  code: d.codigo_devolucion ?? `DEV-${d.id_devolucion}`,
+  projectId: String(d.proyecto_id),
+  projectCode: d.codigo_proyecto ?? "PROJ",
+  projectName: d.nombre_proyecto,
+  technicianName: d.tecnico_nombre,
+  technicianRut: d.tecnico_rut,
+  itemsCount: d.lineas.length,
+  summary: d.lineas.map((l) => `${l.cantidad_declarada} ${l.unidad} ${l.nombre_articulo}`).join(", "),
+  date: d.fecha_declaracion,
+  status: d.estado === "Recibida" ? "recibida" : "en_transito",
+  items: d.lineas.map((l) => ({
+    sku: l.sku ?? "",
+    name: l.nombre_articulo,
+    quantityRetrieved: l.cantidad_retirada,
+    quantityUsed: l.cantidad_utilizada,
+    quantityReturned: l.cantidad_declarada,
+    quantityReceivedReal: l.cantidad_recibida ?? undefined,
+    unit: l.unidad,
+  })),
+});
+
+const aItemFormulario = (s: SobranteInsumoServidor): ReturnItemForm => ({
+  id_articulo: s.id_articulo,
+  sku: s.sku,
+  name: s.nombre_articulo,
+  unit: s.unidad,
+  quantityRetrieved: s.cantidad_retirada,
+  quantityUsed: s.cantidad_utilizada,
+  maximo: s.cantidad_maxima_devolvible,
+  quantityReturned: Math.max(0, s.cantidad_maxima_devolvible),
+});
 
 export interface PropiedadesPantallaDevoluciones {
   showHeader?: boolean;
@@ -56,56 +103,89 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
   );
 
   // -------------------------------------------------------------
-  // 1. TÉCNICO: FORMULARIO DE DEVOLUCIÓN DE SOBRANTE
+  // 1. TÉCNICO: FORMULARIO DE DEVOLUCIÓN DE SOBRANTE (datos reales del servidor)
   // -------------------------------------------------------------
+  const esTecnico = rolActual === "technician";
   const activoProyectos = proyectos.filter((p) => p.status !== "cerrado");
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState(activoProyectos[0]?.id || "");
-  const [retElementos, establecerRetElementos] = useState<ReturnItemForm[]>([
-    {
-      sku: productos[0]?.sku || "GAS-TUB-0020",
-      quantityRetrieved: 10,
-      quantityUsed: 6,
-      quantityReturned: 4,
-    },
-  ]);
+  const [sobranteProyecto, establecerSobranteProyecto] = useState<SobranteInsumoServidor[]>([]);
+  const [cargandoSobrante, establecerCargandoSobrante] = useState(false);
+  const [misDevoluciones, establecerMisDevoluciones] = useState<OrdenDevolucion[]>([]);
+  const [retElementos, establecerRetElementos] = useState<ReturnItemForm[]>([]);
   const [retError, establecerRetError] = useState("");
   const [retExito, establecerRetExito] = useState("");
 
-  const manejarAgregarDevolucionElemento = () => {
-    const disponibleProducto = productos.find((p) => !retElementos.some((ri) => ri.sku === p.sku)) || productos[0];
-    if (disponibleProducto) {
-      establecerRetElementos((prev) => [
-        ...prev,
-        {
-          sku: disponibleProducto.sku,
-          quantityRetrieved: 5,
-          quantityUsed: 3,
-          quantityReturned: 2,
-        },
-      ]);
+  const cargarSobrante = async (idProyecto: string) => {
+    if (!idProyecto) {
+      establecerSobranteProyecto([]);
+      return;
     }
+    establecerCargandoSobrante(true);
+    const res = await obtenerSobranteProyecto(idProyecto);
+    establecerCargandoSobrante(false);
+    if (res.ok && res.data) {
+      establecerSobranteProyecto(res.data.items);
+    } else {
+      establecerSobranteProyecto([]);
+      establecerRetError(res.error ?? "No se pudo cargar el sobrante del proyecto");
+    }
+  };
+
+  const cargarMisDevoluciones = async () => {
+    const res = await listarMisDevoluciones();
+    if (res.ok && res.data) {
+      establecerMisDevoluciones(res.data.map(aOrdenDevolucion));
+    }
+  };
+
+  // Al elegir proyecto (o al entrar), se cargan sus insumos con sobrante real y se limpia el formulario
+  useEffect(() => {
+    if (!esTecnico) return;
+    if (!seleccionadoProyectoId && activoProyectos.length > 0) {
+      establecerSeleccionadoProyectoId(activoProyectos[0].id);
+      return;
+    }
+    establecerRetElementos([]);
+    establecerRetError("");
+    establecerRetExito("");
+    cargarSobrante(seleccionadoProyectoId);
+  }, [seleccionadoProyectoId, esTecnico, activoProyectos.length]);
+
+  useEffect(() => {
+    if (esTecnico) cargarMisDevoluciones();
+  }, [esTecnico]);
+
+  const manejarAgregarDevolucionElemento = () => {
+    const agregados = new Set(retElementos.map((r) => r.id_articulo));
+    const siguiente =
+      sobranteProyecto.find((s) => !agregados.has(s.id_articulo) && s.cantidad_maxima_devolvible > 0) ??
+      sobranteProyecto.find((s) => !agregados.has(s.id_articulo));
+    if (!siguiente) {
+      establecerRetError("No hay más insumos con sobrante en este proyecto.");
+      return;
+    }
+    establecerRetError("");
+    establecerRetElementos((prev) => [...prev, aItemFormulario(siguiente)]);
   };
 
   const manejarQuitarDevolucionElemento = (index: number) => {
-    if (retElementos.length > 1) {
-      establecerRetElementos((prev) => prev.filter((_, idx) => idx !== index));
-    }
+    establecerRetElementos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const validationErrores = retElementos.map((item) => {
-    const maximoAllowed = Math.max(0, item.quantityRetrieved - item.quantityUsed);
-    if (item.quantityReturned > maximoAllowed) {
-      return `Excede el sobrante máximo (${maximoAllowed}).`;
-    }
     if (item.quantityReturned <= 0) {
-      return `La cantidad a devolver debe ser mayor a 0.`;
+      return "La cantidad a devolver debe ser mayor a 0.";
+    }
+    if (item.quantityReturned > item.maximo) {
+      return `Excede el sobrante máximo (${item.maximo}).`;
     }
     return null;
   });
 
-  const tieneFormularioErrores = validationErrores.some((err) => err !== null);
+  const tieneFormularioErrores =
+    cargandoSobrante || retElementos.length === 0 || validationErrores.some((err) => err !== null);
 
-  const manejarGuardarTecnicoDevolucion = () => {
+  const manejarGuardarTecnicoDevolucion = async () => {
     establecerRetError("");
     establecerRetExito("");
 
@@ -114,38 +194,23 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
       return;
     }
 
-    const elementosHastaEnviar: ItemOrdenDevolucion[] = retElementos.map((i) => {
-      const p = productos.find((prod) => prod.sku === i.sku);
-      return {
-        sku: i.sku,
-        name: p ? p.name : i.sku,
-        quantityRetrieved: i.quantityRetrieved,
-        quantityUsed: i.quantityUsed,
-        quantityReturned: i.quantityReturned,
-        unit: p ? p.unit : "un",
-      };
-    });
-
-    const resultado = crearDevolucionTecnico(
+    // El servidor vuelve a validar el sobrante; el formulario solo envía cantidades
+    const res = await declararDevolucionTecnico(
       seleccionadoProyectoId,
-      usuario.rut,
-      usuario.name,
-      elementosHastaEnviar
+      retElementos.map((i) => ({ id_articulo: i.id_articulo, cantidad_declarada: i.quantityReturned }))
     );
 
-    if (!resultado.success) {
-      establecerRetError(resultado.error || "Error al registrar la devolución.");
-    } else {
-      establecerRetExito("Devolución registrada exitosamente. Se encuentra 'En tránsito' hacia Bodega Central.");
-      establecerRetElementos([
-        {
-          sku: productos[1]?.sku || "ELE-CBL-0012",
-          quantityRetrieved: 15,
-          quantityUsed: 10,
-          quantityReturned: 5,
-        },
-      ]);
+    if (!res.ok || !res.data) {
+      establecerRetError(res.error ?? "No se pudo registrar la devolución");
+      await cargarSobrante(seleccionadoProyectoId);
+      return;
     }
+
+    establecerRetExito(
+      `Devolución ${res.data.devolucion.codigo_devolucion} registrada. Se encuentra 'En tránsito' hacia Bodega Central.`
+    );
+    establecerRetElementos([]);
+    await Promise.all([cargarSobrante(seleccionadoProyectoId), cargarMisDevoluciones()]);
   };
 
   // -------------------------------------------------------------
@@ -265,7 +330,8 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
 
   // Filtrado de búsquedas
   const [transitBuscar, establecerTransitBuscar] = useState("");
-  const filtradoTransitDevoluciones = ordenesDevolucion.filter((r) => {
+  const ordenesSeguimiento = esTecnico ? misDevoluciones : ordenesDevolucion;
+  const filtradoTransitDevoluciones = ordenesSeguimiento.filter((r) => {
     const q = transitBuscar.toLowerCase();
     return (
       r.code.toLowerCase().includes(q) ||
@@ -274,7 +340,7 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
     );
   });
 
-  const inTransitConteo = ordenesDevolucion.filter((r) => r.status === "en_transito").length;
+  const inTransitConteo = ordenesSeguimiento.filter((r) => r.status === "en_transito").length;
   const proveedorPendienteConteo = devolucionesProveedor.filter((s) => s.status === "pendiente_resolucion").length;
 
   const pestanas =
@@ -375,7 +441,7 @@ export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = (
           manejarAgregarDevolucionElemento={manejarAgregarDevolucionElemento}
           manejarGuardarTecnicoDevolucion={manejarGuardarTecnicoDevolucion}
           manejarQuitarDevolucionElemento={manejarQuitarDevolucionElemento}
-          ordenesDevolucion={ordenesDevolucion}
+          ordenesDevolucion={misDevoluciones}
           productos={productos}
           retElementos={retElementos}
           retError={retError}

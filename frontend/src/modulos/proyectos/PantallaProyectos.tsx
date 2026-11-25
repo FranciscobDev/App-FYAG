@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,14 +17,11 @@ import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import {
-  Boton,
-  CampoBusqueda,
   ContenedorEstadoPantalla,
   EncabezadoPagina,
   EstadoVacio,
   Insignia,
   NotificacionFlotante,
-  Tarjeta,
 } from "@/componentes/comunes";
 import {
   ESTADOS_PROYECTO,
@@ -55,6 +51,7 @@ import {
   obtenerConfiguracionEstadoProyecto,
 } from "@/componentes/DistintivoEstadoProyecto";
 import { SeccionControlPresupuestarioAdmin } from "./componentes/SeccionControlPresupuestarioAdmin";
+import { SeccionRentabilidadFinalAdmin } from "./componentes/SeccionRentabilidadFinalAdmin";
 
 const formularioVacio = (idUsuario: number | null): FormularioProyecto => ({
   nombre_proyecto: "",
@@ -95,31 +92,12 @@ const obtenerEstiloEstado = (estado: string) => {
 };
 
 /** Determina si un estado de proyecto corresponde a un cierre definitivo (solo lectura). */
-const esEstadoCerrado = (estado?: string | null): boolean => {
-  const norm = (estado || "").toLowerCase();
-  return norm.includes("complet") || norm.includes("finaliz") || norm.includes("cancel");
-};
-
-const clasificarCategoriaEstado = (
-  estado?: string | null
-): "en_curso" | "planificados" | "finalizados" | "cancelados" => {
-  const norm = (estado || "").toLowerCase();
-  if (norm.includes("complet") || norm.includes("finaliz")) return "finalizados";
-  if (norm.includes("cancel")) return "cancelados";
-  if (norm.includes("curso") || norm.includes("proceso") || norm.includes("activ") || norm.includes("ejecuc")) {
-    return "en_curso";
-  }
-  return "planificados";
-};
-
-type FiltroKpiProyecto = "todos" | "en_curso" | "planificados" | "finalizados";
-type FiltroTipoProyecto = "todos" | "obra" | "mantencion";
+const esEstadoCerrado = (estado?: string | null): boolean =>
+  estado === "Completado" || estado === "Cancelado";
 
 export const PantallaProyectos: React.FC = () => {
   const { usuario, idUsuario, rolActual } = usarAutenticacion();
-  const { width } = useWindowDimensions();
-  const esMovilEstrecho = width < 460;
-  const [vistaActiva, establecerVistaActiva] = useState<"obras" | "presupuesto">("obras");
+  const [vistaActiva, establecerVistaActiva] = useState<"obras" | "presupuesto" | "rentabilidad">("obras");
 
   const [cargando, establecerCargando] = useState(true);
   const [proyectos, establecerProyectos] = useState<Proyecto[]>([]);
@@ -128,9 +106,7 @@ export const PantallaProyectos: React.FC = () => {
     useState<Date | null>(() => new Date());
 
   const [busqueda, establecerBusqueda] = useState("");
-  const [filtroEstado, establecerFiltroEstado] = useState<FiltroKpiProyecto>("todos");
-  const [filtroTipo, establecerFiltroTipo] = useState<FiltroTipoProyecto>("todos");
-  const [actualizandoRapidoId, establecerActualizandoRapidoId] = useState<number | null>(null);
+  const [filtroEstado, establecerFiltroEstado] = useState<string>("todos");
 
   const [seleccionado, establecerSeleccionado] = useState<Proyecto | null>(null);
 
@@ -181,108 +157,43 @@ export const PantallaProyectos: React.FC = () => {
     cargar();
   }, [cargar]);
 
-  const metricasProyectos = useMemo(() => {
-    let enCurso = 0;
-    let planificadosYPausados = 0;
-    let finalizados = 0;
-    let presupuestoTotal = 0;
-    let ejecutadoTotal = 0;
-    let sobrecostoCount = 0;
-
-    proyectos.forEach((p) => {
-      const cat = clasificarCategoriaEstado(p.estado_proyecto);
-      if (cat === "en_curso") enCurso++;
-      else if (cat === "finalizados") finalizados++;
-      else planificadosYPausados++;
-
-      const presup = Number(p.presupuesto_inicial || 0);
-      const ejec = Number(p.valor_venta || 0);
-      presupuestoTotal += presup;
-      ejecutadoTotal += ejec;
-      if (presup > 0 && ejec > presup) {
-        sobrecostoCount++;
-      }
-    });
-
-    return {
-      total: proyectos.length,
-      enCurso,
-      planificadosYPausados,
-      finalizados,
-      presupuestoTotal: Math.round(presupuestoTotal),
-      ejecutadoTotal: Math.round(ejecutadoTotal),
-      sobrecostoCount,
-    };
-  }, [proyectos]);
-
   const proyectosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return proyectos.filter((p) => {
-      const cat = clasificarCategoriaEstado(p.estado_proyecto);
-      if (filtroEstado === "en_curso" && cat !== "en_curso") return false;
-      if (filtroEstado === "planificados" && cat !== "planificados" && cat !== "cancelados") return false;
-      if (filtroEstado === "finalizados" && cat !== "finalizados") return false;
-
-      const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
-      if (filtroTipo === "mantencion" && !esMantencion) return false;
-      if (filtroTipo === "obra" && esMantencion) return false;
-
+      if (
+        filtroEstado !== "todos" &&
+        p.estado_proyecto.toLowerCase() !== filtroEstado.toLowerCase()
+      ) {
+        return false;
+      }
       if (q) {
         const coincide =
           p.nombre_proyecto.toLowerCase().includes(q) ||
           (p.cliente ?? "").toLowerCase().includes(q) ||
-          (p.direccion ?? "").toLowerCase().includes(q) ||
-          (p.tipo_proyecto ?? "").toLowerCase().includes(q) ||
           p.estado_proyecto.toLowerCase().includes(q);
         if (!coincide) return false;
       }
       return true;
     });
-  }, [proyectos, busqueda, filtroEstado, filtroTipo]);
+  }, [proyectos, busqueda, filtroEstado]);
 
-  const avanzarProgresoRapido = async (p: Proyecto, nuevoAvance: number) => {
-    if (esEstadoCerrado(p.estado_proyecto) || actualizandoRapidoId === p.id_proyecto) return;
-    const avanceClamped = Math.min(100, Math.max(0, nuevoAvance));
-    const nuevoEstado =
-      avanceClamped >= 100
-        ? "Completado"
-        : avanceClamped > 0 && clasificarCategoriaEstado(p.estado_proyecto) === "planificados"
-          ? "En Proceso"
-          : p.estado_proyecto;
-
-    establecerActualizandoRapidoId(p.id_proyecto);
-    const res = await actualizarProyecto(p.id_proyecto, {
-      nombre_proyecto: p.nombre_proyecto,
-      tipo_proyecto: p.tipo_proyecto,
-      cliente: p.cliente,
-      id_cliente: p.id_cliente,
-      direccion: p.direccion,
-      fecha_inicio: p.fecha_inicio,
-      fecha_fin: p.fecha_fin,
-      presupuesto_inicial: p.presupuesto_inicial,
-      presupuesto_horas: p.presupuesto_horas,
-      valor_venta: p.valor_venta,
-      porcentaje_avance: avanceClamped,
-      estado_proyecto: nuevoEstado,
-      id_usuario: p.id_usuario,
+  const conteoPorEstado = useMemo(() => {
+    const mapa: Record<string, number> = {
+      Planificado: 0,
+      "En curso": 0,
+      Pausado: 0,
+      Finalizado: 0,
+    };
+    proyectos.forEach((p) => {
+      const cfg = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
+      if (cfg.etiqueta in mapa) {
+        mapa[cfg.etiqueta] += 1;
+      } else {
+        mapa[p.estado_proyecto] = (mapa[p.estado_proyecto] || 0) + 1;
+      }
     });
-    establecerActualizandoRapidoId(null);
-
-    if (res.ok && res.data) {
-      const actualizado = res.data.proyecto;
-      establecerProyectos((prev) =>
-        prev.map((item) => (item.id_proyecto === actualizado.id_proyecto ? actualizado : item))
-      );
-      establecerUltimaSincronizacion(new Date());
-      mostrarAviso(
-        avanceClamped >= 100
-          ? `Obra "${p.nombre_proyecto}" marcada como Completada (100%).`
-          : `Avance de "${p.nombre_proyecto}" actualizado a ${avanceClamped}%.`
-      );
-    } else {
-      mostrarAviso(res.error ?? "No se pudo actualizar el avance.");
-    }
-  };
+    return mapa;
+  }, [proyectos]);
 
   const horaSincCorta = useMemo(() => {
     if (!ultimaSincronizacion) return "--:--:--";
@@ -596,59 +507,18 @@ export const PantallaProyectos: React.FC = () => {
     );
   }
 
-  const obtenerSemaforoProyecto = (p: Proyecto) => {
-    const cat = clasificarCategoriaEstado(p.estado_proyecto);
-    const presup = Number(p.presupuesto_inicial || 0);
-    const ejec = Number(p.valor_venta || 0);
-    const tieneSobrecosto = presup > 0 && ejec > presup;
-
-    if (cat === "cancelados" || tieneSobrecosto) {
-      return {
-        bg: "#fef2f2",
-        border: "#fca5a5",
-        stripe: "#dc2626",
-        text: "#991b1b",
-        divider: "#fecaca",
-        badgeBg: "#fee2e2",
-        etiquetaAlerta: tieneSobrecosto ? "Sobrecosto" : "Cancelado",
-        tone: "danger" as const,
-      };
-    }
-    if (cat === "finalizados") {
-      return {
-        bg: "#f0fdf4",
-        border: "#86efac",
-        stripe: "#16a34a",
-        text: "#166534",
-        divider: "#bbf7d0",
-        badgeBg: "#dcfce7",
-        etiquetaAlerta: null,
-        tone: "ok" as const,
-      };
-    }
-    if (cat === "en_curso") {
-      return {
-        bg: "#fffbeb",
-        border: "#fcd34d",
-        stripe: "#d97706",
-        text: "#92400e",
-        divider: "#fde68a",
-        badgeBg: "#fef3c7",
-        etiquetaAlerta: null,
-        tone: "warn" as const,
-      };
-    }
-    return {
-      bg: "#f1f5f9",
-      border: "#cbd5e1",
-      stripe: "#475569",
-      text: "#334155",
-      divider: "#e2e8f0",
-      badgeBg: "#e2e8f0",
-      etiquetaAlerta: null,
-      tone: "info" as const,
-    };
-  };
+  // ---------- Listado ----------
+  const totalPlanificados = proyectos.filter((p) =>
+    p.estado_proyecto.toLowerCase().includes("planific")
+  ).length;
+  const totalEnCurso = proyectos.filter((p) => {
+    const s = p.estado_proyecto.toLowerCase();
+    return s.includes("curso") || s.includes("proceso") || s.includes("activ");
+  }).length;
+  const totalFinalizados = proyectos.filter((p) => {
+    const s = p.estado_proyecto.toLowerCase();
+    return s.includes("finaliz") || s.includes("complet");
+  }).length;
 
   return (
     <ContenedorEstadoPantalla screenTitle="Proyectos y Obras" skeletonType="cards">
@@ -659,13 +529,13 @@ export const PantallaProyectos: React.FC = () => {
           onDismiss={() => establecerAviso(null)}
         />
 
-        {/* 1. ENCABEZADO OSCURO ESTÁNDAR */}
+        {/* 1. ENCABEZADO OSCURO ESTÁNDAR (Igual al resto de módulos FYAG) */}
         <EncabezadoPagina
           title="Proyectos y Obras"
           subtitle="Planificación de faenas, asignación de técnicos, kits predeterminados y control presupuestario"
         />
 
-        {/* Barra de alternancia de vista para Administrador: Listado de Obras vs Control Presupuestario */}
+        {/* Barra de alternancia de vista para Administrador: Obras vs Control Presupuestario (H27) */}
         {rolActual === "admin" && (
           <View
             style={{
@@ -708,7 +578,7 @@ export const PantallaProyectos: React.FC = () => {
                   color: vistaActiva === "obras" ? tema.colors.primaryDark : tema.colors.textSecondary,
                 }}
               >
-                Listado de Obras ({proyectos.length})
+                Listado de Obras
               </Text>
             </TouchableOpacity>
 
@@ -748,7 +618,47 @@ export const PantallaProyectos: React.FC = () => {
                       : tema.colors.textSecondary,
                 }}
               >
-                Control Presupuestario
+                Control Presupuestario (H27)
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => establecerVistaActiva("rentabilidad")}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor:
+                  vistaActiva === "rentabilidad" ? tema.colors.primary : tema.colors.border,
+                backgroundColor:
+                  vistaActiva === "rentabilidad" ? tema.colors.primaryLight : tema.colors.surfaceAlt,
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="pie-chart-outline"
+                size={16}
+                color={
+                  vistaActiva === "rentabilidad"
+                    ? tema.colors.primaryDark
+                    : tema.colors.textMuted
+                }
+              />
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: "700",
+                  color:
+                    vistaActiva === "rentabilidad"
+                      ? tema.colors.primaryDark
+                      : tema.colors.textSecondary,
+                }}
+              >
+                Rentabilidad Final (H34)
               </Text>
             </TouchableOpacity>
           </View>
@@ -757,590 +667,314 @@ export const PantallaProyectos: React.FC = () => {
         <ScrollView contentContainerStyle={estilos.scrollCuerpo}>
           {rolActual === "admin" && vistaActiva === "presupuesto" ? (
             <SeccionControlPresupuestarioAdmin mostrarAviso={mostrarAviso} />
+          ) : rolActual === "admin" && vistaActiva === "rentabilidad" ? (
+            <SeccionRentabilidadFinalAdmin mostrarAviso={mostrarAviso} />
           ) : (
             <>
-              {/* 1. CABECERA COMPACTA INDUSTRIAL + ACCIONES RÁPIDAS */}
-              <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    flexWrap: "wrap",
-                    gap: 10,
-                  }}
+          {/* 2. KPIs DE RESUMEN SUPERIOR (Estilo Control de Herramientas) */}
+          <View style={styles.kpisProyectosFila}>
+            <View style={styles.kpiProyectoCaja}>
+              <Text style={styles.kpiProyectoValor}>{proyectos.length}</Text>
+              <Text style={styles.kpiProyectoLbl}>Total Obras</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#bfdbfe" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: "#1d4ed8" }]}>
+                {totalPlanificados}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>Planificados</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#fde68a" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: tema.colors.primaryDark }]}>
+                {totalEnCurso}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>En Curso</Text>
+            </View>
+            <View style={[styles.kpiProyectoCaja, { borderColor: "#bbf7d0" }]}>
+              <Text style={[styles.kpiProyectoValor, { color: "#15803d" }]}>
+                {totalFinalizados}
+              </Text>
+              <Text style={styles.kpiProyectoLbl}>Finalizados</Text>
+            </View>
+          </View>
+
+          {/* Indicador de última sincronización en tiempo real */}
+          <IndicadorUltimaSincronizacion
+            ultimaSincronizacion={ultimaSincronizacion}
+            sincronizando={cargando}
+            sinConexion={Boolean(error)}
+            onSincronizar={cargar}
+            fuenteDatos="Estados de proyectos sincronizados con el servidor central"
+            style={{ marginBottom: 12 }}
+          />
+
+          {/* Distintivos de color y texto por cada estado */}
+          <LeyendaAccesibilidadEstados
+            conteoPorEstado={conteoPorEstado}
+            estadoSeleccionado={filtroEstado}
+            onSeleccionarEstado={establecerFiltroEstado}
+          />
+
+          {/* 3. TARJETA HERO CON BORDE ÁMBAR (Igual a Herramientas, OC y Conteos) */}
+          <View style={estilos.crearProyectoHeroTarjeta}>
+            <View style={estilos.crearProyectoHeroContenido}>
+              <View style={estilos.crearProyectoHeroIzquierda}>
+                <View style={estilos.heroInsigniaFila}>
+                  <Insignia label="Obras y Faenas" tone="warn" size="sm" />
+                  <Text style={estilos.heroInsigniaHint}>
+                    Control de Ejecución y Presupuesto
+                  </Text>
+                </View>
+                <Text style={estilos.crearProyectoHeroTitulo}>
+                  Registrar Nuevo Proyecto o Faena
+                </Text>
+                <Text style={estilos.crearProyectoHeroDescripcion}>
+                  Crea una obra o mantención definiendo cliente, plazos, kit predeterminado de materiales y presupuesto inicial.
+                </Text>
+              </View>
+
+              <View style={{ width: "100%", gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.botonHeroPrimario}
+                  onPress={abrirNuevo}
+                  activeOpacity={0.85}
                 >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 220 }}>
+                  <Ionicons name="add-circle-outline" size={18} color="#ffffff" />
+                  <Text style={styles.botonNuevoPrimarioTexto}>
+                    + Registrar Nuevo Proyecto
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={styles.herramientasRapidasFila}>
+                  <TouchableOpacity
+                    style={[
+                      styles.botonHerramientaSecundario,
+                      panelAsignacionVisible && styles.botonHerramientaSecundarioActivo,
+                    ]}
+                    onPress={() => establecerPanelAsignacionVisible((prev) => !prev)}
+                    activeOpacity={0.8}
+                  >
                     <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        backgroundColor: tema.colors.primaryLight,
-                        borderWidth: 1,
-                        borderColor: tema.colors.primaryBorder,
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
+                      style={[
+                        styles.iconoHerramientaCirculo,
+                        panelAsignacionVisible && styles.iconoHerramientaCirculoActivo,
+                      ]}
                     >
-                      <Ionicons name="construct-outline" size={20} color={tema.colors.primaryDark} />
+                      <Ionicons
+                        name="person-add-outline"
+                        size={15}
+                        color={panelAsignacionVisible ? "#ffffff" : tema.colors.primary}
+                      />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
-                          Gestión de Proyectos y Faenas
-                        </Text>
-                        <TouchableOpacity
-                          onPress={cargar}
-                          hitSlop={8}
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 3,
-                            backgroundColor: "#f0fdf4",
-                            borderWidth: 1,
-                            borderColor: "#86efac",
-                            borderRadius: 999,
-                            paddingHorizontal: 7,
-                            paddingVertical: 2,
-                          }}
-                        >
-                          <Ionicons name="sync-outline" size={11} color="#166534" />
-                          <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#166534" }}>
-                            {horaSincCorta}
-                          </Text>
-                        </TouchableOpacity>
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.botonHerramientaTexto,
+                        panelAsignacionVisible && styles.botonHerramientaTextoActivo,
+                      ]}
+                    >
+                      {panelAsignacionVisible ? "Ocultar Asignación" : "Asignar Técnicos"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.botonHerramientaSecundario}
+                    onPress={() => establecerModalKitsVisible(true)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.iconoHerramientaCirculo}>
+                      <Ionicons name="cube-outline" size={15} color={tema.colors.primary} />
+                    </View>
+                    <Text numberOfLines={1} style={styles.botonHerramientaTexto}>
+                      Gestionar Kits
+                    </Text>
+                    {kits.length > 0 && (
+                      <View style={styles.badgeContadorKits}>
+                        <Text style={styles.badgeContadorKitsTexto}>{kits.length}</Text>
                       </View>
-                      <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
-                        Presupuesto cartera:{" "}
-                        <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
-                          {formatearCLP(metricasProyectos.presupuestoTotal)}
-                        </Text>
-                        {` • Ejecutado: ${formatearCLP(metricasProyectos.ejecutadoTotal)}`}
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {panelAsignacionVisible && (
+            <ScrollView style={{ maxHeight: 500, marginBottom: 12 }} nestedScrollEnabled>
+              <AsignacionTecnicos
+                proyectosProp={proyectos.length > 0 ? proyectos : undefined}
+                onAviso={mostrarAviso}
+                onCancel={() => establecerPanelAsignacionVisible(false)}
+              />
+            </ScrollView>
+          )}
+
+          {/* 4. BUSCADOR Y FILTROS DE ESTADO */}
+          <View style={styles.buscadorModernoCaja}>
+            <Ionicons name="search-outline" size={18} color="#9ca3af" />
+            <TextInput
+              style={styles.buscadorModernoInput}
+              placeholder="Buscar por código, nombre o cliente..."
+              placeholderTextColor="#9ca3af"
+              value={busqueda}
+              onChangeText={establecerBusqueda}
+            />
+            {busqueda.length > 0 && (
+              <TouchableOpacity onPress={() => establecerBusqueda("")}>
+                <Ionicons name="close-circle" size={18} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={[styles.filtrosWrapper, { marginBottom: 14 }]}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.filtrosContenido}
+              style={styles.filtrosScroll}
+            >
+              {["todos", ...ESTADOS_PROYECTO].map((e) => {
+                const activo = filtroEstado === e;
+                const cantidadEstado =
+                  e === "todos"
+                    ? proyectos.length
+                    : proyectos.filter((p) => p.estado_proyecto === e).length;
+                return (
+                  <Pressable
+                    key={e}
+                    onPress={() => establecerFiltroEstado(e)}
+                    style={[styles.chip, activo && styles.chipActivo]}
+                  >
+                    <Text style={[styles.chipTexto, activo && styles.chipTextoActivo]}>
+                      {e === "todos" ? `Todos (${cantidadEstado})` : `${e} (${cantidadEstado})`}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* 5. LISTADO DE PROYECTOS */}
+          {cargando ? (
+            <ActivityIndicator style={{ marginTop: 40 }} color={tema.colors.primary} size="large" />
+          ) : error ? (
+            <EstadoVacio title="No se pudieron cargar los proyectos" description={error} />
+          ) : proyectosFiltrados.length === 0 ? (
+            <EstadoVacio title="Sin proyectos" description="No hay proyectos que coincidan." />
+          ) : (
+            proyectosFiltrados.map((p) => {
+              const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
+              const color = colorAvance(porcentaje);
+              const cfgEstado = obtenerConfiguracionEstadoProyecto(p.estado_proyecto);
+              const esCerrado = esEstadoCerrado(p.estado_proyecto);
+              const estEstado = obtenerEstiloEstado(p.estado_proyecto);
+              const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
+              return (
+                <Pressable
+                  key={p.id_proyecto}
+                  style={[
+                    styles.tarjetaProyectoModerna,
+                    { borderLeftWidth: 4, borderLeftColor: cfgEstado.colorBorde },
+                    esCerrado && { opacity: 0.85, backgroundColor: "#f9fafb" },
+                  ]}
+                  onPress={() => establecerSeleccionado(p)}
+                >
+                  {/* Fila superior de insignias: Tipo + Estado */}
+                  <View style={styles.tarjetaTopInsignias}>
+                    <View style={styles.badgeTipoProyecto}>
+                      <Ionicons
+                        name={esMantencion ? "build-outline" : "construct-outline"}
+                        size={12}
+                        color={tema.colors.primary}
+                      />
+                      <Text style={styles.badgeTipoProyectoTexto}>{p.tipo_proyecto}</Text>
+                    </View>
+
+                    <View
+                      style={[
+                        styles.badgeEstadoProyecto,
+                        { backgroundColor: estEstado.bg, borderColor: estEstado.border },
+                      ]}
+                    >
+                      <View
+                        style={[styles.puntoEstadoProyecto, { backgroundColor: estEstado.dot }]}
+                      />
+                      <Text style={[styles.badgeEstadoProyectoTexto, { color: estEstado.text }]}>
+                        {p.estado_proyecto}
                       </Text>
                     </View>
                   </View>
 
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      flexWrap: "wrap",
-                      gap: 8,
-                      width: esMovilEstrecho ? "100%" : undefined,
-                    }}
-                  >
-                    <Boton
-                      title={panelAsignacionVisible ? "Ocultar Técnicos" : "Técnicos"}
-                      variant="outline"
-                      size="sm"
-                      icon="people-outline"
-                      onPress={() => establecerPanelAsignacionVisible((prev) => !prev)}
-                      style={{ minHeight: 38, flex: esMovilEstrecho ? 1 : undefined }}
-                    />
-                    <Boton
-                      title={`Kits (${kits.length})`}
-                      variant="outline"
-                      size="sm"
-                      icon="cube-outline"
-                      onPress={() => establecerModalKitsVisible(true)}
-                      style={{ minHeight: 38, flex: esMovilEstrecho ? 1 : undefined }}
-                    />
-                    <Boton
-                      title="Nuevo Proyecto"
-                      variant="primary"
-                      size="sm"
-                      icon="add-outline"
-                      onPress={abrirNuevo}
-                      style={{ minHeight: 38, flex: esMovilEstrecho ? 1.3 : undefined }}
-                    />
+                  {/* Nombre y Cliente */}
+                  <Text style={styles.nombreProyectoModerna} numberOfLines={2}>
+                    {p.nombre_proyecto}
+                  </Text>
+
+                  <View style={styles.clienteProyectoFila}>
+                    <Ionicons name="business-outline" size={14} color="#6b7280" />
+                    <Text style={styles.clienteProyectoTexto} numberOfLines={1}>
+                      {p.cliente && p.cliente.trim().length > 0 ? p.cliente : "Sin cliente asignado"}
+                    </Text>
                   </View>
-                </View>
-              </Tarjeta>
 
-              {/* PANEL INTERACTIVO DESPLEGABLE DE ASIGNACIÓN DE TÉCNICOS */}
-              {panelAsignacionVisible && (
-                <View style={{ marginBottom: 12 }}>
-                  <AsignacionTecnicos
-                    proyectosProp={proyectos.length > 0 ? proyectos : undefined}
-                    onAviso={mostrarAviso}
-                    onCancel={() => establecerPanelAsignacionVisible(false)}
-                  />
-                </View>
-              )}
+                  {p.direccion ? (
+                    <View style={[styles.clienteProyectoFila, { marginTop: 3 }]}>
+                      <Ionicons name="location-outline" size={14} color="#9ca3af" />
+                      <Text style={styles.direccionProyectoTexto} numberOfLines={1}>
+                        {p.direccion}
+                      </Text>
+                    </View>
+                  ) : null}
 
-              {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS CON SEMÁFORO */}
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                {[
-                  {
-                    id: "en_curso" as FiltroKpiProyecto,
-                    titulo: "En Curso",
-                    valor: metricasProyectos.enCurso,
-                    sub: "Obras en ejecución",
-                    icon: "play-circle-outline" as const,
-                    bg: "#fffbeb",
-                    border: "#fcd34d",
-                    borderActivo: "#d97706",
-                    textColor: "#92400e",
-                  },
-                  {
-                    id: "planificados" as FiltroKpiProyecto,
-                    titulo: "Planificados",
-                    valor: metricasProyectos.planificadosYPausados,
-                    sub: "Por iniciar o pausa",
-                    icon: "calendar-outline" as const,
-                    bg: "#f1f5f9",
-                    border: "#cbd5e1",
-                    borderActivo: "#475569",
-                    textColor: "#334155",
-                  },
-                  {
-                    id: "finalizados" as FiltroKpiProyecto,
-                    titulo: "Finalizados",
-                    valor: metricasProyectos.finalizados,
-                    sub: "Obras completadas",
-                    icon: "checkmark-done-circle-outline" as const,
-                    bg: "#f0fdf4",
-                    border: "#86efac",
-                    borderActivo: "#16a34a",
-                    textColor: "#166534",
-                  },
-                  {
-                    id: "todos" as FiltroKpiProyecto,
-                    titulo: "Total Obras",
-                    valor: metricasProyectos.total,
-                    sub: "Cartera completa",
-                    icon: "layers-outline" as const,
-                    bg: "#f1f5f9",
-                    border: "#cbd5e1",
-                    borderActivo: "#0f172a",
-                    textColor: "#0f172a",
-                  },
-                ].map((kpi) => {
-                  const activo = filtroEstado === kpi.id;
-                  return (
-                    <TouchableOpacity
-                      key={kpi.id}
-                      activeOpacity={0.8}
-                      onPress={() => establecerFiltroEstado(kpi.id)}
-                      style={{
-                        flexBasis: "48%",
-                        flexGrow: 1,
-                        minWidth: 140,
-                        backgroundColor: kpi.bg,
-                        borderWidth: activo ? 2 : 1,
-                        borderColor: activo ? kpi.borderActivo : kpi.border,
-                        borderLeftWidth: 5,
-                        borderLeftColor: kpi.borderActivo,
-                        borderRadius: 10,
-                        paddingHorizontal: 10,
-                        paddingVertical: 8,
-                      }}
-                    >
-                      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontWeight: "800",
-                            color: kpi.textColor,
-                            textTransform: "uppercase",
-                          }}
-                          numberOfLines={1}
-                        >
-                          {kpi.titulo}
-                        </Text>
-                        <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
-                      </View>
+                  {/* Barra de progreso con etiqueta */}
+                  <View style={styles.bloqueProgresoModerna}>
+                    <View style={styles.progresoEncabezadoFila}>
+                      <Text style={styles.progresoEtiqueta}>Avance de obra</Text>
+                      <Text style={[styles.progresoPorcentajeValor, { color }]}>
+                        {porcentaje}%
+                      </Text>
+                    </View>
+                    <View style={styles.barraModernaFondo}>
                       <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "baseline",
-                          justifyContent: "space-between",
-                          marginTop: 2,
-                        }}
-                      >
-                        <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
-                          {kpi.valor}
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 10,
-                            fontWeight: activo ? "800" : "600",
-                            color: kpi.textColor,
-                          }}
-                          numberOfLines={1}
-                        >
-                          {activo ? "● Vista activa" : kpi.sub}
+                        style={[
+                          styles.barraModernaRelleno,
+                          { width: `${porcentaje}%`, backgroundColor: color },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Pie de tarjeta con métricas y fechas */}
+                  <View style={styles.pieTarjetaModerna}>
+                    <View style={styles.metricaPieBloque}>
+                      <Text style={styles.metricaPieEtiqueta}>Presupuesto usado</Text>
+                      <Text style={styles.metricaPieValor}>{formatearCLP(p.valor_venta)}</Text>
+                    </View>
+
+                    <View style={styles.divisorVerticalPie} />
+
+                    <View style={[styles.metricaPieBloque, { flex: 1.2 }]}>
+                      <Text style={styles.metricaPieEtiqueta}>Plazo estimado</Text>
+                      <View style={styles.fechasPieFila}>
+                        <Ionicons name="calendar-outline" size={13} color="#6b7280" />
+                        <Text style={styles.fechasPieTexto} numberOfLines={1}>
+                          {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} →{" "}
+                          {p.fecha_fin ? formatearFecha(p.fecha_fin) : "—"}
                         </Text>
                       </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+                    </View>
 
-              {/* 3. BUSCADOR Y FILTRO RÁPIDO POR TIPO DE FAENA */}
-              <View style={{ marginBottom: 12, gap: 8 }}>
-                <CampoBusqueda
-                  value={busqueda}
-                  onChangeText={establecerBusqueda}
-                  placeholder="Buscar proyecto por nombre, cliente, dirección o estado..."
-                />
-
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                  {(
-                    [
-                      { id: "todos", label: "Todos los tipos", icon: "apps-outline" as const },
-                      { id: "obra", label: "Obras e Instalaciones", icon: "construct-outline" as const },
-                      { id: "mantencion", label: "Mantenciones", icon: "build-outline" as const },
-                    ] as const
-                  ).map((t) => {
-                    const activo = filtroTipo === t.id;
-                    return (
-                      <TouchableOpacity
-                        key={t.id}
-                        activeOpacity={0.8}
-                        onPress={() => establecerFiltroTipo(t.id)}
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 5,
-                          paddingHorizontal: 11,
-                          paddingVertical: 6,
-                          borderRadius: 999,
-                          borderWidth: 1,
-                          backgroundColor: activo ? "#0f172a" : "#ffffff",
-                          borderColor: activo ? tema.colors.primary : tema.colors.borderDark,
-                        }}
-                      >
-                        <Ionicons
-                          name={t.icon}
-                          size={13}
-                          color={activo ? "#818cf8" : tema.colors.textSecondary}
-                        />
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontWeight: activo ? "800" : "600",
-                            color: activo ? "#ffffff" : tema.colors.textSecondary,
-                          }}
-                        >
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-
-              {/* 4. LISTADO INTERACTIVO DE PROYECTOS CON SEMÁFORO DE SUPERFICIE */}
-              {cargando ? (
-                <ActivityIndicator style={{ marginTop: 40 }} color={tema.colors.primary} size="large" />
-              ) : error ? (
-                <EstadoVacio title="No se pudieron cargar los proyectos" description={error} />
-              ) : proyectosFiltrados.length === 0 ? (
-                <EstadoVacio
-                  icon="construct-outline"
-                  title="Sin proyectos en esta vista"
-                  description={
-                    busqueda.trim()
-                      ? `No hay obras que coincidan con "${busqueda.trim()}".`
-                      : "No hay obras registradas bajo el filtro de estado o tipo seleccionado."
-                  }
-                  actionTitle={
-                    filtroEstado !== "todos" || filtroTipo !== "todos"
-                      ? "Ver Todas las Obras"
-                      : "Nuevo Proyecto"
-                  }
-                  onAction={
-                    filtroEstado !== "todos" || filtroTipo !== "todos"
-                      ? () => {
-                          establecerFiltroEstado("todos");
-                          establecerFiltroTipo("todos");
-                        }
-                      : abrirNuevo
-                  }
-                />
-              ) : (
-                proyectosFiltrados.map((p) => {
-                  const porcentaje = Math.min(Math.max(p.porcentaje_avance, 0), 100);
-                  const esCerrado = esEstadoCerrado(p.estado_proyecto);
-                  const esMantencion = (p.tipo_proyecto || "").toLowerCase().includes("manten");
-                  const semaforo = obtenerSemaforoProyecto(p);
-                  const presup = Number(p.presupuesto_inicial || 0);
-                  const ejec = Number(p.valor_venta || 0);
-                  const pctPresupuesto = presup > 0 ? Math.round((ejec / presup) * 100) : 0;
-                  const estaActualizando = actualizandoRapidoId === p.id_proyecto;
-
-                  return (
-                    <Tarjeta
-                      key={p.id_proyecto}
-                      variant="outlined"
-                      style={{
-                        marginBottom: 12,
-                        padding: 12,
-                        backgroundColor: semaforo.bg,
-                        borderColor: semaforo.border,
-                        borderWidth: 1.5,
-                        borderLeftWidth: 6,
-                        borderLeftColor: semaforo.stripe,
-                        borderRadius: 12,
-                      }}
-                    >
-                      {/* Cabecera de la tarjeta: Insignias + Título + Cliente vs Caja de Presupuesto */}
-                      <Pressable
-                        onPress={() => establecerSeleccionado(p)}
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start",
-                          flexWrap: "wrap",
-                          gap: 8,
-                        }}
-                      >
-                        <View style={{ flex: 1, minWidth: 200 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                            <View
-                              style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                gap: 4,
-                                backgroundColor: "#ffffff",
-                                borderWidth: 1,
-                                borderColor: tema.colors.primaryBorder,
-                                paddingHorizontal: 8,
-                                paddingVertical: 2,
-                                borderRadius: 6,
-                              }}
-                            >
-                              <Ionicons
-                                name={esMantencion ? "build-outline" : "construct-outline"}
-                                size={11}
-                                color={tema.colors.primaryDark}
-                              />
-                              <Text style={{ fontSize: 10, fontWeight: "800", color: tema.colors.primaryDark }}>
-                                {p.tipo_proyecto}
-                              </Text>
-                            </View>
-
-                            <Insignia label={p.estado_proyecto} tone={semaforo.tone} size="sm" />
-
-                            {semaforo.etiquetaAlerta && (
-                              <Insignia label={semaforo.etiquetaAlerta} tone="danger" size="sm" />
-                            )}
-                          </View>
-
-                          <Text
-                            style={{
-                              fontSize: 15,
-                              fontWeight: "800",
-                              color: tema.colors.text,
-                              marginTop: 5,
-                            }}
-                          >
-                            {p.nombre_proyecto}
-                          </Text>
-
-                          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 2 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                              <Ionicons name="business-outline" size={13} color={semaforo.text} />
-                              <Text style={{ fontSize: 12, fontWeight: "700", color: semaforo.text }}>
-                                {p.cliente && p.cliente.trim().length > 0 ? p.cliente : "Sin cliente asignado"}
-                              </Text>
-                            </View>
-
-                            {p.direccion ? (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, flex: 1, minWidth: 140 }}>
-                                <Ionicons name="location-outline" size={13} color={tema.colors.textSecondary} />
-                                <Text style={{ fontSize: 11, color: tema.colors.textSecondary }} numberOfLines={1}>
-                                  {p.direccion}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
-                        </View>
-
-                        <View
-                          style={{
-                            backgroundColor: "#ffffff",
-                            borderWidth: 1,
-                            borderColor: semaforo.divider,
-                            borderRadius: 9,
-                            paddingHorizontal: 10,
-                            paddingVertical: 6,
-                            alignItems: "flex-end",
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 9,
-                              fontWeight: "800",
-                              color: tema.colors.textMuted,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            Presupuesto Obra
-                          </Text>
-                          <Text style={{ fontSize: 14, fontWeight: "900", color: semaforo.text }}>
-                            {formatearCLP(presup)}
-                          </Text>
-                        </View>
-                      </Pressable>
-
-                      {/* Ficha Blanca Interna: Barra de Avance + Métricas Financieras y Plazo */}
-                      <View
-                        style={{
-                          backgroundColor: "#ffffff",
-                          borderWidth: 1,
-                          borderColor: semaforo.divider,
-                          borderRadius: 9,
-                          paddingHorizontal: 10,
-                          paddingVertical: 8,
-                          marginTop: 8,
-                          gap: 8,
-                        }}
-                      >
-                        {/* Barra de avance con controles rápidos */}
-                        <View style={{ gap: 4 }}>
-                          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                            <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textSecondary }}>
-                              Avance físico de ejecución
-                            </Text>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                              {!esCerrado && porcentaje < 100 && (
-                                <TouchableOpacity
-                                  disabled={estaActualizando}
-                                  onPress={() => avanzarProgresoRapido(p, Math.min(100, porcentaje + 15))}
-                                  style={{
-                                    backgroundColor: tema.colors.primaryLight,
-                                    borderWidth: 1,
-                                    borderColor: tema.colors.primaryBorder,
-                                    borderRadius: 6,
-                                    paddingHorizontal: 6,
-                                    paddingVertical: 1,
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 10, fontWeight: "800", color: tema.colors.primaryDark }}>
-                                    {estaActualizando ? "..." : "+15%"}
-                                  </Text>
-                                </TouchableOpacity>
-                              )}
-                              <Text style={{ fontSize: 13, fontWeight: "900", color: semaforo.stripe }}>
-                                {porcentaje}%
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View
-                            style={{
-                              height: 7,
-                              backgroundColor: "#e2e8f0",
-                              borderRadius: 999,
-                              overflow: "hidden",
-                            }}
-                          >
-                            <View
-                              style={{
-                                width: `${porcentaje}%`,
-                                height: "100%",
-                                backgroundColor: semaforo.stripe,
-                                borderRadius: 999,
-                              }}
-                            />
-                          </View>
-                        </View>
-
-                        {/* Fila de 3 métricas: Ejecutado, Horas y Plazo */}
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                            borderTopWidth: 1,
-                            borderTopColor: "#f3f4f6",
-                            paddingTop: 6,
-                            gap: 8,
-                          }}
-                        >
-                          <View style={{ flex: 1, minWidth: 110 }}>
-                            <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
-                              Ejecutado ({pctPresupuesto}%)
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                fontWeight: "800",
-                                color: pctPresupuesto > 100 ? "#dc2626" : tema.colors.text,
-                                marginTop: 1,
-                              }}
-                            >
-                              {formatearCLP(ejec)}
-                            </Text>
-                          </View>
-
-                          <View style={{ flex: 0.7, minWidth: 75 }}>
-                            <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
-                              Horas Presup.
-                            </Text>
-                            <Text style={{ fontSize: 12, fontWeight: "800", color: tema.colors.text, marginTop: 1 }}>
-                              {p.presupuesto_horas} HH
-                            </Text>
-                          </View>
-
-                          <View style={{ flex: 1.3, minWidth: 145, alignItems: "flex-end" }}>
-                            <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
-                              Plazo Estimado
-                            </Text>
-                            <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textSecondary, marginTop: 1 }} numberOfLines={1}>
-                              {p.fecha_inicio ? formatearFecha(p.fecha_inicio) : "—"} →{" "}
-                              {p.fecha_fin ? formatearFecha(p.fecha_fin) : "Abierto"}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-
-                      {/* Botonera Interactiva Directa al Pie */}
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          flexWrap: "wrap",
-                          gap: 8,
-                          marginTop: 10,
-                        }}
-                      >
-                        <Boton
-                          title="Detalle y Técnicos"
-                          variant="primary"
-                          size="sm"
-                          icon="people-outline"
-                          onPress={() => establecerSeleccionado(p)}
-                          style={{ flex: 1.3, minHeight: 36 }}
-                        />
-
-                        <Boton
-                          title={esCerrado ? "Ver Ficha" : "Editar"}
-                          variant="outline"
-                          size="sm"
-                          icon={esCerrado ? "lock-closed-outline" : "create-outline"}
-                          onPress={() => abrirEditar(p)}
-                          style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
-                        />
-
-                        {!esCerrado && porcentaje < 100 && (
-                          <Boton
-                            title="Completar"
-                            variant="outline"
-                            size="sm"
-                            icon="checkmark-done-outline"
-                            disabled={estaActualizando}
-                            onPress={() => avanzarProgresoRapido(p, 100)}
-                            style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
-                          />
-                        )}
-                      </View>
-                    </Tarjeta>
-                  );
-                })
-              )}
+                    <View style={styles.flechaDetalleCaja}>
+                      <Ionicons
+                        name={esCerrado ? "lock-closed" : "chevron-forward"}
+                        size={16}
+                        color={esCerrado ? "#b91c1c" : "#9ca3af"}
+                      />
+                    </View>
+                  </View>
+                </Pressable>
+              );
+            })
+          )}
             </>
           )}
         </ScrollView>
@@ -1474,6 +1108,17 @@ const ModalFormulario: React.FC<ModalProps> = ({
             contentContainerStyle={{ padding: 18, paddingBottom: 28 }}
             showsVerticalScrollIndicator={true}
           >
+            {/* Guía visual de control de estados de proyecto */}
+            <View style={styles.scrumBanner}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Ionicons name="information-circle" size={16} color="#92400e" />
+                <Text style={styles.scrumBannerTitulo}>[SCRUM] Control de Estados de Proyecto</Text>
+              </View>
+              <Text style={styles.scrumBannerTexto}>
+                Flujo: Planificado → Activo → Cerrado. Al pasar a Cerrado los campos se bloquean visualmente y el presupuesto no puede ser modificado.
+              </Text>
+            </View>
+
             {/* Aviso de bloqueo cuando está en estado Cerrado */}
             {esCerrado && (
               <View style={styles.bannerCerrado}>

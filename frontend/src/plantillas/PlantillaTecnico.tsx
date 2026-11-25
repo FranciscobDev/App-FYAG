@@ -50,7 +50,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
 
   const [activoPestana, establecerActivoPestana] = useState<PestanaTecnico>("proyectos");
   const [seleccionadoProyectoForPestana, establecerSeleccionadoProyectoForPestana] = useState<Proyecto | null>(null);
-  const [registerInicialSubPestana, establecerRegisterInicialSubPestana] = useState<"avance" | "horas" | "sobrante">("avance");
+  const [registerInicialSubPestana, establecerRegisterInicialSubPestana] = useState<"avance" | "sobrante">("avance");
   const [esSinConexion, establecerEsSinConexion] = useState(false);
   const [sinConexionRed, establecerSinConexionRed] = useState(false);
   const [pendienteSincronizacionConteo, establecerPendienteSincronizacionConteo] = useState(0);
@@ -86,7 +86,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
             onNavigateTab={(tab, proj, subTab) => {
               if (proj) establecerSeleccionadoProyectoForPestana(proj);
               if (tab === "registrar") {
-                establecerRegisterInicialSubPestana(subTab || "horas");
+                establecerRegisterInicialSubPestana(subTab === "sobrante" ? "sobrante" : "avance");
                 establecerActivoPestana("registrar");
               } else if (tab === "insumos") {
                 establecerActivoPestana("insumos");
@@ -102,7 +102,7 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
             initialProjectId={seleccionadoProyectoForPestana?.id}
             onNavigateTab={(tab, subTab) => {
               if (tab === "registrar") {
-                establecerRegisterInicialSubPestana(subTab || "sobrante");
+                establecerRegisterInicialSubPestana(subTab === "avance" ? "avance" : "sobrante");
                 establecerActivoPestana("registrar");
               } else if (tab === "proyectos") {
                 establecerActivoPestana("proyectos");

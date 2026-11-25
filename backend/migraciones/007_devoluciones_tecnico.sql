@@ -1,47 +1,28 @@
 -- =============================================================================
--- 007 · Devoluciones de técnicos a bodega: declaración, recepción real, costo y Cardex [BACK-1]
--- Idempotente: puede ejecutarse varias veces sin efectos secundarios.
--- Se aplica automáticamente al iniciar el backend (services/migraciones.ts).
---
---   devoluciones_tecnico   -> cabecera; nace 'En tránsito' (declarada por el técnico, H21).
---   devolucion_lineas      -> cantidad_declarada (técnico) vs cantidad_recibida (bodeguero) + diferencia.
---   proyecto_costo_ajuste  -> libro de ajustes de costo del proyecto (montos NEGATIVOS por devolución).
---   vw_proyecto_costo_materiales -> costo bruto de egresos, ajustes y costo neto por proyecto.
+-- 007 · Devoluciones de técnicos a bodega: confirmación física, ajuste de costo y Cardex [BACK-1]
+-- Extiende la tabla creada en 006_devoluciones_tecnico.sql de forma idempotente.
 -- =============================================================================
 
 CREATE SEQUENCE IF NOT EXISTS seq_codigo_devolucion START WITH 1 INCREMENT BY 1;
 
-CREATE TABLE IF NOT EXISTS devoluciones_tecnico (
-    id_devolucion SERIAL PRIMARY KEY,
-    codigo VARCHAR(40) NOT NULL UNIQUE
-        DEFAULT ('DEV-' || TO_CHAR(CURRENT_DATE, 'YYYY') || '-' || LPAD(NEXTVAL('seq_codigo_devolucion')::TEXT, 5, '0')),
-    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
-    tecnico_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
-    estado VARCHAR(20) NOT NULL DEFAULT 'En tránsito'
-        CHECK (estado IN ('En tránsito', 'Recibida')),
-    tiene_diferencia BOOLEAN NOT NULL DEFAULT FALSE,
-    observaciones_recepcion VARCHAR(250) NULL,
-    bodeguero_id INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
-    fecha_declaracion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    fecha_recepcion TIMESTAMPTZ NULL
-);
+-- Columnas de confirmación y auditoría en la cabecera
+ALTER TABLE devoluciones_tecnico
+    ADD COLUMN IF NOT EXISTS codigo VARCHAR(40) NULL,
+    ADD COLUMN IF NOT EXISTS tiene_diferencia BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS observaciones_recepcion VARCHAR(250) NULL,
+    ADD COLUMN IF NOT EXISTS bodeguero_id INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS fecha_recepcion TIMESTAMPTZ NULL;
 
-CREATE INDEX IF NOT EXISTS idx_devoluciones_tecnico_estado ON devoluciones_tecnico (estado, fecha_declaracion DESC);
-CREATE INDEX IF NOT EXISTS idx_devoluciones_tecnico_proyecto ON devoluciones_tecnico (proyecto_id);
+-- Sincronizar codigo con codigo_devolucion si existe
+UPDATE devoluciones_tecnico
+SET codigo = codigo_devolucion
+WHERE codigo IS NULL AND codigo_devolucion IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS devolucion_lineas (
-    id_devolucion_linea SERIAL PRIMARY KEY,
-    id_devolucion INT NOT NULL REFERENCES devoluciones_tecnico(id_devolucion) ON DELETE CASCADE,
-    id_articulo INT NOT NULL,
-    cantidad_declarada NUMERIC(12,3) NOT NULL CHECK (cantidad_declarada > 0),
-    cantidad_recibida NUMERIC(12,3) NULL CHECK (cantidad_recibida IS NULL OR cantidad_recibida >= 0),
-    diferencia NUMERIC(12,3) GENERATED ALWAYS AS (cantidad_recibida - cantidad_declarada) STORED,
-    costo_unitario NUMERIC(12,2) NULL,
-    id_movimiento_cardex INT NULL,
-    CONSTRAINT uk_devolucion_linea_articulo UNIQUE (id_devolucion, id_articulo)
-);
-
-CREATE INDEX IF NOT EXISTS idx_devolucion_lineas_devolucion ON devolucion_lineas (id_devolucion);
+-- Columnas de confirmación física y Cardex en las líneas
+ALTER TABLE devolucion_lineas
+    ADD COLUMN IF NOT EXISTS diferencia NUMERIC(12,3) NULL,
+    ADD COLUMN IF NOT EXISTS costo_unitario NUMERIC(12,2) NULL,
+    ADD COLUMN IF NOT EXISTS id_movimiento_cardex INT NULL;
 
 CREATE TABLE IF NOT EXISTS proyecto_costo_ajuste (
     id_ajuste SERIAL PRIMARY KEY,
