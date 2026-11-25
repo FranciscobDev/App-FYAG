@@ -22,8 +22,6 @@ import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
 import {
   DistintivoEstadoProyecto,
-  IndicadorUltimaSincronizacion,
-  LeyendaAccesibilidadEstados,
 } from "@/componentes/DistintivoEstadoProyecto";
 import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
 import { Proyecto } from "@/nucleo/tipos";
@@ -38,7 +36,7 @@ interface PropiedadesVistaProyectosTecnico {
   onNavigateTab?: (
     tab: string,
     project?: Proyecto,
-    subTab?: "avance" | "horas" | "sobrante"
+    subTab?: "avance" | "sobrante"
   ) => void;
   isOffline?: boolean;
   onCambioConexion?: (sinConexion: boolean) => void;
@@ -76,8 +74,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
   isOffline = false,
   onCambioConexion,
 }) => {
-  const { proyectos: proyectosContexto, sesionTrabajoActiva, iniciarSesionTrabajo } =
-    usarAplicacion();
+  const { proyectos: proyectosContexto } = usarAplicacion();
   const { usuario } = usarAutenticacion();
 
   const [modalAvanceProyecto, establecerModalAvanceProyecto] = useState<Proyecto | null>(null);
@@ -530,34 +527,6 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                   </View>
 
                   <View style={estilos.accionesGrupo}>
-                    {sesionTrabajoActiva?.projectId === proj.id ? (
-                      <Boton
-                        title="En Faena (HH)"
-                        variant="primary"
-                        size="sm"
-                        icon="timer"
-                        onPress={() =>
-                          onNavigateTab && onNavigateTab("registrar", proj, "horas")
-                        }
-                        style={{ marginRight: 6, height: 42 }}
-                      />
-                    ) : (
-                      <Boton
-                        title="Iniciar Faena"
-                        variant="outline"
-                        size="sm"
-                        icon="play-outline"
-                        onPress={() => {
-                          if (!sesionTrabajoActiva) {
-                            iniciarSesionTrabajo(proj.id);
-                          }
-                          if (onNavigateTab) {
-                            onNavigateTab("registrar", proj, "horas");
-                          }
-                        }}
-                        style={{ marginRight: 6, height: 42 }}
-                      />
-                    )}
                     <Boton
                       title="Avance"
                       variant="outline"
@@ -581,6 +550,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
           })
         )}
       </ScrollView>
+
       {/* MODAL MÓVIL DE REPORTE DE AVANCE RÁPIDO */}
       {modalAvanceProyecto && (
         <Modal
