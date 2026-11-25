@@ -1,6 +1,7 @@
 import { InsumoForm } from "@/componentes/Insumos";
 import { CATEGORIA_POR_DEFECTO } from "@/nucleo/categoriasArticulo";
 import React, { useEffect, useRef, useState } from "react";
+import { listarMermasApi, registrarMermaApi } from "./mermasApi";
 import {
   FlatList,
   Modal,
@@ -95,6 +96,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
 }) => {
   const {
     productos,
+    recargarArticulos,
     cardex,
     solicitudesMaterial,
     proyectos,
@@ -697,6 +699,19 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   // =========================================================================
   // 5. MERMAS STATE
   // =========================================================================
+  const [mermasApi, establecerMermasApi] = useState<RegistroMerma[]>([]);
+  const cargarMermasApi = async () => {
+    try {
+      const lista = await listarMermasApi();
+      establecerMermasApi(lista.map((m) => ({ ...m, unit: productos.find((p) => p.sku === m.sku)?.unit ?? "un" })));
+    } catch {
+      // Sin conexión: se mantiene el historial anterior
+    }
+  };
+  useEffect(() => {
+    cargarMermasApi();
+  }, []);
+
   const [mermaModalVisible, establecerMermaModalVisible] = useState(false);
   const [mermaSku, establecerMermaSku] = useState(productos[0]?.sku || "");
   const [mermaCantidad, establecerMermaCantidad] = useState("1");
@@ -718,7 +733,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerMermaModalVisible(true);
   };
 
-  const manejarRegisterMerma = () => {
+  const manejarRegisterMerma = async () => {
     if (!mermaObs.trim() || mermaObs.trim().length < 5) {
       establecerMermaError("La observación detallada es obligatoria (mínimo 5 caracteres).");
       return;
@@ -731,24 +746,24 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       establecerMermaError(`La cantidad no puede superar el stock disponible (${seleccionadoMermaProducto.stock}).`);
       return;
     }
+    if (!seleccionadoMermaProducto?.id) {
+      establecerMermaError("El insumo no está sincronizado con el servidor.");
+      return;
+    }
 
-    const res = crearRegistroMerma({
-      sku: mermaSku,
-      productName: seleccionadoMermaProducto ? seleccionadoMermaProducto.name : mermaSku,
-      quantity: seleccionadoMermaProducto?.isBulk ? Number(mermaCantidadNumero.toFixed(3)) : mermaCantidadNumero,
-      unit: seleccionadoMermaProducto ? seleccionadoMermaProducto.unit : "un",
-      pmp: seleccionadoMermaProducto?.pmp || seleccionadoMermaProducto?.unitCost || 0,
-      totalLoss: mermaTotalPerdida,
-      reason: mermaMotivo,
-      observation: mermaObs.trim(),
-      user: usuario.name,
-    });
-
-    if (res.success) {
-      mostrarAviso("Merma registrada y descontada de inventario.");
+    try {
+      const { perdida } = await registrarMermaApi({
+        id_articulo: seleccionadoMermaProducto.id,
+        cantidad: seleccionadoMermaProducto.isBulk ? mermaCantidadNumero.toFixed(3) : String(mermaCantidadNumero),
+        motivo: mermaMotivo,
+        observacion: mermaObs.trim(),
+      });
+      await recargarArticulos();
+      await cargarMermasApi();
+      mostrarAviso(`Merma registrada. Pérdida valorizada: $${perdida.toLocaleString("es-CL")}.`);
       establecerMermaModalVisible(false);
-    } else {
-      establecerMermaError(res.error || "No se pudo registrar la merma.");
+    } catch (err) {
+      establecerMermaError(err instanceof Error ? err.message : "No se pudo registrar la merma.");
     }
   };
 
@@ -887,7 +902,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                     label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
                     icon: "checkbox-outline",
                   },
-                  { id: "mermas", label: `Mermas (${registrosMerma.length})`, icon: "trash-outline" },
+                  { id: "mermas", label: `Mermas (${mermasApi.length})`, icon: "trash-outline" },
                 ]
                 : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
@@ -1000,7 +1015,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           activoPestana={activoPestana}
           manejarAbrirMermaModal={manejarAbrirMermaModal}
           mermaSku={mermaSku}
-          registrosMerma={registrosMerma}
+          registrosMerma={mermasApi}
           width={width}
         />
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { guardarCache, leerCache } from "@/nucleo/cacheLocal";
 import {
@@ -127,6 +127,7 @@ interface TipoContextoAplicacion {
   actualizarProducto: (sku: string, updates: Partial<Producto>) => Promise<{ success: boolean; error?: string }>;
   alternarProductoDeshabilitado: (sku: string) => void;
   crearRegistroMerma: (record: Omit<RegistroMerma, "id" | "date">) => { success: boolean; error?: string };
+  recargarArticulos: () => Promise<void>;
   crearConteoFisico: (
     sku: string,
     countedStock: number,
@@ -428,23 +429,22 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
   // 1. INVENTORY
   const { haySesion } = usarAutenticacion();
+  const recargarArticulos = useCallback(async () => {
+    const filas = await listarArticulosApi();
+    if (!filas) return;
+    setProducts((prev) =>
+      filas.map((fila) => {
+        const producto = articuloAProducto(fila);
+        const local = prev.find((p) => p.sku === producto.sku);
+        return { ...local, ...producto, unit: local?.unit ?? producto.unit };
+      })
+    );
+  }, []);
+
   useEffect(() => {
     if (!haySesion) return;
-    let cancelado = false;
-    listarArticulosApi().then((filas) => {
-      if (!filas || cancelado) return;
-      setProducts((prev) =>
-        filas.map((fila) => {
-          const producto = articuloAProducto(fila);
-          const local = prev.find((p) => p.sku === producto.sku);
-          return { ...local, ...producto, unit: local?.unit ?? producto.unit };
-        })
-      );
-    });
-    return () => {
-      cancelado = true;
-    };
-  }, [haySesion]);
+    recargarArticulos();
+  }, [haySesion, recargarArticulos]);
 
   // Proyectos desde la API (conservando despachos incorporados localmente tras retiros confirmados)
   useEffect(() => {
@@ -3134,6 +3134,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         actualizarProducto,
         alternarProductoDeshabilitado,
         crearRegistroMerma,
+        recargarArticulos,
         crearConteoFisico,
         aprobarConteoFisico,
         rechazarConteoFisico,
