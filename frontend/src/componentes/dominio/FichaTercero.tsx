@@ -182,10 +182,12 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
       )}
 
       {/* Cabecera: Nombre de la Entidad y Calificación Promedio */}
-      <View style={estilos.cabeceraFicha}>
-        <View style={{ flex: 1, marginRight: 12 }}>
-          <Text style={estilos.tituloNombre}>{formData.nombre}</Text>
-          <View style={estilos.filaBadges}>
+      <View style={[estilos.cabeceraFicha, { flexWrap: "wrap", gap: 10 }]}>
+        <View style={{ flex: 1, minWidth: 180 }}>
+          <Text style={[estilos.tituloNombre, { flexShrink: 1 }]} numberOfLines={2} ellipsizeMode="tail">
+            {formData.nombre}
+          </Text>
+          <View style={[estilos.filaBadges, { flexWrap: "wrap", gap: 6 }]}>
             <View
               style={[
                 estilos.badgeTipo,
@@ -291,9 +293,9 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
       {/* 🔒 SECCIÓN BANCARIA: Oculta estrictamente si el usuario NO es Administrador [FRONT-2] */}
       {esPerfilAdmin ? (
         <View style={estilos.cajaBancariaAdmin}>
-          <View style={estilos.encabezadoBancarioAdmin}>
+          <View style={[estilos.encabezadoBancarioAdmin, { flexWrap: "wrap" }]}>
             <Ionicons name="card" size={18} color="#1e3a8a" style={{ marginRight: 6 }} />
-            <Text style={estilos.tituloBancarioAdmin}>
+            <Text style={[estilos.tituloBancarioAdmin, { flex: 1, flexShrink: 1 }]}>
               🔒 Información Bancaria y Financiera (Gestión Exclusiva Admin)
             </Text>
           </View>

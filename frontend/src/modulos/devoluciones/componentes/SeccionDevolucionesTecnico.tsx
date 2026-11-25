@@ -68,20 +68,22 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
       {activoPestana === "tecnico" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
           <Tarjeta variant="elevated">
-            <View style={estilos.tarjetaEncabezadoFila}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <View style={estilos.tecnicoInsigniaFila}>
+            <View style={[estilos.tarjetaEncabezadoFila, { flexWrap: "wrap", gap: 8 }]}>
+              <View style={{ flex: 1, minWidth: 180 }}>
+                <View style={[estilos.tecnicoInsigniaFila, { flexWrap: "wrap", gap: 6 }]}>
                   <Insignia label="Terreno" tone="primary" size="sm" />
-                  <Text style={estilos.tecnicoInsigniaHint}>Declaración de Sobrante</Text>
+                  <Text style={[estilos.tecnicoInsigniaHint, { flexShrink: 1 }]}>Declaración de Sobrante</Text>
                 </View>
-                <Text style={estilos.seccionTitulo}>Formulario de Devolución de Sobrante</Text>
-                <Text style={estilos.seccionSubtitulo}>
+                <Text style={[estilos.seccionTitulo, { flexShrink: 1 }]}>Formulario de Devolución de Sobrante</Text>
+                <Text style={[estilos.seccionSubtitulo, { flexShrink: 1 }]}>
                   Fórmula estricta: Sobrante Máximo = Retirado − Usado en Terreno
                 </Text>
               </View>
-              <View style={estilos.formulaInsignia}>
+              <View style={[estilos.formulaInsignia, { maxWidth: "100%" }]}>
                 <Ionicons name="calculator-outline" size={14} color={tema.colors.primary} />
-                <Text style={estilos.formulaTexto}>Máx = Retirado − Usado</Text>
+                <Text style={[estilos.formulaTexto, { flexShrink: 1 }]} numberOfLines={1} ellipsizeMode="tail">
+                  Máx = Retirado − Usado
+                </Text>
               </View>
             </View>
 
@@ -111,9 +113,9 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
             </ScrollView>
 
             {/* Insumos a Devolver con Cuadratura */}
-            <View style={estilos.elementosEncabezadoFila}>
-              <Text style={estilos.campoEtiqueta}>2. Insumos y Cuadratura de Material:</Text>
-              <TouchableOpacity onPress={manejarAgregarDevolucionElemento} style={estilos.agregarPequenoBoton}>
+            <View style={[estilos.elementosEncabezadoFila, { flexWrap: "wrap", gap: 8 }]}>
+              <Text style={[estilos.campoEtiqueta, { flexShrink: 1 }]}>2. Insumos y Cuadratura de Material:</Text>
+              <TouchableOpacity onPress={manejarAgregarDevolucionElemento} style={[estilos.agregarPequenoBoton, { minHeight: 36 }]}>
                 <Ionicons name="add" size={14} color={tema.colors.primary} />
                 <Text style={estilos.agregarPequenoTexto}>Agregar Insumo</Text>
               </TouchableOpacity>
@@ -127,9 +129,11 @@ export const SeccionDevolucionesTecnico: React.FC<PropiedadesSeccionDevoluciones
 
               return (
                 <View key={idx} style={[estilos.devolucionElementoTarjeta, (exceedsMaximo || esInvalidoZero) && estilos.devolucionElementoTarjetaError]}>
-                  <View style={estilos.elementoTarjetaSuperior}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={estilos.elementoNombreTexto}>{producto ? producto.name : item.sku}</Text>
+                  <View style={[estilos.elementoTarjetaSuperior, { gap: 8 }]}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[estilos.elementoNombreTexto, { flexShrink: 1 }]} numberOfLines={2} ellipsizeMode="tail">
+                        {producto ? producto.name : item.sku}
+                      </Text>
                       <Text style={estilos.elementoSkuTexto}>
                         SKU: {item.sku} • Unidad: {producto ? producto.unit : "un"}
                       </Text>

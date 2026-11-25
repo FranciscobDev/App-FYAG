@@ -122,7 +122,7 @@ export const estilos = StyleSheet.create({
   },
   recepcionHeroIzquierda: {
     flex: 1,
-    minWidth: 260,
+    minWidth: 180,
   },
   recepcionInsigniaFila: {
     flexDirection: "row",

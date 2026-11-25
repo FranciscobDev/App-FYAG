@@ -144,6 +144,7 @@ const estilos = StyleSheet.create({
   },
   izquierdaColumnaCompacto: {
     marginRight: 4,
+    minWidth: 0,
   },
   backBoton: {
     marginRight: 10,
@@ -162,12 +163,14 @@ const estilos = StyleSheet.create({
   },
   tituloColumna: {
     flex: 1,
+    minWidth: 0,
   },
   titulo: {
     fontSize: tema.fontSize.md,
     fontWeight: tema.fontWeight.semibold,
     color: tema.colors.text,
     lineHeight: 22,
+    flexShrink: 1,
   },
   tituloOscuro: {
     color: "#ffffff",

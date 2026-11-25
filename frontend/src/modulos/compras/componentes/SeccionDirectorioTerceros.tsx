@@ -131,29 +131,34 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
           ===================================================================== */}
       {activoPestana === "terceros" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          <View style={estilos.subPestanaBarra}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 210 }}>
+          <View style={[estilos.subPestanaBarra, { flexWrap: "wrap", gap: 8 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 180 }}>
               <View
                 style={[
                   estilos.subPestanaBoton,
                   estilos.subPestanaBotonActivo,
-                  { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, minHeight: 40, marginRight: 0 },
+                  { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, minHeight: 40, marginRight: 0, maxWidth: "100%" },
                 ]}
               >
                 <Ionicons name="people-outline" size={16} color={tema.colors.primaryDark} />
-                <Text style={[estilos.subPestanaTexto, estilos.subPestanaTextoActivo]}>
+                <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                  style={[estilos.subPestanaTexto, estilos.subPestanaTextoActivo, { flexShrink: 1 }]}
+                >
                   Proveedores Homologados ({proveedores.length})
                 </Text>
               </View>
             </View>
 
-            <View style={{ flexDirection: "row", gap: 8, marginLeft: "auto" }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, maxWidth: "100%" }}>
               <Boton
                 title="Comparar Vistas por Rol"
                 variant="secondary"
                 size="sm"
                 icon="git-compare-outline"
                 onPress={() => setMostrarModalScrum(true)}
+                style={{ minHeight: 40 }}
               />
               <Boton
                 title="+ Nuevo Proveedor"
@@ -169,8 +174,8 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
           </View>
 
           {/* Barra de búsqueda y ordenación de proveedores */}
-          <View style={estilos.partyFiltrarFila}>
-            <View style={{ flex: 1, marginRight: 8 }}>
+          <View style={[estilos.partyFiltrarFila, { flexWrap: "wrap", gap: 8 }]}>
+            <View style={{ flex: 1, minWidth: 200 }}>
               <CampoTexto
                 label="Buscar Proveedor"
                 value={thirdPartyBuscar}
@@ -185,7 +190,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                 size="sm"
                 icon="close-circle-outline"
                 onPress={() => establecerThirdPartyBuscar("")}
-                style={{ alignSelf: "flex-end", marginBottom: 8, marginRight: 8 }}
+                style={{ alignSelf: "flex-end", marginBottom: 8 }}
               />
             )}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 42 }}>
@@ -231,21 +236,23 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                 variant="default"
                 style={[estilos.partyTarjeta, s.disabled && estilos.deshabilitadoPartyTarjeta]}
               >
-                <View style={estilos.partySuperior}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Text style={estilos.partyNombre}>{s.businessName}</Text>
+                <View style={[estilos.partySuperior, { flexWrap: "wrap", gap: 8 }]}>
+                  <View style={{ flex: 1, minWidth: 170 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                      <Text style={[estilos.partyNombre, { flexShrink: 1 }]} numberOfLines={2} ellipsizeMode="tail">
+                        {s.businessName}
+                      </Text>
                       {s.disabled && (
-                        <Insignia label="Deshabilitado" tone="mute" size="sm" style={{ marginLeft: 6 }} />
+                        <Insignia label="Deshabilitado" tone="mute" size="sm" />
                       )}
                     </View>
                     <Text style={estilos.partyRut}>RUT: {s.rut}</Text>
-                    <Text style={estilos.partyCat}>{s.category}</Text>
+                    <Text style={estilos.partyCat} numberOfLines={1} ellipsizeMode="tail">{s.category}</Text>
                   </View>
                   <Insignia
                     label={`⭐ ${s.ratingAvg?.toFixed(1) || "5.0"} (${s.ratingCount || 1} eval)`}
                     tone="warn"
-                    size="md"
+                    size="sm"
                   />
                 </View>
 
@@ -276,7 +283,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                 )}
 
                 {/* Acción: Ver Ficha, Deshabilitar o Crear OC */}
-                <View style={estilos.partyAcciones}>
+                <View style={[estilos.partyAcciones, { flexWrap: "wrap", gap: 8 }]}>
                   <Boton
                     title={rolActual === "admin" ? "Gestionar Ficha" : "Ver Ficha"}
                     variant="secondary"
@@ -298,7 +305,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                         transferEmail: s.bankDetails?.transferEmail || s.email,
                       });
                     }}
-                    style={{ marginRight: 8 }}
+                    style={{ flexGrow: 1, minWidth: 130, minHeight: 40 }}
                   />
                   {!s.disabled && rolActual === "admin" && (
                     <Boton
@@ -309,7 +316,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       onPress={() => {
                         manejarAbrirNuevoOrden(s.id);
                       }}
-                      style={{ flex: 1, minHeight: 38 }}
+                      style={{ flexGrow: 1, minWidth: 110, minHeight: 40 }}
                     />
                   )}
                   {rolActual === "admin" && (
