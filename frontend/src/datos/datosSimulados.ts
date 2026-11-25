@@ -43,6 +43,11 @@ export const TECNICOS: Tecnico[] = [
   { rut: construirRut(14567832), name: "Pedro Aguilera Mora", phone: "+56 9 6678 2290", specialty: "Soldadura y estructuras" },
 ];
 
+const calcularFechaPlazoRelativo = (diasRelativos: number): string => {
+  const d = new Date(Date.now() + diasRelativos * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+};
+
 export const PROYECTOS: Proyecto[] = [
   {
     id: "p1",
@@ -65,7 +70,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 450000,
     hoursReal: 384,
     startDate: "2026-08-01",
-    deadline: "2026-10-14T11:00:00",
+    deadline: calcularFechaPlazoRelativo(1), // [SCRUM H39] 1 día restante (Rojo - Crítico)
     dispatches: [
       { id: "dsp1", date: "10-10-2026", dispatchCode: "DESP-2026-089", sku: "ELE-CBL-0012", productName: "Cable THHN 12 AWG", quantity: 400, unit: "m", unitCost: 635, totalCost: 254000, deliveredTo: "Alejandro Rojas" },
       { id: "dsp2", date: "05-10-2026", dispatchCode: "DESP-2026-082", sku: "ELE-DIS-0016", productName: "Disyuntor termomagnético 16 A", quantity: 35, unit: "un", unitCost: 4200, totalCost: 147000, deliveredTo: "Pedro Aguilera" },
@@ -103,7 +108,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 220000,
     hoursReal: 208,
     startDate: "2026-09-15",
-    deadline: "2026-10-16T17:00:00",
+    deadline: calcularFechaPlazoRelativo(4), // [SCRUM H39] 4 días restantes (Amarillo - Alerta)
     dispatches: [
       { id: "dsp21", date: "08-10-2026", dispatchCode: "DESP-2026-085", sku: "CLI-GAS-R410", productName: "Gas refrigerante R410A 11,3 kg", quantity: 6, unit: "cilindro", unitCost: 85000, totalCost: 510000, deliveredTo: "Matías Fuentes" },
       { id: "dsp22", date: "25-09-2026", dispatchCode: "DESP-2026-071", sku: "CLI-FLT-HEPA", productName: "Filtros antibacterianos y repuestos", quantity: 1, unit: "kit", unitCost: 6290000, totalCost: 6290000, deliveredTo: "Matías Fuentes" },
@@ -137,7 +142,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 200000,
     hoursReal: 249,
     startDate: "2026-09-01",
-    deadline: "2026-10-31T18:00:00",
+    deadline: calcularFechaPlazoRelativo(6), // [SCRUM H39] 6 días restantes (Normal - En plazo)
     dispatches: [
       { id: "dsp31", date: "02-10-2026", dispatchCode: "DESP-2026-079", sku: "GAS-TUB-0020", productName: "Tubo cobre tipo L 3/4\" 6 m", quantity: 60, unit: "un", unitCost: 42000, totalCost: 2520000, deliveredTo: "Constanza Leiva" },
       { id: "dsp32", date: "15-09-2026", dispatchCode: "DESP-2026-063", sku: "INC-VAL-0040", productName: "Válvulas mariposa y rociadores certificados", quantity: 1, unit: "kit", unitCost: 6680000, totalCost: 6680000, deliveredTo: "Constanza Leiva" },
@@ -1351,6 +1356,19 @@ export const HERRAMIENTAS: Herramienta[] = [
     lastMaintenanceDate: "2026-08-20",
     nextMaintenanceDate: "2026-11-20", // Al día
     loans: [
+      {
+        id: "ln_1b",
+        toolId: "tool_1",
+        technicianRut: TECNICOS[2].rut,
+        technicianName: "Constanza Leiva Núñez",
+        projectCode: "OB-2026-009",
+        projectName: "Bodega Logística Quilicura",
+        loanDate: "10-10-2026",
+        returnDate: "18-10-2026",
+        initialCondition: "Operativo con maletín y set de brocas SDS",
+        returnCondition: "bueno",
+        returnNotes: "Retorno con accesorios completos y prueba operativa OK",
+      },
       {
         id: "ln_1",
         toolId: "tool_1",
