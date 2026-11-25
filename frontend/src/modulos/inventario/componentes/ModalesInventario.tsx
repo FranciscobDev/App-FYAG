@@ -52,6 +52,7 @@ import {
 } from "../escanerBodegaUtils";
 import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
 import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
+import { FormularioRegistroMermas } from "@/componentes/FormularioRegistroMermas";
 import {
   calcularRemanenteContenedorGranel,
   contrastarSaldoInsumoConUltimaLineaCardex,
@@ -1055,145 +1056,17 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         onCancel={() => establecerAnularConfirmarSolicitud?.(null)}
       />
 
-      {/* MODAL 5: REGISTRAR MERMA */}
-      <VistaModal
+      {/* MODAL 5: REGISTRAR MERMA - [FRONT-2] Formulario de registro de mermas */}
+      <FormularioRegistroMermas
         visible={mermaModalVisible}
-        onClose={() => establecerMermaModalVisible(false)}
-        title="Registrar Merma de Insumo"
-        subtitle="Descuenta stock físico y valoriza a PMP"
-      >
-        <Text style={estilos.formularioSeccionEtiqueta}>Seleccionar Insumo:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-          {productos
-            .filter((p: any) => !p.disabled)
-            .map((p: any) => (
-              <TouchableOpacity
-                key={p.sku}
-                onPress={() => establecerMermaSku(p.sku)}
-                style={[estilos.productoSeleccionarChip, mermaSku === p.sku && estilos.productoSeleccionarChipActivo]}
-              >
-                <Text style={[estilos.productoSeleccionarSku, mermaSku === p.sku && { color: tema.colors.primary }]}>
-                  {p.sku}
-                </Text>
-                <Text style={estilos.productoSeleccionarExistencia}>Disp: {p.stock} {p.unit}</Text>
-              </TouchableOpacity>
-            ))}
-        </ScrollView>
-
-        <CampoTexto
-          label={`Cantidad a dar de baja (${seleccionadoMermaProducto?.unit || "un"}${seleccionadoMermaProducto?.isBulk ? " • Granel hasta 3 decimales" : ""
-            }):`}
-          value={mermaCantidad}
-          onChangeText={(val: any) => {
-            const san = sanitizarEntradaCantidadBodega(
-              val,
-              Boolean(seleccionadoMermaProducto?.isBulk),
-              3
-            );
-            establecerMermaCantidad(san.textoSanitizado);
-          }}
-          keyboardType="decimal-pad"
-          placeholder={seleccionadoMermaProducto?.isBulk ? "0.000" : "1"}
-        />
-
-        {seleccionadoMermaProducto && (() => {
-          const remanenteMerma = calcularRemanenteContenedorGranel(seleccionadoMermaProducto, {
-            cantidadMovimiento: mermaCantidadNumero,
-            tipoMovimiento: "merma",
-          });
-          return (
-            <View
-              style={{
-                backgroundColor: tema.colors.surfaceAlt,
-                borderRadius: tema.radius.sm,
-                padding: 10,
-                marginBottom: 12,
-                borderWidth: 1,
-                borderColor: tema.colors.borderLight,
-                gap: 6,
-              }}
-            >
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text }}>
-                  {remanenteMerma.etiquetaUnidadYRemanente}
-                </Text>
-                <Insignia
-                  label={`UM: ${seleccionadoMermaProducto.unit.toUpperCase()}${seleccionadoMermaProducto.isBulk ? " (Granel • 3 dec.)" : ""
-                    }`}
-                  tone="info"
-                  size="sm"
-                />
-              </View>
-              {seleccionadoMermaProducto.isBulk && seleccionadoMermaProducto.containerCapacity && (
-                <BarraProgreso
-                  value={remanenteMerma.remanenteEnContenedorActual}
-                  max={seleccionadoMermaProducto.containerCapacity}
-                  height={6}
-                  showPercentage
-                  semaforo
-                  label={
-                    remanenteMerma.etiquetaCapacidadContenedor ||
-                    `Capacidad restante del contenedor: ${remanenteMerma.remanenteEnContenedorActual.toFixed(
-                      3
-                    )} / ${seleccionadoMermaProducto.containerCapacity} ${seleccionadoMermaProducto.unit}`
-                  }
-                />
-              )}
-            </View>
-          );
-        })()}
-
-        <Text style={estilos.formularioSeccionEtiqueta}>Motivo de la Merma:</Text>
-        <View style={estilos.motivoPastillasFila}>
-          {(["daño", "caducidad", "pérdida", "otro"] as const).map((r: any) => (
-            <TouchableOpacity
-              key={r}
-              onPress={() => establecerMermaMotivo(r)}
-              style={[estilos.motivoPastilla, mermaMotivo === r && estilos.motivoPastillaActivo]}
-            >
-              <Text style={[estilos.motivoPastillaTexto, mermaMotivo === r && estilos.motivoPastillaTextoActivo]}>
-                {r.toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Tarjeta con pérdida valorizada a PMP */}
-        <Tarjeta variant="outlined" style={estilos.perdidaCalculationTarjeta}>
-          <View style={estilos.perdidaTarjetaEncabezado}>
-            <Ionicons name="calculator-outline" size={18} color={tema.colors.danger} />
-            <Text style={estilos.perdidaTarjetaTitulo}>Pérdida Valorizada a PMP:</Text>
-          </View>
-          <Text style={estilos.perdidaAmountTexto}>{formatearCLP(mermaTotalPerdida)}</Text>
-          <Text style={estilos.perdidaMetaTexto}>
-            Cálculo: {mermaCantidadNumero} {seleccionadoMermaProducto?.unit} × {formatearCLP(seleccionadoMermaProducto?.pmp || seleccionadoMermaProducto?.unitCost || 0)} (PMP)
-          </Text>
-        </Tarjeta>
-
-        <CampoTexto
-          label="Observación Obligatoria (Detalle de la merma):"
-          value={mermaObs}
-          onChangeText={establecerMermaObs}
-          placeholder="Ej: Embalaje roto y terminal partido al maniobrar con traspaleta..."
-          multiline
-        />
-
-        {Boolean(mermaError) && <Text style={estilos.errorTexto}>{mermaError}</Text>}
-
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerMermaModalVisible(false)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Confirmar Merma"
-            variant="danger"
-            onPress={manejarRegisterMerma}
-          />
-        </View>
-      </VistaModal>
+        skuInicial={mermaSku}
+        onCerrar={() => establecerMermaModalVisible(false)}
+        onExito={() => {
+          establecerMermaModalVisible(false);
+          mostrarAviso("Merma registrada y descontada de inventario.");
+        }}
+        modoModal={true}
+      />
 
       {/* MODAL 6: REGISTRAR CONTEO FISICO */}
       <VistaModal
