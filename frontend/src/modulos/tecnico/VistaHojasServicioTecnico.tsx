@@ -584,37 +584,8 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
                   </Text>
                 </TouchableOpacity>
               )}
-
-              <TouchableOpacity
-                onPress={alternarModoAvionScrum}
-                style={[
-                  estilos.botonScrumAvion,
-                  modoAvionScrum && estilos.botonScrumAvionActivo,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={modoAvionScrum ? "wifi-outline" : "airplane-outline"}
-                  size={14}
-                  color={modoAvionScrum ? "#ffffff" : "#92400e"}
-                />
-                <Text
-                  style={[
-                    estilos.botonScrumAvionTexto,
-                    modoAvionScrum && estilos.botonScrumAvionTextoActivo,
-                  ]}
-                >
-                  {modoAvionScrum ? "Reconectar Red" : "Modo Avión"}
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
-
-          <Text style={estilos.scrumNota}>
-            [SCRUM] Llena un checklist con foto en Modo Avión, fuerza el cierre/recarga de la app,
-            reabre para verificar que los datos y fotos siguen intactos y reconecta a internet para
-            ver la subida automática.
-          </Text>
         </View>
 
         {/* 3. BANNER DE BORRADOR RECUPERADO DEL DISCO LOCAL (SI SE CERRÓ LA APP A MEDIAS) */}
@@ -723,7 +694,7 @@ export const VistaHojasServicioTecnico: React.FC<PropiedadesVistaHojasServicioTe
             style={[
               estilos.kpiCaja,
               esMovilEstrecho && estilos.kpiCajaMovil,
-              { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
+              { backgroundColor: tema.colors.primaryLight, borderColor: tema.colors.primaryBorder },
             ]}
           >
             <Text style={[estilos.kpiLbl, { color: tema.colors.primaryDark }]}>
@@ -1513,7 +1484,7 @@ const estilos = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {
@@ -1670,7 +1641,7 @@ const estilos = StyleSheet.create({
     borderColor: tema.colors.borderDark,
   },
   chipBotonActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   chipTexto: {

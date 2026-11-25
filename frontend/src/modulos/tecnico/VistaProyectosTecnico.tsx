@@ -298,36 +298,7 @@ export const VistaProyectosTecnico: React.FC<PropiedadesVistaProyectosTecnico> =
                 </Text>
               </View>
             </View>
-
-            <TouchableOpacity
-              onPress={alternarModoAvionScrum}
-              style={[
-                estilos.botonScrumAvion,
-                modoAvionScrum && estilos.botonScrumAvionActivo,
-              ]}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={modoAvionScrum ? "airplane" : "airplane-outline"}
-                size={14}
-                color={modoAvionScrum ? "#ffffff" : "#92400e"}
-              />
-              <Text
-                style={[
-                  estilos.botonScrumAvionTexto,
-                  modoAvionScrum && estilos.botonScrumAvionTextoActivo,
-                ]}
-              >
-                {modoAvionScrum ? "Salir Modo Avión" : "Probar Modo Avión"}
-              </Text>
-            </TouchableOpacity>
           </View>
-
-          <Text style={estilos.scrumNota}>
-            [SCRUM] Activa modo avión en el celular (o usa el botón de prueba) para comprobar que la
-            lista guardada localmente carga sin errores y permite filtrar por estado y ordenar por
-            fecha límite.
-          </Text>
         </View>
 
         {/* 3. BARRA DE FILTROS POR ESTADO Y CONTROL DE ORDEN POR FECHA LÍMITE */}
@@ -643,17 +614,17 @@ const estilos = StyleSheet.create({
   enLineaChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: tema.radius.full,
     borderWidth: 1,
-    borderColor: "#44403c",
+    borderColor: "#334155",
   },
   enLineaChipTexto: {
     fontSize: 10,
     fontWeight: "bold",
-    color: "#e7e5e4",
+    color: "#e2e8f0",
     marginLeft: 4,
   },
   cacheBanner: {
@@ -741,7 +712,7 @@ const estilos = StyleSheet.create({
     justifyContent: "center",
   },
   filtrarChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtrarChipTexto: {

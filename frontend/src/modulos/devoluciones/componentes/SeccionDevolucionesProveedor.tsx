@@ -138,177 +138,167 @@ export const SeccionDevolucionesProveedor: React.FC<
           </View>
         )}
 
-        {/* 1. HERO CARD ADAPTADO POR ROL (BODEGUERO VS ADMINISTRADOR) */}
-        <Tarjeta variant="elevated" style={estilosLocales.heroTarjeta}>
-          <View style={estilosLocales.heroContenido}>
-            <View style={{ flex: 1, minWidth: 220 }}>
-              <View style={estilosLocales.heroBadgesFila}>
-                <Insignia
-                  label={
-                    rolActual === "admin"
-                      ? "Panel de Seguimiento Admin"
-                      : "Emisión con Guía (Bodeguero)"
-                  }
-                  tone={rolActual === "admin" ? "primary" : "danger"}
-                  size="sm"
-                />
-                {cuarentenaConteo > 0 && (
-                  <Insignia
-                    label={`${cuarentenaConteo} SKU en cuarentena`}
-                    tone="warn"
-                    size="sm"
-                  />
-                )}
+        {/* 1. CABECERA COMPACTA INDUSTRIAL + EMISIÓN DE GARANTÍA */}
+        <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: "#fee2e2",
+                  borderWidth: 1,
+                  borderColor: "#fca5a5",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="alert-circle-outline" size={20} color="#dc2626" />
               </View>
-
-              <Text style={estilosLocales.heroTitulo}>
-                {rolActual === "admin"
-                  ? "Seguimiento y Cierre de Devoluciones a Proveedor"
-                  : "Emitir Devolución a Proveedor con Guía de Despacho"}
-              </Text>
-              <Text style={estilosLocales.heroSubtitulo}>
-                {rolActual === "admin"
-                  ? "Controla las garantías despachadas desde bodega y registra el cierre administrativo por Nota de Crédito, Reposición de Producto o Reembolso para pasar de Pendiente de resolución a Resuelta."
-                  : "Despacha insumos defectuosos desde cuarentena ingresando N° de Guía de Despacho y motivo. El caso queda en estado Pendiente de resolución para seguimiento y cierre por Administración."}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                  Garantías a Proveedor
+                </Text>
+                <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                  Pendientes de resolución:{" "}
+                  <Text style={{ fontWeight: "800", color: tema.colors.danger }}>
+                    {metricas.pendientesConteo}
+                  </Text>
+                  {cuarentenaConteo > 0 ? ` • ${cuarentenaConteo} SKU en cuarentena` : ""}
+                </Text>
+              </View>
             </View>
 
             {rolActual !== "technician" && (
-              <View style={estilosLocales.heroAcciones}>
-                <Boton
-                  title="+ Emitir Devolución con Guía"
-                  variant={rolActual === "warehouse" ? "danger" : "primary"}
-                  size="md"
-                  icon="document-text-outline"
-                  onPress={abrirEmision}
-                  style={{ minHeight: 46 }}
-                  fullWidth={esMovilEstrecho}
-                />
-              </View>
+              <Boton
+                title="Emitir Devolución con Guía"
+                variant={rolActual === "warehouse" ? "danger" : "primary"}
+                size="sm"
+                icon="document-text-outline"
+                onPress={abrirEmision}
+                style={{ minHeight: 40 }}
+                fullWidth={esMovilEstrecho}
+              />
             )}
           </View>
         </Tarjeta>
 
-        {/* 2. DASHBOARD RESPONSIVO DE 4 KPIs */}
-        <View style={estilosLocales.kpiGrilla}>
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              metricas.pendientesConteo > 0 && {
-                backgroundColor: tema.colors.dangerLight,
-                borderColor: tema.colors.dangerBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                estilosLocales.kpiLbl,
-                metricas.pendientesConteo > 0 && { color: tema.colors.danger },
-              ]}
-            >
-              Pendientes
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiVal,
-                metricas.pendientesConteo > 0 && { color: tema.colors.danger },
-              ]}
-            >
-              {metricas.pendientesConteo}
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiSub,
-                metricas.pendientesConteo > 0 && { color: tema.colors.danger },
-              ]}
-            >
-              Pendiente de resolución
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.okLight, borderColor: "#bbf7d0" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.okDark }]}>Resueltas</Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.okDark }]}>
-              {metricas.resueltasConteo}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.okDark }]}>
-              Cierre administrativo
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.primaryDark }]}>
-              Nota de Crédito
-            </Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.primaryDark }]}>
-              {metricas.porNotaCredito}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.primaryDark }]}>
-              Ajuste contable
-            </Text>
-          </View>
-
-          <View style={[estilosLocales.kpiCaja, esMovilEstrecho && estilosLocales.kpiCajaMovil]}>
-            <Text style={estilosLocales.kpiLbl}>Reposición / Otros</Text>
-            <Text style={estilosLocales.kpiVal}>{metricas.porReposicion}</Text>
-            <Text style={estilosLocales.kpiSub}>Reemplazo o reembolso</Text>
-          </View>
+        {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS (SIN CHIPS DUPLICADOS) */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[
+            {
+              id: "pendiente_resolucion" as FiltroEstadoProveedor,
+              titulo: "Pendientes",
+              valor: metricas.pendientesConteo,
+              sub: "Por resolver",
+              icon: "time-outline" as const,
+              bg: "#fffbeb",
+              border: "#fcd34d",
+              borderActivo: "#d97706",
+              textColor: "#92400e",
+            },
+            {
+              id: "resuelta" as FiltroEstadoProveedor,
+              titulo: "Resueltas",
+              valor: metricas.resueltasConteo,
+              sub: `${metricas.porNotaCredito} NC • ${metricas.porReposicion} Rep.`,
+              icon: "checkmark-done-circle-outline" as const,
+              bg: "#f0fdf4",
+              border: "#86efac",
+              borderActivo: "#16a34a",
+              textColor: "#166534",
+            },
+            {
+              id: "todas" as FiltroEstadoProveedor,
+              titulo: "Todas",
+              valor: devolucionesProveedor.length,
+              sub: "Historial total",
+              icon: "layers-outline" as const,
+              bg: "#f1f5f9",
+              border: "#cbd5e1",
+              borderActivo: "#334155",
+              textColor: "#0f172a",
+            },
+          ].map((kpi) => {
+            const activo = filtroEstado === kpi.id;
+            return (
+              <TouchableOpacity
+                key={kpi.id}
+                activeOpacity={0.8}
+                onPress={() => establecerFiltroEstado(kpi.id)}
+                style={{
+                  flex: 1,
+                  minWidth: 110,
+                  backgroundColor: kpi.bg,
+                  borderWidth: activo ? 2 : 1,
+                  borderColor: activo ? kpi.borderActivo : kpi.border,
+                  borderLeftWidth: 5,
+                  borderLeftColor: kpi.borderActivo,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "800",
+                      color: kpi.textColor,
+                      textTransform: "uppercase",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {kpi.titulo}
+                  </Text>
+                  <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginTop: 2,
+                  }}
+                >
+                  <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                    {kpi.valor}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: activo ? "800" : "600",
+                      color: kpi.textColor,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {activo ? "● Activa" : kpi.sub}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
-        {/* 3. BUSCADOR Y FILTROS DINÁMICOS */}
+        {/* 3. BUSCADOR COMPACTO */}
         <View style={estilosLocales.filtrosCaja}>
           <CampoBusqueda
             value={busqueda}
             onChangeText={establecerBusqueda}
             placeholder="Buscar por código DEV-PROV, proveedor, SKU o N° de Guía..."
           />
-
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(
-              [
-                {
-                  id: "pendiente_resolucion",
-                  label: `Pendientes de resolución (${metricas.pendientesConteo})`,
-                },
-                { id: "todas", label: `Todas (${devolucionesProveedor.length})` },
-                { id: "resuelta", label: `Resueltas (${metricas.resueltasConteo})` },
-              ] as const
-            ).map((chip) => {
-              const activo = filtroEstado === chip.id;
-              return (
-                <TouchableOpacity
-                  key={chip.id}
-                  onPress={() => establecerFiltroEstado(chip.id)}
-                  style={[estilosLocales.filtroChip, activo && estilosLocales.filtroChipActivo]}
-                >
-                  <Text
-                    style={[
-                      estilosLocales.filtroChipTexto,
-                      activo && estilosLocales.filtroChipTextoActivo,
-                    ]}
-                  >
-                    {chip.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
         </View>
 
-        {/* 4. GRILLA RESPONSIVA DE DEVOLUCIONES A PROVEEDOR */}
+        {/* 4. GRILLA RESPONSIVA DE DEVOLUCIONES A PROVEEDOR CON SEMÁFORO */}
         {devolucionesFiltradas.length === 0 ? (
           <EstadoVacio
             icon="cube-outline"
@@ -326,7 +316,7 @@ export const SeccionDevolucionesProveedor: React.FC<
               filtroEstado !== "todas"
                 ? "Ver todas las devoluciones"
                 : rolActual !== "technician"
-                ? "+ Emitir Devolución con Guía"
+                ? "Emitir Devolución con Guía"
                 : undefined
             }
             onAction={
@@ -354,14 +344,26 @@ export const SeccionDevolucionesProveedor: React.FC<
                   ? "Reposición de Producto"
                   : "Reembolso en Dinero";
 
+              const fondoSem = esResuelta ? "#f0fdf4" : "#fffbeb";
+              const bordeSem = esResuelta ? "#86efac" : "#fcd34d";
+              const franjaSem = esResuelta ? "#16a34a" : "#d97706";
+
               return (
                 <Tarjeta
                   key={sRet.id}
-                  variant={esResuelta ? "default" : "elevated"}
+                  variant="outlined"
                   style={[
-                    estilosLocales.devTarjeta,
+                    {
+                      padding: 12,
+                      gap: 10,
+                      backgroundColor: fondoSem,
+                      borderColor: bordeSem,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: franjaSem,
+                      borderRadius: 12,
+                    },
                     esPantallaAncha && estilosLocales.devTarjetaAncha,
-                    !esResuelta && estilosLocales.devTarjetaPendiente,
                   ]}
                 >
                   <View style={estilosLocales.tarjetaTop}>
@@ -593,7 +595,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {

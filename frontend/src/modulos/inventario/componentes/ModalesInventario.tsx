@@ -53,8 +53,13 @@ import {
 import { ModalComprobanteSolicitud } from "./ModalComprobanteSolicitud";
 import { ModalRechazoSolicitud } from "./ModalRechazoSolicitud";
 import {
+  calcularRemanenteContenedorGranel,
+  contrastarSaldoInsumoConUltimaLineaCardex,
   esProyectoActivoParaSolicitud,
+  filtrarYOrdenarCardexSoloLectura,
+  formatearCantidadMovimientoBodega,
   liberarReservaComprometidoEnCatalogoH6,
+  sanitizarEntradaCantidadBodega,
   validarFormularioNuevaSolicitudInsumos,
 } from "../solicitudInsumosUtils";
 
@@ -108,6 +113,9 @@ export interface PropiedadesModalesInventario {
   establecerFormularioEsBulk: any;
   establecerFormularioExistencia: any;
   establecerFormularioMinimoExistencia: any;
+  establecerFormularioPmp?: any;
+  establecerFormularioPasillo?: any;
+  establecerFormularioEstanteria?: any;
   establecerFormularioNombre: any;
   establecerFormularioNombreError: any;
   establecerFormularioProveedor: any;
@@ -141,6 +149,9 @@ export interface PropiedadesModalesInventario {
   formularioEsBulk: any;
   formularioExistencia: any;
   formularioMinimoExistencia: any;
+  formularioPmp?: any;
+  formularioPasillo?: any;
+  formularioEstanteria?: any;
   formularioNombre: any;
   formularioNombreError: any;
   formularioProveedor: any;
@@ -230,6 +241,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   establecerFormularioEsBulk,
   establecerFormularioExistencia,
   establecerFormularioMinimoExistencia,
+  establecerFormularioPmp,
+  establecerFormularioPasillo,
+  establecerFormularioEstanteria,
   establecerFormularioNombre,
   establecerFormularioNombreError,
   establecerFormularioProveedor,
@@ -261,6 +275,9 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   formularioEsBulk,
   formularioExistencia,
   formularioMinimoExistencia,
+  formularioPmp = "1000",
+  formularioPasillo = "Pasillo A",
+  formularioEstanteria = "Estante 1",
   formularioNombre,
   formularioNombreError,
   formularioProveedor,
@@ -305,16 +322,11 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
   usuario,
 }) => {
   const { proyectos: todosProyectos = [] } = usarAplicacion();
+  const [textosCantidadSolicitud, establecerTextosCantidadSolicitud] = useState<Record<string, string>>({});
 
-  const opcionesProductosSolicitud: OpcionSelectorBuscable<string>[] = productos
-    .filter((p: Producto) => !p.disabled)
-    .map((p: Producto) => ({
-      label: p.name,
-      value: p.sku,
-      hint: `SKU: ${p.sku} • Stock disponible: ${p.stock} ${p.unit}`,
-      badge: `${p.stock} ${p.unit}`,
-      icon: "cube-outline",
-    }));
+  useEffect(() => {
+    establecerTextosCantidadSolicitud({});
+  }, [nuevoSolicitudModal]);
 
   return (
     <>
@@ -386,9 +398,6 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         />
 
         <Text style={estilos.formularioSeccionEtiqueta}>Unidad de Medida:</Text>
-        <Text style={estilos.formularioSeccionSubEtiqueta}>
-          Especifica la magnitud física o presentación para el control de existencias, kardex y compras:
-        </Text>
 
         <View style={estilos.unidadGrilla}>
           {UNIDADES_PRODUCTO.map((u: any) => {
@@ -397,27 +406,31 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
               <TouchableOpacity
                 key={u.id}
                 onPress={() => establecerFormularioUnidad(u.id)}
-                style={[estilos.unidadTarjeta, isSelected && estilos.unidadTarjetaActivo]}
+                style={[
+                  estilos.unidadTarjeta,
+                  { paddingVertical: 8, paddingHorizontal: 10, minWidth: 110, flexBasis: "23%" },
+                  isSelected && estilos.unidadTarjetaActivo,
+                ]}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel={`${u.name} (${u.code}): ${u.desc}`}
               >
-                <View style={estilos.unidadTarjetaEncabezado}>
+                <View style={[estilos.unidadTarjetaEncabezado, { marginBottom: 0 }]}>
                   <View style={[estilos.unidadCodigoInsignia, isSelected && estilos.unidadCodigoInsigniaActivo]}>
                     <Text style={[estilos.unidadCodigoInsigniaTexto, isSelected && estilos.unidadCodigoInsigniaTextoActivo]}>
                       {u.code}
                     </Text>
                   </View>
-                  <Text style={[estilos.unidadTarjetaTitulo, isSelected && estilos.unidadTarjetaTituloActivo]}>
+                  <Text
+                    style={[estilos.unidadTarjetaTitulo, isSelected && estilos.unidadTarjetaTituloActivo]}
+                    numberOfLines={1}
+                  >
                     {u.name}
                   </Text>
                   {isSelected && (
-                    <Ionicons name="checkmark-circle" size={16} color={tema.colors.primary} style={{ marginLeft: "auto" }} />
+                    <Ionicons name="checkmark-circle" size={15} color={tema.colors.primary} style={{ marginLeft: "auto" }} />
                   )}
                 </View>
-                <Text style={[estilos.unidadTarjetaDescripcion, isSelected && estilos.unidadTarjetaDescripcionActivo]}>
-                  {u.desc}
-                </Text>
               </TouchableOpacity>
             );
           })}
@@ -435,24 +448,107 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
           );
         })()}
 
-        {/* 2. CONTROL DE EXISTENCIAS */}
-        <Text style={estilos.formularioSeccionEncabezado}>2. Control de Existencias</Text>
-        {!editandoProducto && (
-          <CampoTexto
-            label="Stock Inicial Disponible"
-            value={formularioExistencia}
-            onChangeText={establecerFormularioExistencia}
-            keyboardType="numeric"
-            placeholder="0"
-          />
-        )}
+        {/* 2. UBICACIÓN FÍSICA EN BODEGA */}
+        <Text style={estilos.formularioSeccionEncabezado}>2. Ubicación en Bodega</Text>
+        <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+          <View style={{ flex: 1, minWidth: 140 }}>
+            <CampoTexto
+              label="Pasillo / Zona"
+              value={formularioPasillo}
+              onChangeText={(val: string) => establecerFormularioPasillo?.(val)}
+              placeholder="Ej: Pasillo A"
+            />
+          </View>
+          <View style={{ flex: 1, minWidth: 140 }}>
+            <CampoTexto
+              label="Estantería / Gabinete"
+              value={formularioEstanteria}
+              onChangeText={(val: string) => establecerFormularioEstanteria?.(val)}
+              placeholder="Ej: Estante 1"
+            />
+          </View>
+        </View>
+
+        {/* Chips rápidos de Pasillo y Estantería + Vista previa */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: tema.colors.surfaceAlt,
+            borderWidth: 1,
+            borderColor: tema.colors.border,
+            borderRadius: tema.radius.sm,
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            marginBottom: tema.spacing.md,
+          }}
+        >
+          <Ionicons name="location-outline" size={15} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
+          <Text style={{ fontSize: 11, color: tema.colors.textSecondary, flex: 1 }}>
+            Ubicación asignada:{" "}
+            <Text style={{ fontWeight: "700", color: tema.colors.text }}>
+              {(formularioPasillo || "Bodega Principal").trim()}
+              {(formularioEstanteria || "").trim() ? ` - ${formularioEstanteria.trim()}` : ""}
+            </Text>
+          </Text>
+        </View>
+
+        {/* 3. EXISTENCIAS Y VALORIZACIÓN (PMP) */}
+        <Text style={estilos.formularioSeccionEncabezado}>3. Existencias y Valorización (PMP)</Text>
+        <View style={{ flexDirection: "row", gap: 10, flexWrap: "wrap" }}>
+          {!editandoProducto && (
+            <View style={{ flex: 1, minWidth: 135 }}>
+              <CampoTexto
+                label="Stock Inicial Disponible"
+                value={formularioExistencia}
+                onChangeText={establecerFormularioExistencia}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+          )}
+          <View style={{ flex: 1, minWidth: 135 }}>
+            <CampoTexto
+              label="Stock Mínimo de Alerta"
+              value={formularioMinimoExistencia}
+              onChangeText={establecerFormularioMinimoExistencia}
+              keyboardType="numeric"
+              placeholder="10"
+            />
+          </View>
+        </View>
+
         <CampoTexto
-          label="Stock Mínimo de Alerta"
-          value={formularioMinimoExistencia}
-          onChangeText={establecerFormularioMinimoExistencia}
+          label="Costo Unitario / PMP ($ CLP)"
+          value={formularioPmp}
+          onChangeText={(val: string) => establecerFormularioPmp?.(val.replace(/[^0-9]/g, ""))}
           keyboardType="numeric"
-          placeholder="10"
+          placeholder="Ej: 635"
         />
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            backgroundColor: tema.colors.primaryLight,
+            borderWidth: 1,
+            borderColor: tema.colors.primaryBorder,
+            borderRadius: tema.radius.sm,
+            paddingHorizontal: 10,
+            paddingVertical: 7,
+            marginBottom: tema.spacing.sm,
+          }}
+        >
+          <Text style={{ fontSize: 11, color: tema.colors.primaryDeep, fontWeight: "600" }}>
+            PMP Unitario Registrado: {formatearCLP(Number(formularioPmp) || 0)}
+          </Text>
+          {!editandoProducto && (
+            <Text style={{ fontSize: 11, color: tema.colors.primaryDark, fontWeight: "700" }}>
+              Total Inicial:{" "}
+              {formatearCLP((Number(formularioExistencia) || 0) * (Number(formularioPmp) || 0))}
+            </Text>
+          )}
+        </View>
 
         {/* 3. MÁS OPCIONES (PLEGABLE) */}
         <TouchableOpacity
@@ -624,17 +720,25 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
               {solicitudElementos.map((item: any, idx: number) => {
                 const evalLinea = validacionEnVivo.lineasEvaluadas[idx];
                 const prod = productos.find((p: any) => p.sku === item.sku);
+                const esGranel = Boolean(prod?.isBulk);
                 const avail = evalLinea ? evalLinea.stockDisponibleActual : prod ? prod.stock : 0;
                 const comprometidoActual = evalLinea
                   ? evalLinea.stockComprometidoActual
                   : prod?.committed || 0;
                 const superaDisp = Boolean(evalLinea?.superaDisponible);
                 const invalida = Boolean(evalLinea?.cantidadInvalida || evalLinea?.insumoInactivo);
-                const opcionesDisponibles = opcionesProductosSolicitud.filter(
-                  (op) =>
-                    op.value === item.sku ||
-                    !solicitudElementos.some((el: any) => el.sku === op.value)
-                );
+                const claveInput = `${idx}_${item.sku}`;
+                const textoInputSolicitud =
+                  textosCantidadSolicitud[claveInput] !== undefined
+                    ? textosCantidadSolicitud[claveInput]
+                    : String(item.quantity);
+                const remanenteGranelSolicitud = prod
+                  ? calcularRemanenteContenedorGranel(prod, {
+                    cantidadMovimiento: Number(item.quantity || 0),
+                    tipoMovimiento: "solicitud",
+                    stockBaseOverride: avail,
+                  })
+                  : null;
 
                 return (
                   <View
@@ -644,47 +748,72 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                       (superaDisp || invalida) && estilos.lackingExistenciaFormularioFila,
                     ]}
                   >
-                    <View style={estilos.solicitudLineaCabecera}>
-                      <Text style={estilos.solicitudLineaTitulo}>Línea #{idx + 1}</Text>
-                      <Pressable
-                        onPress={() => {
-                          const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
-                          establecerSolicitudElementos(updated);
-                          establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
-                        }}
-                        style={{ padding: 4 }}
-                        accessibilityLabel={`Eliminar insumo línea ${idx + 1}`}
-                      >
-                        <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
-                      </Pressable>
-                    </View>
+                    {/* Selector de Insumo del Catálogo con Stock Disponible en Vivo */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={{ marginBottom: 8 }}
+                    >
+                      {productos
+                        .filter((p: any) => !p.disabled)
+                        .map((p: any) => {
+                          const activoSku = p.sku === item.sku;
+                          return (
+                            <TouchableOpacity
+                              key={p.sku}
+                              onPress={() =>
+                                manejarSolicitudElementoCambiar(idx, p.sku, item.quantity)
+                              }
+                              style={[
+                                estilos.productoSeleccionarChip,
+                                activoSku && estilos.productoSeleccionarChipActivo,
+                                { paddingVertical: 4, paddingHorizontal: 10, marginRight: 6 },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  estilos.productoSeleccionarSku,
+                                  activoSku && { color: tema.colors.primary },
+                                ]}
+                              >
+                                {p.sku} • {p.name}
+                              </Text>
+                              <Text style={estilos.productoSeleccionarExistencia}>
+                                Disp: {p.stock} {p.unit} | Comp: {p.committed || 0} {p.unit}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                    </ScrollView>
 
-                    <SelectorBuscable<string>
-                      label="Insumo / Material"
-                      options={opcionesDisponibles}
-                      value={item.sku}
-                      onChange={(nuevoSku) =>
-                        manejarSolicitudElementoCambiar(idx, nuevoSku, Math.max(1, item.quantity || 1))
-                      }
-                      placeholder="Seleccionar insumo..."
-                      searchPlaceholder="Buscar por nombre o SKU..."
-                    />
-
-                    <View style={estilos.solicitudLineaCantidadFila}>
-                      <View style={{ flex: 1, marginRight: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <View style={{ flex: 2, marginRight: 8 }}>
+                        <Text style={estilos.elementoSkuEtiqueta}>
+                          {prod ? `${prod.name} (${prod.sku})` : item.sku}
+                        </Text>
                         <Text
                           style={[
                             estilos.elementoExistenciaDisponible,
                             superaDisp && { color: tema.colors.danger, fontWeight: "bold" },
                           ]}
                         >
-                          Stock Disponible en Vivo: {avail} {prod?.unit || "un"} • Comprometido: {comprometidoActual} {prod?.unit || "un"}
+                          Stock Disponible en Vivo: {avail} {prod?.unit || "un"} • Comprometido Actual: {comprometidoActual} {prod?.unit || "un"}
                         </Text>
                         {!superaDisp && !invalida && evalLinea && (
                           <Text style={{ fontSize: 11, color: tema.colors.okDark, marginTop: 2 }}>
-                            Reserva H6 tras confirmar → Disponible: {evalLinea.stockDisponibleRestanteH6} {evalLinea.unit} | Comprometido:{" "}
+                            Reserva H6 tras confirmar → Remanente disponible:{" "}
+                            {formatearCantidadMovimientoBodega(
+                              evalLinea.stockDisponibleRestanteH6,
+                              esGranel,
+                              evalLinea.unit
+                            )}{" "}
+                            | Comprometido:{" "}
                             <Text style={{ fontWeight: "bold" }}>
-                              {evalLinea.stockComprometidoNuevoH6} {evalLinea.unit}
+                              {formatearCantidadMovimientoBodega(
+                                evalLinea.stockComprometidoNuevoH6,
+                                esGranel,
+                                evalLinea.unit
+                              )}
                             </Text>
                           </Text>
                         )}
@@ -694,26 +823,67 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                           </Text>
                         )}
                       </View>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Text style={{ fontSize: 12, color: tema.colors.textSecondary, fontWeight: "600" }}>
-                          Cant. ({prod?.unit || "un"}):
-                        </Text>
+
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                         <TextInput
-                          value={item.quantity === 0 ? "" : String(item.quantity)}
-                          onChangeText={(val: string) => {
-                            const limpia = val.replace(/[^0-9]/g, "");
-                            const numero = limpia === "" ? 0 : Number(limpia);
-                            manejarSolicitudElementoCambiar(idx, item.sku, numero);
+                          value={textoInputSolicitud}
+                          onChangeText={(val: any) => {
+                            const san = sanitizarEntradaCantidadBodega(val, esGranel, 3);
+                            establecerTextosCantidadSolicitud((prev) => ({
+                              ...prev,
+                              [claveInput]: san.textoSanitizado,
+                            }));
+                            manejarSolicitudElementoCambiar(idx, item.sku, san.valorNumerico);
                           }}
-                          keyboardType="numeric"
+                          placeholder={esGranel ? "0.000" : "1"}
+                          keyboardType="decimal-pad"
                           style={[
                             estilos.cantidadEntrada,
                             (superaDisp || invalida) && { borderColor: tema.colors.danger, borderWidth: 1.5 },
                           ]}
-                          placeholder="0"
+                        />
+                        <Text style={estilos.despachoUnidadEtiqueta}>{prod?.unit || "un"}</Text>
+                      </View>
+
+                      <Pressable
+                        onPress={() => {
+                          const updated = solicitudElementos.filter((_: any, i: number) => i !== idx);
+                          establecerSolicitudElementos(updated);
+                          establecerFaltanteExistenciaErrores(calcularFaltanteExistencia(updated));
+                        }}
+                        style={{ padding: 4, marginLeft: 6 }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={tema.colors.danger} />
+                      </Pressable>
+                    </View>
+
+                    {/* [FRONT-2] Capacidad restante del contenedor para insumos a granel */}
+                    {esGranel && remanenteGranelSolicitud && prod?.containerCapacity && (
+                      <View
+                        style={{
+                          marginTop: 8,
+                          backgroundColor: tema.colors.primaryLight,
+                          borderRadius: tema.radius.sm,
+                          padding: 8,
+                          borderWidth: 1,
+                          borderColor: tema.colors.primaryBorder,
+                        }}
+                      >
+                        <BarraProgreso
+                          value={remanenteGranelSolicitud.remanenteEnContenedorActual}
+                          max={prod.containerCapacity}
+                          height={6}
+                          showPercentage
+                          semaforo
+                          label={
+                            remanenteGranelSolicitud.etiquetaCapacidadContenedor ||
+                            `Capacidad restante del contenedor: ${remanenteGranelSolicitud.remanenteEnContenedorActual.toFixed(
+                              3
+                            )} / ${prod.containerCapacity} ${prod.unit}`
+                          }
                         />
                       </View>
-                    </View>
+                    )}
                   </View>
                 );
               })}
@@ -911,12 +1081,67 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         </ScrollView>
 
         <CampoTexto
-          label={`Cantidad a dar de baja (${seleccionadoMermaProducto?.unit || "un"}):`}
+          label={`Cantidad a dar de baja (${seleccionadoMermaProducto?.unit || "un"}${seleccionadoMermaProducto?.isBulk ? " • Granel hasta 3 decimales" : ""
+            }):`}
           value={mermaCantidad}
-          onChangeText={establecerMermaCantidad}
+          onChangeText={(val: any) => {
+            const san = sanitizarEntradaCantidadBodega(
+              val,
+              Boolean(seleccionadoMermaProducto?.isBulk),
+              3
+            );
+            establecerMermaCantidad(san.textoSanitizado);
+          }}
           keyboardType="decimal-pad"
-          placeholder="1"
+          placeholder={seleccionadoMermaProducto?.isBulk ? "0.000" : "1"}
         />
+
+        {seleccionadoMermaProducto && (() => {
+          const remanenteMerma = calcularRemanenteContenedorGranel(seleccionadoMermaProducto, {
+            cantidadMovimiento: mermaCantidadNumero,
+            tipoMovimiento: "merma",
+          });
+          return (
+            <View
+              style={{
+                backgroundColor: tema.colors.surfaceAlt,
+                borderRadius: tema.radius.sm,
+                padding: 10,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: tema.colors.borderLight,
+                gap: 6,
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text }}>
+                  {remanenteMerma.etiquetaUnidadYRemanente}
+                </Text>
+                <Insignia
+                  label={`UM: ${seleccionadoMermaProducto.unit.toUpperCase()}${seleccionadoMermaProducto.isBulk ? " (Granel • 3 dec.)" : ""
+                    }`}
+                  tone="info"
+                  size="sm"
+                />
+              </View>
+              {seleccionadoMermaProducto.isBulk && seleccionadoMermaProducto.containerCapacity && (
+                <BarraProgreso
+                  value={remanenteMerma.remanenteEnContenedorActual}
+                  max={seleccionadoMermaProducto.containerCapacity}
+                  height={6}
+                  showPercentage
+                  semaforo
+                  label={
+                    remanenteMerma.etiquetaCapacidadContenedor ||
+                    `Capacidad restante del contenedor: ${remanenteMerma.remanenteEnContenedorActual.toFixed(
+                      3
+                    )} / ${seleccionadoMermaProducto.containerCapacity} ${seleccionadoMermaProducto.unit}`
+                  }
+                />
+              )}
+            </View>
+          );
+        })()}
 
         <Text style={estilos.formularioSeccionEtiqueta}>Motivo de la Merma:</Text>
         <View style={estilos.motivoPastillasFila}>
@@ -1062,11 +1287,67 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         )}
 
         <CampoTexto
-          label={`Cantidad Física Contada en Bodega (${seleccionadoConteoProducto?.unit || "un"}):`}
+          label={`Cantidad Física Contada en Bodega (${seleccionadoConteoProducto?.unit || "un"}${seleccionadoConteoProducto?.isBulk ? " • Granel hasta 3 decimales" : ""
+            }):`}
           value={conteoPhysicalCantidad}
-          onChangeText={establecerConteoPhysicalCantidad}
+          onChangeText={(val: any) => {
+            const san = sanitizarEntradaCantidadBodega(
+              val,
+              Boolean(seleccionadoConteoProducto?.isBulk),
+              3
+            );
+            establecerConteoPhysicalCantidad(san.textoSanitizado);
+          }}
+          placeholder={seleccionadoConteoProducto?.isBulk ? "0.000" : "0"}
           keyboardType="decimal-pad"
         />
+
+        {seleccionadoConteoProducto && (() => {
+          const remanenteConteo = calcularRemanenteContenedorGranel(seleccionadoConteoProducto, {
+            tipoMovimiento: "conteo",
+            cantidadContadaFisica: parseFloat(String(conteoPhysicalCantidad || "0").replace(",", ".")) || 0,
+          });
+          return (
+            <View
+              style={{
+                backgroundColor: tema.colors.surfaceAlt,
+                borderRadius: tema.radius.sm,
+                padding: 10,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: tema.colors.borderLight,
+                gap: 6,
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: tema.colors.text }}>
+                  {remanenteConteo.etiquetaUnidadYRemanente}
+                </Text>
+                <Insignia
+                  label={`UM: ${seleccionadoConteoProducto.unit.toUpperCase()}${seleccionadoConteoProducto.isBulk ? " (Granel • 3 dec.)" : ""
+                    }`}
+                  tone="info"
+                  size="sm"
+                />
+              </View>
+              {seleccionadoConteoProducto.isBulk && seleccionadoConteoProducto.containerCapacity && (
+                <BarraProgreso
+                  value={remanenteConteo.remanenteEnContenedorActual}
+                  max={seleccionadoConteoProducto.containerCapacity}
+                  height={6}
+                  showPercentage
+                  semaforo
+                  label={
+                    remanenteConteo.etiquetaCapacidadContenedor ||
+                    `Capacidad restante del contenedor: ${remanenteConteo.remanenteEnContenedorActual.toFixed(
+                      3
+                    )} / ${seleccionadoConteoProducto.containerCapacity} ${seleccionadoConteoProducto.unit}`
+                  }
+                />
+              )}
+            </View>
+          );
+        })()}
 
         {/* Tarjeta de Discrepancia y Regla de Umbral del 5 % */}
         <Tarjeta variant="outlined" style={estilos.conteoDiferenciaTarjeta}>
@@ -1196,59 +1477,108 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
         }}
       />
 
-      {/* MODAL 10: CARDEX DE MOVIMIENTOS POR INSUMO (CON RESPONSABLE "¿QUIÉN LO HIZO?") */}
+      {/* MODAL 10: CARDEX DE MOVIMIENTOS POR INSUMO (CON RESPONSABLE "¿QUIÉN LO HIZO?" Y CONTRASTE DE SALDO ACTUAL VS ÚLTIMA LÍNEA) */}
       <VistaModal
         visible={Boolean(productoCardexSeleccionado)}
         onClose={() => establecerProductoCardexSeleccionado && establecerProductoCardexSeleccionado(null)}
-        title={productoCardexSeleccionado ? `Cardex: ${productoCardexSeleccionado.sku}` : "Cardex"}
+        title={productoCardexSeleccionado ? `Cardex de Solo Lectura: ${productoCardexSeleccionado.sku}` : "Cardex"}
         subtitle={productoCardexSeleccionado?.name || ""}
       >
-        {productoCardexSeleccionado && (
-          <View style={estilos.modalCardexContenido}>
-            {/* Cabecera Resumen Insumo */}
-            <View style={estilos.modalCardexCabecera}>
-              <View style={estilos.modalCardexCol}>
-                <Text style={estilos.modalCardexEtiqueta}>Stock Físico</Text>
-                <Text style={estilos.modalCardexValor}>
-                  {productoCardexSeleccionado.stock} {productoCardexSeleccionado.unit}
+        {productoCardexSeleccionado && (() => {
+          const { movimientosCronologicoAsc } = filtrarYOrdenarCardexSoloLectura(cardex, {
+            skuExacto: productoCardexSeleccionado.sku,
+            ordenCronologico: "asc",
+          });
+          const contrasteModal = contrastarSaldoInsumoConUltimaLineaCardex(
+            productoCardexSeleccionado,
+            cardex
+          );
+
+          return (
+            <View style={estilos.modalCardexContenido}>
+              {/* Cabecera Resumen Insumo */}
+              <View style={estilos.modalCardexCabecera}>
+                <View style={estilos.modalCardexCol}>
+                  <Text style={estilos.modalCardexEtiqueta}>Saldo Actual</Text>
+                  <Text style={estilos.modalCardexValor}>
+                    {productoCardexSeleccionado.stock} {productoCardexSeleccionado.unit}
+                  </Text>
+                </View>
+                <View style={estilos.modalCardexCol}>
+                  <Text style={estilos.modalCardexEtiqueta}>Última Línea Cardex</Text>
+                  <Text style={[estilos.modalCardexValor, { color: tema.colors.okDark }]}>
+                    {contrasteModal.saldoUltimaLineaCardex !== null
+                      ? `${contrasteModal.saldoUltimaLineaCardex} ${productoCardexSeleccionado.unit}`
+                      : "Sin mov."}
+                  </Text>
+                </View>
+                <View style={estilos.modalCardexCol}>
+                  <Text style={estilos.modalCardexEtiqueta}>PMP Unitario</Text>
+                  <Text style={[estilos.modalCardexValor, { color: tema.colors.primaryDark }]}>
+                    {formatearCLP(productoCardexSeleccionado.pmp || productoCardexSeleccionado.unitCost)}
+                  </Text>
+                </View>
+              </View>
+
+              {/* [SCRUM] Aviso de contraste entre saldo actual y última línea del Cardex */}
+              <View
+                style={{
+                  backgroundColor: contrasteModal.coincideSaldoConUltimaLinea
+                    ? tema.colors.okLight
+                    : tema.colors.warnLight,
+                  borderWidth: 1,
+                  borderColor: contrasteModal.coincideSaldoConUltimaLinea
+                    ? tema.colors.ok
+                    : tema.colors.warn,
+                  borderRadius: tema.radius.sm,
+                  padding: 8,
+                  marginBottom: 10,
+                }}
+              >
+                <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                  {contrasteModal.mensajeVerificacion}
                 </Text>
               </View>
-              <View style={estilos.modalCardexCol}>
-                <Text style={estilos.modalCardexEtiqueta}>PMP Unitario</Text>
-                <Text style={[estilos.modalCardexValor, { color: tema.colors.primaryDark }]}>
-                  {formatearCLP(productoCardexSeleccionado.pmp || productoCardexSeleccionado.unitCost)}
-                </Text>
-              </View>
-              <View style={estilos.modalCardexCol}>
-                <Text style={estilos.modalCardexEtiqueta}>Ubicación</Text>
-                <Text style={estilos.modalCardexValor}>{productoCardexSeleccionado.location || "Central"}</Text>
-              </View>
-            </View>
 
-            {/* Listado de Movimientos del Insumo */}
-            <Text style={estilos.modalCardexSubtitulo}>
-              Historial de Movimientos y Responsables:
-            </Text>
+              {/* Listado Cronológico de Movimientos del Insumo */}
+              <Text style={estilos.modalCardexSubtitulo}>
+                Tabla Cronológica de Movimientos, Saldos y PMP (Solo Lectura):
+              </Text>
 
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={true}>
-              {cardex.filter((m: MovimientoCardex) => m.sku === productoCardexSeleccionado.sku).length === 0 ? (
-                <EstadoVacio
-                  icon="swap-horizontal-outline"
-                  title="Sin movimientos previos"
-                  description={`No se han registrado movimientos en Cardex para ${productoCardexSeleccionado.sku}.`}
-                  containerStyle={{ marginVertical: 16, borderWidth: 0 }}
-                />
-              ) : (
-                cardex
-                  .filter((m: MovimientoCardex) => m.sku === productoCardexSeleccionado.sku)
-                  .map((item: MovimientoCardex) => {
+              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={true}>
+                {movimientosCronologicoAsc.length === 0 ? (
+                  <EstadoVacio
+                    icon="swap-horizontal-outline"
+                    title="Sin movimientos previos"
+                    description={`No se han registrado movimientos en Cardex para ${productoCardexSeleccionado.sku}.`}
+                    containerStyle={{ marginVertical: 16, borderWidth: 0 }}
+                  />
+                ) : (
+                  movimientosCronologicoAsc.map((item: MovimientoCardex, idx: number) => {
                     const esEntrada = item.qtyIn > 0;
+                    const esUltimaLinea = idx === movimientosCronologicoAsc.length - 1;
                     return (
-                      <View key={item.id} style={estilos.modalCardexItem}>
+                      <View
+                        key={item.id}
+                        style={[
+                          estilos.modalCardexItem,
+                          esUltimaLinea && {
+                            borderColor: tema.colors.primary,
+                            borderWidth: 1.5,
+                          },
+                        ]}
+                      >
                         {/* Cabecera del Movimiento */}
                         <View style={estilos.modalCardexItemSuperior}>
                           <View style={{ flex: 1, marginRight: 8 }}>
-                            <Text style={estilos.modalCardexFecha}>{formatearFecha(item.date)}</Text>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={estilos.modalCardexFecha}>
+                                #{idx + 1} • {formatearFecha(item.date)}
+                              </Text>
+                              {esUltimaLinea && (
+                                <Insignia label="Última línea" tone="primary" size="sm" />
+                              )}
+                            </View>
                             <Text style={estilos.modalCardexReferencia}>Ref: {item.reference}</Text>
                             {item.projectName && (
                               <Text style={estilos.modalCardexProyecto}>Obra: {item.projectName}</Text>
@@ -1260,10 +1590,10 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                               item.type === "entrada_compra" || item.type === "devolucion"
                                 ? "ok"
                                 : item.type === "merma"
-                                ? "danger"
-                                : item.type === "ajuste_conteo"
-                                ? "warn"
-                                : "info"
+                                  ? "danger"
+                                  : item.type === "ajuste_conteo"
+                                    ? "warn"
+                                    : "info"
                             }
                             size="sm"
                           />
@@ -1279,17 +1609,18 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                                 { color: esEntrada ? tema.colors.okDark : tema.colors.danger, fontWeight: "bold" },
                               ]}
                             >
-                              {esEntrada ? `+${item.qtyIn}` : `-${item.qtyOut}`} {productoCardexSeleccionado.unit}
+                              {esEntrada ? `+${item.qtyIn}` : item.qtyOut > 0 ? `-${item.qtyOut}` : "0"}{" "}
+                              {productoCardexSeleccionado.unit}
                             </Text>
                           </View>
                           <View style={estilos.modalCardexCifraCol}>
-                            <Text style={estilos.modalCardexCifraLbl}>Saldo Resultante</Text>
+                            <Text style={estilos.modalCardexCifraLbl}>Saldo Posterior</Text>
                             <Text style={[estilos.modalCardexCifraVal, { fontWeight: "bold" }]}>
                               {item.balance} {productoCardexSeleccionado.unit}
                             </Text>
                           </View>
                           <View style={estilos.modalCardexCifraCol}>
-                            <Text style={estilos.modalCardexCifraLbl}>PMP Movimiento</Text>
+                            <Text style={estilos.modalCardexCifraLbl}>PMP Posterior</Text>
                             <Text style={estilos.modalCardexCifraVal}>{formatearCLP(item.pmp)}</Text>
                           </View>
                         </View>
@@ -1312,8 +1643,8 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                                     item.userRole === "Administrador"
                                       ? "primary"
                                       : item.userRole === "Tecnico"
-                                      ? "ok"
-                                      : "warn"
+                                        ? "ok"
+                                        : "warn"
                                   }
                                   size="sm"
                                 />
@@ -1327,20 +1658,21 @@ export const ModalesInventario: React.FC<PropiedadesModalesInventario> = ({
                       </View>
                     );
                   })
-              )}
-            </ScrollView>
+                )}
+              </ScrollView>
 
-            <View style={[estilos.modalBotonesFila, { marginTop: 16 }]}>
-              <Boton
-                title="Cerrar Cardex"
-                variant="outline"
-                size="md"
-                onPress={() => establecerProductoCardexSeleccionado && establecerProductoCardexSeleccionado(null)}
-                style={{ width: "100%" }}
-              />
+              <View style={[estilos.modalBotonesFila, { marginTop: 16 }]}>
+                <Boton
+                  title="Cerrar Cardex"
+                  variant="outline"
+                  size="md"
+                  onPress={() => establecerProductoCardexSeleccionado && establecerProductoCardexSeleccionado(null)}
+                  style={{ width: "100%" }}
+                />
+              </View>
             </View>
-          </View>
-        )}
+          );
+        })()}
       </VistaModal>
     </>
   );

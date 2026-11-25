@@ -332,7 +332,7 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
         </View>
       ) : (
         <View style={estilos.cajaBancariaBodega}>
-          <Ionicons name="lock-closed" size={20} color="#78716c" style={{ marginRight: 8 }} />
+          <Ionicons name="lock-closed" size={20} color="#64748b" style={{ marginRight: 8 }} />
           <View style={{ flex: 1 }}>
             <Text style={estilos.textoRestriccionBancaria}>
               ℹ️ Sección de cuentas bancarias restringida (Solo visible para perfiles Administrador según normativa de seguridad).
@@ -374,125 +374,11 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
       showsVerticalScrollIndicator={false}
     >
       {/* =====================================================================
-          BARRA SCRUM: Herramienta de Comparación Rápida Admin vs Bodeguero
+          RENDERIZADO DE FICHA
           ===================================================================== */}
-      {mostrarComparadorScrum && (
-        <View style={estilos.barraScrum}>
-          <View style={estilos.scrumInfo}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons name="git-compare-outline" size={18} color={tema.colors.primaryDark} style={{ marginRight: 6 }} />
-              <Text style={estilos.scrumTitulo}>[SCRUM] Verificación de Ficha (FRONT-2)</Text>
-            </View>
-            <Text style={estilos.scrumSubtitulo}>
-              Compara la vista entre Administrador (gestiona cuentas bancarias y edición) y Bodeguero (banco oculto y solo lectura).
-            </Text>
-          </View>
-
-          <View style={estilos.scrumSelectorBotones}>
-            <TouchableOpacity
-              onPress={() => setRolSimulado("Administrador")}
-              style={[
-                estilos.scrumBoton,
-                isAdmin && !rolSimulado?.includes("Comparativa") && estilos.scrumBotonActivoAdmin,
-              ]}
-            >
-              <Ionicons
-                name="shield-checkmark"
-                size={14}
-                color={isAdmin && !rolSimulado?.includes("Comparativa") ? "#ffffff" : "#1e40af"}
-                style={{ marginRight: 4 }}
-              />
-              <Text
-                style={[
-                  estilos.scrumBotonTexto,
-                  isAdmin && !rolSimulado?.includes("Comparativa") && estilos.scrumBotonTextoActivo,
-                ]}
-              >
-                Vista Admin
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setRolSimulado("Bodeguero")}
-              style={[
-                estilos.scrumBoton,
-                !isAdmin && !rolSimulado?.includes("Comparativa") && estilos.scrumBotonActivoBodega,
-              ]}
-            >
-              <Ionicons
-                name="cube-outline"
-                size={14}
-                color={!isAdmin && !rolSimulado?.includes("Comparativa") ? "#ffffff" : "#92400e"}
-                style={{ marginRight: 4 }}
-              />
-              <Text
-                style={[
-                  estilos.scrumBotonTexto,
-                  !isAdmin && !rolSimulado?.includes("Comparativa") && estilos.scrumBotonTextoActivo,
-                ]}
-              >
-                Vista Bodeguero
-              </Text>
-            </TouchableOpacity>
-
-            {esDesktop && (
-              <TouchableOpacity
-                onPress={() =>
-                  setRolSimulado((prev) =>
-                    prev === "Comparativa" ? null : "Comparativa"
-                  )
-                }
-                style={[
-                  estilos.scrumBoton,
-                  rolSimulado === "Comparativa" && estilos.scrumBotonActivoScrum,
-                ]}
-              >
-                <Ionicons
-                  name="grid-outline"
-                  size={14}
-                  color={rolSimulado === "Comparativa" ? "#ffffff" : tema.colors.primaryDark}
-                  style={{ marginRight: 4 }}
-                />
-                <Text
-                  style={[
-                    estilos.scrumBotonTexto,
-                    rolSimulado === "Comparativa" && estilos.scrumBotonTextoActivo,
-                  ]}
-                >
-                  Comparar Lado a Lado
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {onClose && (
-              <TouchableOpacity
-                onPress={onClose}
-                style={estilos.botonCerrarHeader}
-              >
-                <Ionicons name="close" size={20} color="#64748b" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* =====================================================================
-          RENDERIZADO DE FICHA O COMPARATIVA
-          ===================================================================== */}
-      {rolSimulado === "Comparativa" && esDesktop ? (
-        <View style={estilos.filaComparativa}>
-          <View style={estilos.columnaComparativa}>
-            {renderFichaContenido(true, "VISTA ADMINISTRADOR (Edición Completa + Banco)")}
-          </View>
-          <View style={estilos.columnaComparativa}>
-            {renderFichaContenido(false, "VISTA BODEGUERO (Solo Lectura + Banco Restringido)")}
-          </View>
-        </View>
-      ) : (
-        renderFichaContenido(
-          isAdmin,
-          `Modo Activo: ${isAdmin ? "Administrador (Ficha completa editable)" : "Bodeguero (Solo lectura, banco restringido)"}`
-        )
+      {renderFichaContenido(
+        isAdmin,
+        `Modo Activo: ${isAdmin ? "Administrador (Ficha completa editable)" : "Bodeguero (Solo lectura, banco restringido)"}`
       )}
     </ScrollView>
   );
@@ -692,13 +578,13 @@ const estilos = StyleSheet.create({
   calificacionEtiqueta: {
     fontSize: 10,
     fontWeight: "600",
-    color: "#78716c",
+    color: "#64748b",
     textTransform: "uppercase",
   },
   calificacionValor: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#1c1917",
+    color: "#0f172a",
   },
   seccionFormulario: {
     marginBottom: 16,

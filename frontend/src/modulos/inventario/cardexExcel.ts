@@ -255,12 +255,12 @@ xmlns="http://www.w3.org/TR/REC-html40">
   <meta charset="UTF-8" />
   <style>
     body { font-family: Arial, sans-serif; font-size: 11px; color: #1f2937; }
-    h2 { color: #1c1917; margin-bottom: 4px; }
-    p { margin: 2px 0 10px 0; color: #57534e; }
+    h2 { color: #0f172a; margin-bottom: 4px; }
+    p { margin: 2px 0 10px 0; color: #475569; }
     table { border-collapse: collapse; width: 100%; margin-bottom: 18px; }
-    th { background-color: #1c1917; color: #f59e0b; font-weight: bold; padding: 6px; border: 1px solid #d6d3d1; text-align: left; }
-    td { padding: 5px 6px; border: 1px solid #d6d3d1; }
-    .resumen td { background-color: #fef3c7; font-weight: bold; }
+    th { background-color: #1e1b4b; color: #c7d2fe; font-weight: bold; padding: 6px; border: 1px solid #cbd5e1; text-align: left; }
+    td { padding: 5px 6px; border: 1px solid #cbd5e1; }
+    .resumen td { background-color: #eef2ff; font-weight: bold; }
   </style>
 </head>
 <body>

@@ -21,6 +21,7 @@ import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
 import { NotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
 import { CampoTexto } from "@/componentes/formularios/CampoTexto";
+import { Selector } from "@/componentes/formularios/Selector";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
@@ -417,141 +418,239 @@ export const PantallaHerramientas: React.FC = () => {
 
         <ScrollView style={estilos.scrollContenedor} contentContainerStyle={estilos.contenido}>
           {/* ========================================================================= */}
-          {/* KPIS DE RESUMEN                                                           */}
+          {/* KPIS DE RESUMEN INTERACTIVOS (MANTIENE ESENCIA CON SEMÁFORO DE SUPERFICIE) */}
           {/* ========================================================================= */}
-          <View style={estilos.kpisFila}>
-        <View style={estilos.kpiTarjeta}>
-          <Text style={estilos.kpiValor}>{totalConteo}</Text>
-          <Text style={estilos.kpiLbl}>Total Equipos</Text>
-        </View>
-
-        <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.ok }]}>
-          <Text style={[estilos.kpiValor, { color: tema.colors.ok }]}>{disponibleConteo}</Text>
-          <Text style={estilos.kpiLbl}>Disponibles</Text>
-        </View>
-
-        <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.info }]}>
-          <Text style={[estilos.kpiValor, { color: tema.colors.info }]}>{asignadoConteo}</Text>
-          <Text style={estilos.kpiLbl}>Asignadas</Text>
-        </View>
-
-        <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.warn }]}>
-          <Text style={[estilos.kpiValor, { color: tema.colors.warn }]}>{mantencionConteo}</Text>
-          <Text style={estilos.kpiLbl}>En Mantención</Text>
-        </View>
-
-        <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.borderDark }]}>
-          <Text style={[estilos.kpiValor, { color: tema.colors.textMuted }]}>{bajaConteo}</Text>
-          <Text style={estilos.kpiLbl}>Dadas de Baja</Text>
-        </View>
-
-        {nearDueConteo > 0 && (
-          <View style={[estilos.kpiTarjeta, { borderColor: tema.colors.warn, backgroundColor: tema.colors.warnLight }]}>
-            <Text style={[estilos.kpiValor, { color: tema.colors.warnDark }]}>{nearDueConteo}</Text>
-            <Text style={[estilos.kpiLbl, { color: tema.colors.warnDark }]}>Próx. Mant.</Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {[
+              {
+                id: "todos",
+                label: "Total Equipos",
+                valor: totalConteo,
+                bg: "#f1f5f9",
+                border: "#cbd5e1",
+                activeBorder: "#0f172a",
+                color: "#0f172a",
+              },
+              {
+                id: "disponible",
+                label: "Disponibles",
+                valor: disponibleConteo,
+                bg: "#f0fdf4",
+                border: "#86efac",
+                activeBorder: "#16a34a",
+                color: "#166534",
+              },
+              {
+                id: "asignada",
+                label: "Asignadas",
+                valor: asignadoConteo,
+                bg: "#fffbeb",
+                border: "#fcd34d",
+                activeBorder: "#d97706",
+                color: "#92400e",
+              },
+              {
+                id: "en_mantencion",
+                label: "En Mantención",
+                valor: mantencionConteo,
+                bg: "#fff7ed",
+                border: "#fdba74",
+                activeBorder: "#ea580c",
+                color: "#9a3412",
+              },
+              {
+                id: "dada_de_baja",
+                label: "Dadas de Baja",
+                valor: bajaConteo,
+                bg: "#f1f5f9",
+                border: "#cbd5e1",
+                activeBorder: "#64748b",
+                color: "#475569",
+              },
+              ...(overdueConteo > 0
+                ? [
+                    {
+                      id: "vencidas",
+                      label: "¡Vencidas!",
+                      valor: overdueConteo,
+                      bg: "#fef2f2",
+                      border: "#fca5a5",
+                      activeBorder: "#dc2626",
+                      color: "#991b1b",
+                    },
+                  ]
+                : []),
+              ...(nearDueConteo > 0
+                ? [
+                    {
+                      id: "proximas",
+                      label: "Próx. Mant.",
+                      valor: nearDueConteo,
+                      bg: "#fffbeb",
+                      border: "#fcd34d",
+                      activeBorder: "#d97706",
+                      color: "#b45309",
+                    },
+                  ]
+                : []),
+            ].map((kpi) => {
+              const activo = filtrarEstado === kpi.id;
+              return (
+                <TouchableOpacity
+                  key={kpi.id}
+                  activeOpacity={0.8}
+                  onPress={() =>
+                    establecerFiltrarEstado(filtrarEstado === kpi.id && kpi.id !== "todos" ? "todos" : kpi.id)
+                  }
+                  style={{
+                    flexGrow: 1,
+                    flexBasis: "30%",
+                    minWidth: 96,
+                    backgroundColor: kpi.bg,
+                    borderWidth: activo ? 2 : 1.5,
+                    borderColor: activo ? kpi.activeBorder : kpi.border,
+                    borderLeftWidth: 4,
+                    borderLeftColor: kpi.activeBorder,
+                    borderRadius: 10,
+                    paddingVertical: 8,
+                    paddingHorizontal: 10,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={{ fontSize: 19, fontWeight: "900", color: kpi.color }}>
+                    {kpi.valor}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: activo ? "800" : "700",
+                      color: kpi.color,
+                      marginTop: 2,
+                      textAlign: "center",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {activo ? `● ${kpi.label}` : kpi.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-        )}
 
-        {overdueConteo > 0 && (
-          <View style={[estilos.kpiTarjeta, estilos.kpiTarjetaPeligro]}>
-            <Text style={[estilos.kpiValor, { color: tema.colors.danger }]}>{overdueConteo}</Text>
-            <Text style={[estilos.kpiLbl, { color: tema.colors.danger }]}>¡Vencidas!</Text>
-          </View>
-        )}
-      </View>
+          {/* BANNER DESTACADO DE ALERTAS DE MANTENCIÓN VENCIDA O PRÓXIMA */}
+          {(overdueConteo > 0 || nearDueConteo > 0) && (
+            <View
+              style={{
+                backgroundColor: overdueConteo > 0 ? "#fef2f2" : "#fffbeb",
+                borderWidth: 1.5,
+                borderColor: overdueConteo > 0 ? "#fca5a5" : "#fcd34d",
+                borderLeftWidth: 5,
+                borderLeftColor: overdueConteo > 0 ? "#dc2626" : "#d97706",
+                borderRadius: 12,
+                padding: 12,
+                marginBottom: 12,
+                flexDirection: "row",
+                flexWrap: "wrap",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+                <Ionicons
+                  name={overdueConteo > 0 ? "alert-circle" : "time"}
+                  size={22}
+                  color={overdueConteo > 0 ? tema.colors.danger : tema.colors.warnDark}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      fontWeight: "800",
+                      color: overdueConteo > 0 ? "#991b1b" : tema.colors.warnDark,
+                    }}
+                  >
+                    {overdueConteo > 0
+                      ? `${overdueConteo} herramienta(s) con mantención VENCIDA`
+                      : `${nearDueConteo} herramienta(s) con mantención PRÓXIMA (≤ 15 días)`}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                    {overdueConteo > 0 && nearDueConteo > 0
+                      ? `Además hay ${nearDueConteo} equipo(s) próximos a calibración. Se muestran primero en el listado.`
+                      : "Registra la mantención o calibración ejecutada para habilitarlas nuevamente como Disponibles."}
+                  </Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {overdueConteo > 0 && (
+                  <Boton
+                    title={filtrarEstado === "vencidas" ? "Ver Todas" : `Ver Vencidas (${overdueConteo})`}
+                    variant="danger"
+                    size="sm"
+                    onPress={() =>
+                      establecerFiltrarEstado(filtrarEstado === "vencidas" ? "todos" : "vencidas")
+                    }
+                    style={{ minHeight: 36 }}
+                  />
+                )}
+                {nearDueConteo > 0 && (
+                  <Boton
+                    title={`Ver Próximas (${nearDueConteo})`}
+                    variant="outline"
+                    size="sm"
+                    onPress={() =>
+                      establecerFiltrarEstado(filtrarEstado === "proximas" ? "todos" : "proximas")
+                    }
+                    style={{ minHeight: 36, backgroundColor: "#ffffff" }}
+                  />
+                )}
+              </View>
+            </View>
+          )}
 
-      {/* BANNER DESTACADO DE ALERTAS DE MANTENCIÓN VENCIDA O PRÓXIMA */}
-      {(overdueConteo > 0 || nearDueConteo > 0) && (
-        <View
-          style={{
-            backgroundColor: overdueConteo > 0 ? tema.colors.dangerLight : tema.colors.warnLight,
-            borderWidth: 1.5,
-            borderColor: overdueConteo > 0 ? tema.colors.danger : tema.colors.warn,
-            borderRadius: tema.radius.md,
-            padding: 12,
-            marginBottom: tema.spacing.md,
-            flexDirection: "row",
-            flexWrap: "wrap",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 220 }}>
-            <Ionicons
-              name={overdueConteo > 0 ? "alert-circle" : "time"}
-              size={22}
-              color={overdueConteo > 0 ? tema.colors.danger : tema.colors.warnDark}
-            />
-            <View style={{ flex: 1 }}>
-              <Text
+          {/* ========================================================================= */}
+          {/* TARJETA HERO COMPACTA PARA REGISTRAR NUEVA HERRAMIENTA O EQUIPO           */}
+          {/* ========================================================================= */}
+          {rolActual !== "technician" && (
+            <Tarjeta
+              style={[
+                estilos.crearHerramientaHeroTarjeta,
+                { padding: 14, marginBottom: 12 },
+              ]}
+            >
+              <View
                 style={{
-                  fontSize: 13,
-                  fontWeight: "800",
-                  color: overdueConteo > 0 ? tema.colors.danger : tema.colors.warnDark,
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
                 }}
               >
-                {overdueConteo > 0
-                  ? `${overdueConteo} herramienta(s) con mantención VENCIDA`
-                  : `${nearDueConteo} herramienta(s) con mantención PRÓXIMA (≤ 15 días)`}
-              </Text>
-              <Text style={{ fontSize: 11.5, color: tema.colors.textSecondary, marginTop: 2 }}>
-                {overdueConteo > 0 && nearDueConteo > 0
-                  ? `Además hay ${nearDueConteo} equipo(s) próximos a calibración. Se muestran primero en el listado.`
-                  : "Registra la mantención o calibración ejecutada para habilitarlas nuevamente como Disponibles."}
-              </Text>
-            </View>
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-            {overdueConteo > 0 && (
-              <Boton
-                title={`Ver Vencidas (${overdueConteo})`}
-                variant="danger"
-                size="sm"
-                onPress={() => establecerFiltrarEstado("vencidas")}
-                style={{ minHeight: 36 }}
-              />
-            )}
-            {nearDueConteo > 0 && (
-              <Boton
-                title={`Ver Próximas (${nearDueConteo})`}
-                variant="outline"
-                size="sm"
-                onPress={() => establecerFiltrarEstado("proximas")}
-                style={{ minHeight: 36 }}
-              />
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* ========================================================================= */}
-      {/* BOTÓN PROMINENTE PARA REGISTRAR NUEVA HERRAMIENTA O EQUIPO                */}
-      {/* ========================================================================= */}
-      {rolActual !== "technician" && (
-        <Tarjeta style={estilos.crearHerramientaHeroTarjeta}>
-          <View style={estilos.crearHerramientaHeroContenido}>
-            <View style={estilos.crearHerramientaHeroIzquierda}>
-              <View style={estilos.herramientaInsigniaFila}>
-                <Insignia label="Activos Fijos" tone="primary" size="sm" />
-                <Insignia label="Separado de Insumos" tone="info" size="sm" />
+                <View style={{ flex: 1, minWidth: 220 }}>
+                  <View style={[estilos.herramientaInsigniaFila, { marginBottom: 4 }]}>
+                    <Insignia label="Activos Fijos" tone="primary" size="sm" />
+                    <Insignia label="Separado de Insumos" tone="info" size="sm" />
+                  </View>
+                  <Text style={[estilos.crearHerramientaHeroTitulo, { fontSize: 15 }]}>
+                    Registrar Nueva Herramienta o Equipo
+                  </Text>
+                  <Text style={[estilos.crearHerramientaHeroDescripcion, { fontSize: 11.5, marginTop: 2 }]}>
+                    Control patrimonial con código QR, N° de serie, mantención preventiva y baja lógica.
+                  </Text>
+                </View>
+                <Boton
+                  title="+ Registrar Nueva Herramienta"
+                  variant="primary"
+                  size="sm"
+                  icon="add-circle-outline"
+                  onPress={manejarAbrirNuevoHerramientaModal}
+                  style={{ minHeight: 40 }}
+                />
               </View>
-              <Text style={estilos.crearHerramientaHeroTitulo}>Registrar Nueva Herramienta o Equipo</Text>
-              <Text style={estilos.crearHerramientaHeroDescripcion}>
-                Administra el inventario de activos fijos con código QR, serie, fecha de próximo mantenimiento y baja lógica sin mezclar con insumos consumibles.
-              </Text>
-            </View>
-            <Boton
-              title="+ Registrar Nueva Herramienta"
-              variant="primary"
-              size="md"
-              icon="add-circle-outline"
-              onPress={manejarAbrirNuevoHerramientaModal}
-              style={estilos.botonCrearHerramientaGrande}
-            />
-          </View>
-        </Tarjeta>
-      )}
+            </Tarjeta>
+          )}
 
       {/* ========================================================================= */}
       {/* BUSCADOR Y FILTROS POR ESTADO                                             */}
@@ -638,252 +737,285 @@ export const PantallaHerramientas: React.FC = () => {
       ) : (
         filtradoHerramientas.map((t) => {
           const diasIzquierda = obtenerDiasUntilMantencion(t.nextMaintenanceDate);
-        const esRetired = t.status === "dada_de_baja";
-        const esOverdue = !esRetired && diasIzquierda <= 0;
-        const esNearDue = !esRetired && diasIzquierda > 0 && diasIzquierda <= 15;
-        const esAsignado = t.status === "asignada";
-        const esDisponible = t.status === "disponible";
+          const esRetired = t.status === "dada_de_baja";
+          const esOverdue = !esRetired && diasIzquierda <= 0;
+          const esNearDue = !esRetired && diasIzquierda > 0 && diasIzquierda <= 15;
+          const esAsignado = t.status === "asignada";
+          const esDisponible = t.status === "disponible";
 
-        return (
-          <Tarjeta
-            key={t.id}
-            variant="elevated"
-            style={[
-              estilos.herramientaTarjeta,
-              esOverdue && estilos.overdueTarjeta,
-              esNearDue && estilos.nearDueTarjeta,
-            ]}
-          >
-            {/* Franja superior de alerta visual inmediata si tiene mantención vencida o próxima */}
-            {(esOverdue || esNearDue) && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  backgroundColor: esOverdue ? tema.colors.dangerLight : tema.colors.warnLight,
-                  borderRadius: tema.radius.sm,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginBottom: 10,
-                  borderWidth: 1,
-                  borderColor: esOverdue ? tema.colors.danger : tema.colors.warn,
-                }}
-              >
-                <Ionicons
-                  name={esOverdue ? "warning" : "time"}
-                  size={15}
-                  color={esOverdue ? tema.colors.danger : tema.colors.warnDark}
-                />
-                <Text
+          const semaforoTarjeta = esRetired
+            ? {
+                bg: "#f1f5f9",
+                border: "#cbd5e1",
+                stripe: "#64748b",
+                innerBorder: "#e2e8f0",
+              }
+            : esOverdue
+              ? {
+                  bg: "#fef2f2",
+                  border: "#fca5a5",
+                  stripe: "#dc2626",
+                  innerBorder: "#fecaca",
+                }
+              : esNearDue || t.status === "en_mantencion" || esAsignado
+                ? {
+                    bg: "#fffbeb",
+                    border: "#fcd34d",
+                    stripe: "#d97706",
+                    innerBorder: "#fde68a",
+                  }
+                : {
+                    bg: "#f0fdf4",
+                    border: "#86efac",
+                    stripe: "#16a34a",
+                    innerBorder: "#bbf7d0",
+                  };
+
+          return (
+            <Tarjeta
+              key={t.id}
+              variant="outlined"
+              style={[
+                estilos.herramientaTarjeta,
+                {
+                  backgroundColor: semaforoTarjeta.bg,
+                  borderColor: semaforoTarjeta.border,
+                  borderWidth: 1.5,
+                  borderLeftWidth: 6,
+                  borderLeftColor: semaforoTarjeta.stripe,
+                },
+              ]}
+            >
+              {/* Franja superior de alerta visual inmediata si tiene mantención vencida o próxima */}
+              {(esOverdue || esNearDue) && (
+                <View
                   style={{
-                    flex: 1,
-                    fontSize: 11.5,
-                    fontWeight: "800",
-                    color: esOverdue ? tema.colors.danger : tema.colors.warnDark,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    backgroundColor: "#ffffff",
+                    borderRadius: tema.radius.sm,
+                    paddingHorizontal: 10,
+                    paddingVertical: 6,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: esOverdue ? tema.colors.danger : tema.colors.warn,
                   }}
                 >
-                  {esOverdue
-                    ? `MANTENCIÓN VENCIDA (${Math.abs(diasIzquierda)} día(s) de atraso) — Registrar calibración/mantención`
-                    : `MANTENCIÓN PRÓXIMA (vence en ${diasIzquierda} día(s) • ${formatearFecha(t.nextMaintenanceDate)})`}
-                </Text>
+                  <Ionicons
+                    name={esOverdue ? "warning" : "time"}
+                    size={15}
+                    color={esOverdue ? tema.colors.danger : tema.colors.warnDark}
+                  />
+                  <Text
+                    style={{
+                      flex: 1,
+                      fontSize: 11.5,
+                      fontWeight: "800",
+                      color: esOverdue ? tema.colors.danger : tema.colors.warnDark,
+                    }}
+                  >
+                    {esOverdue
+                      ? `MANTENCIÓN VENCIDA (${Math.abs(diasIzquierda)} día(s) de atraso) — Registrar calibración/mantención`
+                      : `MANTENCIÓN PRÓXIMA (vence en ${diasIzquierda} día(s) • ${formatearFecha(t.nextMaintenanceDate)})`}
+                  </Text>
+                </View>
+              )}
+              {/* Top row: Código, S/N, Nombre y EstadoBadge */}
+              <View style={estilos.herramientaSuperior}>
+                <View style={{ flex: 1 }}>
+                  <View style={estilos.herramientaCodigoFila}>
+                    <Text style={estilos.herramientaCodigo}>{t.code}</Text>
+                    <Text style={[estilos.herramientaSerie, { backgroundColor: "#ffffff" }]}>
+                      S/N: {t.serialNumber}
+                    </Text>
+                    {esOverdue && (
+                      <View style={estilos.peligroPastilla}>
+                        <Ionicons name="alert-circle" size={12} color="#ffffff" />
+                        <Text style={estilos.peligroPastillaTexto}>VENCIDA</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={estilos.herramientaNombre}>{t.name}</Text>
+                  <Text style={estilos.herramientaMarcaModelo}>
+                    {t.brand} {t.model} • Categoría: <Text style={{ color: tema.colors.text, fontWeight: "700" }}>{t.category}</Text>
+                  </Text>
+                </View>
+
+                <InsigniaEstado status={t.status} size="md" />
               </View>
-            )}
-            {/* Top row: Código, S/N, Nombre y EstadoBadge */}
-            <View style={estilos.herramientaSuperior}>
-              <View style={{ flex: 1 }}>
-                <View style={estilos.herramientaCodigoFila}>
-                  <Text style={estilos.herramientaCodigo}>{t.code}</Text>
-                  <Text style={estilos.herramientaSerie}>S/N: {t.serialNumber}</Text>
-                  {esOverdue && (
-                    <View style={estilos.peligroPastilla}>
-                      <Ionicons name="alert-circle" size={12} color="#ffffff" />
-                      <Text style={estilos.peligroPastillaTexto}>VENCIDA</Text>
-                    </View>
+
+              {/* Ficha de Asignación si está en Faena */}
+              {esAsignado && (
+                <View style={[estilos.asignadoCaja, { backgroundColor: "#ffffff" }]}>
+                  <Ionicons name="person" size={16} color={tema.colors.primaryDark} style={{ marginTop: 2 }} />
+                  <View style={estilos.asignadoInfo}>
+                    <Text style={estilos.asignadoTecnico}>
+                      Asignada a Técnico: <Text style={{ fontWeight: "bold" }}>{t.currentTechnicianName}</Text>
+                    </Text>
+                    <Text style={estilos.asignadoProyecto}>
+                      Faena: {t.currentProjectName} ({t.currentProjectCode}) • Desde el {formatearFecha(t.currentLoanDate || "")}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Control de Próxima Mantención (En caja blanca limpia sobre la superficie de semáforo) */}
+              <View
+                style={[
+                  estilos.mantencionFila,
+                  {
+                    backgroundColor: "#ffffff",
+                    borderColor: semaforoTarjeta.innerBorder,
+                  },
+                ]}
+              >
+                <View style={estilos.maintColumna}>
+                  <Text style={estilos.maintFechaEtiqueta}>Próxima Mantención Preventiva:</Text>
+                  <Text
+                    style={[
+                      estilos.maintFechaValor,
+                      esOverdue && estilos.overdueFechaValor,
+                      esNearDue && estilos.nearDueFechaValor,
+                    ]}
+                  >
+                    {formatearFecha(t.nextMaintenanceDate)}
+                  </Text>
+                  <Text style={estilos.maintFreqTexto}>
+                    Frecuencia de calibración: cada {t.maintenanceFrequencyDays} días
+                  </Text>
+                </View>
+
+                <View style={estilos.maintInsigniaEnvoltorio}>
+                  {esRetired ? (
+                    <Insignia label="Baja" tone="mute" size="sm" />
+                  ) : esOverdue ? (
+                    <Insignia label="Vencida" tone="danger" icon="alert-circle" size="sm" />
+                  ) : esNearDue ? (
+                    <Insignia label="Próxima" tone="warn" icon="time-outline" size="sm" />
+                  ) : (
+                    <Insignia label="Vigente" tone="ok" icon="checkmark-circle-outline" size="sm" />
                   )}
                 </View>
-                <Text style={estilos.herramientaNombre}>{t.name}</Text>
-                <Text style={estilos.herramientaMarcaModelo}>
-                  {t.brand} {t.model} • Categoría: <Text style={{ color: tema.colors.text }}>{t.category}</Text>
-                </Text>
               </View>
 
-              <InsigniaEstado status={t.status} size="md" />
-            </View>
+              {/* BOTONES DE ACCIÓN */}
+              <View style={[estilos.herramientaAccionesFila, { flexWrap: "wrap", gap: 8, borderTopColor: semaforoTarjeta.innerBorder }]}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                  {/* Botón Ver Código QR del Activo Fijo */}
+                  <TouchableOpacity
+                    onPress={() => establecerQrModalHerramienta(t)}
+                    style={[estilos.historialBoton, { backgroundColor: "#ffffff" }]}
+                    accessibilityLabel={`Ver código QR de ${t.code}`}
+                  >
+                    <Ionicons name="qr-code-outline" size={16} color={tema.colors.primaryDark} />
+                    <Text style={estilos.historialBotonTexto}>Ver QR</Text>
+                  </TouchableOpacity>
 
-            {/* Ficha de Asignación si está en Faena */}
-            {esAsignado && (
-              <View style={estilos.asignadoCaja}>
-                <Ionicons name="person" size={16} color={tema.colors.info} style={{ marginTop: 2 }} />
-                <View style={estilos.asignadoInfo}>
-                  <Text style={estilos.asignadoTecnico}>
-                    Asignada a Técnico: <Text style={{ fontWeight: "bold" }}>{t.currentTechnicianName}</Text>
-                  </Text>
-                  <Text style={estilos.asignadoProyecto}>
-                    Faena: {t.currentProjectName} ({t.currentProjectCode}) • Desde el {formatearFecha(t.currentLoanDate || "")}
-                  </Text>
+                  {/* Botón Historial de Préstamos y Mantenciones */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      establecerSeleccionadoHerramientaHistorial(t);
+                      establecerHistorialPestana("prestamos");
+                    }}
+                    style={[estilos.historialBoton, { backgroundColor: "#ffffff" }]}
+                  >
+                    <Ionicons name="time-outline" size={16} color={tema.colors.primary} />
+                    <Text style={estilos.historialBotonTexto}>
+                      Historial ({t.loans?.length || 0})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={[estilos.accionBtnsGrupo, { flexWrap: "wrap", gap: 6 }]}>
+                  {/* 1. Prestar a Técnico (Disponible) */}
+                  {esDisponible && rolActual !== "technician" && (
+                    <Boton
+                      title="Prestar a Técnico"
+                      variant="primary"
+                      size="sm"
+                      icon="arrow-forward-outline"
+                      onPress={() => {
+                        establecerPrestamoModalHerramienta(t);
+                        establecerPrestamoTecnicoRut(tecnicos[0]?.rut || "");
+                        establecerPrestamoProyectoCodigo(proyectos[0]?.code || "");
+                      }}
+                      style={{ minHeight: 38 }}
+                    />
+                  )}
+
+                  {/* 2. Devolución de Herramienta (Asignada) */}
+                  {esAsignado && rolActual !== "technician" && (
+                    <Boton
+                      title="Devolver (Bueno/Dañado)"
+                      variant="outline"
+                      size="sm"
+                      icon="return-down-back-outline"
+                      onPress={() => {
+                        establecerDevolucionModalHerramienta(t);
+                        establecerDevolucionCondicion("bueno");
+                        establecerDevolucionNotas("");
+                      }}
+                      style={{ minHeight: 38, backgroundColor: "#ffffff" }}
+                    />
+                  )}
+
+                  {/* 3. Registrar Mantención */}
+                  {!esRetired && rolActual !== "technician" && (
+                    <Boton
+                      title={t.status === "en_mantencion" ? "Completar Mantención" : "Mantención"}
+                      variant={esOverdue ? "danger" : t.status === "en_mantencion" ? "success" : "outline"}
+                      size="sm"
+                      icon="build-outline"
+                      onPress={() => {
+                        establecerMaintModalHerramienta(t);
+                        establecerMaintError("");
+                        establecerMaintTipo(t.status === "en_mantencion" ? "correctiva" : "preventiva");
+                        establecerMaintTaller("Servicio Técnico Oficial Bosch");
+                        establecerMaintCosto("35000");
+                        establecerMaintDescripcion(
+                          t.status === "en_mantencion"
+                            ? "Reparación y cambio de piezas averiadas"
+                            : "Limpieza, calibración y engrase general"
+                        );
+                        const calculoSiguiente = new Date(Date.now() + t.maintenanceFrequencyDays * 86400000)
+                          .toISOString()
+                          .slice(0, 10);
+                        establecerMaintSiguienteFecha(calculoSiguiente);
+                      }}
+                      style={[
+                        { minHeight: 38 },
+                        !esOverdue && t.status !== "en_mantencion" && { backgroundColor: "#ffffff" },
+                      ]}
+                    />
+                  )}
+
+                  {/* 4. Baja Lógica Patrimonial (Admin / Bodeguero, conserva historial) */}
+                  {!esRetired && rolActual !== "technician" && (
+                    <Boton
+                      title="Dar de Baja"
+                      variant="danger"
+                      size="sm"
+                      icon="archive-outline"
+                      onPress={() => {
+                        if (esAsignado) {
+                          mostrarAviso(
+                            `Primero registra la devolución de ${t.code} antes de darle baja lógica.`
+                          );
+                          return;
+                        }
+                        establecerBajaModalHerramienta(t);
+                        establecerBajaMotivo("");
+                        establecerBajaError("");
+                      }}
+                      style={{ minHeight: 38 }}
+                    />
+                  )}
                 </View>
               </View>
-            )}
-
-            {/* Control de Próxima Mantención (Resaltado si vencida) */}
-            <View style={[
-              estilos.mantencionFila,
-              esOverdue && estilos.mantencionFilaOverdue,
-              esNearDue && estilos.mantencionFilaNearDue,
-            ]}>
-              <View style={estilos.maintColumna}>
-                <Text style={estilos.maintFechaEtiqueta}>Próxima Mantención Preventiva:</Text>
-                <Text style={[
-                  estilos.maintFechaValor,
-                  esOverdue && estilos.overdueFechaValor,
-                  esNearDue && estilos.nearDueFechaValor,
-                ]}>
-                  {formatearFecha(t.nextMaintenanceDate)}
-                </Text>
-                <Text style={estilos.maintFreqTexto}>
-                  Frecuencia de calibración: cada {t.maintenanceFrequencyDays} días
-                </Text>
-              </View>
-
-              <View style={estilos.maintInsigniaEnvoltorio}>
-                {esRetired ? (
-                  <Insignia label="Baja" tone="mute" size="sm" />
-                ) : esOverdue ? (
-                  <Insignia
-                    label="Vencida"
-                    tone="danger"
-                    icon="alert-circle"
-                    size="sm"
-                  />
-                ) : esNearDue ? (
-                  <Insignia
-                    label="Próxima"
-                    tone="warn"
-                    icon="time-outline"
-                    size="sm"
-                  />
-                ) : (
-                  <Insignia
-                    label="Vigente"
-                    tone="ok"
-                    icon="checkmark-circle-outline"
-                    size="sm"
-                  />
-                )}
-              </View>
-            </View>
-
-            {/* BOTONES DE ACCIÓN */}
-            <View style={[estilos.herramientaAccionesFila, { flexWrap: "wrap", gap: 8 }]}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                {/* Botón Ver Código QR del Activo Fijo */}
-                <TouchableOpacity
-                  onPress={() => establecerQrModalHerramienta(t)}
-                  style={estilos.historialBoton}
-                  accessibilityLabel={`Ver código QR de ${t.code}`}
-                >
-                  <Ionicons name="qr-code-outline" size={16} color={tema.colors.primaryDark} />
-                  <Text style={estilos.historialBotonTexto}>Ver QR</Text>
-                </TouchableOpacity>
-
-                {/* Botón Historial de Préstamos y Mantenciones */}
-                <TouchableOpacity
-                  onPress={() => {
-                    establecerSeleccionadoHerramientaHistorial(t);
-                    establecerHistorialPestana("prestamos");
-                  }}
-                  style={estilos.historialBoton}
-                >
-                  <Ionicons name="time-outline" size={16} color={tema.colors.primary} />
-                  <Text style={estilos.historialBotonTexto}>
-                    Historial ({t.loans?.length || 0})
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={[estilos.accionBtnsGrupo, { flexWrap: "wrap", gap: 6 }]}>
-                {/* 1. Prestar a Técnico (Disponible) */}
-                {esDisponible && rolActual !== "technician" && (
-                  <Boton
-                    title="Prestar a Técnico"
-                    variant="primary"
-                    size="sm"
-                    icon="arrow-forward-outline"
-                    onPress={() => {
-                      establecerPrestamoModalHerramienta(t);
-                      establecerPrestamoTecnicoRut(tecnicos[0]?.rut || "");
-                      establecerPrestamoProyectoCodigo(proyectos[0]?.code || "");
-                    }}
-                    style={{ minHeight: 38 }}
-                  />
-                )}
-
-                {/* 2. Devolución de Herramienta (Asignada) */}
-                {esAsignado && rolActual !== "technician" && (
-                  <Boton
-                    title="Devolver (Bueno/Dañado)"
-                    variant="secondary"
-                    size="sm"
-                    icon="return-down-back-outline"
-                    onPress={() => {
-                      establecerDevolucionModalHerramienta(t);
-                      establecerDevolucionCondicion("bueno");
-                      establecerDevolucionNotas("");
-                    }}
-                    style={{ minHeight: 38 }}
-                  />
-                )}
-
-                {/* 3. Registrar Mantención */}
-                {!esRetired && rolActual !== "technician" && (
-                  <Boton
-                    title={t.status === "en_mantencion" ? "Completar Mantención" : "Mantención"}
-                    variant={esOverdue ? "danger" : t.status === "en_mantencion" ? "success" : "outline"}
-                    size="sm"
-                    icon="build-outline"
-                    onPress={() => {
-                      establecerMaintModalHerramienta(t);
-                      establecerMaintError("");
-                      establecerMaintTipo(t.status === "en_mantencion" ? "correctiva" : "preventiva");
-                      establecerMaintTaller("Servicio Técnico Oficial Bosch");
-                      establecerMaintCosto("35000");
-                      establecerMaintDescripcion(t.status === "en_mantencion" ? "Reparación y cambio de piezas averiadas" : "Limpieza, calibración y engrase general");
-                      const calculoSiguiente = new Date(Date.now() + t.maintenanceFrequencyDays * 86400000)
-                        .toISOString()
-                        .slice(0, 10);
-                      establecerMaintSiguienteFecha(calculoSiguiente);
-                    }}
-                    style={{ minHeight: 38 }}
-                  />
-                )}
-
-                {/* 4. Baja Lógica Patrimonial (Admin / Bodeguero, conserva historial) */}
-                {!esRetired && rolActual !== "technician" && (
-                  <Boton
-                    title="Dar de Baja"
-                    variant="danger"
-                    size="sm"
-                    icon="archive-outline"
-                    onPress={() => {
-                      if (esAsignado) {
-                        mostrarAviso(
-                          `Primero registra la devolución de ${t.code} antes de darle baja lógica.`
-                        );
-                        return;
-                      }
-                      establecerBajaModalHerramienta(t);
-                      establecerBajaMotivo("");
-                      establecerBajaError("");
-                    }}
-                    style={{ minHeight: 38 }}
-                  />
-                )}
-              </View>
-            </View>
-          </Tarjeta>
-        );
-      })
+            </Tarjeta>
+          );
+        })
     )}
 
       {/* ========================================================================= */}
@@ -995,55 +1127,35 @@ export const PantallaHerramientas: React.FC = () => {
         title="Prestar Herramienta a Técnico"
         subtitle={prestamoModalHerramienta ? `${prestamoModalHerramienta.code} • ${prestamoModalHerramienta.name}` : ""}
       >
-        <Text style={estilos.campoEtiqueta}>1. Técnico Responsable en Terreno:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-          {tecnicos.map((t) => {
-            const esSeleccionado = prestamoTecnicoRut === t.rut;
-            return (
-              <TouchableOpacity
-                key={t.rut}
-                onPress={() => establecerPrestamoTecnicoRut(t.rut)}
-                style={[estilos.chipBoton, esSeleccionado && estilos.chipBotonActivo]}
-              >
-                <Ionicons
-                  name="person-outline"
-                  size={14}
-                  color={esSeleccionado ? "#ffffff" : tema.colors.textMuted}
-                  style={{ marginRight: 4 }}
-                />
-                <Text style={[estilos.chipTexto, esSeleccionado && estilos.chipTextoActivo]}>
-                  {t.name} ({t.rut})
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+        <Selector
+          label="1. Técnico Responsable en Terreno"
+          required
+          options={tecnicos.map((t) => ({
+            label: t.name,
+            value: t.rut,
+            hint: `${t.specialty} • RUT: ${t.rut}`,
+            icon: "person-outline",
+          }))}
+          value={prestamoTecnicoRut}
+          onChange={establecerPrestamoTecnicoRut}
+          placeholder="Seleccionar técnico..."
+        />
 
-        <Text style={estilos.campoEtiqueta}>2. Proyecto / Faena de Destino:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-          {proyectos
+        <Selector
+          label="2. Proyecto / Faena de Destino"
+          required
+          options={proyectos
             .filter((p) => p.status !== "cerrado")
-            .map((p) => {
-              const isSelected = prestamoProyectoCodigo === p.code;
-              return (
-                <TouchableOpacity
-                  key={p.code}
-                  onPress={() => establecerPrestamoProyectoCodigo(p.code)}
-                  style={[estilos.chipBoton, isSelected && estilos.chipBotonActivo]}
-                >
-                  <Ionicons
-                    name="business-outline"
-                    size={14}
-                    color={isSelected ? "#ffffff" : tema.colors.textMuted}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text style={[estilos.chipTexto, isSelected && estilos.chipTextoActivo]}>
-                    {p.code} - {p.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-        </ScrollView>
+            .map((p) => ({
+              label: `${p.code} • ${p.name}`,
+              value: p.code,
+              hint: `Cliente: ${p.client || "Asignado"}`,
+              icon: "business-outline",
+            }))}
+          value={prestamoProyectoCodigo}
+          onChange={establecerPrestamoProyectoCodigo}
+          placeholder="Seleccionar proyecto de destino..."
+        />
 
         <View style={estilos.infoResumenCaja}>
           <Text style={estilos.infoResumenLinea}>
@@ -1057,7 +1169,7 @@ export const PantallaHerramientas: React.FC = () => {
         <View style={estilos.modalBotonesFila}>
           <Boton
             title="Cancelar"
-            variant="ghost"
+            variant="outline"
             onPress={() => establecerPrestamoModalHerramienta(null)}
             style={{ marginRight: 8, flex: 1 }}
           />

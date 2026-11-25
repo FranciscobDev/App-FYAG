@@ -112,7 +112,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[estilos.rapidoAccionBoton, { backgroundColor: "#fef3c7" }]}
+          style={[estilos.rapidoAccionBoton, { backgroundColor: "#eef2ff" }]}
           onPress={() => onNavigate && onNavigate("conteo")}
           activeOpacity={0.8}
         >

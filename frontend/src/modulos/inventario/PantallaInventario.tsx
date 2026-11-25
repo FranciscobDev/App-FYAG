@@ -1,4 +1,3 @@
-import { InsumoForm } from "@/componentes/Insumos";
 import { CATEGORIA_POR_DEFECTO } from "@/nucleo/categoriasArticulo";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -46,14 +45,14 @@ import {
 import {
   calcularResumenLineaSalidaFisica,
   calcularResumenSolicitudSalidaFisica,
-} from "@/modulos/inventario/solicitudInsumosUtils";
-import { estilos } from "./estilos";
-import { SeccionCatalogoCardex, SeccionSolicitudesMaterial, SeccionEgresoBodega, SeccionMermas, SeccionConteoFisico, ModalesInventario } from "./componentes";
-import {
   esProyectoActivoParaSolicitud,
+  filtrarYOrdenarCardexSoloLectura,
+  generarContenidoExcelCardex,
   liberarReservaComprometidoEnCatalogoH6,
   validarFormularioNuevaSolicitudInsumos,
 } from "./solicitudInsumosUtils";
+import { estilos } from "./estilos";
+import { SeccionCatalogoCardex, SeccionSolicitudesMaterial, SeccionEgresoBodega, SeccionMermas, SeccionConteoFisico, ModalesInventario } from "./componentes";
 import {
   formatearTiempoEscaneo,
   resolverCodigoEscaneadoBodega,
@@ -222,7 +221,6 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const nombreEntradaReferencia = useRef<any>(null);
   const [buscarQuery, establecerBuscarQuery] = useState("");
   const [nuevoProductoModal, establecerNuevoProductoModal] = useState(false);
-  const [registroInsumoFormVisible, establecerRegistroInsumoFormVisible] = useState(false);
   const [editandoProducto, establecerEditandoProducto] = useState<Producto | null>(null);
 
   const [formularioSku, establecerFormularioSku] = useState("");
@@ -233,6 +231,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   const [formularioUnidad, establecerFormularioUnidad] = useState<string>("un");
   const [formularioExistencia, establecerFormularioExistencia] = useState("0");
   const [formularioMinimoExistencia, establecerFormularioMinimoExistencia] = useState("10");
+  const [formularioPmp, establecerFormularioPmp] = useState("1000");
+  const [formularioPasillo, establecerFormularioPasillo] = useState("Pasillo A");
+  const [formularioEstanteria, establecerFormularioEstanteria] = useState("Estante 1");
   const [formularioRestock, establecerFormularioRestock] = useState("50");
   const [formularioProveedor, establecerFormularioProveedor] = useState("ElectroChile SpA");
   const [formularioBarcode, establecerFormularioBarcode] = useState("");
@@ -257,6 +258,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerFormularioUnidad("un");
     establecerFormularioExistencia("0");
     establecerFormularioMinimoExistencia("10");
+    establecerFormularioPmp("1000");
+    establecerFormularioPasillo("Pasillo A");
+    establecerFormularioEstanteria("Estante 1");
     establecerFormularioRestock("50");
     establecerFormularioProveedor("ElectroChile SpA");
     establecerFormularioBarcode("");
@@ -268,6 +272,10 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   const manejarAbrirEditarProducto = (prod: Producto) => {
+    const partesUbicacion = (prod.location || "").split(" - ").map((s) => s.trim());
+    const pasilloInicial = partesUbicacion[0] || "Pasillo A";
+    const estanteriaInicial = partesUbicacion.slice(1).join(" - ") || "Estante 1";
+
     establecerEditandoProducto(prod);
     establecerFormularioSku(prod.sku);
     establecerFormularioSkuError("");
@@ -277,6 +285,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerFormularioUnidad((prod.unit as any) || "un");
     establecerFormularioExistencia(String(prod.stock));
     establecerFormularioMinimoExistencia(String(prod.minStock));
+    establecerFormularioPmp(String(prod.pmp || prod.unitCost || 0));
+    establecerFormularioPasillo(pasilloInicial);
+    establecerFormularioEstanteria(estanteriaInicial);
     establecerFormularioRestock(String(prod.restockQuantity || 50));
     establecerFormularioProveedor(prod.defaultSupplier || "");
     establecerFormularioBarcode(prod.barcode || "");
@@ -305,12 +316,22 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
       return;
     }
 
+    const pasilloLimpio = formularioPasillo.trim() || "Bodega Principal";
+    const estanteriaLimpia = formularioEstanteria.trim();
+    const ubicacionFinal = estanteriaLimpia
+      ? `${pasilloLimpio} - ${estanteriaLimpia}`
+      : pasilloLimpio;
+    const pmpNumerico = Math.max(0, Number(formularioPmp) || 0);
+
     if (editandoProducto) {
       const resultadoEdicion = await actualizarProducto(editandoProducto.sku, {
         name: formularioNombre.trim(),
         category: formularioCategoria,
         unit: formularioUnidad,
         minStock: Number(formularioMinimoExistencia) || 0,
+        unitCost: pmpNumerico,
+        pmp: pmpNumerico,
+        location: ubicacionFinal,
         restockQuantity: Number(formularioRestock) || 0,
         defaultSupplier: formularioProveedor.trim(),
         barcode: formularioBarcode.trim() || undefined,
@@ -331,9 +352,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         unit: formularioUnidad,
         stock: formularioEsBulk ? Number(Number(formularioExistencia).toFixed(3)) : Number(formularioExistencia) || 0,
         minStock: Number(formularioMinimoExistencia) || 0,
-        unitCost: 1000,
-        pmp: 1000,
-        location: "Bodega Principal - Estante B",
+        unitCost: pmpNumerico,
+        pmp: pmpNumerico,
+        location: ubicacionFinal,
         restockQuantity: Number(formularioRestock) || 0,
         defaultSupplier: formularioProveedor.trim() || "Proveedor General",
         barcode: formularioBarcode.trim() || undefined,
@@ -352,7 +373,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   // =========================================================================
-  // 2. ESTADO DEL CARDEX (SOLO LECTURA)
+  // 2. CARDEX STATE (Vista de solo lectura con filtros dinámicos y tabla cronológica)
   // =========================================================================
   const [kardexFiltrarSku, establecerKardexFiltrarSku] = useState("");
   const [kardexFiltrarTipo, establecerKardexFiltrarTipo] = useState<string>("todos");
@@ -364,24 +385,41 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
     establecerProductoCardexSeleccionado(prod);
   };
 
-  const filtradoCardex = cardex.filter((entry) => {
-    if (kardexFiltrarSku) {
-      const q = kardexFiltrarSku.toLowerCase();
-      const coincidenciaSku = entry.sku.toLowerCase().includes(q);
-      const coincidenciaNombre = entry.productName.toLowerCase().includes(q);
-      if (!coincidenciaSku && !coincidenciaNombre) return false;
-    }
-    if (kardexFiltrarTipo !== "todos" && entry.type !== kardexFiltrarTipo) {
-      return false;
-    }
-    if (kardexFiltrarProyecto !== "todos" && entry.projectCode !== kardexFiltrarProyecto) {
-      return false;
-    }
-    return true;
+  const resultadoCardexSoloLectura = filtrarYOrdenarCardexSoloLectura(cardex, {
+    insumoQuery: kardexFiltrarSku,
+    tipoMovimiento: kardexFiltrarTipo,
+    rangoFechas: kardexFechaRango,
+    ordenCronologico: "asc",
   });
+  const filtradoCardex = resultadoCardexSoloLectura.movimientosOrdenados;
 
   const manejarExportarCardex = (format: "pdf" | "excel") => {
-    mostrarAviso(`Cardex exportado exitosamente a formato ${format.toUpperCase()}.`);
+    const excelData = generarContenidoExcelCardex(filtradoCardex);
+    if (
+      format === "excel" &&
+      typeof window !== "undefined" &&
+      typeof document !== "undefined" &&
+      typeof Blob !== "undefined"
+    ) {
+      try {
+        const blob = new Blob([excelData.contenidoCsvExcel], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+        const enlace = document.createElement("a");
+        enlace.href = url;
+        enlace.setAttribute("download", excelData.nombreArchivo);
+        document.body.appendChild(enlace);
+        enlace.click();
+        document.body.removeChild(enlace);
+        URL.revokeObjectURL(url);
+      } catch {
+        // Fallback silencioso en entornos móviles nativos
+      }
+    }
+    mostrarAviso(
+      `Cardex de solo lectura exportado a Excel (${excelData.filas.length} movimientos cronológicos con saldos y PMP).`
+    );
   };
 
   // =========================================================================
@@ -616,8 +654,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
   };
 
   const manejarDespachoCantidadCambiar = (sku: string, val: string) => {
+    const prod = productos.find((p) => p.sku === sku);
     const normalizado = String(val || "").replace(",", ".");
-    const numero = Math.max(0, parseFloat(normalizado) || 0);
+    const parsed = parseFloat(normalizado);
+    const numero = Number.isFinite(parsed)
+      ? Math.max(0, prod?.isBulk ? Number(parsed.toFixed(3)) : Math.trunc(parsed))
+      : 0;
     establecerDespachoQuantities((prev) => ({ ...prev, [sku]: numero }));
     if (despachoError) establecerDespachoError("");
   };
@@ -875,28 +917,12 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
               {(rolActual === "warehouse"
                 ? [
                   { id: "egreso", label: `Egreso (${aprobadoSolicitudes.length})`, icon: "log-out-outline" },
-                  {
-                    id: "solicitudes",
-                    label: `Solicitudes (${solicitudesMaterial.filter((r) => r.status === "pendiente").length})`,
-                    icon: "clipboard-outline",
-                  },
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
-                  {
-                    id: "conteo",
-                    label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
-                    icon: "checkbox-outline",
-                  },
                   { id: "mermas", label: `Mermas (${registrosMerma.length})`, icon: "trash-outline" },
                 ]
                 : [
                   { id: "catalogo", label: `Inventario (${productos.length})`, icon: "cube-outline" },
-                  { id: "solicitudes", label: `Solicitudes (${solicitudesMaterial.length})`, icon: "document-text-outline" },
-                  {
-                    id: "conteo",
-                    label: `Conteo Físico (${conteosFisicos.filter((c) => c.status === "pendiente_aprobacion").length})`,
-                    icon: "checkbox-outline",
-                  },
                   { id: "cardex", label: "Cardex", icon: "swap-horizontal-outline" },
                 ]
               ).map((tab) => {
@@ -912,7 +938,7 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
                     <Ionicons
                       name={tab.icon as any}
                       size={18}
-                      color={esActivo ? "#f59e0b" : "#a8a29e"}
+                      color={esActivo ? "#818cf8" : "#94a3b8"}
                     />
                     <Text style={[estilos.pestanaEtiqueta, esActivo && estilos.pestanaEtiquetaActivo]}>
                       {tab.label}
@@ -944,7 +970,6 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           manejarAbrirCardexProducto={manejarAbrirCardexProducto}
           manejarAbrirEditarProducto={manejarAbrirEditarProducto}
           manejarAbrirNuevoProducto={manejarAbrirNuevoProducto}
-          manejarAbrirInsumoForm={() => establecerRegistroInsumoFormVisible(true)}
           manejarExportarCardex={manejarExportarCardex}
           mostrarAviso={mostrarAviso}
           productos={productos}
@@ -1027,34 +1052,6 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
         />
 
 
-        {/* MODAL INSUMO FORM (Validación Unicidad SKU y Magnitudes con Decimales) */}
-        <Modal
-          visible={registroInsumoFormVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => establecerRegistroInsumoFormVisible(false)}
-        >
-          <Pressable
-            style={{
-              flex: 1,
-              backgroundColor: "rgba(15, 23, 42, 0.6)",
-              justifyContent: "center",
-              alignItems: "center",
-              padding: 16,
-            }}
-            onPress={() => establecerRegistroInsumoFormVisible(false)}
-          >
-            <Pressable style={{ width: "100%", maxWidth: 520 }} onPress={(e) => e.stopPropagation()}>
-              <InsumoForm
-                onCancel={() => establecerRegistroInsumoFormVisible(false)}
-                onSubmit={(datos) => {
-                  mostrarAviso(`Insumo ${datos.sku} (${datos.nombre}) registrado exitosamente.`);
-                  establecerRegistroInsumoFormVisible(false);
-                }}
-              />
-            </Pressable>
-          </Pressable>
-        </Modal>
 
         <ModalesInventario
           abrirEscaner={abrirEscaner}
@@ -1101,6 +1098,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           establecerFormularioEsBulk={establecerFormularioEsBulk}
           establecerFormularioExistencia={establecerFormularioExistencia}
           establecerFormularioMinimoExistencia={establecerFormularioMinimoExistencia}
+          establecerFormularioPmp={establecerFormularioPmp}
+          establecerFormularioPasillo={establecerFormularioPasillo}
+          establecerFormularioEstanteria={establecerFormularioEstanteria}
           establecerFormularioNombre={establecerFormularioNombre}
           establecerFormularioNombreError={establecerFormularioNombreError}
           establecerFormularioProveedor={establecerFormularioProveedor}
@@ -1132,6 +1132,9 @@ export const PantallaInventario: React.FC<PropiedadesPantallaInventario> = ({
           formularioEsBulk={formularioEsBulk}
           formularioExistencia={formularioExistencia}
           formularioMinimoExistencia={formularioMinimoExistencia}
+          formularioPmp={formularioPmp}
+          formularioPasillo={formularioPasillo}
+          formularioEstanteria={formularioEstanteria}
           formularioNombre={formularioNombre}
           formularioNombreError={formularioNombreError}
           formularioProveedor={formularioProveedor}

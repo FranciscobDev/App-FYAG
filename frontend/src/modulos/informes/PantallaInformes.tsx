@@ -193,8 +193,7 @@ export const PantallaInformes: React.FC = () => {
 
       return coincidenciasPeriod && coincidenciasTipo && coincidenciasProyecto && coincidenciasQuery;
     });
-  }, [cardexApi, period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
-  }, [cardex, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
+  }, [cardexApi, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
 
   const cardexTotals = useMemo(() => {
     let totalIn = 0;
@@ -1060,59 +1059,59 @@ export const PantallaInformes: React.FC = () => {
             </View>
 
             {/* TAB 1: MOVIMIENTOS */}
-      <SeccionInformeMovimientos
-        activoPestana={activoPestana}
-        cardexTotals={cardexTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoCardex={filtradoCardex}
-        width={width}
-      />
+            <SeccionInformeMovimientos
+              activoPestana={activoPestana}
+              cardexTotals={cardexTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoCardex={filtradoCardex}
+              width={width}
+            />
 
             {/* TAB 2: INVENTARIO */}
-      <SeccionInformeInventario
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProductos={filtradoProductos}
-        inventarioTotals={inventarioTotals}
-        width={width}
-      />
+            <SeccionInformeInventario
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProductos={filtradoProductos}
+              inventarioTotals={inventarioTotals}
+              width={width}
+            />
 
             {/* TAB 3: PROYECTOS */}
-      <SeccionInformeProyectos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProyectos={filtradoProyectos}
-        proyectosTotals={proyectosTotals}
-        width={width}
-      />
+            <SeccionInformeProyectos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProyectos={filtradoProyectos}
+              proyectosTotals={proyectosTotals}
+              width={width}
+            />
 
             {/* TAB 4: MATERIALES EN PROYECTOS */}
-      <SeccionInformeMateriales
-        activoPestana={activoPestana}
-        asignadoMateriales={asignadoMateriales}
-        asignadoMaterialesTotals={asignadoMaterialesTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        width={width}
-      />
+            <SeccionInformeMateriales
+              activoPestana={activoPestana}
+              asignadoMateriales={asignadoMateriales}
+              asignadoMaterialesTotals={asignadoMaterialesTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              width={width}
+            />
 
             {/* TAB 5: GASTOS Y COMPRAS DEL MES */}
-      <SeccionInformeGastos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoPurchases={filtradoPurchases}
-        purchasesTotals={purchasesTotals}
-        width={width}
-      />
+            <SeccionInformeGastos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoPurchases={filtradoPurchases}
+              purchasesTotals={purchasesTotals}
+              width={width}
+            />
 
             {/* TAB 6: MERMAS */}
-      <SeccionInformeMermas
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoWastes={filtradoWastes}
-        mermaTotals={mermaTotals}
-        productos={productos}
-        width={width}
-      />
+            <SeccionInformeMermas
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoWastes={filtradoWastes}
+              mermaTotals={mermaTotals}
+              productos={productos}
+              width={width}
+            />
           </Tarjeta>
         </ScrollView>
       </View>

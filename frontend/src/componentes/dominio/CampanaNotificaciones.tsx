@@ -710,7 +710,7 @@ const estilos = StyleSheet.create({
     zIndex: 10,
   },
   insigniaOscuro: {
-    borderColor: "#1c1917",
+    borderColor: "#0f172a",
   },
   insigniaTexto: {
     color: "#ffffff",

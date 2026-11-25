@@ -603,24 +603,6 @@ export const LeyendaAccesibilidadEstados: React.FC<
             </Text>
           </View>
         </View>
-
-        <Pressable
-          onPress={() => establecerMostrarRevisionMovil((prev) => !prev)}
-          accessibilityRole="button"
-          accessibilityLabel="Alternar revisión de accesibilidad visual en pantalla móvil"
-          style={estilos.botonRevisionScrum}
-        >
-          <Ionicons
-            name="phone-portrait-outline"
-            size={14}
-            color={tema.colors.primaryDark}
-          />
-          <Text style={estilos.botonRevisionScrumTexto}>
-            {mostrarRevisionMovil
-              ? "Ocultar ficha móvil"
-              : "Revisar accesibilidad móvil"}
-          </Text>
-        </Pressable>
       </View>
 
       {/* Chips de estados interactivos con distintivo de color, icono y etiqueta textual */}
@@ -697,54 +679,6 @@ export const LeyendaAccesibilidadEstados: React.FC<
           );
         })}
       </ScrollView>
-
-      {/* Panel desplegable de verificación SCRUM de accesibilidad visual en pantalla móvil */}
-      {mostrarRevisionMovil && (
-        <View style={estilos.panelScrumMovil}>
-          <View style={estilos.panelScrumEncabezado}>
-            <Ionicons
-              name="shield-checkmark-outline"
-              size={16}
-              color="#065F46"
-            />
-            <Text style={estilos.panelScrumTitulo}>
-              Verificación de Accesibilidad Visual en Pantalla Móvil (360px - 480px)
-            </Text>
-          </View>
-          <Text style={estilos.panelScrumSubtitulo}>
-            Cada estado combina 3 señales independientes (color de alto contraste + icono + símbolo y etiqueta textual) para garantizar lectura bajo luz solar y daltonismo:
-          </Text>
-
-          <View style={estilos.grillaScrumEstados}>
-            {Object.values(CATALOGO_ESTADOS_PROYECTO).map((cfg) => (
-              <View
-                key={cfg.clave}
-                style={[
-                  estilos.tarjetaScrumEstado,
-                  { borderLeftColor: cfg.colorBorde },
-                ]}
-              >
-                <View style={estilos.tarjetaScrumSuperior}>
-                  <DistintivoEstadoProyecto
-                    estado={cfg.etiqueta}
-                    tamano="md"
-                    mostrarPrefijo
-                    forzarModoMovil
-                  />
-                  <View style={estilos.badgeContraste}>
-                    <Text style={estilos.badgeContrasteTexto}>
-                      Contraste {cfg.contrasteWcag}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={estilos.tarjetaScrumDescripcion}>
-                  {cfg.descripcion}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
     </View>
   );
 };
