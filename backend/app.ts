@@ -23,11 +23,17 @@ import prestamoHerramientaRoutes from './routes/prestamoHerramientaRoutes';
 import reporteRoutes from './routes/reporteRoutes';
 import respaldoRoutes from './routes/respaldoRoutes';
 import verificarToken from './middleware/authMiddleware';
+import { obtenerOrigenesCors } from './config/entorno';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
 export const app = express();
 
-app.use(cors());
+const origenesPermitidos = obtenerOrigenesCors();
+app.use(cors({
+    origin: (origen, callback) => {
+        callback(null, !origen || origenesPermitidos.includes(origen));
+    },
+}));
 
 // El lote de sincronización lleva fotos en base64: tiene su propio límite de cuerpo (más alto) y se
 // parsea DESPUÉS de validar el token, para no leer cuerpos grandes de peticiones sin sesión.

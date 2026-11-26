@@ -197,43 +197,48 @@ export const ProveedorAutenticacion: React.FC<{ children: React.ReactNode }> = (
   const iniciarSesion = async (correo: string, contrasena: string): Promise<string | null> => {
     const res = await loginApi(correo, contrasena);
     if (!res.ok || !res.data) {
-      // Modo respaldo / prueba: permite entrar con los perfiles simulados si el backend no responde
-      const correoLimpio = correo.trim().toLowerCase();
-      const usuarioSimulado = USUARIOS_SISTEMA.find(
-        (u) => u.email.toLowerCase() === correoLimpio
-      );
+      establecerToken(null);
+      establecerSesion(null);
+      await AsyncStorage.removeItem(CLAVE_TOKEN);
 
-      if (usuarioSimulado && !usuarioSimulado.disabled) {
-        const partes = usuarioSimulado.name.split(" ");
-        const nombre = partes[0] || "";
-        const apellido = partes.slice(1).join(" ") || "";
-        const iniciales = `${nombre.charAt(0)}${apellido.charAt(0) || ""}`.toUpperCase();
+      if (process.env.NODE_ENV === "development") {
+        const correoLimpio = correo.trim().toLowerCase();
+        const usuarioSimulado = USUARIOS_SISTEMA.find(
+          (u) => u.email.toLowerCase() === correoLimpio
+        );
 
-        establecerToken("token-sesion-simulada");
-        establecerSesion({
-          idUsuario: parseInt(usuarioSimulado.id.replace(/\D/g, "")) || 1,
-          rol: usuarioSimulado.role,
-          usuario: {
-            rut: usuarioSimulado.rut,
-            name: usuarioSimulado.name,
-            email: usuarioSimulado.email,
-            initials: iniciales,
-            role: usuarioSimulado.role,
-          },
-        });
-        return null;
-      }
+        if (usuarioSimulado && !usuarioSimulado.disabled) {
+          const partes = usuarioSimulado.name.split(" ");
+          const nombre = partes[0] || "";
+          const apellido = partes.slice(1).join(" ") || "";
+          const iniciales = `${nombre.charAt(0)}${apellido.charAt(0) || ""}`.toUpperCase();
 
-      const roles: Rol[] = ["admin", "warehouse", "technician"];
-      for (const r of roles) {
-        if (USUARIOS[r].email.toLowerCase() === correoLimpio || (correoLimpio === "admin@fyag.cl" && r === "admin")) {
           establecerToken("token-sesion-simulada");
           establecerSesion({
-            idUsuario: r === "admin" ? 1 : r === "warehouse" ? 2 : 3,
-            rol: r,
-            usuario: USUARIOS[r],
+            idUsuario: parseInt(usuarioSimulado.id.replace(/\D/g, "")) || 1,
+            rol: usuarioSimulado.role,
+            usuario: {
+              rut: usuarioSimulado.rut,
+              name: usuarioSimulado.name,
+              email: usuarioSimulado.email,
+              initials: iniciales,
+              role: usuarioSimulado.role,
+            },
           });
           return null;
+        }
+
+        const roles: Rol[] = ["admin", "warehouse", "technician"];
+        for (const r of roles) {
+          if (USUARIOS[r].email.toLowerCase() === correoLimpio || (correoLimpio === "admin@fyag.cl" && r === "admin")) {
+            establecerToken("token-sesion-simulada");
+            establecerSesion({
+              idUsuario: r === "admin" ? 1 : r === "warehouse" ? 2 : 3,
+              rol: r,
+              usuario: USUARIOS[r],
+            });
+            return null;
+          }
         }
       }
 
