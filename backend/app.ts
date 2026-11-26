@@ -10,8 +10,10 @@ import clienteRoutes from './routes/clienteRoutes';
 import parametrosRoutes from './routes/parametrosRoutes';
 import ordenCompraRoutes from './routes/ordenCompraRoutes';
 import solicitudRoutes from './routes/solicitudRoutes';
-import verificarToken from './middleware/authMiddleware';
+import devolucionRoutes from './routes/devolucionRoutes';
+import sincronizacionRoutes from './routes/sincronizacionRoutes';
 import cardexRoutes from './routes/cardexRoutes';
+import verificarToken from './middleware/authMiddleware';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
 export const app = express();
@@ -53,5 +55,8 @@ app.use('/api/clientes', verificarToken, clienteRoutes);
 app.use('/api/parametros', verificarToken, parametrosRoutes);
 app.use('/api/ordenes-compra', verificarToken, ordenCompraRoutes);
 app.use('/api/solicitudes', verificarToken, solicitudRoutes);
+app.use('/api/devoluciones', verificarToken, devolucionRoutes);
+app.use('/api/sincronizacion', verificarToken, sincronizacionRoutes);
+app.use('/api/cardex', verificarToken, cardexRoutes);
 
 export default app;

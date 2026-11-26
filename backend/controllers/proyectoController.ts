@@ -324,6 +324,15 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
                 });
                 return;
             }
+
+            const bloqueoDev = await verificarBloqueoCierreProyectoPorDevolucionesH34(pool, Number(id));
+            if (bloqueoDev.bloqueado) {
+                res.status(409).json({
+                    mensaje: bloqueoDev.motivoBloqueo,
+                    devoluciones_bloqueantes: bloqueoDev.devolucionesBloqueantes,
+                });
+                return;
+            }
         }
 
         let idClienteValido: number | null = null;
@@ -584,9 +593,40 @@ export const quitarTecnico = async (req: Request<{ id: string; idUsuario: string
     }
 };
 
+export const verificarBloqueoCierreProyectoPorDevolucionesH34 = async (
+    cliente: { query: (text: string, params?: any[]) => Promise<any> },
+    idProyecto: number
+): Promise<{
+    bloqueado: boolean;
+    devolucionesBloqueantes: { id_devolucion: number; codigo_devolucion: string }[];
+    motivoBloqueo: string | null;
+}> => {
+    try {
+        const res = await cliente.query(
+            `SELECT id_devolucion, COALESCE(codigo_devolucion, codigo) AS codigo_devolucion
+             FROM devoluciones_tecnico
+             WHERE proyecto_id = $1 AND estado = 'En tránsito'
+             ORDER BY id_devolucion ASC`,
+            [idProyecto]
+        );
+        if (!res.rows || res.rows.length === 0) {
+            return { bloqueado: false, devolucionesBloqueantes: [], motivoBloqueo: null };
+        }
+        const detalle = res.rows.map((d: any) => d.codigo_devolucion || `#${d.id_devolucion}`).join(', ');
+        return {
+            bloqueado: true,
+            devolucionesBloqueantes: res.rows,
+            motivoBloqueo: `No se puede cerrar el proyecto (H34): existen ${res.rows.length} devolución(es) en tránsito pendientes de recepción en bodega (${detalle}).`,
+        };
+    } catch {
+        return { bloqueado: false, devolucionesBloqueantes: [], motivoBloqueo: null };
+    }
+};
+
 /**
  * [H34 / BACK-1] Endpoint para cerrar un proyecto (`POST /api/proyectos/:id/cerrar`),
- * bloqueando el cierre si existen solicitudes de insumos en estado `Pendiente` o `Aprobada` sin egresar.
+ * bloqueando el cierre si existen solicitudes de insumos en estado `Pendiente` o `Aprobada` sin egresar,
+ * o si existen devoluciones de insumos en estado `En tránsito`.
  */
 export const cerrarProyecto = async (
     req: Request<{ id: string }>,
@@ -604,6 +644,15 @@ export const cerrarProyecto = async (
             res.status(409).json({
                 mensaje: bloqueoH34.motivoBloqueo,
                 solicitudes_bloqueantes: bloqueoH34.solicitudesBloqueantes,
+            });
+            return;
+        }
+
+        const bloqueoDev = await verificarBloqueoCierreProyectoPorDevolucionesH34(pool, idProyecto);
+        if (bloqueoDev.bloqueado) {
+            res.status(409).json({
+                mensaje: bloqueoDev.motivoBloqueo,
+                devoluciones_bloqueantes: bloqueoDev.devolucionesBloqueantes,
             });
             return;
         }

@@ -8,15 +8,17 @@ CREATE SEQUENCE IF NOT EXISTS seq_codigo_devolucion START WITH 1 INCREMENT BY 1;
 -- Columnas de confirmación y auditoría en la cabecera
 ALTER TABLE devoluciones_tecnico
     ADD COLUMN IF NOT EXISTS codigo VARCHAR(40) NULL,
+    ADD COLUMN IF NOT EXISTS codigo_devolucion VARCHAR(40) NULL,
     ADD COLUMN IF NOT EXISTS tiene_diferencia BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS observaciones_recepcion VARCHAR(250) NULL,
     ADD COLUMN IF NOT EXISTS bodeguero_id INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS fecha_recepcion TIMESTAMPTZ NULL;
 
--- Sincronizar codigo con codigo_devolucion si existe
+-- Sincronizar codigo con codigo_devolucion
 UPDATE devoluciones_tecnico
-SET codigo = codigo_devolucion
-WHERE codigo IS NULL AND codigo_devolucion IS NOT NULL;
+SET codigo = COALESCE(codigo, codigo_devolucion),
+    codigo_devolucion = COALESCE(codigo_devolucion, codigo)
+WHERE codigo IS NULL OR codigo_devolucion IS NULL;
 
 -- Columnas de confirmación física y Cardex en las líneas
 ALTER TABLE devolucion_lineas
