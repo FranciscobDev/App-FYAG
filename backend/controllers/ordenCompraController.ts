@@ -869,7 +869,7 @@ export const descargarPdfOrdenCompra = async (
  * Borrador, Enviada, Recibida parcial, Recibida, Cerrada y Anulada.
  */
 export const cambiarEstadoOrdenCompra = async (
-    req: Request<{ id: string }, unknown, { estado?: string; correo_destino?: string }>,
+    req: Request<{ id: string }, unknown, { estado?: string; correo_destino?: string; calificacion?: number | { timeRating?: number; qualityRating?: number; priceRating?: number; average?: number; comment?: string } }>,
     res: Response
 ): Promise<void> => {
     const idOrden = Number(req.params.id);
@@ -910,9 +910,42 @@ export const cambiarEstadoOrdenCompra = async (
                 );
             }
 
+            // Si la orden pasa a 'Cerrada' y se envía calificación del proveedor (H15)
+            let notaRating = '';
+            if (nuevoEstado === 'Cerrada' && req.body?.calificacion) {
+                const calif = req.body.calificacion;
+                const puntaje = typeof calif === 'number' ? calif : (calif?.average ?? 5.0);
+                const comentarioCalif = typeof calif === 'object' && calif?.comment ? calif.comment.trim() : '';
+                notaRating = ` [Calificación H15: ${puntaje}⭐${comentarioCalif ? ` - "${comentarioCalif}"` : ''}]`;
+
+                if (antes.proveedor_id && puntaje >= 1 && puntaje <= 5) {
+                    const provActual = await cliente.query<{ calificacion_promedio: number | null }>(
+                        'SELECT calificacion_promedio FROM proveedor WHERE id_proveedor = $1',
+                        [antes.proveedor_id]
+                    );
+                    const prevRating = provActual.rows[0]?.calificacion_promedio != null
+                        ? Number(provActual.rows[0].calificacion_promedio)
+                        : null;
+                    const nuevoPromedio = prevRating != null
+                        ? Number(((prevRating + puntaje) / 2).toFixed(2))
+                        : Number(puntaje.toFixed(2));
+
+                    await cliente.query(
+                        'UPDATE proveedor SET calificacion_promedio = $1 WHERE id_proveedor = $2',
+                        [nuevoPromedio, antes.proveedor_id]
+                    );
+                }
+            }
+
             await cliente.query(
-                'UPDATE ordenes_compra SET estado = $1 WHERE id_orden_compra = $2',
-                [nuevoEstado, idOrden]
+                `UPDATE ordenes_compra 
+                 SET estado = $1,
+                     observaciones = CASE 
+                        WHEN $2 <> '' THEN SUBSTRING(COALESCE(observaciones, '') || $2 FROM 1 FOR 250)
+                        ELSE observaciones 
+                     END
+                 WHERE id_orden_compra = $3`,
+                [nuevoEstado, notaRating, idOrden]
             );
 
             const despues = (await cargarOrdenCompraCompleta(cliente, idOrden))!;

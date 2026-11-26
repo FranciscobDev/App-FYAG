@@ -9,6 +9,7 @@ export interface Proveedor {
     correo_contacto: string | null;
     telefono: string | null;
     direccion: string | null;
+    calificacion_promedio?: number | null;
 }
 
 interface ProveedorBody {
@@ -17,6 +18,7 @@ interface ProveedorBody {
     correo_contacto?: string | null;
     telefono?: string | null;
     direccion?: string | null;
+    calificacion_promedio?: number | null;
 }
 
 const esErrorPg = (error: unknown): error is DatabaseError => {

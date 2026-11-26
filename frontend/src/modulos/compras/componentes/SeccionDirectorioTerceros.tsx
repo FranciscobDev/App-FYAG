@@ -99,9 +99,10 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
     const lista = proveedores || [];
     const activos = lista.filter((p: any) => !p.disabled);
     const archivados = lista.filter((p: any) => Boolean(p.disabled));
-    const destacados = activos.filter((p: any) => (p.ratingAvg ?? 5) >= 4.5);
-    const sumaRating = activos.reduce((acc: number, p: any) => acc + Number(p.ratingAvg ?? 5), 0);
-    const promedio = activos.length > 0 ? (sumaRating / activos.length).toFixed(1) : "5.0";
+    const evaluados = activos.filter((p: any) => typeof p.ratingAvg === "number" && !isNaN(p.ratingAvg) && p.ratingAvg > 0);
+    const destacados = evaluados.filter((p: any) => p.ratingAvg >= 4.5);
+    const sumaRating = evaluados.reduce((acc: number, p: any) => acc + Number(p.ratingAvg), 0);
+    const promedio = evaluados.length > 0 ? (sumaRating / evaluados.length).toFixed(1) : "—";
 
     return {
       activosConteo: activos.length,
@@ -118,19 +119,28 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
     }
     const activos = base.filter((p: any) => !p.disabled);
     if (filtroDirectorio === "destacados") {
-      return activos.filter((p: any) => (p.ratingAvg ?? 5) >= 4.5);
+      return activos.filter((p: any) => typeof p.ratingAvg === "number" && !isNaN(p.ratingAvg) && p.ratingAvg >= 4.5);
     }
     return activos;
   }, [filtradoProveedores, filtroDirectorio]);
 
-  const obtenerEstiloSemaforoProveedor = (ratingAvg = 5, disabled?: boolean) => {
+  const obtenerEstiloSemaforoProveedor = (ratingAvg?: number, disabled?: boolean) => {
     if (disabled) {
       return {
-        fondoTarjeta: "#f1f5f9",
+        fondoTarjeta: "#f8fafc",
         bordeTarjeta: "#cbd5e1",
         franjaLateral: "#64748b",
         colorTexto: "#334155",
         divisorColor: "#e2e8f0",
+      };
+    }
+    if (typeof ratingAvg !== "number" || isNaN(ratingAvg) || ratingAvg <= 0) {
+      return {
+        fondoTarjeta: "#ffffff",
+        bordeTarjeta: "#e2e8f0",
+        franjaLateral: "#94a3b8",
+        colorTexto: "#334155",
+        divisorColor: "#f1f5f9",
       };
     }
     if (ratingAvg < 4.0) {
@@ -379,8 +389,8 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                 Ordenar:
               </Text>
               {[
-                { id: "rating_desc", label: "Mayor Calif.", icon: "star" as const },
-                { id: "rating_asc", label: "Menor Calif.", icon: "trending-down-outline" as const },
+                { id: "rating_desc", label: "[SCRUM] Ranking: Mayor a Menor ★", icon: "star" as const },
+                { id: "rating_asc", label: "Menor Calificación", icon: "trending-down-outline" as const },
                 { id: "alpha", label: "Alfabético A-Z", icon: "text-outline" as const },
               ].map((s) => {
                 const activo = thirdPartyOrdenar === s.id;
@@ -396,20 +406,20 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       paddingVertical: 5,
                       borderRadius: 7,
                       borderWidth: 1,
-                      backgroundColor: activo ? tema.colors.primaryLight : "#ffffff",
-                      borderColor: activo ? tema.colors.primary : tema.colors.border,
+                      backgroundColor: activo ? (s.id === "rating_desc" ? "#fef3c7" : tema.colors.primaryLight) : "#ffffff",
+                      borderColor: activo ? (s.id === "rating_desc" ? "#f59e0b" : tema.colors.primary) : tema.colors.border,
                     }}
                   >
                     <Ionicons
                       name={s.icon}
                       size={12}
-                      color={activo ? tema.colors.primaryDark : tema.colors.textMuted}
+                      color={activo ? (s.id === "rating_desc" ? "#b45309" : tema.colors.primaryDark) : tema.colors.textMuted}
                     />
                     <Text
                       style={{
                         fontSize: 11,
                         fontWeight: activo ? "800" : "600",
-                        color: activo ? tema.colors.primaryDark : tema.colors.textSecondary,
+                        color: activo ? (s.id === "rating_desc" ? "#92400e" : tema.colors.primaryDark) : tema.colors.textSecondary,
                       }}
                     >
                       {s.label}
@@ -448,9 +458,12 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
               containerStyle={{ marginVertical: 24 }}
             />
           ) : (
-            proveedoresVisibles.map((s: any) => {
-              const rating = Number(s.ratingAvg ?? 5);
-              const semaforo = obtenerEstiloSemaforoProveedor(rating, s.disabled);
+            proveedoresVisibles.map((s: any, idx: number) => {
+              const tieneCalificacion = typeof s.ratingAvg === "number" && !isNaN(s.ratingAvg) && s.ratingAvg > 0;
+              const rating = tieneCalificacion ? Number(s.ratingAvg) : 0;
+              const ratingCount = s.ratingCount || 0;
+              const semaforo = obtenerEstiloSemaforoProveedor(tieneCalificacion ? rating : undefined, s.disabled);
+              const esRankingActivo = thirdPartyOrdenar === "rating_desc";
 
               return (
                 <Tarjeta
@@ -467,7 +480,7 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                     borderRadius: 12,
                   }}
                 >
-                  {/* Cabecera compacta: RUT + Categoría + Nombre a la izquierda / Badge de Calificación a la derecha */}
+                  {/* Cabecera compacta: RUT + Categoría + Ranking + Nombre a la izquierda / Badge de Calificación a la derecha */}
                   <View
                     style={{
                       flexDirection: "row",
@@ -479,6 +492,36 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                   >
                     <View style={{ flex: 1, minWidth: 160 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        {esRankingActivo && tieneCalificacion && (
+                          <View
+                            style={{
+                              backgroundColor: idx === 0 ? "#fef3c7" : idx === 1 ? "#f1f5f9" : idx === 2 ? "#ffedd5" : "#ede9fe",
+                              borderWidth: 1,
+                              borderColor: idx === 0 ? "#f59e0b" : idx === 1 ? "#94a3b8" : idx === 2 ? "#f97316" : "#8b5cf6",
+                              paddingHorizontal: 7,
+                              paddingVertical: 2,
+                              borderRadius: 6,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 3,
+                            }}
+                          >
+                            <Ionicons
+                              name={idx === 0 ? "trophy" : idx < 3 ? "medal" : "ribbon"}
+                              size={12}
+                              color={idx === 0 ? "#b45309" : idx === 1 ? "#475569" : idx === 2 ? "#c2410c" : "#6d28d9"}
+                            />
+                            <Text
+                              style={{
+                                fontSize: 10,
+                                fontWeight: "800",
+                                color: idx === 0 ? "#92400e" : idx === 1 ? "#334155" : idx === 2 ? "#9a3412" : "#5b21b6",
+                              }}
+                            >
+                              #{idx + 1} Ranking
+                            </Text>
+                          </View>
+                        )}
                         <Text
                           style={{
                             fontSize: 11,
@@ -521,24 +564,48 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                       </Text>
                     </View>
 
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 4,
-                        backgroundColor: "#fef3c7",
-                        borderWidth: 1,
-                        borderColor: "#f59e0b",
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 999,
-                      }}
-                    >
-                      <Ionicons name="star" size={12} color="#d97706" />
-                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#92400e" }}>
-                        {rating.toFixed(1)} ({s.ratingCount || 1})
-                      </Text>
-                    </View>
+                    {tieneCalificacion ? (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          backgroundColor: "#fef3c7",
+                          borderWidth: 1,
+                          borderColor: "#f59e0b",
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 999,
+                        }}
+                      >
+                        <Ionicons name="star" size={13} color="#d97706" />
+                        <Text style={{ fontSize: 11, fontWeight: "800", color: "#92400e" }}>
+                          {rating.toFixed(1)}
+                        </Text>
+                        <Text style={{ fontSize: 10, fontWeight: "600", color: "#b45309" }}>
+                          ({ratingCount} {ratingCount === 1 ? "eval" : "evals"})
+                        </Text>
+                      </View>
+                    ) : (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 4,
+                          backgroundColor: "#f1f5f9",
+                          borderWidth: 1,
+                          borderColor: "#cbd5e1",
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderRadius: 999,
+                        }}
+                      >
+                        <Ionicons name="star-outline" size={12} color="#94a3b8" />
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#64748b" }}>
+                          Sin calificación
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
                   {/* Caja blanca unificada: Contacto + Datos Bancarios (Cero azul eléctrico) */}
@@ -636,7 +703,9 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
                           contacto: s.email,
                           telefono: s.phone,
                           direccion: s.address,
-                          calificacionPromedio: s.ratingAvg || 4.7,
+                          calificacionPromedio: tieneCalificacion ? rating : undefined,
+                          ratingAvg: tieneCalificacion ? rating : undefined,
+                          ratingCount: ratingCount,
                           banco: s.bankDetails?.bank || "Banco Estado",
                           tipoCuenta: s.bankDetails?.accountType || "Cuenta Corriente",
                           numeroCuenta: s.bankDetails?.accountNumber || "12345678-9",

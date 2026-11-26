@@ -1690,17 +1690,31 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
 
     const order = ordenesCompra.find((o) => o.id === orderId);
-    if (order && order.supplierId) {
+    if (order) {
       setSuppliers((prev) =>
         prev.map((s) => {
-          if (s.id !== order.supplierId) return s;
-          const newCount = (s.ratingCount || 0) + 1;
-          const newAvg = Number(
-            (((s.ratingAvg || 0) * (s.ratingCount || 0) + rating.average) / newCount).toFixed(1)
-          );
+          const coincideId = order.supplierId && s.id === order.supplierId;
+          const coincideNombre = order.supplier && s.businessName.trim().toLowerCase() === order.supplier.trim().toLowerCase();
+          const coincideRut = order.supplierRut && s.rut.replace(/[.\s-]/g, "") === order.supplierRut.replace(/[.\s-]/g, "");
+
+          if (!coincideId && !coincideNombre && !coincideRut) return s;
+
+          const currentCount = s.ratingCount || (s.ratingAvg ? 1 : 0);
+          const currentAvg = typeof s.ratingAvg === 'number' && !isNaN(s.ratingAvg) ? s.ratingAvg : null;
+
+          const newCount = currentCount + 1;
+          const newAvg = currentAvg != null
+            ? Number((((currentAvg * currentCount) + rating.average) / newCount).toFixed(1))
+            : Number(rating.average.toFixed(1));
+
           return { ...s, ratingAvg: newAvg, ratingCount: newCount };
         })
       );
+    }
+
+    const idOrdenNum = Number(orderId.replace(/\D/g, ""));
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void cambiarEstadoOrdenCompraApi(idOrdenNum, mapearEstadoHaciaBd("cerrada"), rating);
     }
   };
 

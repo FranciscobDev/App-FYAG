@@ -672,7 +672,7 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     }
   };
 
-  // Filtrado y ordenación de proveedores
+  // Filtrado y ordenación de proveedores [H15 / SCRUM: Ordena de mayor a menor calificación]
   const filtradoProveedores = proveedores
     .filter((s) => {
       const q = thirdPartyBuscar.toLowerCase().trim();
@@ -685,8 +685,35 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       );
     })
     .sort((a, b) => {
-      if (thirdPartyOrdenar === "rating_desc") return (b.ratingAvg || 0) - (a.ratingAvg || 0);
-      if (thirdPartyOrdenar === "rating_asc") return (a.ratingAvg || 0) - (b.ratingAvg || 0);
+      if (thirdPartyOrdenar === "rating_desc") {
+        const ratingA = typeof a.ratingAvg === "number" && !isNaN(a.ratingAvg) && a.ratingAvg > 0 ? a.ratingAvg : -1;
+        const ratingB = typeof b.ratingAvg === "number" && !isNaN(b.ratingAvg) && b.ratingAvg > 0 ? b.ratingAvg : -1;
+
+        // Proveedores sin calificación quedan al final
+        if (ratingA === -1 && ratingB === -1) {
+          return a.businessName.localeCompare(b.businessName);
+        }
+        if (ratingA === -1) return 1;
+        if (ratingB === -1) return -1;
+
+        const diff = ratingB - ratingA;
+        if (Math.abs(diff) > 0.001) return diff;
+        return (b.ratingCount || 0) - (a.ratingCount || 0);
+      }
+      if (thirdPartyOrdenar === "rating_asc") {
+        const ratingA = typeof a.ratingAvg === "number" && !isNaN(a.ratingAvg) && a.ratingAvg > 0 ? a.ratingAvg : 999;
+        const ratingB = typeof b.ratingAvg === "number" && !isNaN(b.ratingAvg) && b.ratingAvg > 0 ? b.ratingAvg : 999;
+
+        if (ratingA === 999 && ratingB === 999) {
+          return a.businessName.localeCompare(b.businessName);
+        }
+        if (ratingA === 999) return 1;
+        if (ratingB === 999) return -1;
+
+        const diff = ratingA - ratingB;
+        if (Math.abs(diff) > 0.001) return diff;
+        return (a.ratingCount || 0) - (b.ratingCount || 0);
+      }
       return a.businessName.localeCompare(b.businessName);
     });
 
@@ -879,6 +906,11 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           ultimoEscaneoRecepcion={ultimoEscaneoRecepcion}
           onLimpiarUltimoEscaneo={() => establecerUltimoEscaneoRecepcion(null)}
           width={width}
+          establecerTarifaModalOrden={establecerTarifaModalOrden}
+          establecerCalificacionTiempo={establecerCalificacionTiempo}
+          establecerCalificacionQuality={establecerCalificacionQuality}
+          establecerCalificacionPrecio={establecerCalificacionPrecio}
+          establecerCalificacionComentario={establecerCalificacionComentario}
         />
 
         <SeccionDirectorioTerceros
