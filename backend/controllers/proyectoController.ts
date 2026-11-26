@@ -831,13 +831,16 @@ export const registrarAvanceProyectoEnTransaccion = async (
 
     // Obtener datos del técnico
     const tecRes = await cliente.query(
-        `SELECT id_usuario, nombre, apellido FROM usuario WHERE id_usuario = $1 LIMIT 1`,
+        `SELECT id_usuario,
+                TRIM(COALESCE(nombre_usuario, '') || ' ' || COALESCE(apellido_usuario, '')) AS nombre_completo
+         FROM usuario WHERE id_usuario = $1 LIMIT 1`,
         [idEjecutor]
     );
     const tecnico = tecRes.rows?.[0];
-    const tecnicoNombre = tecnico
-        ? [tecnico.nombre, tecnico.apellido].filter(Boolean).join(' ').trim()
-        : 'Técnico';
+    const tecnicoNombre =
+        tecnico?.nombre_completo ||
+        (tecnico ? [tecnico.nombre, tecnico.apellido].filter(Boolean).join(' ').trim() : '') ||
+        'Técnico';
 
     // Normalizar materiales declarados
     const materialesRaw = (
@@ -1012,10 +1015,12 @@ export const listarAvancesProyecto = async (req: Request<{ id: string }>, res: R
                             'sku', art.sku,
                             'nombre_articulo', art.nombre_articulo,
                             'cantidad_utilizada', u.cantidad_utilizada::float8,
-                            'unidad', COALESCE(art.unidad_medida, 'un')
+                            'unidad', COALESCE(um.codigo, 'un')
                         ) ORDER BY u.id_uso ASC)
                         FROM uso_insumos_proyecto u
                         JOIN articulo art ON art.id_articulo = u.id_articulo
+                        LEFT JOIN insumos i ON i.id_insumo = art.id_articulo
+                        LEFT JOIN unidades_medida um ON um.id_unidad = i.id_unidad
                         WHERE u.id_avance = a.id_avance
                     ), '[]'::json) AS materiales_utilizados
              FROM avances_proyecto a
@@ -1067,20 +1072,22 @@ export const obtenerReporteFinalProyecto = async (req: Request<{ id: string }>, 
             `SELECT a.id_articulo,
                     a.sku,
                     a.nombre_articulo,
-                    COALESCE(a.unidad_medida, 'un') AS unidad,
+                    COALESCE(um.codigo, 'un') AS unidad,
                     COALESCE(aep.total_asignado, 0)::float8 AS cantidad_asignada,
                     COALESCE(sb.total_retirado, 0)::float8 AS cantidad_retirada,
                     COALESCE(u.total_utilizado, 0)::float8 AS cantidad_utilizada,
                     COALESCE(dev.total_devuelto, 0)::float8 AS cantidad_devuelta
              FROM articulo a
+             LEFT JOIN insumos i ON i.id_insumo = a.id_articulo
+             LEFT JOIN unidades_medida um ON um.id_unidad = i.id_unidad
              LEFT JOIN (
                  SELECT id_articulo, SUM(cantidad) AS total_asignado
                  FROM articulo_en_proyecto WHERE id_proyecto = $1 GROUP BY id_articulo
              ) aep ON aep.id_articulo = a.id_articulo
              LEFT JOIN (
                  SELECT el.id_articulo, SUM(el.cantidad_egresada) AS total_retirado
-                 FROM salidas_bodega s JOIN salida_lineas el ON el.id_salida = s.id_salida
-                 WHERE s.proyecto_id = $1 GROUP BY el.id_articulo
+                 FROM egresos_bodega e JOIN egreso_lineas el ON el.id_egreso = e.id_egreso
+                 WHERE e.proyecto_id = $1 GROUP BY el.id_articulo
              ) sb ON sb.id_articulo = a.id_articulo
              LEFT JOIN (
                  SELECT id_articulo, SUM(cantidad_utilizada) AS total_utilizado

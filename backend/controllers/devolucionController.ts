@@ -93,145 +93,164 @@ export const declararDevolucionEnTransaccion = async (
         throw new ErrorAplicacion(400, 'Debe incluir al menos un insumo con cantidad a devolver');
     }
 
-    // 1. Técnico que declara
-    const tecnicoRes = await cliente.query<{
+    // 1. Técnico que declara (siempre el del token, nunca uno indicado en el cuerpo)
+    const tecRes = await cliente.query<{
         id_usuario: number;
-        nombre: string;
-        apellido: string | null;
         rut: string;
+        nombre_completo?: string;
+        nombre?: string;
+        apellido?: string | null;
     }>(
-        `SELECT id_usuario, nombre, apellido, COALESCE(rut, '') AS rut
+        `SELECT id_usuario,
+                COALESCE(rut, '') AS rut,
+                TRIM(COALESCE(nombre_usuario, '') || ' ' || COALESCE(apellido_usuario, '')) AS nombre_completo
          FROM usuario
-         WHERE id_usuario = $1
+         WHERE id_usuario = $1 AND activo = TRUE
          LIMIT 1`,
         [idTecnico]
     );
-    if (!tecnicoRes.rows[0]) {
-        throw new ErrorAplicacion(401, 'Usuario no encontrado');
+    if (tecRes.rows.length === 0) {
+        throw new ErrorAplicacion(404, 'El técnico que declara la devolución no existe o está inactivo');
     }
+    const filaTec = tecRes.rows[0];
     const tecnico = {
-        id_usuario: tecnicoRes.rows[0].id_usuario,
-        rut: tecnicoRes.rows[0].rut,
-        nombre_completo: [tecnicoRes.rows[0].nombre, tecnicoRes.rows[0].apellido].filter(Boolean).join(' ').trim(),
+        id_usuario: filaTec.id_usuario,
+        rut: filaTec.rut ?? '',
+        nombre_completo:
+            filaTec.nombre_completo ||
+            [filaTec.nombre, filaTec.apellido].filter(Boolean).join(' ').trim() ||
+            'Técnico',
     };
 
-    // 2. Proyecto activo
-    const proyRes = await cliente.query<{
-        id_proyecto: number;
-        nombre_proyecto: string;
-        estado_proyecto: string;
-    }>(
-        `SELECT id_proyecto, nombre_proyecto, estado_proyecto::text AS estado_proyecto
-         FROM proyecto
-         WHERE id_proyecto = $1
-         LIMIT 1`,
+    // 2. Proyecto
+    const proyRes = await cliente.query<{ id_proyecto: number; nombre_proyecto: string }>(
+        'SELECT id_proyecto, nombre_proyecto FROM proyecto WHERE id_proyecto = $1 LIMIT 1',
         [idProyecto]
     );
-    const proyecto = proyRes.rows[0];
-    if (!proyecto) {
-        throw new ErrorAplicacion(404, 'Proyecto no encontrado');
+    if (proyRes.rows.length === 0) {
+        throw new ErrorAplicacion(404, 'El proyecto indicado no existe');
     }
+    const proyecto = proyRes.rows[0];
 
-    // 3. Serializar con bloqueo consultivo
-    await cliente.query(
-        `SELECT pg_advisory_xact_lock(hashtext($1))`,
-        [claveBloqueoDevolucion(idTecnico, idProyecto)]
-    );
+    // 3. Resolver insumos y acumular la cantidad declarada por artículo
+    const acumuladoPorArticulo = new Map<
+        number,
+        { sku: string; nombre_articulo: string; cantidad: number }
+    >();
 
-    // 4. Normalizar líneas y resolver artículos
-    const acumuladoPorArticulo = new Map<number, { sku: string; nombre_articulo: string; cantidad: number }>();
-    for (const item of itemsRaw) {
-        const cant = Number(item.cantidad_declarada ?? item.cantidad ?? item.quantity ?? 0);
+    for (const raw of itemsRaw) {
+        const cant = Number(raw.cantidad_declarada ?? raw.cantidad ?? raw.quantity ?? NaN);
         if (!Number.isFinite(cant) || cant <= 0) {
-            throw new ErrorAplicacion(400, 'La cantidad declarada a devolver debe ser mayor a 0');
+            throw new ErrorAplicacion(400, 'Todas las cantidades a devolver deben ser números mayores a 0');
         }
-        let artFila: { id_articulo: number; sku: string; nombre_articulo: string } | null = null;
-        if (Number.isInteger(Number(item.id_articulo)) && Number(item.id_articulo) > 0) {
-            const res = await cliente.query<{ id_articulo: number; sku: string; nombre_articulo: string }>(
-                `SELECT a.id_articulo, a.sku, a.nombre_articulo FROM articulo a WHERE a.id_articulo = $1 LIMIT 1`,
-                [Number(item.id_articulo)]
+
+        let idArt = raw.id_articulo ? Number(raw.id_articulo) : 0;
+        const skuInput = raw.sku ? String(raw.sku).trim() : '';
+
+        const artRes = await cliente.query<{
+            id_articulo: number;
+            sku: string | null;
+            nombre_articulo: string;
+            activo?: boolean;
+        }>(
+            idArt > 0
+                ? 'SELECT id_articulo, sku, nombre_articulo, activo FROM articulo WHERE id_articulo = $1 LIMIT 1'
+                : 'SELECT id_articulo, sku, nombre_articulo, activo FROM articulo WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1)) LIMIT 1',
+            [idArt > 0 ? idArt : skuInput]
+        );
+        if (artRes.rows.length === 0) {
+            throw new ErrorAplicacion(
+                404,
+                `El insumo ${idArt > 0 ? `#${idArt}` : `'${skuInput}'`} no existe en el catálogo`
             );
-            artFila = res.rows[0] ?? null;
-        } else if (typeof item.sku === 'string' && item.sku.trim().length > 0) {
-            const res = await cliente.query<{ id_articulo: number; sku: string; nombre_articulo: string }>(
-                `SELECT a.id_articulo, a.sku, a.nombre_articulo FROM articulo a WHERE UPPER(TRIM(a.sku)) = UPPER(TRIM($1)) LIMIT 1`,
-                [item.sku.trim()]
+        }
+        const art = artRes.rows[0];
+        if (art.activo === false) {
+            throw new ErrorAplicacion(
+                400,
+                `El insumo "${art.nombre_articulo}" (${art.sku || art.id_articulo}) se encuentra inactivo`
             );
-            artFila = res.rows[0] ?? null;
         }
-        if (!artFila) {
-            throw new ErrorAplicacion(400, 'Artículo no encontrado en el catálogo');
-        }
-        const previo = acumuladoPorArticulo.get(artFila.id_articulo);
-        acumuladoPorArticulo.set(artFila.id_articulo, {
-            sku: artFila.sku,
-            nombre_articulo: artFila.nombre_articulo,
-            cantidad: redondear((previo?.cantidad ?? 0) + cant),
+
+        idArt = Number(art.id_articulo);
+        const previo = acumuladoPorArticulo.get(idArt);
+        acumuladoPorArticulo.set(idArt, {
+            sku: art.sku || String(idArt),
+            nombre_articulo: art.nombre_articulo,
+            cantidad: redondear((previo?.cantidad ?? 0) + redondear(cant)),
         });
     }
 
-    // 5. Validar que no supere el sobrante
-    const idsArticulos = Array.from(acumuladoPorArticulo.keys());
-    const retiradoRes = await cliente.query<{ id_articulo: number; total_retirado: number }>(
-        `SELECT el.id_articulo, COALESCE(SUM(el.cantidad_egresada), 0)::float8 AS total_retirado
-         FROM salidas_bodega sb
-         JOIN salida_lineas el ON el.id_salida = sb.id_salida
-         WHERE sb.proyecto_id = $1 AND sb.tecnico_retira_id = $2 AND el.id_articulo = ANY($3::int[])
-         GROUP BY el.id_articulo`,
-        [idProyecto, idTecnico, idsArticulos]
-    );
-    const mapaRetirado = new Map<number, number>(retiradoRes.rows.map((r) => [r.id_articulo, Number(r.total_retirado)]));
+    // 4. Serializar las declaraciones del mismo técnico y proyecto.
+    await cliente.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [
+        claveBloqueoDevolucion(idTecnico, idProyecto),
+    ]);
 
-    const utilizadoRes = await cliente.query<{ id_articulo: number; total_utilizado: number }>(
-        `SELECT u.id_articulo, COALESCE(SUM(u.cantidad_utilizada), 0)::float8 AS total_utilizado
-         FROM uso_insumos_proyecto u
-         WHERE u.proyecto_id = $1 AND u.tecnico_id = $2 AND u.id_articulo = ANY($3::int[])
-         GROUP BY u.id_articulo`,
-        [idProyecto, idTecnico, idsArticulos]
-    );
-    const mapaUtilizado = new Map<number, number>(utilizadoRes.rows.map((r) => [r.id_articulo, Number(r.total_utilizado)]));
-
-    const devueltoPrevioRes = await cliente.query<{ id_articulo: number; total_devuelto: number }>(
-        `SELECT dl.id_articulo, COALESCE(SUM(dl.cantidad_declarada), 0)::float8 AS total_devuelto
-         FROM devoluciones_tecnico dt
-         JOIN devolucion_lineas dl ON dl.id_devolucion = dt.id_devolucion
-         WHERE dt.proyecto_id = $1 AND dt.tecnico_id = $2 AND dt.estado IN ('En tránsito', 'Recibida')
-           AND dl.id_articulo = ANY($3::int[])
-         GROUP BY dl.id_articulo`,
-        [idProyecto, idTecnico, idsArticulos]
-    );
-    const mapaDevueltoPrevio = new Map<number, number>(devueltoPrevioRes.rows.map((r) => [r.id_articulo, Number(r.total_devuelto)]));
-
-    const snapshotsPorArticulo = new Map<number, {
-        cantidad_retirada: number;
-        cantidad_utilizada: number;
-        cantidad_devuelta_previa: number;
-        cantidad_maxima_devolvible: number;
-    }>();
-    const erroresValidacion: string[] = [];
+    // 5. Calcular el máximo devolvible por artículo y validar todas las líneas antes de escribir
+    const snapshotsPorArticulo = new Map<
+        number,
+        {
+            cantidad_retirada: number;
+            cantidad_utilizada: number;
+            cantidad_devuelta_previa: number;
+            cantidad_maxima_devolvible: number;
+        }
+    >();
+    const erroresSobrante: string[] = [];
 
     for (const [idArt, info] of acumuladoPorArticulo.entries()) {
-        const retirado = redondear(mapaRetirado.get(idArt) ?? 0);
-        const utilizado = redondear(mapaUtilizado.get(idArt) ?? 0);
-        const devueltoPrevio = redondear(mapaDevueltoPrevio.get(idArt) ?? 0);
-        const maxDevolvible = redondear(Math.max(0, retirado - utilizado - devueltoPrevio));
+        const retiradoRes = await cliente.query<{ total?: number; total_retirado?: number }>(
+            `SELECT COALESCE(SUM(el.cantidad_egresada), 0)::float8 AS total
+             FROM egreso_lineas el
+             JOIN egresos_bodega e ON e.id_egreso = el.id_egreso
+             WHERE e.proyecto_id = $1
+               AND el.id_articulo = $2
+               AND (e.tecnico_retira_id = $3 OR ($4 <> '' AND e.tecnico_retira_rut = $4))`,
+            [idProyecto, idArt, idTecnico, tecnico.rut]
+        );
+
+        const usadoRes = await cliente.query<{ total?: number; total_utilizado?: number }>(
+            `SELECT COALESCE(SUM(cantidad_utilizada), 0)::float8 AS total
+             FROM uso_insumos_proyecto
+             WHERE proyecto_id = $1 AND tecnico_id = $2 AND id_articulo = $3`,
+            [idProyecto, idTecnico, idArt]
+        );
+
+        const previaRes = await cliente.query<{ total?: number; total_devuelto?: number }>(
+            `SELECT COALESCE(SUM(dl.cantidad_declarada), 0)::float8 AS total
+             FROM devolucion_lineas dl
+             JOIN devoluciones_tecnico d ON d.id_devolucion = dl.id_devolucion
+             WHERE d.proyecto_id = $1
+               AND d.tecnico_id = $2
+               AND dl.id_articulo = $3
+               AND d.estado IN ('En tránsito', 'Recibida')`,
+            [idProyecto, idTecnico, idArt]
+        );
+
+        const retirada = redondear(Number(retiradoRes.rows[0]?.total ?? retiradoRes.rows[0]?.total_retirado ?? 0));
+        const utilizada = redondear(Number(usadoRes.rows[0]?.total ?? usadoRes.rows[0]?.total_utilizado ?? 0));
+        const previa = redondear(Number(previaRes.rows[0]?.total ?? previaRes.rows[0]?.total_devuelto ?? 0));
+        const maximo = redondear(Math.max(0, retirada - utilizada - previa));
 
         snapshotsPorArticulo.set(idArt, {
-            cantidad_retirada: retirado,
-            cantidad_utilizada: utilizado,
-            cantidad_devuelta_previa: devueltoPrevio,
-            cantidad_maxima_devolvible: maxDevolvible,
+            cantidad_retirada: retirada,
+            cantidad_utilizada: utilizada,
+            cantidad_devuelta_previa: previa,
+            cantidad_maxima_devolvible: maximo,
         });
 
-        if (info.cantidad > maxDevolvible) {
-            erroresValidacion.push(
-                `${info.nombre_articulo} (${info.sku}): declaras ${info.cantidad} un., pero tu sobrante disponible es ${maxDevolvible} un. (retirado: ${retirado}, utilizado: ${utilizado}${devueltoPrevio > 0 ? `, ya declarado: ${devueltoPrevio}` : ''}).`
+        if (info.cantidad > maximo) {
+            erroresSobrante.push(
+                `${info.nombre_articulo} (${info.sku}): se intentó devolver ${info.cantidad}, máximo devolvible ${maximo} (retirado ${retirada} − usado ${utilizada} − ya declarado ${previa})`
             );
         }
     }
 
-    if (erroresValidacion.length > 0) {
-        throw new ErrorAplicacion(400, erroresValidacion.join(' '));
+    if (erroresSobrante.length > 0) {
+        throw new ErrorAplicacion(
+            400,
+            `No se puede declarar la devolución: supera el sobrante real del técnico. ${erroresSobrante.join(' | ')}`
+        );
     }
 
     // 6. Insertar cabecera
@@ -372,6 +391,12 @@ export const obtenerSobranteDevolucion = async (req: Request, res: Response): Pr
             }
         }
 
+        const tecRes = await pool.query<{ rut: string }>(
+            `SELECT COALESCE(rut, '') AS rut FROM usuario WHERE id_usuario = $1 LIMIT 1`,
+            [idTecnico]
+        );
+        const rutTecnico = tecRes.rows[0]?.rut ?? '';
+
         const retirados = await pool.query<{
             id_articulo: number;
             sku: string;
@@ -379,14 +404,21 @@ export const obtenerSobranteDevolucion = async (req: Request, res: Response): Pr
             unidad: string;
             total_retirado: number;
         }>(
-            `SELECT a.id_articulo, a.sku, a.nombre_articulo, COALESCE(a.unidad_medida, 'un') AS unidad,
+            `SELECT a.id_articulo,
+                    COALESCE(a.sku, a.id_articulo::text) AS sku,
+                    a.nombre_articulo,
+                    COALESCE(um.codigo, 'un') AS unidad,
                     COALESCE(SUM(el.cantidad_egresada), 0)::float8 AS total_retirado
-             FROM salidas_bodega sb
-             JOIN salida_lineas el ON el.id_salida = sb.id_salida
+             FROM egreso_lineas el
+             JOIN egresos_bodega e ON e.id_egreso = el.id_egreso
              JOIN articulo a ON a.id_articulo = el.id_articulo
-             WHERE sb.proyecto_id = $1 AND sb.tecnico_retira_id = $2
-             GROUP BY a.id_articulo, a.sku, a.nombre_articulo, a.unidad_medida`,
-            [idProyecto, idTecnico]
+             LEFT JOIN insumos i ON i.id_insumo = a.id_articulo
+             LEFT JOIN unidades_medida um ON um.id_unidad = i.id_unidad
+             WHERE e.proyecto_id = $1
+               AND (e.tecnico_retira_id = $2 OR ($3 <> '' AND e.tecnico_retira_rut = $3))
+             GROUP BY a.id_articulo, a.sku, a.nombre_articulo, um.codigo
+             ORDER BY a.nombre_articulo ASC`,
+            [idProyecto, idTecnico, rutTecnico]
         );
 
         const idsArticulos = retirados.rows.map((r) => r.id_articulo);
@@ -680,29 +712,55 @@ export const listarDevolucionesTecnico = async (req: Request, res: Response): Pr
             throw new ErrorAplicacion(400, `estado debe ser "${ESTADO_DEVOLUCION_EN_TRANSITO}" o "${ESTADO_DEVOLUCION_RECIBIDA}"`);
         }
 
+        const idEjecutor = obtenerIdEjecutor(req);
+        const usuarioSesion = typeof req.usuario === 'object' && req.usuario !== null ? req.usuario : null;
+        const esTecnico = usuarioSesion?.rol === 'technician';
+
         const resultado = await pool.query(
-            `SELECT d.id_devolucion, COALESCE(d.codigo, d.codigo_devolucion, 'DEV-' || d.id_devolucion::text) AS codigo,
-                    d.codigo_devolucion, d.proyecto_id, p.nombre_proyecto, d.tecnico_id, d.tecnico_nombre, d.estado,
-                    d.tiene_diferencia, d.observaciones_recepcion, d.bodeguero_id,
-                    d.fecha_declaracion, d.fecha_recepcion,
+            `SELECT d.id_devolucion,
+                    COALESCE(d.codigo, d.codigo_devolucion, 'DEV-' || d.id_devolucion::text) AS codigo,
+                    COALESCE(d.codigo_devolucion, d.codigo, 'DEV-' || d.id_devolucion::text) AS codigo_devolucion,
+                    d.proyecto_id,
+                    p.nombre_proyecto,
+                    p.codigo_proyecto,
+                    d.tecnico_id,
+                    d.tecnico_nombre,
+                    d.tecnico_rut,
+                    d.estado,
+                    d.tiene_diferencia,
+                    d.observaciones_recepcion,
+                    d.bodeguero_id,
+                    d.fecha_declaracion,
+                    d.fecha_recepcion,
                     COALESCE((SELECT json_agg(json_build_object(
                         'id_devolucion_linea', l.id_devolucion_linea,
                         'id_articulo', l.id_articulo,
                         'sku', a.sku,
                         'nombre_articulo', a.nombre_articulo,
-                        'cantidad_declarada', l.cantidad_declarada,
-                        'cantidad_recibida', l.cantidad_recibida,
-                        'diferencia', l.diferencia
+                        'unidad', COALESCE(um.codigo, 'un'),
+                        'cantidad_retirada', l.cantidad_retirada::float8,
+                        'cantidad_utilizada', l.cantidad_utilizada::float8,
+                        'cantidad_declarada', l.cantidad_declarada::float8,
+                        'cantidad_recibida', l.cantidad_recibida::float8,
+                        'diferencia', l.diferencia::float8
                     ) ORDER BY l.id_devolucion_linea)
-                    FROM devolucion_lineas l JOIN articulo a ON a.id_articulo = l.id_articulo
+                    FROM devolucion_lineas l
+                    JOIN articulo a ON a.id_articulo = l.id_articulo
+                    LEFT JOIN insumos i ON i.id_insumo = a.id_articulo
+                    LEFT JOIN unidades_medida um ON um.id_unidad = i.id_unidad
                     WHERE l.id_devolucion = d.id_devolucion), '[]'::json) AS items
              FROM devoluciones_tecnico d
              JOIN proyecto p ON p.id_proyecto = d.proyecto_id
              WHERE ($1 = '' OR d.estado = $1)
+               AND ($2::boolean = FALSE OR d.tecnico_id = $3)
              ORDER BY d.fecha_declaracion DESC`,
-            [estado]
+            [estado, esTecnico, idEjecutor]
         );
-        res.status(200).json(resultado.rows);
+        const filas = resultado.rows.map((r: any) => ({
+            ...r,
+            lineas: r.items,
+        }));
+        res.status(200).json(filas);
     } catch (error) {
         enviarErrorHttp(res, error, 'Error al listar las devoluciones');
     }

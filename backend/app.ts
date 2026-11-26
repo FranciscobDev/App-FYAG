@@ -13,6 +13,10 @@ import solicitudRoutes from './routes/solicitudRoutes';
 import devolucionRoutes from './routes/devolucionRoutes';
 import sincronizacionRoutes from './routes/sincronizacionRoutes';
 import cardexRoutes from './routes/cardexRoutes';
+import conteoFisicoRoutes from './routes/conteoFisicoRoutes';
+import devolucionProveedorRoutes from './routes/devolucionProveedorRoutes';
+import mermaRoutes from './routes/mermaRoutes';
+import codigoQrRoutes from './routes/codigoQrRoutes';
 import verificarToken from './middleware/authMiddleware';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
@@ -58,5 +62,11 @@ app.use('/api/solicitudes', verificarToken, solicitudRoutes);
 app.use('/api/devoluciones', verificarToken, devolucionRoutes);
 app.use('/api/sincronizacion', verificarToken, sincronizacionRoutes);
 app.use('/api/cardex', verificarToken, cardexRoutes);
+app.use('/api/conteos', verificarToken, conteoFisicoRoutes);
+app.use('/api/conteos-fisicos', verificarToken, conteoFisicoRoutes);
+app.use('/api/devoluciones-proveedor', verificarToken, devolucionProveedorRoutes);
+app.use('/api/cuarentena', verificarToken, devolucionProveedorRoutes);
+app.use('/api/mermas', verificarToken, mermaRoutes);
+app.use('/api/codigos-qr', verificarToken, codigoQrRoutes);
 
 export default app;

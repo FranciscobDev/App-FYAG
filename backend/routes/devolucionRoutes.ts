@@ -15,8 +15,8 @@ router.get('/sobrante', verificarRoles('technician', 'warehouse', 'admin'), obte
 // [BACK-2] Declaración de devolución de sobrante: exclusiva del técnico que retiró los insumos
 router.post('/', verificarRoles('technician'), declararDevolucion);
 
-// Listar devoluciones para el Bodeguero o Administrador
-router.get('/', verificarRoles('warehouse', 'admin'), listarDevolucionesTecnico);
+// Listar devoluciones para el Técnico (solo las propias), Bodeguero o Administrador
+router.get('/', verificarRoles('technician', 'warehouse', 'admin'), listarDevolucionesTecnico);
 
 // [BACK-1] Confirmación física en bodega: stock, costo del proyecto, Cardex y alerta
 router.post('/:id/confirmar-recepcion', verificarRoles('warehouse', 'admin'), confirmarRecepcionDevolucion);

@@ -234,14 +234,14 @@ test('[BACK-2][SCRUM] Intenta declarar una devolución mayor al sobrante real y 
             if (sql.includes('FROM articulo')) {
                 return { rows: [{ id_articulo: 100, sku: 'ELE-CBL-0012', nombre_articulo: 'Cable THHN 12 AWG' }] };
             }
-            if (sql.includes('FROM salidas_bodega')) {
-                return { rows: [{ id_articulo: 100, total_retirado: 10 }] };
+            if (sql.includes('FROM salidas_bodega') || sql.includes('FROM egreso_lineas')) {
+                return { rows: [{ id_articulo: 100, total_retirado: 10, total: 10 }] };
             }
             if (sql.includes('FROM uso_insumos_proyecto')) {
-                return { rows: [{ id_articulo: 100, total_utilizado: 4 }] };
+                return { rows: [{ id_articulo: 100, total_utilizado: 4, total: 4 }] };
             }
-            if (sql.includes('FROM devoluciones_tecnico dt')) {
-                return { rows: [{ id_articulo: 100, total_devuelto: 2 }] };
+            if (sql.includes('FROM devoluciones_tecnico') || sql.includes('FROM devolucion_lineas')) {
+                return { rows: [{ id_articulo: 100, total_devuelto: 2, total: 2 }] };
             }
             if (sql.includes('INSERT INTO devoluciones_tecnico')) {
                 return { rows: [{ id_devolucion: 99, codigo: 'DEV-2026-00099', codigo_devolucion: 'DEV-2026-00099', fecha_declaracion: new Date() }] };
@@ -267,7 +267,7 @@ test('[BACK-2][SCRUM] Intenta declarar una devolución mayor al sobrante real y 
         }),
         (err: any) => {
             assert.equal(err.estado, 400);
-            assert.match(err.message, /declaras 5 un\., pero tu sobrante disponible es 4 un\./);
+            assert.match(err.message, /se intentó devolver 5, máximo devolvible 4/);
             return true;
         }
     );
