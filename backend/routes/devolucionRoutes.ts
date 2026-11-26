@@ -3,10 +3,14 @@ import {
     confirmarRecepcionDevolucion,
     declararDevolucion,
     listarDevolucionesTecnico,
+    obtenerSobranteDevolucion,
 } from '../controllers/devolucionController';
 import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
+
+// [FRONT-2 / BACK-2] Sobrante real por insumo (tope máximo devolvible)
+router.get('/sobrante', verificarRoles('technician', 'warehouse', 'admin'), obtenerSobranteDevolucion);
 
 // [BACK-2] Declaración de devolución de sobrante: exclusiva del técnico que retiró los insumos
 router.post('/', verificarRoles('technician'), declararDevolucion);

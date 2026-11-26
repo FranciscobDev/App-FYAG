@@ -346,6 +346,99 @@ export const declararDevolucion = async (req: Request, res: Response): Promise<v
     }
 };
 
+/**
+ * [FRONT-2 / BACK-2] Consulta el sobrante real por insumo de un técnico en un proyecto
+ * (cantidad_retirada - cantidad_utilizada - cantidad_devuelta_previa), para alimentar
+ * la pantalla móvil y mostrar el tope máximo devolvible.
+ */
+export const obtenerSobranteDevolucion = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const idProyecto = Number(req.query.id_proyecto ?? req.query.proyecto_id);
+        if (!Number.isInteger(idProyecto) || idProyecto <= 0) {
+            throw new ErrorAplicacion(400, 'El parámetro id_proyecto es obligatorio');
+        }
+
+        const idEjecutor = obtenerIdEjecutor(req);
+        if (!idEjecutor) {
+            throw new ErrorAplicacion(401, 'Debes iniciar sesión');
+        }
+
+        let idTecnico = idEjecutor;
+        const usuarioSesion = typeof req.usuario === 'object' && req.usuario !== null ? req.usuario : null;
+        if (req.query.id_tecnico && (usuarioSesion?.rol === 'admin' || usuarioSesion?.rol === 'warehouse')) {
+            const idTecParam = Number(req.query.id_tecnico);
+            if (Number.isInteger(idTecParam) && idTecParam > 0) {
+                idTecnico = idTecParam;
+            }
+        }
+
+        const retirados = await pool.query<{
+            id_articulo: number;
+            sku: string;
+            nombre_articulo: string;
+            unidad: string;
+            total_retirado: number;
+        }>(
+            `SELECT a.id_articulo, a.sku, a.nombre_articulo, COALESCE(a.unidad_medida, 'un') AS unidad,
+                    COALESCE(SUM(el.cantidad_egresada), 0)::float8 AS total_retirado
+             FROM salidas_bodega sb
+             JOIN salida_lineas el ON el.id_salida = sb.id_salida
+             JOIN articulo a ON a.id_articulo = el.id_articulo
+             WHERE sb.proyecto_id = $1 AND sb.tecnico_retira_id = $2
+             GROUP BY a.id_articulo, a.sku, a.nombre_articulo, a.unidad_medida`,
+            [idProyecto, idTecnico]
+        );
+
+        const idsArticulos = retirados.rows.map((r) => r.id_articulo);
+        if (idsArticulos.length === 0) {
+            res.status(200).json({ id_proyecto: idProyecto, items: [] });
+            return;
+        }
+
+        const utilizados = await pool.query<{ id_articulo: number; total_utilizado: number }>(
+            `SELECT u.id_articulo, COALESCE(SUM(u.cantidad_utilizada), 0)::float8 AS total_utilizado
+             FROM uso_insumos_proyecto u
+             WHERE u.proyecto_id = $1 AND u.tecnico_id = $2 AND u.id_articulo = ANY($3::int[])
+             GROUP BY u.id_articulo`,
+            [idProyecto, idTecnico, idsArticulos]
+        );
+        const mapaUtilizados = new Map<number, number>(utilizados.rows.map((r) => [r.id_articulo, Number(r.total_utilizado)]));
+
+        const devueltos = await pool.query<{ id_articulo: number; total_devuelto: number }>(
+            `SELECT dl.id_articulo, COALESCE(SUM(dl.cantidad_declarada), 0)::float8 AS total_devuelto
+             FROM devoluciones_tecnico dt
+             JOIN devolucion_lineas dl ON dl.id_devolucion = dt.id_devolucion
+             WHERE dt.proyecto_id = $1 AND dt.tecnico_id = $2 AND dt.estado IN ('En tránsito', 'Recibida')
+               AND dl.id_articulo = ANY($3::int[])
+             GROUP BY dl.id_articulo`,
+            [idProyecto, idTecnico, idsArticulos]
+        );
+        const mapaDevueltos = new Map<number, number>(devueltos.rows.map((r) => [r.id_articulo, Number(r.total_devuelto)]));
+
+        const items = retirados.rows.map((r) => {
+            const retirado = redondear(Number(r.total_retirado));
+            const utilizado = redondear(mapaUtilizados.get(r.id_articulo) ?? 0);
+            const devueltoPrevio = redondear(mapaDevueltos.get(r.id_articulo) ?? 0);
+            const maxDevolvible = redondear(Math.max(0, retirado - utilizado - devueltoPrevio));
+
+            return {
+                id_articulo: r.id_articulo,
+                sku: r.sku,
+                nombre_articulo: r.nombre_articulo,
+                unidad: r.unidad,
+                cantidad_retirada: retirado,
+                cantidad_utilizada: utilizado,
+                cantidad_devuelta_previa: devueltoPrevio,
+                cantidad_maxima_devolvible: maxDevolvible,
+            };
+        });
+
+        res.status(200).json({ id_proyecto: idProyecto, items });
+    } catch (error) {
+        enviarErrorHttp(res, error, 'Error al consultar sobrante de insumos');
+    }
+};
+
 // =========================================================================================
 // [BACK-1] CONFIRMACIÓN DE RECEPCIÓN FÍSICA PARA EL BODEGUERO
 // =========================================================================================
