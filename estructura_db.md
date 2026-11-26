@@ -135,8 +135,38 @@ CREATE TABLE herramienta (
     categoria categoria_enum NOT NULL,
     marca_herramienta VARCHAR(250),
     modelo_herramienta VARCHAR(250),
-    frecuencia_mantencion INT
+    frecuencia_mantencion INT,
+    codigo_unico VARCHAR(50) NOT NULL UNIQUE,
+    nombre VARCHAR(100) NOT NULL,
+    valor NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (valor >= 0),
+    estado VARCHAR(20) NOT NULL DEFAULT 'Disponible'
+        CHECK (estado IN ('Disponible', 'Asignada', 'En mantención', 'Dada de baja')),
+    fecha_prox_mantenimiento DATE,
+    codigo_qr VARCHAR(255) UNIQUE,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT chk_herramienta_baja_activo
+        CHECK (activo OR estado = 'Dada de baja')
 );
+
+CREATE INDEX idx_herramienta_estado_activo ON herramienta (estado, activo);
+CREATE INDEX idx_herramienta_fecha_mantenimiento ON herramienta (fecha_prox_mantenimiento)
+    WHERE activo = TRUE;
+
+CREATE OR REPLACE VIEW herramientas AS
+SELECT
+    id_herramienta,
+    codigo_unico,
+    nombre,
+    valor,
+    estado,
+    fecha_prox_mantenimiento,
+    codigo_qr,
+    activo
+FROM herramienta;
+
+CREATE TRIGGER trg_impedir_borrado_herramienta
+BEFORE DELETE ON herramienta
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_borrado_fisico();
 
 -- ==========================================
 -- 3. USUARIOS, AUDITORÍA, ACCESOS Y PROYECTOS
@@ -149,6 +179,9 @@ CREATE TABLE usuario (
     apellido_usuario VARCHAR(50) NOT NULL,
     correo_usuario VARCHAR(250) UNIQUE NOT NULL,
     rut VARCHAR(20) UNIQUE,
+    telefono_usuario VARCHAR(30),
+    identificador_anonimo VARCHAR(30) UNIQUE,
+    fecha_anonimizacion TIMESTAMPTZ NULL,
     id_rol INT NOT NULL,
     especializacion VARCHAR(250),
     contrasena_hash VARCHAR(250) NOT NULL,
@@ -168,6 +201,9 @@ SELECT
     apellido_usuario,
     correo_usuario,
     rut,
+    telefono_usuario,
+    identificador_anonimo,
+    fecha_anonimizacion,
     id_rol,
     especializacion,
     contrasena_hash,
@@ -304,6 +340,72 @@ CREATE TABLE parametro_sistema (
     CONSTRAINT parametro_valor_en_rango CHECK (valor BETWEEN valor_minimo AND valor_maximo)
 );
 
+-- Tabla: Notificaciones (historial consolidado de eventos H3/H17/H19/H21/H22/H24/H25/H33)
+-- Una notificación puede dirigirse a un usuario específico, a un rol completo o a ambos.
+CREATE TABLE notificaciones (
+    id_notificacion SERIAL PRIMARY KEY,
+    usuario_destino_id INT REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    rol_destino roles_enum,
+    origen VARCHAR(3) NOT NULL,
+    tipo VARCHAR(60) NOT NULL,
+    mensaje TEXT NOT NULL,
+    leida BOOLEAN NOT NULL DEFAULT FALSE,
+    enviar_correo BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_notificacion_origen CHECK (origen IN ('H3', 'H17', 'H19', 'H21', 'H22', 'H24', 'H25', 'H33')),
+    CONSTRAINT chk_notificacion_destino CHECK (usuario_destino_id IS NOT NULL OR rol_destino IS NOT NULL),
+    CONSTRAINT chk_notificacion_mensaje_no_vacio CHECK (BTRIM(mensaje) <> '')
+);
+
+CREATE INDEX idx_notificaciones_usuario_estado
+    ON notificaciones (usuario_destino_id, leida, fecha_creacion DESC);
+CREATE INDEX idx_notificaciones_rol_estado
+    ON notificaciones (rol_destino, leida, fecha_creacion DESC);
+CREATE INDEX idx_notificaciones_fecha_creacion
+    ON notificaciones (fecha_creacion);
+CREATE INDEX idx_notificaciones_correo_pendiente
+    ON notificaciones (enviar_correo, fecha_creacion)
+    WHERE enviar_correo = TRUE;
+
+-- Purga automática: conserva el historial de notificaciones durante 90 días.
+CREATE OR REPLACE FUNCTION fn_purgar_notificaciones_expiradas()
+RETURNS INTEGER AS $$
+DECLARE
+    eliminadas INTEGER;
+BEGIN
+    DELETE FROM notificaciones
+    WHERE fecha_creacion < CURRENT_TIMESTAMP - INTERVAL '90 days';
+
+    GET DIAGNOSTICS eliminadas = ROW_COUNT;
+    RETURN eliminadas;
+END;
+$$ LANGUAGE plpgsql;
+
+-- La tarea se registra en pg_cron si la extensión está disponible en el servidor.
+-- Si el entorno no la tiene habilitada, la función queda disponible para el scheduler
+-- administrado por PostgreSQL o por la infraestructura.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'purga-notificaciones-90-dias') THEN
+                PERFORM cron.unschedule('purga-notificaciones-90-dias');
+            END IF;
+
+            PERFORM cron.schedule(
+                'purga-notificaciones-90-dias',
+                '0 3 * * *',
+                'SELECT fn_purgar_notificaciones_expiradas();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para la purga de notificaciones: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
+
 -- Precarga de umbrales requeridos (H1, H19, H27, H22, H23, H24, H41, H47)
 INSERT INTO parametros (clave, valor_actual, valor_defecto, min, max, descripcion, unidad) VALUES
     ('intentos_bloqueo', 5, 5, 1, 10, 'Intentos fallidos de login permitidos antes de bloquear la cuenta (H1)', 'intentos'),
@@ -316,6 +418,7 @@ INSERT INTO parametros (clave, valor_actual, valor_defecto, min, max, descripcio
     ('alerta_reposicion_dias', 7, 7, 1, 60, 'Días de anticipación para alerta de sugerencia de compra (H23)', 'días'),
     ('alerta_cuarentena_horas', 24, 24, 1, 168, 'Tiempo máximo sin resolver ítem en cuarentena (H24)', 'horas'),
     ('edicion_limite_horas', 48, 48, 1, 720, 'Plazo máximo permitido para editar registros o recepciones (H41)', 'horas'),
+    ('alerta_vencimiento_proyecto_horas', 48, 48, 1, 720, 'Anticipación para alertar al técnico sobre el vencimiento de un proyecto activo (H39)', 'horas'),
     ('qr_tamano_pixeles', 250, 250, 100, 1000, 'Tamaño estándar de renderizado de etiquetas QR (H47)', 'px');
 
 -- Tabla: Proyecto
@@ -368,6 +471,71 @@ SELECT
     fecha_asignacion
 FROM asignaciones_proyecto
 WHERE activo = TRUE;
+
+-- Job: alerta de vencimiento de proyectos activos [BACK-2][SCRUM]
+-- Con fecha_fin de tipo DATE, 48 horas equivalen a dos días calendario para el
+-- job diario. Se excluyen explícitamente los proyectos completados o cancelados.
+CREATE OR REPLACE FUNCTION fn_generar_alertas_vencimiento_proyecto()
+RETURNS INTEGER AS $$
+DECLARE
+    insertadas INTEGER;
+BEGIN
+    INSERT INTO notificaciones (
+        usuario_destino_id, origen, tipo, mensaje, leida, enviar_correo, fecha_creacion
+    )
+    SELECT
+        ap.tecnico_id,
+        'H22',
+        'vencimiento_proyecto_48h',
+        FORMAT('El proyecto %s (%s) vence en 48 horas. Prioriza las tareas pendientes.', p.codigo_proyecto, p.nombre_proyecto),
+        FALSE,
+        FALSE,
+        CURRENT_TIMESTAMP
+    FROM proyecto p
+    INNER JOIN asignaciones_proyecto ap
+        ON ap.proyecto_id = p.id_proyecto
+       AND ap.activo = TRUE
+    WHERE p.estado_proyecto IN ('Planificado', 'En Proceso', 'Pausado')
+      AND p.fecha_fin = CURRENT_DATE + (
+          (SELECT ROUND(valor_actual)::INT
+           FROM parametros
+           WHERE clave = 'alerta_vencimiento_proyecto_horas') / 24
+      )::INT
+      AND NOT EXISTS (
+          SELECT 1
+          FROM notificaciones n
+          WHERE n.usuario_destino_id = ap.tecnico_id
+            AND n.origen = 'H22'
+            AND n.tipo = 'vencimiento_proyecto_48h'
+            AND n.mensaje = FORMAT('El proyecto %s (%s) vence en 48 horas. Prioriza las tareas pendientes.', p.codigo_proyecto, p.nombre_proyecto)
+            AND n.fecha_creacion::DATE = CURRENT_DATE
+      );
+
+    GET DIAGNOSTICS insertadas = ROW_COUNT;
+    RETURN insertadas;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Ejecución diaria a las 00:05. La alerta es visual/push mediante la notificación.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'alertas-vencimiento-proyecto-48h') THEN
+                PERFORM cron.unschedule('alertas-vencimiento-proyecto-48h');
+            END IF;
+            PERFORM cron.schedule(
+                'alertas-vencimiento-proyecto-48h',
+                '5 0 * * *',
+                'SELECT fn_generar_alertas_vencimiento_proyecto();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para alertas de vencimiento: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
 
 -- Tabla: Horas_trabajadas [DB]
 CREATE TABLE horas_trabajadas (
@@ -653,6 +821,97 @@ CREATE TABLE oc_lineas (
     CONSTRAINT fk_oc_lineas_cabecera FOREIGN KEY (id_orden_compra) REFERENCES ordenes_compra(id_orden_compra) ON DELETE CASCADE,
     CONSTRAINT fk_oc_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
 );
+
+-- 5.1.1 Calificaciones de proveedores por Orden de Compra [DB] (H15)
+CREATE TABLE calificaciones_proveedor (
+    id_calificacion SERIAL PRIMARY KEY,
+    oc_id INT NOT NULL UNIQUE,
+    proveedor_id INT NOT NULL,
+    puntos_tiempo INT NOT NULL CHECK (puntos_tiempo BETWEEN 1 AND 5),
+    puntos_calidad INT NOT NULL CHECK (puntos_calidad BETWEEN 1 AND 5),
+    puntos_precio INT NOT NULL CHECK (puntos_precio BETWEEN 1 AND 5),
+    promedio NUMERIC(3,2) GENERATED ALWAYS AS (
+        ROUND((puntos_tiempo + puntos_calidad + puntos_precio)::NUMERIC / 3, 2)
+    ) STORED,
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    CONSTRAINT fk_calificacion_oc
+        FOREIGN KEY (oc_id) REFERENCES ordenes_compra(id_orden_compra) ON DELETE RESTRICT,
+    CONSTRAINT fk_calificacion_proveedor
+        FOREIGN KEY (proveedor_id) REFERENCES proveedor(id_proveedor) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_calificaciones_proveedor ON calificaciones_proveedor (proveedor_id, fecha DESC);
+
+-- Solo se puede calificar una OC recibida o cerrada y el proveedor debe coincidir.
+CREATE OR REPLACE FUNCTION fn_validar_calificacion_proveedor()
+RETURNS TRIGGER AS $$
+DECLARE
+    estado_oc_actual estado_oc_enum;
+    proveedor_oc INT;
+BEGIN
+    SELECT estado, proveedor_id
+    INTO estado_oc_actual, proveedor_oc
+    FROM ordenes_compra
+    WHERE id_orden_compra = NEW.oc_id;
+
+    IF estado_oc_actual NOT IN ('Recibida', 'Cerrada') THEN
+        RAISE EXCEPTION 'La OC % no puede calificarse porque su estado es %; debe estar Recibida o Cerrada.',
+            NEW.oc_id, estado_oc_actual;
+    END IF;
+
+    IF proveedor_oc <> NEW.proveedor_id THEN
+        RAISE EXCEPTION 'El proveedor % no corresponde al proveedor % de la OC %.',
+            NEW.proveedor_id, proveedor_oc, NEW.oc_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_calificacion_proveedor
+BEFORE INSERT OR UPDATE ON calificaciones_proveedor
+FOR EACH ROW EXECUTE FUNCTION fn_validar_calificacion_proveedor();
+
+-- Actualiza el promedio general visible en la ficha del proveedor.
+CREATE OR REPLACE FUNCTION fn_actualizar_promedio_proveedor()
+RETURNS TRIGGER AS $$
+DECLARE
+    proveedor_anterior INT;
+    proveedor_actual INT;
+BEGIN
+    proveedor_anterior := CASE WHEN TG_OP = 'DELETE' THEN OLD.proveedor_id ELSE NULL END;
+    proveedor_actual := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE NEW.proveedor_id END;
+
+    IF proveedor_anterior IS NOT NULL THEN
+        UPDATE proveedor
+        SET calificacion_promedio = COALESCE((
+            SELECT ROUND(AVG(promedio), 2)
+            FROM calificaciones_proveedor
+            WHERE proveedor_id = proveedor_anterior
+        ), 5.00)
+        WHERE id_proveedor = proveedor_anterior;
+    END IF;
+
+    IF proveedor_actual IS NOT NULL THEN
+        UPDATE proveedor
+        SET calificacion_promedio = COALESCE((
+            SELECT ROUND(AVG(promedio), 2)
+            FROM calificaciones_proveedor
+            WHERE proveedor_id = proveedor_actual
+        ), 5.00)
+        WHERE id_proveedor = proveedor_actual;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_actualizar_promedio_proveedor
+AFTER INSERT OR UPDATE OR DELETE ON calificaciones_proveedor
+FOR EACH ROW EXECUTE FUNCTION fn_actualizar_promedio_proveedor();
 
 -- Índices optimizados para detección de insumos bajo mínimo sin OC abierta [DB]
 CREATE INDEX idx_ordenes_compra_estado_abierta
@@ -1144,6 +1403,35 @@ CREATE TABLE herramienta_en_proyecto (
     CONSTRAINT fk_herram_proj_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
 
+-- Tabla: Prestamos_herramientas (historial completo de entregas y devoluciones)
+CREATE TABLE prestamos_herramientas (
+    id_prestamo SERIAL PRIMARY KEY,
+    herramienta_id INT NOT NULL,
+    tecnico_id INT NOT NULL,
+    proyecto_id INT NOT NULL,
+    fecha_entrega DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_devolucion DATE,
+    estado_devolucion VARCHAR(10) CHECK (estado_devolucion IN ('Bueno', 'Dañado')),
+    observacion VARCHAR(500),
+    CONSTRAINT fk_prestamo_herramienta
+        FOREIGN KEY (herramienta_id) REFERENCES herramienta(id_herramienta) ON DELETE RESTRICT,
+    CONSTRAINT fk_prestamo_tecnico
+        FOREIGN KEY (tecnico_id) REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    CONSTRAINT fk_prestamo_proyecto
+        FOREIGN KEY (proyecto_id) REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    CONSTRAINT chk_prestamo_fechas
+        CHECK (fecha_devolucion IS NULL OR fecha_devolucion >= fecha_entrega),
+    CONSTRAINT chk_prestamo_devolucion
+        CHECK (fecha_devolucion IS NULL OR estado_devolucion IS NOT NULL)
+);
+
+CREATE INDEX idx_prestamos_herramienta_fecha
+    ON prestamos_herramientas (herramienta_id, fecha_entrega DESC);
+CREATE INDEX idx_prestamos_tecnico
+    ON prestamos_herramientas (tecnico_id, fecha_entrega DESC);
+CREATE INDEX idx_prestamos_proyecto
+    ON prestamos_herramientas (proyecto_id, fecha_entrega DESC);
+
 -- ==========================================
 -- 7. SEGUIMIENTO POST-VENTA Y PLANES DE MANTENCIÓN PERIÓDICA
 -- ==========================================
@@ -1253,5 +1541,134 @@ CREATE TABLE adjuntos_servicio (
 
 CREATE INDEX idx_adjuntos_hoja ON adjuntos_servicio (id_hoja_servicio);
 CREATE INDEX idx_adjuntos_hash ON adjuntos_servicio (hash_sha256);
+
+-- Procedimiento: anonimización irreversible de trabajadores [DB]
+-- Mantiene id_usuario en Cardex, auditoría y documentos legales; solo ofusca
+-- los datos personales de la ficha y desactiva la cuenta. La llamada es atómica:
+-- si falla una actualización, toda la transacción se revierte.
+CREATE OR REPLACE PROCEDURE sp_anonimizar_usuario(p_id_usuario INT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    identificador VARCHAR(30);
+    correo_anonimo VARCHAR(250);
+BEGIN
+    SELECT identificador_anonimo
+    INTO identificador
+    FROM usuario
+    WHERE id_usuario = p_id_usuario
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No existe el usuario %.', p_id_usuario;
+    END IF;
+
+    -- Idempotencia: una cuenta ya anonimizada no vuelve a modificar su identidad.
+    IF identificador IS NOT NULL THEN
+        RETURN;
+    END IF;
+
+    identificador := 'ANON-' || LPAD(p_id_usuario::TEXT, 8, '0');
+    correo_anonimo := LOWER(identificador) || '@anonimizado.invalid';
+
+    UPDATE usuario
+    SET nombre_usuario = 'ANONIMO',
+        apellido_usuario = identificador,
+        correo_usuario = correo_anonimo,
+        rut = identificador,
+        telefono_usuario = identificador,
+        especializacion = 'ANONIMIZADO',
+        activo = FALSE,
+        identificador_anonimo = identificador,
+        fecha_anonimizacion = CURRENT_TIMESTAMP
+    WHERE id_usuario = p_id_usuario;
+
+    -- Los logs operacionales conservan su FK y dejan de exponer el correo original.
+    UPDATE log_accesos
+    SET usuario = correo_anonimo
+    WHERE id_usuario = p_id_usuario;
+
+    -- No se actualizan ni eliminan auditoria, Cardex ni documentos legales:
+    -- sus id_usuario permanecen intactos para conservar la trazabilidad.
+END;
+$$;
+
+-- Tabla: Historial de respaldos diarios cifrados [DB]
+-- El archivo lo genera un runner externo con pg_dump, lo cifra con AES-256 y lo
+-- sube a almacenamiento cloud; esta tabla registra el resultado verificable.
+CREATE TABLE historial_respaldos (
+    id_respaldo BIGSERIAL PRIMARY KEY,
+    tipo_respaldo VARCHAR(20) NOT NULL DEFAULT 'Completo'
+        CHECK (tipo_respaldo IN ('Completo', 'Incremental')),
+    fecha_inicio TIMESTAMPTZ NOT NULL,
+    fecha_fin TIMESTAMPTZ,
+    nombre_archivo VARCHAR(255) NOT NULL,
+    ubicacion_nube VARCHAR(500) NOT NULL,
+    proveedor_nube VARCHAR(50) NOT NULL,
+    tamano_bytes BIGINT CHECK (tamano_bytes IS NULL OR tamano_bytes > 0),
+    hash_sha256 CHAR(64),
+    cifrado BOOLEAN NOT NULL DEFAULT TRUE,
+    algoritmo_cifrado VARCHAR(20) NOT NULL DEFAULT 'AES-256'
+        CHECK (algoritmo_cifrado = 'AES-256'),
+    estado VARCHAR(20) NOT NULL
+        CHECK (estado IN ('Iniciado', 'Completado', 'Fallido', 'Expirado')),
+    fecha_expiracion TIMESTAMPTZ GENERATED ALWAYS AS
+        (COALESCE(fecha_fin, fecha_inicio) + INTERVAL '30 days') STORED,
+    restauracion_verificada BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_restauracion TIMESTAMPTZ,
+    rto_segundos INTEGER CHECK (rto_segundos IS NULL OR rto_segundos >= 0),
+    mensaje_error TEXT,
+    CONSTRAINT chk_respaldo_fecha_fin CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio),
+    CONSTRAINT chk_respaldo_cifrado CHECK (cifrado = TRUE),
+    CONSTRAINT chk_respaldo_rto CHECK (rto_segundos IS NULL OR rto_segundos < 14400),
+    CONSTRAINT chk_respaldo_restauracion
+        CHECK (NOT restauracion_verificada OR (fecha_restauracion IS NOT NULL AND rto_segundos IS NOT NULL)),
+    CONSTRAINT chk_respaldo_hash CHECK (hash_sha256 IS NULL OR hash_sha256 ~ '^[0-9a-fA-F]{64}$')
+);
+
+CREATE INDEX idx_historial_respaldos_fecha_fin
+    ON historial_respaldos (fecha_fin DESC);
+CREATE INDEX idx_historial_respaldos_estado
+    ON historial_respaldos (estado, fecha_fin DESC);
+CREATE INDEX idx_historial_respaldos_expiracion
+    ON historial_respaldos (fecha_expiracion);
+
+-- Purga diaria: conserva exactamente los respaldos de los últimos 30 días.
+CREATE OR REPLACE FUNCTION fn_purgar_historial_respaldos()
+RETURNS INTEGER AS $$
+DECLARE
+    eliminados INTEGER;
+BEGIN
+    DELETE FROM historial_respaldos
+    WHERE COALESCE(fecha_fin, fecha_inicio) < CURRENT_TIMESTAMP - INTERVAL '30 days';
+
+    GET DIAGNOSTICS eliminados = ROW_COUNT;
+    RETURN eliminados;
+END;
+$$ LANGUAGE plpgsql;
+
+-- El runner externo debe ejecutar diariamente en horario de baja actividad:
+-- pg_dump --format=custom --file=... | openssl enc -aes-256-cbc -pbkdf2 -salt
+-- y subir el resultado cifrado a ubicacion_nube, registrando aquí su checksum.
+-- La tarea SQL solo realiza la purga diaria del historial.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'purga-historial-respaldos-30-dias') THEN
+                PERFORM cron.unschedule('purga-historial-respaldos-30-dias');
+            END IF;
+            PERFORM cron.schedule(
+                'purga-historial-respaldos-30-dias',
+                '30 2 * * *',
+                'SELECT fn_purgar_historial_respaldos();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para purga de respaldos: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
 ```
 

@@ -112,7 +112,8 @@ ON CONFLICT (id_usuario) DO UPDATE SET
     rut = EXCLUDED.rut,
     id_rol = EXCLUDED.id_rol,
     contrasena_hash = EXCLUDED.contrasena_hash,
-    activo = EXCLUDED.activo;
+    activo = EXCLUDED.activo
+WHERE usuario.identificador_anonimo IS NULL;
 
 SELECT setval('usuario_id_usuario_seq', (SELECT MAX(id_usuario) FROM usuario));
 
@@ -132,6 +133,7 @@ INSERT INTO parametros (clave, valor_actual, valor_defecto, min, max, descripcio
     ('alerta_reposicion_dias',      7,      7,      1,      60,      'Días de anticipación para alerta de sugerencia de compra (H23)',         'días'),
     ('alerta_cuarentena_horas',     24,     24,     1,      168,     'Tiempo máximo sin resolver ítem en cuarentena (H24)',                    'horas'),
     ('edicion_limite_horas',        48,     48,     1,      720,     'Plazo máximo permitido para editar registros o recepciones (H41)',       'horas'),
+    ('alerta_vencimiento_proyecto_horas', 48, 48, 1, 720, 'Anticipación para alertar al técnico sobre el vencimiento de un proyecto activo (H39)', 'horas'),
     ('qr_tamano_pixeles',           250,    250,    100,    1000,    'Tamaño estándar de renderizado de etiquetas QR (H47)',                   'px')
 ON CONFLICT (clave) DO UPDATE SET 
     valor_actual = EXCLUDED.valor_actual,
@@ -146,7 +148,8 @@ INSERT INTO parametro_sistema (clave, descripcion, valor, valor_minimo, valor_ma
     ('intentos_bloqueo',             'Intentos fallidos de login permitidos antes de bloquear la cuenta', 5,  1, 10,   'intentos'),
     ('minutos_bloqueo',              'Duración del bloqueo de la cuenta tras exceder los intentos',       15, 1, 1440, 'minutos'),
     ('minutos_inactividad_sesion',   'Minutos de inactividad web antes de expirar la sesión',             30, 5, 480,  'minutos'),
-    ('minutos_validez_enlace_clave', 'Validez del enlace de recuperación de contraseña',                30, 5, 120,  'minutos')
+    ('minutos_validez_enlace_clave', 'Validez del enlace de recuperación de contraseña',                30, 5, 120,  'minutos'),
+    ('alerta_vencimiento_proyecto_horas', 'Anticipación para alertar sobre vencimiento de proyecto (H39)', 48, 1, 720, 'horas')
 ON CONFLICT (clave) DO UPDATE SET
     valor = EXCLUDED.valor,
     valor_minimo = EXCLUDED.valor_minimo,
@@ -155,7 +158,35 @@ ON CONFLICT (clave) DO UPDATE SET
     unidad = EXCLUDED.unidad;
 
 -- =============================================================================
--- 8. INSUMOS / ARTÍCULOS (Garantiza SKU único, código QR y precisión hasta 3 decimales)
+-- 8. NOTIFICACIONES CONSOLIDADAS [DB][SCRUM]
+-- Eventos representativos de las historias H3, H17, H19, H21, H22, H24, H25 y H33.
+-- La tabla conserva el estado leída/no leída y el indicador de envío por correo.
+-- =============================================================================
+INSERT INTO notificaciones
+    (id_notificacion, usuario_destino_id, rol_destino, origen, tipo, mensaje, leida, enviar_correo, fecha_creacion)
+VALUES
+    (1, 2, NULL, 'H3',  'solicitud_insumos',       'Solicitud de insumos pendiente de autorización para el proyecto Los Aromos.', FALSE, TRUE,  CURRENT_TIMESTAMP - INTERVAL '2 days'),
+    (2, 2, NULL, 'H17', 'merma_inventario',        'Se registró una merma de inventario que debe quedar reflejada en el Cardex.', TRUE,  FALSE, CURRENT_TIMESTAMP - INTERVAL '5 days'),
+    (3, 2, NULL, 'H19', 'conteo_fisico',           'El conteo físico del Disyuntor 16A presenta una diferencia pendiente de aprobación.', FALSE, TRUE,  CURRENT_TIMESTAMP - INTERVAL '1 day'),
+    (4, 3, NULL, 'H21', 'devolucion_sobrante',     'La devolución de sobrantes de la obra Los Aromos fue recibida por bodega.', TRUE,  FALSE, CURRENT_TIMESTAMP - INTERVAL '3 days'),
+    (5, 3, NULL, 'H22', 'plazo_proyecto',          'El proyecto asignado Los Aromos se aproxima a su fecha límite.', FALSE, TRUE,  CURRENT_TIMESTAMP - INTERVAL '6 hours'),
+    (6, NULL, 'Administrador', 'H24', 'mantenimiento_herramienta', 'La herramienta Multímetro Digital True RMS requiere mantenimiento o calibración.', FALSE, TRUE, CURRENT_TIMESTAMP - INTERVAL '4 days'),
+    (7, NULL, 'Bodeguero',     'H25', 'reposicion_stock',        'El insumo Bomba de Condensado alcanzó su stock mínimo y requiere reposición.', FALSE, TRUE, CURRENT_TIMESTAMP - INTERVAL '12 hours'),
+    (8, NULL, 'Bodeguero',     'H33', 'recepcion_compra',        'La recepción de la OC-2026-00002 contiene unidades defectuosas enviadas a cuarentena.', TRUE,  FALSE, CURRENT_TIMESTAMP - INTERVAL '7 days')
+ON CONFLICT (id_notificacion) DO UPDATE SET
+    usuario_destino_id = EXCLUDED.usuario_destino_id,
+    rol_destino = EXCLUDED.rol_destino,
+    origen = EXCLUDED.origen,
+    tipo = EXCLUDED.tipo,
+    mensaje = EXCLUDED.mensaje,
+    leida = EXCLUDED.leida,
+    enviar_correo = EXCLUDED.enviar_correo,
+    fecha_creacion = EXCLUDED.fecha_creacion;
+
+SELECT setval('notificaciones_id_notificacion_seq', (SELECT MAX(id_notificacion) FROM notificaciones));
+
+-- =============================================================================
+-- 9. INSUMOS / ARTÍCULOS (Garantiza SKU único, código QR y precisión hasta 3 decimales)
 -- Al insertar, el trigger 'trg_inicializar_stock_insumo' crea automáticamente
 -- la fila en 'stock_insumos' con ceros.
 -- =============================================================================
@@ -224,17 +255,55 @@ SELECT setval('articulos_stock_id_stock_seq', (SELECT MAX(id_stock) FROM articul
 -- =============================================================================
 -- 10. HERRAMIENTAS
 -- =============================================================================
-INSERT INTO herramienta (id_herramienta, numero_serie_herramienta, nombre_herramienta, categoria, marca_herramienta, modelo_herramienta, frecuencia_mantencion) VALUES
-    (1, 'SN-MIL-M18-001', 'Rotomartillo SDS Plus M18 FUEL', 'Herramientas', 'Milwaukee', 'M18-CHP-0X', 90),
-    (2, 'SN-MAK-DHP-002', 'Taladro Percutor Inalámbrico 18V', 'Herramientas', 'Makita',    'DHP484Z',    90),
-    (3, 'SN-FLU-179-003', 'Multímetro Digital True RMS',     'Equipos',      'Fluke',     '179 TrueRMS',180),
-    (4, 'SN-ROTH-ROC-004','Bomba de Vacío Doble Etapa 2.5CFM', 'Equipos',   'Rothenberger','ROAIRVAC R32',60),
-    (5, 'SN-DEW-DWE-005', 'Esmeril Angular 4-1/2 pulg 900W', 'Herramientas', 'DeWalt',    'DWE4020',    90)
+INSERT INTO herramienta (id_herramienta, numero_serie_herramienta, nombre_herramienta, categoria, marca_herramienta, modelo_herramienta, frecuencia_mantencion, codigo_unico, nombre, valor, estado, fecha_prox_mantenimiento, codigo_qr, activo) VALUES
+    (1, 'SN-MIL-M18-001', 'Rotomartillo SDS Plus M18 FUEL', 'Herramientas', 'Milwaukee', 'M18-CHP-0X', 90, 'HERR-001', 'Rotomartillo SDS Plus M18 FUEL', 489990.00, 'Asignada', CURRENT_DATE + 90,  'QR-HERR-001', TRUE),
+    (2, 'SN-MAK-DHP-002', 'Taladro Percutor Inalámbrico 18V', 'Herramientas', 'Makita',    'DHP484Z',    90, 'HERR-002', 'Taladro Percutor Inalámbrico 18V', 249990.00, 'Disponible', CURRENT_DATE + 90,  'QR-HERR-002', TRUE),
+    (3, 'SN-FLU-179-003', 'Multímetro Digital True RMS',     'Equipos',      'Fluke',     '179 TrueRMS',180, 'HERR-003', 'Multímetro Digital True RMS', 389990.00, 'En mantención', CURRENT_DATE + 180, 'QR-HERR-003', TRUE),
+    (4, 'SN-ROTH-ROC-004','Bomba de Vacío Doble Etapa 2.5CFM', 'Equipos',   'Rothenberger','ROAIRVAC R32',60, 'HERR-004', 'Bomba de Vacío Doble Etapa 2.5CFM', 799990.00, 'Disponible', CURRENT_DATE + 60,  'QR-HERR-004', TRUE),
+    (5, 'SN-DEW-DWE-005', 'Esmeril Angular 4-1/2 pulg 900W', 'Herramientas', 'DeWalt',    'DWE4020',    90, 'HERR-005', 'Esmeril Angular 4-1/2 pulg 900W', 159990.00, 'Dada de baja', CURRENT_DATE + 90, 'QR-HERR-005', FALSE)
 ON CONFLICT (id_herramienta) DO UPDATE SET 
     nombre_herramienta = EXCLUDED.nombre_herramienta,
-    frecuencia_mantencion = EXCLUDED.frecuencia_mantencion;
+    frecuencia_mantencion = EXCLUDED.frecuencia_mantencion,
+    codigo_unico = EXCLUDED.codigo_unico,
+    nombre = EXCLUDED.nombre,
+    valor = EXCLUDED.valor,
+    estado = EXCLUDED.estado,
+    fecha_prox_mantenimiento = EXCLUDED.fecha_prox_mantenimiento,
+    codigo_qr = EXCLUDED.codigo_qr,
+    activo = EXCLUDED.activo;
 
 SELECT setval('herramienta_id_herramienta_seq', (SELECT MAX(id_herramienta) FROM herramienta));
+
+-- Verificación SCRUM: impide códigos duplicados y elimina físicamente herramientas.
+DO $$
+DECLARE
+    codigo_duplicado_bloqueado BOOLEAN := FALSE;
+    borrado_fisico_bloqueado BOOLEAN := FALSE;
+BEGIN
+    BEGIN
+        INSERT INTO herramienta (
+            numero_serie_herramienta, nombre_herramienta, categoria,
+            codigo_unico, nombre, valor, estado, activo
+        ) VALUES (
+            'SN-SCRUM-DUP', 'Intento de duplicado', 'Herramientas',
+            'HERR-001', 'Intento de duplicado', 1.00, 'Disponible', TRUE
+        );
+    EXCEPTION WHEN unique_violation THEN
+        codigo_duplicado_bloqueado := TRUE;
+    END;
+
+    BEGIN
+        DELETE FROM herramienta WHERE id_herramienta = 1;
+    EXCEPTION WHEN OTHERS THEN
+        borrado_fisico_bloqueado := TRUE;
+    END;
+
+    IF NOT codigo_duplicado_bloqueado OR NOT borrado_fisico_bloqueado THEN
+        RAISE EXCEPTION 'Verificación de herramientas fallida: duplicado=% borrado=%',
+            codigo_duplicado_bloqueado, borrado_fisico_bloqueado;
+    END IF;
+END;
+$$;
 
 -- =============================================================================
 -- 11. PROYECTOS / FAENAS
@@ -243,10 +312,13 @@ INSERT INTO proyecto (id_proyecto, codigo_proyecto, nombre_proyecto, tipo_proyec
     (1, 'OB-2026-014', 'Edificio Los Aromos – Instalación eléctrica', 'Instalacion', 'Inmobiliaria Pacífico SpA', 1, 'Av. Providencia 2450, Providencia, Santiago', '2026-08-01', '2026-10-14', 18500000, 11000000, 400.00, 18750, 24500000, 19450000, 68.00, 'En Proceso', 1),
     (2, 'MT-2026-087', 'Mantención preventiva climatización – Clínica Andes', 'Mantencion', 'Clínica Andes S.A.', 2, 'Av. Las Condes 9100, Las Condes, Santiago', '2026-09-15', '2026-11-20', 12000000, 7500000, 240.00, 18750, 16800000, 10920000, 45.00, 'En Proceso', 1),
     (3, 'OB-2026-021', 'Nave Logística Renca – Red contra incendios', 'Instalacion', 'Logística & Bodegaje Renca SpA', 3, 'Camino Lo Boza 120, Renca, Santiago', '2026-10-01', '2026-12-15', 32000000, 21000000, 580.00, 18500, 42000000, 8500000,  22.00, 'En Proceso', 1),
-    (4, 'OB-2026-009', 'Condominio San Bernardo – Canalización y tableros', 'Instalacion', 'Constructora Maipo Limitada', 4, 'Av. San Bernardo 540, San Bernardo', '2026-06-01', '2026-09-30', 14200000, 8800000, 310.00, 18500, 19500000, 14100000, 100.00, 'Completado', 1)
+    (4, 'OB-2026-009', 'Condominio San Bernardo – Canalización y tableros', 'Instalacion', 'Constructora Maipo Limitada', 4, 'Av. San Bernardo 540, San Bernardo', '2026-06-01', '2026-09-30', 14200000, 8800000, 310.00, 18500, 19500000, 14100000, 100.00, 'Completado', 1),
+    (5, 'SCRUM-2026-ACT', 'Proyecto de prueba alerta de vencimiento activo', 'Instalacion', 'Inmobiliaria Pacífico SpA', 1, 'Av. Providencia 2450, Providencia, Santiago', CURRENT_DATE, CURRENT_DATE + 2, 1000000, 500000, 40.00, 18500, 1500000, 250000, 20.00, 'En Proceso', 1),
+    (6, 'SCRUM-2026-CER', 'Proyecto de prueba alerta de vencimiento cerrado', 'Instalacion', 'Inmobiliaria Pacífico SpA', 1, 'Av. Providencia 2450, Providencia, Santiago', CURRENT_DATE, CURRENT_DATE + 2, 1000000, 500000, 40.00, 18500, 1500000, 1000000, 100.00, 'Completado', 1)
 ON CONFLICT (id_proyecto) DO UPDATE SET 
     codigo_proyecto = EXCLUDED.codigo_proyecto,
     nombre_proyecto = EXCLUDED.nombre_proyecto,
+    fecha_fin = EXCLUDED.fecha_fin,
     porcentaje_avance = EXCLUDED.porcentaje_avance,
     estado_proyecto = EXCLUDED.estado_proyecto;
 
@@ -261,8 +333,78 @@ INSERT INTO asignaciones_proyecto (proyecto_id, tecnico_id, fecha_asignacion, ac
     (2, 4, '2026-09-15 09:00:00-03', TRUE), -- Matías Fuentes en Clínica Andes
     (2, 3, '2026-09-20 09:00:00-03', TRUE), -- Alejandro Rojas en Clínica Andes
     (3, 5, '2026-10-01 08:00:00-03', TRUE), -- Constanza Leiva en Nave Renca
-    (3, 6, '2026-10-01 08:00:00-03', TRUE)  -- Pedro Aguilera en Nave Renca
+    (3, 6, '2026-10-01 08:00:00-03', TRUE), -- Pedro Aguilera en Nave Renca
+    (5, 3, CURRENT_TIMESTAMP, TRUE), -- Caso SCRUM: proyecto activo que vence en 48 horas
+    (6, 3, CURRENT_TIMESTAMP, TRUE)  -- Caso SCRUM: proyecto cerrado con igual fecha límite
 ON CONFLICT (proyecto_id, tecnico_id) WHERE activo = TRUE DO NOTHING;
+
+-- Verificación SCRUM de BACK-2: el job alerta solo el proyecto activo.
+DO $$
+DECLARE
+    alertas_activas INTEGER;
+    alertas_cerradas INTEGER;
+BEGIN
+    PERFORM fn_generar_alertas_vencimiento_proyecto();
+
+    SELECT COUNT(*)
+    INTO alertas_activas
+    FROM notificaciones
+    WHERE origen = 'H22'
+      AND tipo = 'vencimiento_proyecto_48h'
+      AND mensaje LIKE '%SCRUM-2026-ACT%';
+
+    SELECT COUNT(*)
+    INTO alertas_cerradas
+    FROM notificaciones
+    WHERE origen = 'H22'
+      AND tipo = 'vencimiento_proyecto_48h'
+      AND mensaje LIKE '%SCRUM-2026-CER%';
+
+    IF alertas_activas <> 1 OR alertas_cerradas <> 0 THEN
+        RAISE EXCEPTION 'Verificación BACK-2 fallida: activo=% cerrado=%', alertas_activas, alertas_cerradas;
+    END IF;
+END;
+$$;
+
+-- =============================================================================
+-- 13. PRÉSTAMOS DE HERRAMIENTAS [DB][SCRUM]
+-- Conserva más de un préstamo histórico para una misma herramienta y relaciona
+-- cada registro con un técnico y un proyecto existentes.
+-- =============================================================================
+INSERT INTO prestamos_herramientas
+    (id_prestamo, herramienta_id, tecnico_id, proyecto_id, fecha_entrega, fecha_devolucion, estado_devolucion, observacion)
+VALUES
+    (1, 1, 3, 1, '2026-08-01', '2026-08-20', 'Bueno', 'Devuelto sin observaciones después del montaje de canalizaciones.'),
+    (2, 1, 6, 3, '2026-10-01', '2026-10-18', 'Dañado', 'Se detectó desgaste en el mandril durante la inspección de devolución.'),
+    (3, 1, 3, 5, CURRENT_DATE, NULL, NULL, 'Préstamo vigente para verificación del historial de la herramienta.'),
+    (4, 2, 4, 2, '2026-09-15', '2026-09-30', 'Bueno', 'Devuelto con batería y accesorios completos.')
+ON CONFLICT (id_prestamo) DO UPDATE SET
+    herramienta_id = EXCLUDED.herramienta_id,
+    tecnico_id = EXCLUDED.tecnico_id,
+    proyecto_id = EXCLUDED.proyecto_id,
+    fecha_entrega = EXCLUDED.fecha_entrega,
+    fecha_devolucion = EXCLUDED.fecha_devolucion,
+    estado_devolucion = EXCLUDED.estado_devolucion,
+    observacion = EXCLUDED.observacion;
+
+SELECT setval('prestamos_herramientas_id_prestamo_seq', (SELECT MAX(id_prestamo) FROM prestamos_herramientas));
+
+-- Verificación SCRUM: la herramienta 1 conserva tres préstamos relacionados
+-- con técnicos y proyectos válidos, incluyendo uno vigente y dos históricos.
+DO $$
+DECLARE
+    prestamos_herramienta INTEGER;
+BEGIN
+    SELECT COUNT(*)
+    INTO prestamos_herramienta
+    FROM prestamos_herramientas
+    WHERE herramienta_id = 1;
+
+    IF prestamos_herramienta <> 3 THEN
+        RAISE EXCEPTION 'Verificación de historial de préstamos fallida: se esperaban 3 registros y existen %', prestamos_herramienta;
+    END IF;
+END;
+$$;
 
 -- Registro de horas trabajadas (en bloques de 0.5h y máximo 24h/día por técnico) [DB]
 INSERT INTO horas_trabajadas (id_registro_horas, proyecto_id, tecnico_id, fecha, horas) VALUES
@@ -347,6 +489,43 @@ INSERT INTO oc_lineas (id_oc_linea, id_orden_compra, id_articulo, cantidad_orden
 ON CONFLICT (id_oc_linea) DO NOTHING;
 
 SELECT setval('oc_lineas_id_oc_linea_seq', (SELECT MAX(id_oc_linea) FROM oc_lineas));
+
+-- =============================================================================
+-- 14.1 CALIFICACIONES DE PROVEEDORES [DB][SCRUM]
+-- La OC 1 está recibida y puede calificarse; cada OC solo admite una calificación.
+-- =============================================================================
+INSERT INTO calificaciones_proveedor
+    (id_calificacion, oc_id, proveedor_id, puntos_tiempo, puntos_calidad, puntos_precio, fecha)
+VALUES
+    (1, 1, 1, 5, 4, 5, '2026-09-06')
+ON CONFLICT (id_calificacion) DO UPDATE SET
+    oc_id = EXCLUDED.oc_id,
+    proveedor_id = EXCLUDED.proveedor_id,
+    puntos_tiempo = EXCLUDED.puntos_tiempo,
+    puntos_calidad = EXCLUDED.puntos_calidad,
+    puntos_precio = EXCLUDED.puntos_precio,
+    fecha = EXCLUDED.fecha;
+
+SELECT setval('calificaciones_proveedor_id_calificacion_seq', (SELECT MAX(id_calificacion) FROM calificaciones_proveedor));
+
+-- Verificación SCRUM: intentar calificar dos veces la misma OC debe fallar por oc_id UNIQUE.
+DO $$
+DECLARE
+    duplicado_bloqueado BOOLEAN := FALSE;
+BEGIN
+    BEGIN
+        INSERT INTO calificaciones_proveedor
+            (oc_id, proveedor_id, puntos_tiempo, puntos_calidad, puntos_precio, fecha)
+        VALUES (1, 1, 3, 3, 3, CURRENT_DATE);
+    EXCEPTION WHEN unique_violation THEN
+        duplicado_bloqueado := TRUE;
+    END;
+
+    IF NOT duplicado_bloqueado THEN
+        RAISE EXCEPTION 'Verificación de calificaciones fallida: la OC 1 aceptó una segunda calificación.';
+    END IF;
+END;
+$$;
 
 -- =============================================================================
 -- 15. REGISTROS DE RECEPCIÓN DE ARTÍCULOS
@@ -711,6 +890,115 @@ INSERT INTO codigos_qr_insumos (
 ON CONFLICT (id_qr) DO NOTHING;
 
 SELECT setval('codigos_qr_insumos_id_qr_seq', (SELECT MAX(id_qr) FROM codigos_qr_insumos));
+
+-- =============================================================================
+-- 28. HISTORIAL DE RESPALDOS CIFRADOS [DB][SCRUM]
+-- Registro de respaldo diario completado, almacenado en cloud y restaurado en
+-- una prueba de control con RTO inferior a cuatro horas.
+-- =============================================================================
+INSERT INTO historial_respaldos (
+    id_respaldo, tipo_respaldo, fecha_inicio, fecha_fin, nombre_archivo,
+    ubicacion_nube, proveedor_nube, tamano_bytes, hash_sha256, cifrado,
+    algoritmo_cifrado, estado, restauracion_verificada, fecha_restauracion,
+    rto_segundos, mensaje_error
+) VALUES (
+    1, 'Completo', CURRENT_TIMESTAMP - INTERVAL '2 hours 10 minutes', CURRENT_TIMESTAMP - INTERVAL '2 hours',
+    'fyag-backups/postgresql/2026/11/fyag-2026-11-25.dump.enc', 'S3-compatible',
+    18432000, '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', TRUE,
+    'AES-256', 'Completado', TRUE, CURRENT_TIMESTAMP - INTERVAL '1 hour',
+    7200, NULL
+)
+ON CONFLICT (id_respaldo) DO UPDATE SET
+    fecha_inicio = EXCLUDED.fecha_inicio,
+    fecha_fin = EXCLUDED.fecha_fin,
+    nombre_archivo = EXCLUDED.nombre_archivo,
+    ubicacion_nube = EXCLUDED.ubicacion_nube,
+    proveedor_nube = EXCLUDED.proveedor_nube,
+    tamano_bytes = EXCLUDED.tamano_bytes,
+    hash_sha256 = EXCLUDED.hash_sha256,
+    estado = EXCLUDED.estado,
+    restauracion_verificada = EXCLUDED.restauracion_verificada,
+    fecha_restauracion = EXCLUDED.fecha_restauracion,
+    rto_segundos = EXCLUDED.rto_segundos,
+    mensaje_error = EXCLUDED.mensaje_error;
+
+SELECT setval('historial_respaldos_id_respaldo_seq', (SELECT MAX(id_respaldo) FROM historial_respaldos));
+
+-- Verificación SCRUM: el respaldo está cifrado, disponible en cloud y la
+-- restauración completa terminó en menos de cuatro horas.
+DO $$
+DECLARE
+    respaldo_valido INTEGER;
+BEGIN
+    SELECT COUNT(*)
+    INTO respaldo_valido
+    FROM historial_respaldos
+    WHERE estado = 'Completado'
+      AND cifrado = TRUE
+      AND algoritmo_cifrado = 'AES-256'
+      AND ubicacion_nube IS NOT NULL
+      AND restauracion_verificada = TRUE
+      AND rto_segundos < 14400
+      AND COALESCE(fecha_fin, fecha_inicio) >= CURRENT_TIMESTAMP - INTERVAL '24 hours';
+
+    IF respaldo_valido <> 1 THEN
+        RAISE EXCEPTION 'Verificación de respaldo fallida: se esperaba un respaldo válido dentro de RPO 24h y se encontraron %', respaldo_valido;
+    END IF;
+END;
+$$;
+
+-- =============================================================================
+-- 29. ANONIMIZACIÓN IRREVERSIBLE DE TRABAJADORES [DB][SCRUM]
+-- El usuario 3 posee un movimiento de Cardex y un evento de auditoría antes
+-- de ejecutar el procedimiento; ambos conservan id_usuario = 3 después.
+-- =============================================================================
+INSERT INTO movimientos_inventario
+    (id_insumo, tipo_movimiento, destino_bolsa, cantidad, referencia, id_usuario)
+VALUES
+    (1, 'Ajuste', 'disponible', 1.000, 'Movimiento SCRUM previo a anonimización del usuario 3', 3);
+
+INSERT INTO auditoria
+    (usuario, id_usuario, entidad, accion, campo_modificado, valor_anterior, valor_nuevo, descripcion)
+VALUES
+    ('alejandro.rojas@fyag.cl', 3, 'movimientos_inventario', 'INSERT', NULL, NULL, NULL,
+     'Evento SCRUM para validar conservación de auditoría al anonimizar el usuario');
+
+DO $$
+DECLARE
+    movimientos_antes INTEGER;
+    movimientos_despues INTEGER;
+    auditorias_usuario INTEGER;
+    identificador VARCHAR(30);
+    correo_actual VARCHAR(250);
+BEGIN
+    SELECT COUNT(*) INTO movimientos_antes
+    FROM movimientos_inventario
+    WHERE id_usuario = 3;
+
+    CALL sp_anonimizar_usuario(3);
+
+    SELECT COUNT(*) INTO movimientos_despues
+    FROM movimientos_inventario
+    WHERE id_usuario = 3;
+
+    SELECT COUNT(*) INTO auditorias_usuario
+    FROM auditoria
+    WHERE id_usuario = 3;
+
+    SELECT identificador_anonimo, correo_usuario
+    INTO identificador, correo_actual
+    FROM usuario
+    WHERE id_usuario = 3;
+
+    IF movimientos_antes <> movimientos_despues
+       OR auditorias_usuario < 1
+       OR identificador <> 'ANON-00000003'
+       OR correo_actual <> 'anon-00000003@anonimizado.invalid' THEN
+        RAISE EXCEPTION 'Verificación de anonimización fallida: Cardex antes=% después=%, auditorías=%, identificador=%, correo=%',
+            movimientos_antes, movimientos_despues, auditorias_usuario, identificador, correo_actual;
+    END IF;
+END;
+$$;
 
 
 COMMIT;
