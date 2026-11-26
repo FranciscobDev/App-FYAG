@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import type { PoolClient } from 'pg';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
@@ -185,6 +186,51 @@ const traducirErrorUsuario = (res: Response, error: unknown, mensajeInterno: str
     enviarErrorHttp(res, error, mensajeInterno);
 };
 
+export interface DatosPersonalesUsuario {
+    id_usuario: number;
+    nombre_usuario: string;
+    apellido_usuario: string;
+    correo_usuario: string;
+    rut: string | null;
+    id_rol: number;
+    nombre_rol: string | null;
+    especializacion: string | null;
+    activo: boolean;
+    ultimo_acceso: string | null;
+    fecha_creacion: string | null;
+}
+
+const CONSULTA_DATOS_PERSONALES = `
+    SELECT u.id_usuario, u.nombre_usuario, u.apellido_usuario, u.correo_usuario,
+           u.rut, u.id_rol, r.nombre_rol::text AS nombre_rol,
+           u.especializacion, u.activo, u.ultimo_acceso, u.fecha_creacion
+    FROM usuario u
+    LEFT JOIN roles r ON r.id_rol = u.id_rol
+`;
+
+const escaparCsv = (valor: unknown): string => {
+    if (valor === null || valor === undefined) return '';
+    const texto = String(valor);
+    return /[",;\r\n]/.test(texto) ? `"${texto.replace(/"/g, '""')}"` : texto;
+};
+
+export const construirCsvDatosPersonales = (datos: DatosPersonalesUsuario): string => {
+    const columnas = [
+        'id_usuario', 'nombre_usuario', 'apellido_usuario', 'correo_usuario', 'rut',
+        'id_rol', 'nombre_rol', 'especializacion', 'activo', 'ultimo_acceso', 'fecha_creacion',
+    ];
+    return [
+        columnas.join(','),
+        columnas.map((columna) => escaparCsv((datos as unknown as Record<string, unknown>)[columna])).join(','),
+    ].join('\r\n');
+};
+
+const esUsuarioAnonimizado = (datos: DatosPersonalesUsuario): boolean =>
+    datos.nombre_usuario === 'Usuario' &&
+    datos.apellido_usuario === 'Anonimo' &&
+    datos.rut === null &&
+    datos.correo_usuario.endsWith('@anonimizado.local');
+
 // Listar todos
 export const obtenerUsuarios = async (_req: Request, res: Response): Promise<void> => {
     try {
@@ -212,6 +258,134 @@ export const obtenerUsuarioPorId = async (req: Request<{ id: string }>, res: Res
     } catch (error) {
         console.error('Error al obtener usuario:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
+    }
+};
+
+// Exportación exclusiva de datos personales (JSON o CSV)
+export const exportarDatosPersonalesUsuario = async (
+    req: Request<{ id: string; formato?: string }, unknown, unknown>,
+    res: Response
+): Promise<void> => {
+    const { id } = req.params;
+    const formato = String(req.params.formato ?? req.query.formato ?? 'json').toLowerCase();
+
+    if (formato !== 'json' && formato !== 'csv') {
+        res.status(400).json({ mensaje: 'El formato debe ser json o csv' });
+        return;
+    }
+
+    try {
+        const resultado = await pool.query<DatosPersonalesUsuario>(`${CONSULTA_DATOS_PERSONALES} WHERE u.id_usuario = $1`, [id]);
+        if (resultado.rows.length === 0) {
+            res.status(404).json({ mensaje: 'Usuario no encontrado para exportación' });
+            return;
+        }
+
+        const datos = resultado.rows[0];
+        await registrarAuditoria({
+            entidad: 'usuario',
+            accion: `exportar_datos_personales_${formato}`,
+            idRegistro: Number(id),
+            idUsuarioEjecutor: obtenerIdEjecutor(req),
+            estadoAnterior: null,
+            estadoNuevo: { id_usuario: Number(id), formato, datos_exportados: true },
+            descripcion: `Exportación de datos personales del usuario ID ${id} en formato ${formato.toUpperCase()}`,
+        });
+
+        if (formato === 'csv') {
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="usuario-${id}-datos.csv"`);
+            res.status(200).send(construirCsvDatosPersonales(datos));
+            return;
+        }
+
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="usuario-${id}-datos.json"`);
+        res.status(200).send(JSON.stringify(datos, null, 2));
+    } catch (error) {
+        enviarErrorHttp(res, error, 'Error interno al exportar los datos personales del usuario');
+    }
+};
+
+// Anonimización irreversible de datos personales
+export const anonimizarUsuario = async (
+    req: Request<{ id: string }>,
+    res: Response
+): Promise<void> => {
+    const { id } = req.params;
+
+    try {
+        await ejecutarTransaccion(async (cliente) => {
+            const resultado = await cliente.query<DatosPersonalesUsuario>(
+                `${CONSULTA_DATOS_PERSONALES} WHERE u.id_usuario = $1`,
+                [id]
+            );
+            const antes = resultado.rows[0];
+            if (!antes) {
+                throw new ErrorAplicacion(404, 'Usuario no encontrado para anonimizar');
+            }
+            if (esUsuarioAnonimizado(antes)) {
+                throw new ErrorAplicacion(409, 'El usuario ya fue anonimizado');
+            }
+            if (antes.activo && esAdmin(antes.nombre_rol)) {
+                const otrosAdmins = await contarAdminsActivosExcluyendo(cliente, id);
+                if (otrosAdmins === 0) {
+                    throw new ErrorAplicacion(400, 'No se puede anonimizar al único Administrador activo del sistema');
+                }
+            }
+
+            const idEjecutor = obtenerIdEjecutor(req);
+            await registrarAuditoria({
+                entidad: 'usuario',
+                accion: 'solicitar_anonimizacion',
+                idRegistro: Number(id),
+                idUsuarioEjecutor: idEjecutor,
+                estadoAnterior: { id_usuario: Number(id), activo: antes.activo, nombre_rol: antes.nombre_rol },
+                estadoNuevo: { id_usuario: Number(id), solicitud_anonimizacion: true },
+                descripcion: `Solicitud de anonimización irreversible del usuario ID ${id}`,
+            }, cliente);
+
+            const correoAnonimo = `anonimo-${id}-${crypto.randomBytes(6).toString('hex')}@anonimizado.local`;
+            const hashImposible = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+
+            await cliente.query(
+                `UPDATE usuario
+                 SET nombre_usuario = 'Usuario',
+                     apellido_usuario = 'Anonimo',
+                     correo_usuario = $2,
+                     rut = NULL,
+                     especializacion = NULL,
+                     contrasena_hash = $3,
+                     activo = FALSE,
+                     intentos_fallidos = 0,
+                     bloqueado_hasta = NULL
+                 WHERE id_usuario = $1`,
+                [id, correoAnonimo, hashImposible]
+            );
+            await revocarSesionesUsuario(cliente, id);
+
+            await registrarAuditoria({
+                entidad: 'usuario',
+                accion: 'ejecutar_anonimizacion',
+                idRegistro: Number(id),
+                idUsuarioEjecutor: idEjecutor,
+                estadoAnterior: { id_usuario: Number(id), activo: antes.activo, nombre_rol: antes.nombre_rol },
+                estadoNuevo: {
+                    id_usuario: Number(id),
+                    activo: false,
+                    datos_personales_anonimizados: true,
+                    sesiones_revocadas: true,
+                },
+                descripcion: `Anonimización irreversible ejecutada para el usuario ID ${id}`,
+            }, cliente);
+        });
+
+        res.status(200).json({
+            mensaje: 'Usuario anonimizado correctamente',
+            anonimizacion: { id_usuario: Number(id), activo: false, irreversible: true },
+        });
+    } catch (error) {
+        enviarErrorHttp(res, error, 'Error interno al anonimizar los datos personales del usuario');
     }
 };
 
