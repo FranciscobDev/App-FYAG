@@ -7,7 +7,7 @@
     "dev": "tsx watch index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/authMiddleware.test.ts tests/parametros.test.ts tests/articulos.test.ts tests/ordenesCompra.test.ts tests/sincronizacion.test.ts tests/devolucionBodega.test.ts",
+    "test": "tsx --test tests/authMiddleware.test.ts tests/parametros.test.ts tests/articulos.test.ts tests/ordenesCompra.test.ts tests/sincronizacion.test.ts tests/devolucionBodega.test.ts tests/avancesProyecto.test.ts tests/conteoFisico.test.ts tests/devolucionProveedor.test.ts tests/mermas.test.ts tests/codigosQr.test.ts",
     "test:integracion": "tsx tests/scrum.integracion.test.ts && tsx tests/articulos.integracion.test.ts",
     "test:devoluciones": "tsx tests/devoluciones.integracion.test.ts"
   },

@@ -7,6 +7,7 @@ import {
     deshabilitarArticulo,
     eliminarArticulo,
 } from '../controllers/articuloController';
+import { generarCodigoQrInsumo, listarCodigosQrInsumo } from '../controllers/codigoQrController';
 import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -22,5 +23,9 @@ router.post('/', puedeEscribir, crearArticulo);
 router.put('/:id', puedeEscribir, actualizarArticulo);
 router.patch('/:id/deshabilitar', puedeEscribir, deshabilitarArticulo);
 router.delete('/:id', puedeEscribir, eliminarArticulo);
+
+// [BACK-1] Generación de códigos QR del insumo (exclusiva del Administrador) y consulta
+router.get('/:id/codigos-qr', verificarRoles('admin', 'warehouse'), listarCodigosQrInsumo);
+router.post('/:id/codigos-qr', verificarRoles('admin'), generarCodigoQrInsumo);
 
 export default router;
