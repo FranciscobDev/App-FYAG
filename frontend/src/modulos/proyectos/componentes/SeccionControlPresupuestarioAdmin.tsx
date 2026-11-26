@@ -238,7 +238,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
     establecerInputMaterialExtra("");
     establecerInputHorasExtra("");
     if (mostrarAviso) {
-      mostrarAviso("Impacto financiero aplicado en vivo al semáforo y margen H27.");
+      mostrarAviso("Impacto financiero aplicado en vivo al semáforo y margen estimado.");
     }
   };
 
@@ -249,7 +249,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
         <View style={estilos.heroFila}>
           <View style={{ flex: 1, minWidth: 220 }}>
             <View style={estilos.insigniasFila}>
-              <Insignia label="Control Presupuestario H27" tone="primary" size="sm" />
+              <Insignia label="Control Presupuestario" tone="primary" size="sm" />
               <Insignia label="Cálculo en Vivo" tone="ok" size="sm" />
             </View>
             <Text style={estilos.heroTitulo}>
@@ -307,7 +307,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
             },
           ]}
         >
-          <Text style={estilos.kpiEtiqueta}>Margen Estimado (H27)</Text>
+          <Text style={estilos.kpiEtiqueta}>Margen Estimado</Text>
           <Text
             style={[
               estilos.kpiValor,
@@ -528,7 +528,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                         },
                       ]}
                     >
-                      <Text style={estilos.metricaLbl}>Margen Estimado H27</Text>
+                      <Text style={estilos.metricaLbl}>Margen Estimado</Text>
                       <Text
                         style={[
                           estilos.metricaVal,
@@ -559,10 +559,10 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                     </View>
                   </View>
 
-                  {/* Acciones de Auditoría H27 e Impacto en Vivo */}
+                  {/* Acciones de Desglose Presupuestario */}
                   <View style={estilos.accionesFila}>
                     <Boton
-                      title="Ver Fórmula H27 e Impacto en Vivo"
+                      title="Ver Desglose Presupuestario"
                       variant="primary"
                       size="sm"
                       icon="calculator-outline"
@@ -573,16 +573,6 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                       }}
                       style={{ flex: 1, minHeight: 40 }}
                     />
-                    {tieneSimulacion && (
-                      <Boton
-                        title="Restablecer"
-                        variant="outline"
-                        size="sm"
-                        icon="refresh-outline"
-                        onPress={() => restablecerSimulacionProyecto(r.proyecto.id)}
-                        style={{ minHeight: 40 }}
-                      />
-                    )}
                   </View>
                 </Tarjeta>
               </View>
@@ -597,8 +587,8 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
         onClose={() => establecerProyectoDetalleId(null)}
         title={
           resumenDetalle
-            ? `Control Presupuestario H27 — ${resumenDetalle.proyecto.code}`
-            : "Control Presupuestario H27"
+            ? `Control Presupuestario — ${resumenDetalle.proyecto.code}`
+            : "Control Presupuestario"
         }
         subtitle={resumenDetalle ? resumenDetalle.proyecto.name : ""}
       >
@@ -644,7 +634,7 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                 <View style={estilos.formulaEncabezado}>
                   <Ionicons name="calculator" size={16} color={tema.colors.primaryDark} />
                   <Text style={estilos.formulaTitulo}>
-                    Desglose Auditable — Fórmula de Margen H27
+                    Desglose del Margen Estimado
                   </Text>
                 </View>
 
@@ -734,90 +724,14 @@ export const SeccionControlPresupuestarioAdmin: React.FC<
                 </View>
               </View>
 
-              {/* Simulador de Impacto en Vivo (Materiales + Mano de Obra) */}
-              <View style={estilos.simuladorCaja}>
-                <Text style={estilos.simuladorTitulo}>
-                  Probar Impacto Financiero en Vivo (Materiales y Mano de Obra)
-                </Text>
-                <Text style={estilos.simuladorSub}>
-                  Suma un egreso de materiales o nuevas horas hombre para ver cómo cambia al
-                  instante el semáforo, la barra de consumo y el margen H27:
-                </Text>
-
-                <View style={estilos.simBotonesRapidos}>
-                  <Boton
-                    title="+ $500.000 Materiales"
-                    variant="outline"
-                    size="sm"
-                    icon="cube-outline"
-                    onPress={() =>
-                      aplicarImpactoEnVivo(resumenDetalle.proyecto.id, 500000, 0)
-                    }
-                    style={{ flexGrow: 1, minHeight: 38 }}
-                  />
-                  <Boton
-                    title="+ $2.000.000 Materiales"
-                    variant="outline"
-                    size="sm"
-                    icon="layers-outline"
-                    onPress={() =>
-                      aplicarImpactoEnVivo(resumenDetalle.proyecto.id, 2000000, 0)
-                    }
-                    style={{ flexGrow: 1, minHeight: 38 }}
-                  />
-                  <Boton
-                    title="+ 8 h Mano de Obra"
-                    variant="outline"
-                    size="sm"
-                    icon="time-outline"
-                    onPress={() => aplicarImpactoEnVivo(resumenDetalle.proyecto.id, 0, 8)}
-                    style={{ flexGrow: 1, minHeight: 38 }}
-                  />
-                </View>
-
-                <View style={[estilos.simInputsFila, esMovilEstrecho && { flexDirection: "column" }]}>
-                  <TextInput
-                    value={inputMaterialExtra}
-                    onChangeText={establecerInputMaterialExtra}
-                    placeholder="Materiales extra ($ CLP)"
-                    placeholderTextColor={tema.colors.textLight}
-                    keyboardType="numeric"
-                    style={estilos.simInput}
-                  />
-                  <TextInput
-                    value={inputHorasExtra}
-                    onChangeText={establecerInputHorasExtra}
-                    placeholder="Horas extra (HH)"
-                    placeholderTextColor={tema.colors.textLight}
-                    keyboardType="decimal-pad"
-                    style={estilos.simInput}
-                  />
-                  <Boton
-                    title="Aplicar"
-                    variant="primary"
-                    size="sm"
-                    onPress={aplicarInputsPersonalizados}
-                    style={{ minHeight: 40, minWidth: 92 }}
-                  />
-                </View>
-
-                <View style={estilos.modalPieAcciones}>
-                  <Boton
-                    title="Restablecer Valores Reales"
-                    variant="ghost"
-                    size="sm"
-                    icon="refresh-outline"
-                    onPress={() => restablecerSimulacionProyecto(resumenDetalle.proyecto.id)}
-                    style={{ flex: 1, minHeight: 40 }}
-                  />
-                  <Boton
-                    title="Cerrar"
-                    variant="secondary"
-                    size="sm"
-                    onPress={() => establecerProyectoDetalleId(null)}
-                    style={{ flex: 1, minHeight: 40 }}
-                  />
-                </View>
+              <View style={estilos.modalPieAcciones}>
+                <Boton
+                  title="Cerrar"
+                  variant="secondary"
+                  size="sm"
+                  onPress={() => establecerProyectoDetalleId(null)}
+                  style={{ flex: 1, minHeight: 40 }}
+                />
               </View>
             </View>
           );

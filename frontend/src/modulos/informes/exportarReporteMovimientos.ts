@@ -37,7 +37,7 @@ export function exportarInformeExcelWeb(params: ParametrosExportacionInforme): {
   const encabezadoTabla = params.headers
     .map(
       (h) =>
-        `<th style="background:#1c1917;color:#ffffff;font-weight:bold;padding:8px;border:1px solid #d6d3d1;text-align:left;">${escaparHtml(h)}</th>`
+        `<th style="background:#0f172a;color:#ffffff;font-weight:bold;padding:8px;border:1px solid #cbd5e1;text-align:left;">${escaparHtml(h)}</th>`
     )
     .join("");
 
@@ -161,11 +161,11 @@ export function exportarInformePdfWeb(params: ParametrosExportacionInforme): {
           @page { size: landscape; margin: 14mm; }
           body { font-family: "Segoe UI", Arial, sans-serif; color: #0f172a; margin: 0; padding: 16px; }
           .cabecera { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #f59e0b; padding-bottom: 10px; margin-bottom: 14px; }
-          .marca { font-size: 18px; font-weight: 800; color: #1c1917; }
+          .marca { font-size: 18px; font-weight: 800; color: #0f172a; }
           .sub { font-size: 12px; color: #475569; margin-top: 3px; }
           .meta { text-align: right; font-size: 11px; color: #475569; }
           table { width: 100%; border-collapse: collapse; font-size: 11px; }
-          th { background: #1c1917; color: #ffffff; text-align: left; padding: 7px 6px; border: 1px solid #334155; }
+          th { background: #0f172a; color: #ffffff; text-align: left; padding: 7px 6px; border: 1px solid #334155; }
           td { padding: 6px; border: 1px solid #cbd5e1; }
           tr:nth-child(even) td { background: #f8fafc; }
           tr.totales td { background: #fef3c7 !important; font-weight: 800; color: #78350f; border-top: 2px solid #f59e0b; }

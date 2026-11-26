@@ -392,11 +392,8 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
         <View style={estilos.encabezado}>
           <View style={{ flex: 1 }}>
             <View style={estilos.etiquetaTicketFila}>
-              <Insignia label="[FRONT-2]" tone="info" size="sm" />
+              <Insignia label="Avance de Obra" tone="info" size="sm" />
               <Insignia label="Terreno Móvil" tone="mute" size="sm" />
-              {avancePorcentaje === 50 && (
-                <Insignia label="[SCRUM 50%]" tone="ok" size="sm" />
-              )}
             </View>
             <Text style={estilos.titulo}>Reporte de Avance en Terreno</Text>
             <Text style={estilos.subtitulo}>
@@ -524,14 +521,13 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
                 </View>
               </View>
 
-              {/* Hitos Rápidos (con 50% especialmente resaltado para SCRUM) */}
+              {/* Hitos Rápidos */}
               <Text style={estilos.campoSubEtiqueta}>
                 Selección Rápida de Hito (1 toque):
               </Text>
               <View style={estilos.hitosFila}>
                 {[10, 25, 50, 75, 90, 100].map((pct) => {
                   const esSeleccionado = avancePorcentaje === pct;
-                  const esScrum50 = pct === 50;
 
                   return (
                     <TouchableOpacity
@@ -539,7 +535,6 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
                       onPress={() => establecerAvancePorcentaje(pct)}
                       style={[
                         estilos.hitoChip,
-                        esScrum50 && estilos.hitoChipScrum,
                         esSeleccionado && estilos.hitoChipActivo,
                       ]}
                       activeOpacity={0.7}
@@ -549,21 +544,11 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
                       <Text
                         style={[
                           estilos.hitoChipTexto,
-                          esScrum50 && estilos.hitoChipScrumTexto,
                           esSeleccionado && estilos.hitoChipTextoActivo,
                         ]}
                       >
                         {pct}%
                       </Text>
-                      {esScrum50 && (
-                        <View style={estilos.scrumEstrellaBadge}>
-                          <Ionicons
-                            name="star"
-                            size={10}
-                            color={esSeleccionado ? "#ffffff" : tema.colors.primaryDark}
-                          />
-                        </View>
-                      )}
                     </TouchableOpacity>
                   );
                 })}
@@ -647,9 +632,7 @@ export const FormularioReporteAvance: React.FC<PropiedadesFormularioReporteAvanc
                 </View>
                 <View style={estilos.deslizadorEscala}>
                   <Text style={estilos.escalaTexto}>0%</Text>
-                  <Text style={[estilos.escalaTexto, { fontWeight: "700", color: tema.colors.primaryDark }]}>
-                    50% (Hito SCRUM)
-                  </Text>
+                  <Text style={estilos.escalaTexto}>50%</Text>
                   <Text style={estilos.escalaTexto}>100%</Text>
                 </View>
               </View>

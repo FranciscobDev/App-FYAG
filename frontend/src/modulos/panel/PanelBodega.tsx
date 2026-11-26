@@ -28,6 +28,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
     solicitudesMaterial,
     ordenesDevolucion,
     recepcionesPendientes,
+    herramientas,
   } = usarAplicacion();
 
   const [escanerAbrir, establecerEscanerAbrir] = useState(false);
@@ -112,7 +113,7 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[estilos.rapidoAccionBoton, { backgroundColor: "#fef3c7" }]}
+          style={[estilos.rapidoAccionBoton, { backgroundColor: "#eef2ff" }]}
           onPress={() => onNavigate && onNavigate("conteo")}
           activeOpacity={0.8}
         >
@@ -156,6 +157,24 @@ export const PanelBodega: React.FC<WarehouseDashboardProps> = ({ onNavigate }) =
           </View>
           <Text style={[estilos.rapidoAccionEtiqueta, { color: tema.colors.primaryDark }]}>
             Solicitudes ({solicitudesMaterial.length})
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[estilos.rapidoAccionBoton, { backgroundColor: "#fef3c7" }]}
+          onPress={() => onNavigate && onNavigate("herramientas")}
+          activeOpacity={0.8}
+        >
+          <View style={estilos.rapidoAccionSuperiorFila}>
+            <Ionicons name="construct-outline" size={26} color="#b45309" />
+            <Insignia
+              label={String(herramientas.filter((h) => h.status === "asignada").length)}
+              tone="warn"
+              size="sm"
+            />
+          </View>
+          <Text style={[estilos.rapidoAccionEtiqueta, { color: "#92400e" }]}>
+            Préstamo Herramientas
           </Text>
         </TouchableOpacity>
       </View>
@@ -426,19 +445,28 @@ const estilos = StyleSheet.create({
   },
   tarjetaEncabezado: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: tema.spacing.md,
+    gap: 8,
+    paddingBottom: 10,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: tema.colors.borderLight,
   },
   tituloWithIcono: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
+    minWidth: 160,
   },
   tarjetaTitulo: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: -0.2,
     color: tema.colors.text,
-    marginLeft: 6,
+    marginLeft: 8,
+    flexShrink: 1,
   },
   enlaceTexto: {
     fontSize: tema.fontSize.xs,
@@ -453,29 +481,34 @@ const estilos = StyleSheet.create({
   },
   criticalElementoFila: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: tema.spacing.sm,
+    gap: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: tema.colors.borderLight,
   },
   elementoInfoColumna: {
     flex: 1,
+    minWidth: 160,
     marginRight: tema.spacing.sm,
   },
   skuTexto: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "bold",
+    fontSize: 11.5,
+    fontWeight: "800",
     color: tema.colors.primaryDark,
   },
   productoNombre: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "500",
+    fontSize: 13.5,
+    fontWeight: "700",
     color: tema.colors.text,
+    marginTop: 1,
   },
   ubicacionTexto: {
-    fontSize: tema.fontSize.xs,
+    fontSize: 11.5,
     color: tema.colors.textMuted,
+    marginTop: 2,
   },
   existenciaColumna: {
     alignItems: "flex-end",
@@ -486,19 +519,23 @@ const estilos = StyleSheet.create({
     marginBottom: 4,
   },
   existenciaAlertaTexto: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "bold",
+    fontSize: 15,
+    fontWeight: "800",
     color: tema.colors.danger,
   },
   minimoExistenciaTexto: {
-    fontSize: tema.fontSize.xs,
+    fontSize: 11.5,
     color: tema.colors.textMuted,
   },
   aprobadoTarjeta: {
     backgroundColor: tema.colors.surfaceAlt,
     borderRadius: tema.radius.md,
-    padding: tema.spacing.md,
-    marginBottom: tema.spacing.sm,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    borderLeftWidth: 3,
+    borderLeftColor: tema.colors.primary,
+    padding: 14,
+    marginBottom: 10,
   },
   aprobadoSuperior: {
     flexDirection: "row",

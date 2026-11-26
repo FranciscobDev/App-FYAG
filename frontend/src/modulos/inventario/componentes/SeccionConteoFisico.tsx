@@ -196,165 +196,214 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
           </View>
         )}
 
-        {/* 2. HERO CARD ADAPTADO POR ROL (BODEGUERO VS ADMINISTRADOR) */}
-        <Tarjeta variant="elevated" style={estilosLocales.heroTarjeta}>
-          <View style={estilosLocales.heroContenido}>
-            <View style={{ flex: 1, minWidth: 220 }}>
-              <View style={estilosLocales.heroInsigniaFila}>
-                <Insignia
-                  label={
-                    rolActual === "admin"
-                      ? "Bandeja de Aprobación Admin"
-                      : "Conteo Físico Bodeguero"
-                  }
-                  tone="primary"
-                  size="sm"
-                />
-                <Insignia label="Umbral: 5 %" tone="info" size="sm" />
+        {/* 2. CABECERA COMPACTA INDUSTRIAL + IMPACTO RETENIDO EN VIVO */}
+        <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+            }}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 10,
+                  backgroundColor: tema.colors.primaryLight,
+                  borderWidth: 1,
+                  borderColor: tema.colors.primaryBorder,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Ionicons name="calculator-outline" size={20} color={tema.colors.primaryDark} />
               </View>
-
-              <Text style={estilosLocales.heroTitulo}>
-                {rolActual === "admin"
-                  ? "Aprobación de Ajustes Mayores al 5 %"
-                  : "Iniciar e Ingresar Conteo Físico de Stock"}
-              </Text>
-              <Text style={estilosLocales.heroDescripcion}>
-                {rolActual === "admin"
-                  ? "Revisa y aprueba o rechaza las diferencias de inventario retenidas por superar el umbral del 5 %. Al aprobar, el ajuste impacta el stock y genera el movimiento en el Cardex."
-                  : "Audita existencias reales en estantería. Si la diferencia es ≤ 5 % el ajuste se aplica directo al stock y Cardex; si supera el 5 % queda retenido para aprobación del Administrador."}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                  {rolActual === "admin"
+                    ? "Auditoría de Conteos (Umbral 5 %)"
+                    : "Conteo Físico de Bodega"}
+                </Text>
+                <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                  Impacto retenido (&gt; 5%):{" "}
+                  <Text
+                    style={{
+                      fontWeight: "800",
+                      color:
+                        metricas.impactoPendiente > 0
+                          ? tema.colors.danger
+                          : tema.colors.okDark,
+                    }}
+                  >
+                    {formatearCLP(metricas.impactoPendiente)}
+                  </Text>{" "}
+                  ({metricas.pendientesConteo} por aprobar)
+                </Text>
+              </View>
             </View>
 
-            <View style={[estilosLocales.heroAcciones, { flexDirection: "row", flexWrap: "wrap", gap: 8 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", width: esMovilEstrecho ? "100%" : undefined }}>
               {manejarEscanearParaConteo && (
                 <Boton
-                  title="Escanear QR / Barras"
-                  variant="secondary"
-                  size="md"
+                  title="Escanear QR"
+                  variant="outline"
+                  size="sm"
                   icon="qr-code-outline"
                   onPress={manejarEscanearParaConteo}
-                  style={{ minHeight: 46 }}
-                  fullWidth={esMovilEstrecho}
+                  style={[{ minHeight: 40, backgroundColor: "#ffffff" }, esMovilEstrecho && { flex: 1 }]}
                 />
               )}
               <Boton
-                title="+ Iniciar Nuevo Conteo Físico"
+                title="Nuevo Conteo"
                 variant="primary"
-                size="md"
+                size="sm"
                 icon="calculator-outline"
                 onPress={manejarAbrirConteoModal}
-                style={{ minHeight: 46 }}
-                fullWidth={esMovilEstrecho}
+                style={[{ minHeight: 40 }, esMovilEstrecho && { flex: 1.2 }]}
               />
             </View>
           </View>
-        </Tarjeta>
 
-        {/* 3. DASHBOARD RESPONSIVO DE 4 KPIs */}
-        <View style={estilosLocales.kpiGrilla}>
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              metricas.pendientesConteo > 0 && {
-                backgroundColor: tema.colors.warnLight,
-                borderColor: tema.colors.warnBorder,
-              },
-            ]}
-          >
-            <Text
-              style={[
-                estilosLocales.kpiLbl,
-                metricas.pendientesConteo > 0 && { color: tema.colors.warnDark },
-              ]}
+          {hayInsumosBloqueados && (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: "#fef2f2",
+                borderWidth: 1,
+                borderColor: "#fca5a5",
+                borderRadius: 8,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+                marginTop: 10,
+              }}
             >
-              Retenidos (&gt; 5 %)
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiVal,
-                metricas.pendientesConteo > 0 && { color: tema.colors.warnDark },
-              ]}
-            >
-              {metricas.pendientesConteo}
-            </Text>
-            <Text
-              style={[
-                estilosLocales.kpiSub,
-                metricas.pendientesConteo > 0 && { color: tema.colors.warnDark },
-              ]}
-            >
-              Pendientes de Admin
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.okLight, borderColor: "#bbf7d0" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.okDark }]}>
-              Ajuste Directo (≤ 5 %)
-            </Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.okDark }]}>
-              {metricas.directosConteo}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.okDark }]}>
-              Aplicados en Cardex
-            </Text>
-          </View>
-
-          <View
-            style={[
-              estilosLocales.kpiCaja,
-              esMovilEstrecho && estilosLocales.kpiCajaMovil,
-              { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
-            ]}
-          >
-            <Text style={[estilosLocales.kpiLbl, { color: tema.colors.primaryDark }]}>
-              Aprobados Admin
-            </Text>
-            <Text style={[estilosLocales.kpiVal, { color: tema.colors.primaryDark }]}>
-              {metricas.aprobadosConteo}
-            </Text>
-            <Text style={[estilosLocales.kpiSub, { color: tema.colors.primaryDark }]}>
-              Ajustados en Cardex
-            </Text>
-          </View>
-
-          <View style={[estilosLocales.kpiCaja, esMovilEstrecho && estilosLocales.kpiCajaMovil]}>
-            <Text style={estilosLocales.kpiLbl}>Impacto Pendiente</Text>
-            <Text
-              style={[
-                estilosLocales.kpiVal,
-                metricas.impactoPendiente > 0 && { color: tema.colors.danger },
-              ]}
-            >
-              {formatearCLP(metricas.impactoPendiente)}
-            </Text>
-            <Text style={estilosLocales.kpiSub}>Valorización retenida</Text>
-          </View>
-        </View>
-
-        {/* 4. ALERTA DE INSUMOS BLOQUEADOS EN AUDITORÍA */}
-        {hayInsumosBloqueados && (
-          <View style={estilosLocales.bloqueoBanner}>
-            <Ionicons name="lock-closed" size={18} color="#991b1b" />
-            <View style={{ flex: 1 }}>
-              <Text style={estilosLocales.bloqueoTitulo}>
-                Insumos retenidos y bloqueados preventivamente (&gt; 5 %)
-              </Text>
-              <Text style={estilosLocales.bloqueoTexto}>
-                Los insumos con conteos pendientes de aprobación administrativa permanecen
-                bloqueados para despachos hasta ser aprobados o rechazados.
+              <Ionicons name="lock-closed" size={14} color="#dc2626" />
+              <Text style={{ fontSize: 11, color: "#991b1b", fontWeight: "600", flex: 1 }}>
+                Insumos con diferencia &gt; 5 % permanecen bloqueados para despacho hasta resolución de Admin.
               </Text>
             </View>
-          </View>
-        )}
+          )}
+        </Tarjeta>
 
-        {/* 5. BUSCADOR Y FILTROS DINÁMICOS */}
+        {/* 3. GRILLA 2x2 DE PESTAÑAS KPI INTERACTIVAS (FILTRAN CON 1 TOQUE, SIN CHIPS DUPLICADOS) */}
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {[
+            {
+              id: "pendiente_aprobacion" as FiltroEstadoConteo,
+              titulo: "Retenidos (> 5%)",
+              valor: metricas.pendientesConteo,
+              sub: "Pendientes Admin",
+              icon: "lock-closed-outline" as const,
+              bg: "#fffbeb",
+              border: "#fcd34d",
+              borderActivo: "#d97706",
+              textColor: "#92400e",
+            },
+            {
+              id: "ajustado_directo" as FiltroEstadoConteo,
+              titulo: "Directos (≤ 5%)",
+              valor: metricas.directosConteo,
+              sub: "Aplicados OK",
+              icon: "flash-outline" as const,
+              bg: "#f0fdf4",
+              border: "#86efac",
+              borderActivo: "#16a34a",
+              textColor: "#166534",
+            },
+            {
+              id: "aprobado" as FiltroEstadoConteo,
+              titulo: "Aprobados Admin",
+              valor: metricas.aprobadosConteo,
+              sub: "En Cardex",
+              icon: "checkmark-done-circle-outline" as const,
+              bg: "#f0fdf4",
+              border: "#86efac",
+              borderActivo: "#15803d",
+              textColor: "#166534",
+            },
+            {
+              id: "todos" as FiltroEstadoConteo,
+              titulo: "Todos",
+              valor: conteosFisicos.length,
+              sub:
+                metricas.rechazadosConteo > 0
+                  ? `${metricas.rechazadosConteo} rechazado(s)`
+                  : "Historial total",
+              icon: "layers-outline" as const,
+              bg: "#f1f5f9",
+              border: "#cbd5e1",
+              borderActivo: "#334155",
+              textColor: "#0f172a",
+            },
+          ].map((kpi) => {
+            const activo = filtroEstado === kpi.id;
+            return (
+              <TouchableOpacity
+                key={kpi.id}
+                activeOpacity={0.8}
+                onPress={() => establecerFiltroEstado(kpi.id)}
+                style={{
+                  flexBasis: "48%",
+                  flexGrow: 1,
+                  minWidth: 140,
+                  backgroundColor: kpi.bg,
+                  borderWidth: activo ? 2 : 1,
+                  borderColor: activo ? kpi.borderActivo : kpi.border,
+                  borderLeftWidth: 5,
+                  borderLeftColor: kpi.borderActivo,
+                  borderRadius: 10,
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "800",
+                      color: kpi.textColor,
+                      textTransform: "uppercase",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {kpi.titulo}
+                  </Text>
+                  <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginTop: 2,
+                  }}
+                >
+                  <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                    {kpi.valor}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: activo ? "800" : "600",
+                      color: kpi.textColor,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {activo ? "● Vista activa" : kpi.sub}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* 4. BUSCADOR COMPACTO */}
         <View style={estilosLocales.filtrosBloque}>
           <CampoBusqueda
             value={busqueda}
@@ -362,44 +411,38 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
             placeholder="Buscar por SKU, nombre de insumo o auditor..."
           />
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(
-              [
-                {
-                  id: "pendiente_aprobacion",
-                  label: `Retenidos > 5% (${metricas.pendientesConteo})`,
-                },
-                { id: "todos", label: `Todos (${conteosFisicos.length})` },
-                {
-                  id: "ajustado_directo",
-                  label: `Ajuste Directo ≤ 5% (${metricas.directosConteo})`,
-                },
-                { id: "aprobado", label: `Aprobados (${metricas.aprobadosConteo})` },
-                { id: "rechazado", label: `Rechazados (${metricas.rechazadosConteo})` },
-              ] as const
-            ).map((chip) => {
-              const activo = filtroEstado === chip.id;
-              return (
-                <TouchableOpacity
-                  key={chip.id}
-                  onPress={() => establecerFiltroEstado(chip.id)}
-                  style={[estilosLocales.filtroChip, activo && estilosLocales.filtroChipActivo]}
-                >
-                  <Text
-                    style={[
-                      estilosLocales.filtroChipTexto,
-                      activo && estilosLocales.filtroChipTextoActivo,
-                    ]}
-                  >
-                    {chip.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+          {(metricas.rechazadosConteo > 0 || filtroEstado === "rechazado") && (
+            <View style={{ flexDirection: "row" }}>
+              <TouchableOpacity
+                onPress={() =>
+                  establecerFiltroEstado(
+                    filtroEstado === "rechazado" ? "pendiente_aprobacion" : "rechazado"
+                  )
+                }
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  backgroundColor: filtroEstado === "rechazado" ? "#fef2f2" : "#ffffff",
+                  borderWidth: 1,
+                  borderColor: "#fca5a5",
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 8,
+                }}
+              >
+                <Ionicons name="close-circle-outline" size={14} color="#dc2626" />
+                <Text style={{ fontSize: 11, fontWeight: "700", color: "#991b1b" }}>
+                  {filtroEstado === "rechazado"
+                    ? `Viendo Rechazados (${metricas.rechazadosConteo}) • Toca para volver`
+                    : `Ver Conteos Rechazados (${metricas.rechazadosConteo})`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
-        {/* 6. LISTADO / BANDEJA RESPONSIVA DE CONTEOS FÍSICOS */}
+        {/* 5. LISTADO / BANDEJA RESPONSIVA DE CONTEOS FÍSICOS CON SEMÁFORO DE SUPERFICIE */}
         {conteosFiltrados.length === 0 ? (
           <EstadoVacio
             icon="checkbox-outline"
@@ -427,22 +470,48 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
               const esRechazado = c.status === "rechazado";
               const superoUmbral = Math.abs(c.differencePct) > 5;
 
+              const fondoSem = esPendiente
+                ? "#fffbeb"
+                : esRechazado
+                ? "#fef2f2"
+                : "#f0fdf4";
+              const bordeSem = esPendiente
+                ? "#fcd34d"
+                : esRechazado
+                ? "#fca5a5"
+                : "#86efac";
+              const franjaSem = esPendiente
+                ? "#d97706"
+                : esRechazado
+                ? "#dc2626"
+                : "#16a34a";
+
               return (
                 <Tarjeta
                   key={c.id}
-                  variant={esPendiente ? "elevated" : "outlined"}
+                  variant="outlined"
                   style={[
-                    estilosLocales.conteoTarjeta,
+                    {
+                      padding: 12,
+                      gap: 10,
+                      backgroundColor: fondoSem,
+                      borderColor: bordeSem,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: franjaSem,
+                      borderRadius: 12,
+                    },
                     esPantallaAncha && estilosLocales.conteoTarjetaAncha,
-                    esPendiente && estilosLocales.conteoTarjetaPendiente,
                   ]}
                 >
                   <View style={estilosLocales.tarjetaTop}>
                     <View style={{ flex: 1, minWidth: 160 }}>
                       <Text style={estilosLocales.skuTexto}>{c.sku}</Text>
-                      <Text style={estilosLocales.nombreTexto}>{c.productName}</Text>
+                      <Text style={[estilosLocales.nombreTexto, { fontSize: 15 }]}>
+                        {c.productName}
+                      </Text>
                       <Text style={estilosLocales.metaTexto}>
-                        Auditor: {c.counterUser} • {formatearFecha(c.date)}
+                        👤 Auditor: {c.counterUser} • 📅 {formatearFecha(c.date)}
                       </Text>
                     </View>
 
@@ -451,7 +520,7 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                         esPendiente
                           ? "Retenido > 5%"
                           : esDirecto
-                          ? "Ajuste Directo ≤ 5%"
+                          ? "Directo ≤ 5%"
                           : esAprobado
                           ? "Aprobado Admin"
                           : "Rechazado"
@@ -474,40 +543,65 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                     />
                   </View>
 
-                  {/* Grilla comparativa: Sistema vs Conteo Físico vs Diferencia vs Valor */}
-                  <View style={estilosLocales.comparativaGrilla}>
-                    <View style={estilosLocales.comparativaCelda}>
-                      <Text style={estilosLocales.celdaLbl}>Stock Sistema</Text>
-                      <Text style={estilosLocales.celdaVal}>{c.systemStock}</Text>
-                    </View>
-                    <View style={estilosLocales.comparativaCelda}>
-                      <Text style={estilosLocales.celdaLbl}>Conteo Físico</Text>
-                      <Text style={estilosLocales.celdaVal}>{c.countedStock}</Text>
-                    </View>
-                    <View style={estilosLocales.comparativaCelda}>
-                      <Text style={estilosLocales.celdaLbl}>Diferencia</Text>
-                      <Text
-                        style={[
-                          estilosLocales.celdaVal,
-                          {
-                            color: superoUmbral ? tema.colors.danger : tema.colors.okDark,
-                          },
-                        ]}
-                      >
-                        {c.difference > 0 ? `+${c.difference}` : c.difference} (
-                        {c.differencePct.toFixed(1)}%)
+                  {/* Grilla comparativa compacta en 1 sola fila de 4 columnas */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: bordeSem,
+                      borderRadius: 9,
+                      paddingVertical: 8,
+                      paddingHorizontal: 10,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Sistema
+                      </Text>
+                      <Text style={{ fontSize: 14, fontWeight: "800", color: tema.colors.text, marginTop: 1 }}>
+                        {c.systemStock}
                       </Text>
                     </View>
-                    <View style={estilosLocales.comparativaCelda}>
-                      <Text style={estilosLocales.celdaLbl}>Impacto CLP</Text>
+
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Físico
+                      </Text>
+                      <Text style={{ fontSize: 14, fontWeight: "800", color: tema.colors.text, marginTop: 1 }}>
+                        {c.countedStock}
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1.2 }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Diferencia
+                      </Text>
                       <Text
-                        style={[
-                          estilosLocales.celdaVal,
-                          {
-                            color:
-                              c.differenceValue !== 0 ? tema.colors.danger : tema.colors.text,
-                          },
-                        ]}
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "900",
+                          color: superoUmbral ? tema.colors.danger : tema.colors.okDark,
+                          marginTop: 1,
+                        }}
+                      >
+                        {c.difference > 0 ? `+${c.difference}` : c.difference} ({c.differencePct.toFixed(1)}%)
+                      </Text>
+                    </View>
+
+                    <View style={{ flex: 1.1, alignItems: "flex-end" }}>
+                      <Text style={{ fontSize: 9, fontWeight: "800", color: tema.colors.textMuted, textTransform: "uppercase" }}>
+                        Impacto CLP
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "900",
+                          color: c.differenceValue !== 0 ? tema.colors.danger : tema.colors.text,
+                          marginTop: 1,
+                        }}
                       >
                         {formatearCLP(c.differenceValue)}
                       </Text>
@@ -515,7 +609,9 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                   </View>
 
                   {Boolean(c.notes) && (
-                    <Text style={estilosLocales.notasTexto}>Nota: "{c.notes}"</Text>
+                    <Text style={[estilosLocales.notasTexto, { marginTop: -2 }]}>
+                      💬 &ldquo;{c.notes}&rdquo;
+                    </Text>
                   )}
 
                   {Boolean(c.approverUser) && (
@@ -527,10 +623,11 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                   {/* Acciones de Administrador en bandeja de pendientes (> 5%) */}
                   {esPendiente && rolActual === "admin" && (
                     <View
-                      style={[
-                        estilosLocales.accionesFila,
-                        esMovilEstrecho && { flexDirection: "column" },
-                      ]}
+                      style={{
+                        flexDirection: "row",
+                        gap: 8,
+                        marginTop: 2,
+                      }}
                     >
                       <Boton
                         title="Rechazar"
@@ -543,13 +640,14 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                         }}
                         style={{
                           flex: 1,
-                          minHeight: 42,
+                          minHeight: 38,
                           borderColor: tema.colors.danger,
+                          backgroundColor: "#ffffff",
                         }}
                         textStyle={{ color: tema.colors.danger }}
                       />
                       <Boton
-                        title="Aprobar Ajuste en Cardex"
+                        title="Aprobar en Cardex"
                         variant="success"
                         size="sm"
                         icon="checkmark-done-outline"
@@ -559,7 +657,7 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                             `Ajuste de ${c.sku} aprobado por ${usuario.name} y registrado en el Cardex.`
                           );
                         }}
-                        style={{ flex: 1.5, minHeight: 42 }}
+                        style={{ flex: 1.5, minHeight: 38 }}
                       />
                     </View>
                   )}
@@ -574,7 +672,6 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                     </View>
                   )}
 
-                  {/* Botón rápido para verificar el movimiento de ajuste en el Cardex [SCRUM] */}
                   {(esDirecto || esAprobado) && onIrACardex && (
                     <View style={estilosLocales.pieCardexFila}>
                       <Boton
@@ -583,7 +680,7 @@ export const SeccionConteoFisico: React.FC<PropiedadesSeccionConteoFisico> = ({
                         size="sm"
                         icon="swap-horizontal-outline"
                         onPress={() => onIrACardex(c.sku)}
-                        style={{ minHeight: 38 }}
+                        style={{ minHeight: 34, backgroundColor: "#ffffff" }}
                       />
                     </View>
                   )}
@@ -742,7 +839,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {

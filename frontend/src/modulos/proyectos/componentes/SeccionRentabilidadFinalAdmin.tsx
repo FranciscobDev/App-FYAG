@@ -431,7 +431,7 @@ export const PanelGraficosRentabilidadProyecto: React.FC<{
         <Ionicons name="checkmark-done-circle" size={20} color={tema.colors.okDark} />
         <View style={{ flex: 1 }}>
           <Text style={estilos.cierreAuditadoTitulo}>
-            Proyecto Cerrado (H34) — Dashboard de Rentabilidad Final Habilitado
+            Proyecto Cerrado — Dashboard de Rentabilidad Final Habilitado
           </Text>
           <Text style={estilos.cierreAuditadoSub}>
             {proyecto.code} • {proyecto.name}
@@ -694,7 +694,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
     establecerProyectoSeleccionadoId(p.id);
     if (mostrarAviso) {
       mostrarAviso(
-        `✓ Proyecto ${p.code} cerrado (H34). Dashboard de Rentabilidad Final habilitado automáticamente.`
+        `✓ Proyecto ${p.code} cerrado correctamente. Dashboard de Rentabilidad Final habilitado.`
       );
     }
   };
@@ -706,7 +706,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
         <View style={estilos.selectorHeader}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 4 }}>
-              <Insignia label="Rentabilidad Final (H34)" tone="primary" size="sm" />
+              <Insignia label="Rentabilidad Final" tone="primary" size="sm" />
               <Insignia
                 label={`${proyectosCerrados.length} cerrado(s) habilitado(s)`}
                 tone="ok"
@@ -717,8 +717,8 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
               Dashboard de Rentabilidad Final por Proyecto Cerrado
             </Text>
             <Text style={estilos.selectorSub}>
-              Se habilita automáticamente al cerrar un proyecto en H34. Selecciona una obra
-              cerrada para auditar sus gráficos de barras, torta y desviaciones ($ y %).
+              Se habilita automáticamente al cerrar contablemente un proyecto. Selecciona una obra
+              cerrada para revisar sus gráficos de barras, composición de costos y desviaciones ($ y %).
             </Text>
           </View>
         </View>
@@ -760,7 +760,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
       ) : (
         <EstadoVacio
           icon="lock-closed-outline"
-          title="Aún no hay proyectos cerrados (H34)"
+          title="Aún no hay proyectos cerrados"
           description="Cierra un proyecto desde la lista inferior o desde su ficha para habilitar automáticamente su Dashboard de Rentabilidad Final."
           containerStyle={{ marginVertical: 12 }}
         />
@@ -772,7 +772,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
           <Ionicons name="warning" size={20} color={tema.colors.danger} />
           <View style={{ flex: 1 }}>
             <Text style={estilos.bloqueosTitulo}>
-              Cierre H34 bloqueado para {bloqueosCierre.proyectoCodigo}:
+              Cierre bloqueado para {bloqueosCierre.proyectoCodigo}:
             </Text>
             {bloqueosCierre.bloqueos.map((b, i) => (
               <Text key={i} style={estilos.bloqueosItem}>
@@ -790,7 +790,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
       {proyectosAbiertos.length > 0 && (
         <Tarjeta variant="outlined" style={{ gap: 10 }}>
           <Text style={estilos.abiertosTitulo}>
-            Proyectos Activos / En Curso (Cerrar en H34 para habilitar Rentabilidad Final):
+            Proyectos Activos / En Curso (Cerrar proyecto para habilitar Rentabilidad Final):
           </Text>
           {proyectosAbiertos.map((p) => (
             <View key={p.id} style={estilos.abiertoFila}>
@@ -804,7 +804,7 @@ export const SeccionRentabilidadFinalAdmin: React.FC<
                 </Text>
               </View>
               <Boton
-                title="Cerrar Proyecto (H34)"
+                title="Cerrar Proyecto"
                 variant="secondary"
                 size="sm"
                 icon="lock-closed-outline"

@@ -10,7 +10,6 @@ import clienteRoutes from './routes/clienteRoutes';
 import parametrosRoutes from './routes/parametrosRoutes';
 import ordenCompraRoutes from './routes/ordenCompraRoutes';
 import solicitudRoutes from './routes/solicitudRoutes';
-import devolucionRoutes from './routes/devolucionRoutes';
 import verificarToken from './middleware/authMiddleware';
 import cardexRoutes from './routes/cardexRoutes';
 
@@ -18,7 +17,17 @@ import cardexRoutes from './routes/cardexRoutes';
 export const app = express();
 
 app.use(cors());
-app.use(express.json());
+
+// El lote de sincronización lleva fotos en base64: tiene su propio límite de cuerpo (más alto) y se
+// parsea DESPUÉS de validar el token, para no leer cuerpos grandes de peticiones sin sesión.
+const analizadorJsonGeneral = express.json();
+app.use((req, res, next) => {
+    if (req.originalUrl.startsWith('/api/sincronizacion')) {
+        next();
+        return;
+    }
+    analizadorJsonGeneral(req, res, next);
+});
 
 // Log de peticiones entrantes para diagnóstico en desarrollo
 app.use((req, _res, next) => {
@@ -44,7 +53,5 @@ app.use('/api/clientes', verificarToken, clienteRoutes);
 app.use('/api/parametros', verificarToken, parametrosRoutes);
 app.use('/api/ordenes-compra', verificarToken, ordenCompraRoutes);
 app.use('/api/solicitudes', verificarToken, solicitudRoutes);
-app.use('/api/cardex', verificarToken, cardexRoutes);
-app.use('/api/devoluciones', verificarToken, devolucionRoutes);
 
 export default app;

@@ -554,36 +554,8 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                   {sincronizando ? "Sincronizando..." : "Sincronizar"}
                 </Text>
               </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={alternarModoOfflineScrum}
-                style={[
-                  estilos.botonModoOffline,
-                  modoOfflineScrum && estilos.botonModoOfflineActivo,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name={modoOfflineScrum ? "wifi-outline" : "airplane-outline"}
-                  size={15}
-                  color={modoOfflineScrum ? "#ffffff" : "#92400e"}
-                />
-                <Text
-                  style={[
-                    estilos.botonModoOfflineTexto,
-                    modoOfflineScrum && estilos.botonModoOfflineTextoActivo,
-                  ]}
-                >
-                  {modoOfflineScrum ? "Salir Offline" : "Probar Offline"}
-                </Text>
-              </TouchableOpacity>
             </View>
           </View>
-
-          <Text style={estilos.scrumGuiaTexto}>
-            [SCRUM] Desconecta el internet del celular (o usa "Probar Offline") para verificar los
-            saldos asignados y cuánto material falta retirar de bodega sin perder información.
-          </Text>
         </View>
 
         {/* 3. SELECTOR RESPONSIVO DE PROYECTOS ASIGNADOS */}
@@ -626,7 +598,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                       <Ionicons
                         name="business-outline"
                         size={14}
-                        color={esSeleccionado ? "#f59e0b" : tema.colors.textMuted}
+                        color={esSeleccionado ? "#818cf8" : tema.colors.textMuted}
                       />
                       <Text
                         style={[
@@ -666,9 +638,9 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
               {/* 4. DASHBOARD DE MÉTRICAS DEL PROYECTO SELECCIONADO */}
               {actualProyecto && (
                 <Tarjeta variant="elevated" style={estilos.dashboardTarjeta}>
-                  <View style={estilos.dashboardCabecera}>
-                    <View style={{ flex: 1, minWidth: 190 }}>
-                      <View style={estilos.dashboardCodigoFila}>
+                  <View style={[estilos.dashboardCabecera, { flexWrap: "wrap", gap: 10 }]}>
+                    <View style={{ flex: 1, minWidth: 160 }}>
+                      <View style={[estilos.dashboardCodigoFila, { flexWrap: "wrap", gap: 6 }]}>
                         <Text style={estilos.dashboardCodigo}>{actualProyecto.code}</Text>
                         <Insignia
                           label={actualProyecto.kind.toUpperCase()}
@@ -676,8 +648,18 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                           size="sm"
                         />
                       </View>
-                      <Text style={estilos.proyectoNombre}>{actualProyecto.name}</Text>
-                      <Text style={estilos.proyectoCliente}>
+                      <Text
+                        style={[estilos.proyectoNombre, { flexShrink: 1 }]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        {actualProyecto.name}
+                      </Text>
+                      <Text
+                        style={[estilos.proyectoCliente, { flexShrink: 1 }]}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
                         Cliente: {actualProyecto.client}
                         {actualProyecto.address ? ` • ${actualProyecto.address}` : ""}
                       </Text>
@@ -686,6 +668,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                     <View
                       style={[
                         estilos.resumenRetiroPill,
+                        { maxWidth: "100%" },
                         totalPendiente > 0
                           ? estilos.resumenRetiroPillPendiente
                           : estilos.resumenRetiroPillOk,
@@ -697,9 +680,11 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                         color={totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok}
                       />
                       <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
                         style={[
                           estilos.resumenRetiroPillTexto,
-                          { color: totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok },
+                          { flexShrink: 1, color: totalPendiente > 0 ? tema.colors.warnDark : tema.colors.ok },
                         ]}
                       >
                         {totalPendiente > 0
@@ -725,7 +710,7 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                       style={[
                         estilos.kpiCaja,
                         esMovilEstrecho && estilos.kpiCajaMovil,
-                        { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
+                        { backgroundColor: tema.colors.primaryLight, borderColor: tema.colors.primaryBorder },
                       ]}
                     >
                       <Text style={[estilos.kpiEtiqueta, { color: tema.colors.primaryDark }]}>
@@ -791,8 +776,8 @@ export const VistaMaterialesTecnico: React.FC<PropiedadesVistaMaterialesTecnico>
                   </View>
 
                   <View style={estilos.supplyProgresoCaja}>
-                    <View style={estilos.supplyEncabezado}>
-                      <Text style={estilos.supplyEtiqueta}>Progreso de retiro en bodega</Text>
+                    <View style={[estilos.supplyEncabezado, { flexWrap: "wrap", gap: 6 }]}>
+                      <Text style={[estilos.supplyEtiqueta, { flexShrink: 1 }]}>Progreso de retiro en bodega</Text>
                       <Text style={estilos.supplyPorcentaje}>
                         {porcentajeAbastecimiento}% retirado
                       </Text>
@@ -1508,9 +1493,9 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderWidth: 1,
-    borderColor: "#44403c",
+    borderColor: "#334155",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: tema.radius.full,
@@ -1518,7 +1503,7 @@ const estilos = StyleSheet.create({
   chipOnlineTexto: {
     fontSize: 11,
     fontWeight: "bold",
-    color: "#e7e5e4",
+    color: "#e2e8f0",
   },
   chipPendienteGlobal: {
     flexDirection: "row",
@@ -1680,7 +1665,7 @@ const estilos = StyleSheet.create({
     borderColor: tema.colors.borderDark,
   },
   proyectoChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   proyectoChipTexto: {
@@ -1840,7 +1825,7 @@ const estilos = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {

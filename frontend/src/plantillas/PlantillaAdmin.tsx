@@ -194,7 +194,7 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
         {
           id: "proyectos",
           label: "Proyectos y Obras",
-          description: "Presupuestos, costos reales H27/H28 y liquidación final",
+          description: "Presupuestos, costos reales y liquidación final",
           icon: "business-outline",
         },
         {
@@ -893,7 +893,7 @@ export const PlantillaAdmin: React.FC<PropiedadesPlantillaAdmin> = ({ onLogout }
               }}
               style={estilos.testSesionBoton}
             >
-              <Ionicons name="time-outline" size={18} color={tema.colors.warnDark} />
+              <Ionicons name="time-outline" size={18} color={tema.colors.primaryDark} />
               <Text style={estilos.testSesionTexto}>Aviso 30 min Inactividad (Test)</Text>
             </TouchableOpacity>
 
@@ -1063,9 +1063,9 @@ const estilos = StyleSheet.create({
   barraSuperior: {
     minHeight: 64,
     paddingVertical: 8,
-    backgroundColor: "#1c1917", // Dark Titanium Bar
+    backgroundColor: "#1e1b4b", // Indigo Night Bar
     borderBottomWidth: 1.5,
-    borderBottomColor: "#292524",
+    borderBottomColor: "#312e81",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -1432,16 +1432,16 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 8,
     paddingHorizontal: 8,
-    backgroundColor: tema.colors.warnLight,
+    backgroundColor: tema.colors.primaryLight,
     borderWidth: 1,
-    borderColor: tema.colors.warnBorder,
+    borderColor: tema.colors.primaryBorder,
     borderRadius: tema.radius.sm,
     marginBottom: 6,
   },
   testSesionTexto: {
     fontSize: tema.fontSize.xs,
     fontWeight: "700",
-    color: tema.colors.warnDark,
+    color: tema.colors.primaryDark,
     marginLeft: 8,
   },
   cerrarSesionBoton: {

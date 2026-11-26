@@ -15,6 +15,8 @@ import { FormularioReporteAvance } from "@/componentes/FormularioReporteAvance";
 interface TechnicianRegisterViewProps {
   initialSubTab?: "avance" | "sobrante";
   initialProjectId?: string;
+  isOffline?: boolean;
+  onCambioConexion?: (offline: boolean) => void;
 }
 
 export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
@@ -60,7 +62,7 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
           <Ionicons
             name="trending-up-outline"
             size={16}
-            color={activoSubPestana === "avance" ? "#ffffff" : "#a8a29e"}
+            color={activoSubPestana === "avance" ? "#ffffff" : "#94a3b8"}
           />
           <Text style={[estilos.subPestanaEtiqueta, activoSubPestana === "avance" && estilos.subPestanaEtiquetaActivo]}>
             Avance (0-100%)
@@ -75,7 +77,7 @@ export const VistaRegistroTecnico: React.FC<TechnicianRegisterViewProps> = ({
           <Ionicons
             name="return-down-back-outline"
             size={16}
-            color={activoSubPestana === "sobrante" ? "#ffffff" : "#a8a29e"}
+            color={activoSubPestana === "sobrante" ? "#ffffff" : "#94a3b8"}
           />
           <Text style={[estilos.subPestanaEtiqueta, activoSubPestana === "sobrante" && estilos.subPestanaEtiquetaActivo]}>
             Devolver Sobrante
@@ -112,14 +114,14 @@ const estilos = StyleSheet.create({
   },
   subPestanaBarra: {
     flexDirection: "row",
-    backgroundColor: "#292524",
+    backgroundColor: "#1e293b",
     padding: 3,
     marginHorizontal: tema.spacing.md,
     marginTop: tema.spacing.sm,
     marginBottom: tema.spacing.xs,
     borderRadius: tema.radius.full,
     borderWidth: 1,
-    borderColor: "#44403c",
+    borderColor: "#334155",
   },
   subPestanaElemento: {
     flex: 1,
@@ -140,7 +142,7 @@ const estilos = StyleSheet.create({
   },
   subPestanaEtiqueta: {
     fontSize: tema.fontSize.xs,
-    color: "#a8a29e",
+    color: "#94a3b8",
     fontWeight: "600",
     marginLeft: 4,
   },

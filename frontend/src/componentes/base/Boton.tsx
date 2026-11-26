@@ -186,9 +186,11 @@ export const Boton: React.FC<PropiedadesBoton> = ({
             />
           )}
           <Text
+            numberOfLines={2}
+            ellipsizeMode="tail"
             style={[
               estilos.texto,
-              { color: textoColor, fontSize: fontTamano },
+              { color: textoColor, fontSize: fontTamano, lineHeight: fontTamano + 4 },
               textStyle,
             ]}
           >

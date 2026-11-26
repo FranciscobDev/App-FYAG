@@ -104,7 +104,7 @@ export const estilos = StyleSheet.create({
     marginBottom: tema.spacing.md,
     backgroundColor: tema.colors.card,
     borderWidth: 1.5,
-    borderColor: "#f59e0b",
+    borderColor: "#a5b4fc",
     borderRadius: tema.radius.lg,
     padding: tema.spacing.md,
     shadowColor: "#000",
@@ -122,7 +122,7 @@ export const estilos = StyleSheet.create({
   },
   recepcionHeroIzquierda: {
     flex: 1,
-    minWidth: 260,
+    minWidth: 180,
   },
   recepcionInsigniaFila: {
     flexDirection: "row",
@@ -134,7 +134,7 @@ export const estilos = StyleSheet.create({
   recepcionInsigniaHint: {
     fontSize: 11,
     fontWeight: "600",
-    color: "#b45309",
+    color: "#4338ca",
   },
   recepcionHeroTitulo: {
     fontSize: tema.fontSize.md,

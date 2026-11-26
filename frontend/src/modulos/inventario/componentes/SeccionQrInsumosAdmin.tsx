@@ -2,8 +2,9 @@
 // para el Administrador, con control de estado de asignación física y visor de datos embebidos.
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ScrollView,
+   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   useWindowDimensions,
@@ -30,6 +31,8 @@ import {
   RegistroQrInsumo,
   construirPayloadQrInsumo,
   crearRegistroQrParaProducto,
+  descargarLoteQrPngWeb,
+  exportarLoteQrPdfWeb,
   generarMatrizQrVisual,
   guardarRegistrosQrLocal,
   imprimirEtiquetaQrWeb,
@@ -46,6 +49,7 @@ export interface PropiedadesSeccionQrInsumosAdmin {
 type FiltroVistaQr =
   | "todos"
   | "asignado_estanteria"
+  | "por_asignar"
   | "impreso"
   | "pendiente_impresion"
   | "sin_qr";
@@ -128,9 +132,15 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
   const [registrosQr, establecerRegistrosQr] = useState<RegistroQrInsumo[]>([]);
   const [hidratado, establecerHidratado] = useState(false);
 
-  // Filtros dinámicos
+  // Filtros dinámicos y selección múltiple para exportación en lote (PDF/PNG)
+  // Por defecto inicia en "por_asignar" (Pendientes) para que los ya pegados pasen a la pestaña "Pegados"
   const [busqueda, establecerBusqueda] = useState("");
-  const [filtroVista, establecerFiltroVista] = useState<FiltroVistaQr>("todos");
+  const [filtroVista, establecerFiltroVista] = useState<FiltroVistaQr>("por_asignar");
+  const [seleccionadosIds, establecerSeleccionadosIds] = useState<string[]>([]);
+  const [modalLotePreview, establecerModalLotePreview] = useState<{
+    formato: "PDF" | "PNG";
+    registros: RegistroQrInsumo[];
+  } | null>(null);
 
   // Modal de generación de nuevo QR
   const [modalGenerarVisible, establecerModalGenerarVisible] = useState(false);
@@ -205,7 +215,14 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
   const registrosFiltrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
     return registrosQr.filter((r) => {
-      if (
+      if (filtroVista === "por_asignar") {
+        if (
+          r.estadoAsignacion !== "impreso" &&
+          r.estadoAsignacion !== "pendiente_impresion"
+        ) {
+          return false;
+        }
+      } else if (
         filtroVista !== "todos" &&
         filtroVista !== "sin_qr" &&
         r.estadoAsignacion !== filtroVista
@@ -314,8 +331,12 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
         ? { ...prev, estadoAsignacion: nuevoEstado, actualizadoEn: ahora }
         : prev
     );
+    // Quitar de la selección activa si cambió de bandeja (ej. pasó de Pendientes a Pegados)
+    establecerSeleccionadosIds((prev) => prev.filter((id) => id !== idRegistro));
     mostrarAviso(
-      `Estado físico actualizado a "${CONFIG_ESTADO_QR[nuevoEstado].label}".`
+      nuevoEstado === "asignado_estanteria"
+        ? `Etiqueta confirmada y movida a la sección "Pegados".`
+        : `Etiqueta movida a la sección "Pendientes" (${CONFIG_ESTADO_QR[nuevoEstado].label}).`
     );
   };
 
@@ -333,166 +354,522 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
     }
   };
 
+  // Funciones de selección múltiple y exportación en lote (PDF / PNG)
+  const alternarSeleccionQr = (id: string) => {
+    establecerSeleccionadosIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const seleccionarLoteRapido = (cantidad?: number) => {
+    const lista = cantidad ? registrosFiltrados.slice(0, cantidad) : registrosFiltrados;
+    establecerSeleccionadosIds(lista.map((r) => r.id));
+    mostrarAviso(
+      `${lista.length} etiqueta(s) QR seleccionadas para exportación o asignación en lote.`
+    );
+  };
+
+  const limpiarSeleccionQr = () => {
+    establecerSeleccionadosIds([]);
+  };
+
+  const registrosSeleccionados = useMemo(
+    () => registrosQr.filter((r) => seleccionadosIds.includes(r.id)),
+    [registrosQr, seleccionadosIds]
+  );
+
+  const manejarConfirmarPegadoEnLote = (asignadoEnEstanteria: boolean) => {
+    if (registrosSeleccionados.length === 0) return;
+    const nuevoEstado: EstadoAsignacionFisicaQr = asignadoEnEstanteria
+      ? "asignado_estanteria"
+      : "impreso";
+    const ahora = new Date().toISOString();
+    const setIds = new Set(seleccionadosIds);
+
+    establecerRegistrosQr((prev) =>
+      prev.map((r) =>
+        setIds.has(r.id)
+          ? { ...r, estadoAsignacion: nuevoEstado, actualizadoEn: ahora }
+          : r
+      )
+    );
+    establecerSeleccionadosIds([]);
+    mostrarAviso(
+      asignadoEnEstanteria
+        ? `${registrosSeleccionados.length} etiqueta(s) confirmadas y movidas a la pestaña "Pegados".`
+        : `${registrosSeleccionados.length} etiqueta(s) movidas a la pestaña "Pendientes".`
+    );
+  };
+
+  const manejarExportarLote = (formato: "PDF" | "PNG", lista?: RegistroQrInsumo[]) => {
+    const lote =
+      lista && lista.length > 0
+        ? lista
+        : registrosSeleccionados.length > 0
+        ? registrosSeleccionados
+        : registrosFiltrados.slice(0, 5);
+
+    if (lote.length === 0) {
+      mostrarAviso("Selecciona al menos un código QR para exportar en lote.");
+      return;
+    }
+
+    establecerSeleccionadosIds(lote.map((r) => r.id));
+    establecerModalLotePreview({ formato, registros: lote });
+
+    if (formato === "PNG") {
+      const ok = descargarLoteQrPngWeb(lote);
+      if (ok) {
+        mostrarAviso(
+          `Lote de ${lote.length} etiqueta(s) descargado en un solo archivo PNG imprimible.`
+        );
+      }
+    } else {
+      const ok = exportarLoteQrPdfWeb(lote);
+      if (ok) {
+        mostrarAviso(
+          `Plancha PDF imprimible con ${lote.length} etiqueta(s) generada correctamente.`
+        );
+      }
+    }
+  };
+
+  const totalInsumosActivos = Math.max(1, skusConQr.size + metricas.sinQr);
+  const porcentajeCoberturaQr = Math.min(
+    100,
+    Math.round((skusConQr.size / totalInsumosActivos) * 100)
+  );
+
   return (
     <View style={estilosLocales.contenedorCentrado}>
-      {/* 1. HERO CARD ADMINISTRADOR: GENERACIÓN DE CÓDIGOS QR */}
-      <Tarjeta variant="elevated" style={estilosLocales.heroTarjeta}>
-        <View style={estilosLocales.heroContenido}>
-          <View style={{ flex: 1, minWidth: 220 }}>
-            <View style={estilosLocales.heroBadgesFila}>
-              <Insignia label="Catálogo QR — Administrador" tone="primary" size="sm" />
-              <Insignia label="Asignación Física en Bodega" tone="info" size="sm" />
+      {/* 1. CABECERA COMPACTA INDUSTRIAL + COBERTURA EN VIVO */}
+      <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: tema.colors.primaryLight,
+                borderWidth: 1,
+                borderColor: tema.colors.primaryBorder,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="qr-code-outline" size={20} color={tema.colors.primaryDark} />
             </View>
-            <Text style={estilosLocales.heroTitulo}>
-              Generación y Visualización de Códigos QR de Insumos
-            </Text>
-            <Text style={estilosLocales.heroSub}>
-              Genera etiquetas QR con datos embebidos (SKU, nombre, categoría, unidad, lote y
-              ubicación) y controla su estado de asignación física en estantería.
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                Control de Etiquetas QR — Bodega
+              </Text>
+              <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                Cobertura física:{" "}
+                <Text style={{ fontWeight: "700", color: tema.colors.primaryDark }}>
+                  {skusConQr.size} de {skusConQr.size + metricas.sinQr} insumos
+                </Text>{" "}
+                etiquetados ({porcentajeCoberturaQr}%)
+              </Text>
+            </View>
           </View>
 
-          <View style={estilosLocales.heroAcciones}>
-            <Boton
-              title="+ Generar Nuevo QR"
-              variant="primary"
-              size="md"
-              icon="qr-code-outline"
-              onPress={() => abrirModalGenerar()}
-              style={{ minHeight: 46 }}
-              fullWidth={esMovilEstrecho}
-            />
-          </View>
+          <Boton
+            title="+ Generar Nuevo QR"
+            variant="primary"
+            size="sm"
+            icon="qr-code-outline"
+            onPress={() => abrirModalGenerar()}
+            style={{ minHeight: 40 }}
+            fullWidth={esMovilEstrecho}
+          />
+        </View>
+
+        {/* Barra de progreso de cobertura de etiquetado */}
+        <View
+          style={{
+            height: 6,
+            backgroundColor: tema.colors.surfaceAlt,
+            borderRadius: 999,
+            overflow: "hidden",
+            marginTop: 10,
+          }}
+        >
+          <View
+            style={{
+              width: `${porcentajeCoberturaQr}%`,
+              height: "100%",
+              backgroundColor:
+                porcentajeCoberturaQr >= 80
+                  ? "#16a34a"
+                  : porcentajeCoberturaQr >= 40
+                  ? tema.colors.primary
+                  : "#dc2626",
+            }}
+          />
         </View>
       </Tarjeta>
 
-      {/* 2. DASHBOARD RESPONSIVO DE 4 KPIs */}
-      <View style={estilosLocales.kpiGrilla}>
-        <View
-          style={[
-            estilosLocales.kpiCaja,
-            esMovilEstrecho && estilosLocales.kpiCajaMovil,
-            { backgroundColor: tema.colors.primaryLight, borderColor: "#fde68a" },
-          ]}
-        >
-          <Text style={[estilosLocales.kpiLbl, { color: tema.colors.primaryDark }]}>
-            QR Generados
-          </Text>
-          <Text style={[estilosLocales.kpiVal, { color: tema.colors.primaryDark }]}>
-            {metricas.totalQr}
-          </Text>
-          <Text style={[estilosLocales.kpiSub, { color: tema.colors.primaryDark }]}>
-            Etiquetas activas
-          </Text>
-        </View>
-
-        <View
-          style={[
-            estilosLocales.kpiCaja,
-            esMovilEstrecho && estilosLocales.kpiCajaMovil,
-            { backgroundColor: tema.colors.okLight, borderColor: "#bbf7d0" },
-          ]}
-        >
-          <Text style={[estilosLocales.kpiLbl, { color: tema.colors.okDark }]}>
-            En Estantería
-          </Text>
-          <Text style={[estilosLocales.kpiVal, { color: tema.colors.okDark }]}>
-            {metricas.asignados}
-          </Text>
-          <Text style={[estilosLocales.kpiSub, { color: tema.colors.okDark }]}>
-            Asignación física OK
-          </Text>
-        </View>
-
-        <View
-          style={[
-            estilosLocales.kpiCaja,
-            esMovilEstrecho && estilosLocales.kpiCajaMovil,
-            metricas.pendientes + metricas.impresos > 0 && {
-              backgroundColor: tema.colors.warnLight,
-              borderColor: tema.colors.warnBorder,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              estilosLocales.kpiLbl,
-              metricas.pendientes + metricas.impresos > 0 && { color: tema.colors.warnDark },
-            ]}
-          >
-            Por Asignar
-          </Text>
-          <Text
-            style={[
-              estilosLocales.kpiVal,
-              metricas.pendientes + metricas.impresos > 0 && { color: tema.colors.warnDark },
-            ]}
-          >
-            {metricas.pendientes + metricas.impresos}
-          </Text>
-          <Text
-            style={[
-              estilosLocales.kpiSub,
-              metricas.pendientes + metricas.impresos > 0 && { color: tema.colors.warnDark },
-            ]}
-          >
-            {metricas.impresos} impresos • {metricas.pendientes} pend.
-          </Text>
-        </View>
-
-        <View style={[estilosLocales.kpiCaja, esMovilEstrecho && estilosLocales.kpiCajaMovil]}>
-          <Text style={estilosLocales.kpiLbl}>Insumos Sin QR</Text>
-          <Text style={estilosLocales.kpiVal}>{metricas.sinQr}</Text>
-          <Text style={estilosLocales.kpiSub}>Disponibles para emitir</Text>
-        </View>
+      {/* 2. PESTAÑAS DE SECCIÓN QR: PENDIENTES (INICIO) / PEGADOS / SIN QR / TODOS */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {[
+          {
+            id: "por_asignar" as FiltroVistaQr,
+            titulo: "Pendientes",
+            valor: metricas.pendientes + metricas.impresos,
+            sub: `${metricas.impresos} imp. • ${metricas.pendientes} por imp.`,
+            icon: "time-outline" as const,
+            bg: "#fffbeb",
+            border: "#fcd34d",
+            borderActivo: "#d97706",
+            textColor: "#92400e",
+          },
+          {
+            id: "asignado_estanteria" as FiltroVistaQr,
+            titulo: "Pegados",
+            valor: metricas.asignados,
+            sub: "En estantería OK",
+            icon: "checkmark-done-circle-outline" as const,
+            bg: "#f0fdf4",
+            border: "#86efac",
+            borderActivo: "#16a34a",
+            textColor: "#166534",
+          },
+          {
+            id: "sin_qr" as FiltroVistaQr,
+            titulo: "Sin QR",
+            valor: metricas.sinQr,
+            sub: "Por generar",
+            icon: "add-circle-outline" as const,
+            bg: metricas.sinQr > 0 ? "#fef2f2" : "#f1f5f9",
+            border: metricas.sinQr > 0 ? "#fecaca" : "#e2e8f0",
+            borderActivo: metricas.sinQr > 0 ? "#dc2626" : "#475569",
+            textColor: metricas.sinQr > 0 ? "#991b1b" : "#334155",
+          },
+          {
+            id: "todos" as FiltroVistaQr,
+            titulo: "Todos los QR",
+            valor: metricas.totalQr,
+            sub: "Historial total",
+            icon: "qr-code-outline" as const,
+            bg: "#f1f5f9",
+            border: "#cbd5e1",
+            borderActivo: "#334155",
+            textColor: "#0f172a",
+          },
+        ].map((kpi) => {
+          const activo = filtroVista === kpi.id;
+          return (
+            <TouchableOpacity
+              key={kpi.id}
+              activeOpacity={0.8}
+              onPress={() => {
+                establecerFiltroVista(kpi.id);
+                establecerSeleccionadosIds([]);
+              }}
+              style={{
+                flexBasis: "48%",
+                flexGrow: 1,
+                minWidth: 140,
+                backgroundColor: kpi.bg,
+                borderWidth: activo ? 2 : 1,
+                borderColor: activo ? kpi.borderActivo : kpi.border,
+                borderLeftWidth: 5,
+                borderLeftColor: kpi.borderActivo,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    color: kpi.textColor,
+                    textTransform: "uppercase",
+                  }}
+                  numberOfLines={1}
+                >
+                  {kpi.titulo}
+                </Text>
+                <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                  {kpi.valor}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: activo ? "800" : "600",
+                    color: kpi.textColor,
+                  }}
+                  numberOfLines={1}
+                >
+                  {activo ? "● Vista activa" : kpi.sub}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* 3. BUSCADOR Y FILTROS DE ESTADO DE ASIGNACIÓN FÍSICA */}
+      {/* 3. BUSCADOR COMPACTO + BARRA DE SELECCIÓN MÚLTIPLE MEJORADA */}
       <View style={estilosLocales.filtrosBloque}>
         <CampoBusqueda
           value={busqueda}
           onChangeText={establecerBusqueda}
-          placeholder="Buscar por código QR, SKU, nombre de insumo o ubicación..."
+          placeholder="Buscar por código QR, SKU, nombre o ubicación..."
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {(
-            [
-              { id: "todos", label: `Todos los QR (${metricas.totalQr})` },
-              {
-                id: "asignado_estanteria",
-                label: `Asignado en Estantería (${metricas.asignados})`,
-              },
-              { id: "impreso", label: `Impreso (${metricas.impresos})` },
-              {
-                id: "pendiente_impresion",
-                label: `Pendiente Impresión (${metricas.pendientes})`,
-              },
-              { id: "sin_qr", label: `Insumos Sin QR (${metricas.sinQr})` },
-            ] as const
-          ).map((chip) => {
-            const activo = filtroVista === chip.id;
-            return (
-              <TouchableOpacity
-                key={chip.id}
-                onPress={() => establecerFiltroVista(chip.id)}
-                style={[estilosLocales.filtroChip, activo && estilosLocales.filtroChipActivo]}
-              >
+        {filtroVista !== "sin_qr" && registrosFiltrados.length > 0 && (
+          <View
+            style={{
+              backgroundColor:
+                registrosSeleccionados.length > 0 ? "#fffbeb" : tema.colors.card,
+              borderWidth: 1.5,
+              borderColor:
+                registrosSeleccionados.length > 0
+                  ? tema.colors.primary
+                  : tema.colors.border,
+              borderRadius: 12,
+              padding: 12,
+              gap: 10,
+            }}
+          >
+            {/* Cabecera del Selector Múltiple: Estado + Chips rápidos de selección */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: 8,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons
+                  name={
+                    registrosSeleccionados.length > 0
+                      ? "checkbox"
+                      : "layers-outline"
+                  }
+                  size={18}
+                  color={tema.colors.primaryDark}
+                />
                 <Text
-                  style={[
-                    estilosLocales.filtroChipTexto,
-                    activo && estilosLocales.filtroChipTextoActivo,
-                  ]}
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "800",
+                    color: tema.colors.text,
+                  }}
                 >
-                  {chip.label}
+                  {registrosSeleccionados.length > 0
+                    ? `${registrosSeleccionados.length} de ${registrosFiltrados.length} etiqueta(s) seleccionada(s)`
+                    : `Selección en Lote (${registrosFiltrados.length} en esta pestaña)`}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+              </View>
+
+              {/* Chips de selección rápida */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <TouchableOpacity
+                  onPress={() =>
+                    registrosSeleccionados.length === registrosFiltrados.length
+                      ? limpiarSeleccionQr()
+                      : seleccionarLoteRapido()
+                  }
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    backgroundColor:
+                      registrosSeleccionados.length === registrosFiltrados.length &&
+                      registrosFiltrados.length > 0
+                        ? tema.colors.primary
+                        : tema.colors.surfaceAlt,
+                    borderWidth: 1,
+                    borderColor:
+                      registrosSeleccionados.length === registrosFiltrados.length &&
+                      registrosFiltrados.length > 0
+                        ? tema.colors.primary
+                        : tema.colors.borderDark,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 7,
+                  }}
+                >
+                  <Ionicons
+                    name={
+                      registrosSeleccionados.length === registrosFiltrados.length &&
+                      registrosFiltrados.length > 0
+                        ? "checkmark-done"
+                        : "checkbox-outline"
+                    }
+                    size={14}
+                    color={
+                      registrosSeleccionados.length === registrosFiltrados.length &&
+                      registrosFiltrados.length > 0
+                        ? "#ffffff"
+                        : tema.colors.text
+                    }
+                  />
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "700",
+                      color:
+                        registrosSeleccionados.length === registrosFiltrados.length &&
+                        registrosFiltrados.length > 0
+                          ? "#ffffff"
+                          : tema.colors.text,
+                    }}
+                  >
+                    {registrosSeleccionados.length === registrosFiltrados.length &&
+                    registrosFiltrados.length > 0
+                      ? "Quitar Todas"
+                      : `Todas (${registrosFiltrados.length})`}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => seleccionarLoteRapido(5)}
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                    backgroundColor:
+                      registrosSeleccionados.length === 5
+                        ? tema.colors.primaryLight
+                        : "#ffffff",
+                    borderWidth: 1,
+                    borderColor:
+                      registrosSeleccionados.length === 5
+                        ? tema.colors.primary
+                        : tema.colors.borderDark,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 7,
+                  }}
+                >
+                  <Ionicons name="sparkles-outline" size={13} color={tema.colors.primaryDark} />
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.primaryDark }}>
+                    Lote de 5
+                  </Text>
+                </TouchableOpacity>
+
+                {registrosSeleccionados.length > 0 && (
+                  <TouchableOpacity
+                    onPress={limpiarSeleccionQr}
+                    activeOpacity={0.8}
+                    style={{
+                      backgroundColor: "#fee2e2",
+                      borderWidth: 1,
+                      borderColor: "#fca5a5",
+                      paddingHorizontal: 8,
+                      paddingVertical: 5,
+                      borderRadius: 7,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#991b1b" }}>
+                      Limpiar
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Fila 2: Botones simétricos de Descarga en Lote (PDF / PNG en 1 solo archivo) */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Boton
+                title={`Exportar PDF (${
+                  registrosSeleccionados.length > 0
+                    ? registrosSeleccionados.length
+                    : Math.min(5, registrosFiltrados.length)
+                })`}
+                variant="primary"
+                size="sm"
+                icon="document-text-outline"
+                onPress={() => manejarExportarLote("PDF")}
+                style={{ flex: 1, minWidth: 140, minHeight: 38 }}
+              />
+              <Boton
+                title={`Descargar PNG (${
+                  registrosSeleccionados.length > 0
+                    ? registrosSeleccionados.length
+                    : Math.min(5, registrosFiltrados.length)
+                })`}
+                variant="outline"
+                size="sm"
+                icon="image-outline"
+                onPress={() => manejarExportarLote("PNG")}
+                style={{ flex: 1, minWidth: 140, minHeight: 38, backgroundColor: "#ffffff" }}
+              />
+            </View>
+
+            {/* Fila 3 (Condicional cuando hay selección): Mover lote entre Pendientes y Pegados */}
+            {registrosSeleccionados.length > 0 && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  paddingTop: 8,
+                  borderTopWidth: 1,
+                  borderTopColor: "#fde68a",
+                }}
+              >
+                <Text style={{ fontSize: 11, color: "#92400e", fontWeight: "700" }}>
+                  Mover {registrosSeleccionados.length} seleccionada(s) de sección:
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", flex: 1, justifyContent: "flex-end" }}>
+                  {filtroVista !== "asignado_estanteria" && (
+                    <Boton
+                      title="Mover a Pegados (Estante)"
+                      variant="success"
+                      size="sm"
+                      icon="checkmark-done-outline"
+                      onPress={() => manejarConfirmarPegadoEnLote(true)}
+                      style={{ minHeight: 34 }}
+                    />
+                  )}
+                  {filtroVista !== "por_asignar" && (
+                    <Boton
+                      title="Mover a Pendientes"
+                      variant="outline"
+                      size="sm"
+                      icon="time-outline"
+                      onPress={() => manejarConfirmarPegadoEnLote(false)}
+                      style={{ minHeight: 34, backgroundColor: "#ffffff" }}
+                    />
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
       </View>
 
-      {/* 4. LISTADO RESPONSIVO: INSUMOS SIN QR O TARJETAS DE CÓDIGOS QR */}
+      {/* 4. LISTADO RESPONSIVO: INSUMOS SIN QR O TARJETAS DE CÓDIGOS QR CON SEMÁFORO */}
       {filtroVista === "sin_qr" ? (
         sinQrFiltrados.length === 0 ? (
           <EstadoVacio
@@ -513,32 +890,43 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
                 key={prod.sku}
                 variant="outlined"
                 style={[
-                  estilosLocales.qrTarjeta,
+                  {
+                    padding: 12,
+                    backgroundColor: "#fef2f2",
+                    borderColor: "#fca5a5",
+                    borderWidth: 1.5,
+                    borderLeftWidth: 5,
+                    borderLeftColor: "#dc2626",
+                    borderRadius: 12,
+                  },
                   esPantallaAncha && estilosLocales.qrTarjetaAncha,
                 ]}
               >
-                <View style={estilosLocales.sinQrFila}>
-                  <View style={estilosLocales.sinQrIconoCaja}>
-                    <Ionicons name="qr-code-outline" size={26} color={tema.colors.textMuted} />
-                  </View>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={estilosLocales.skuTexto}>{prod.sku}</Text>
-                    <Text style={estilosLocales.nombreTexto}>{prod.name}</Text>
-                    <Text style={estilosLocales.metaTexto}>
-                      {prod.category} • Stock: {prod.stock} {prod.unit} •{" "}
-                      {prod.location || "Sin ubicación"}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#991b1b" }}>
+                        {prod.sku}
+                      </Text>
+                      <Insignia label="Sin Etiqueta QR" tone="danger" size="sm" />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: "800", color: tema.colors.text, marginTop: 2 }}>
+                      {prod.name}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 2 }}>
+                      📍 {prod.location || "Sin ubicación"} • Stock: {prod.stock} {prod.unit}
                     </Text>
                   </View>
-                </View>
 
-                <Boton
-                  title="Generar QR para este Insumo"
-                  variant="primary"
-                  size="sm"
-                  icon="add-circle-outline"
-                  onPress={() => abrirModalGenerar(prod)}
-                  style={{ minHeight: 40 }}
-                />
+                  <Boton
+                    title="+ Emitir QR"
+                    variant="primary"
+                    size="sm"
+                    icon="qr-code-outline"
+                    onPress={() => abrirModalGenerar(prod)}
+                    style={{ minHeight: 36 }}
+                  />
+                </View>
               </Tarjeta>
             ))}
           </View>
@@ -547,7 +935,7 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
         <EstadoVacio
           icon="qr-code-outline"
           title="Sin códigos QR en este filtro"
-          description="Genera un nuevo código QR o cambia el filtro de estado de asignación física."
+          description="Genera un nuevo código QR o selecciona otra tarjeta de estado arriba."
           actionTitle="+ Generar Nuevo QR"
           onAction={() => abrirModalGenerar()}
           containerStyle={{ marginVertical: 20 }}
@@ -561,34 +949,119 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
         >
           {registrosFiltrados.map((reg) => {
             const cfg = CONFIG_ESTADO_QR[reg.estadoAsignacion];
+            const esAsignado = reg.estadoAsignacion === "asignado_estanteria";
+            const estaSeleccionado = seleccionadosIds.includes(reg.id);
+            const fondoSem = esAsignado ? "#f0fdf4" : "#fffbeb";
+            const bordeSem = estaSeleccionado
+              ? tema.colors.primary
+              : esAsignado
+              ? "#86efac"
+              : "#fcd34d";
+            const franjaSem = esAsignado ? "#16a34a" : "#d97706";
+            const divisorSem = esAsignado ? "#bbf7d0" : "#fde68a";
+
             return (
               <Tarjeta
                 key={reg.id}
-                variant="elevated"
+                variant="outlined"
                 style={[
-                  estilosLocales.qrTarjeta,
+                  {
+                    padding: 12,
+                    gap: 10,
+                    backgroundColor: fondoSem,
+                    borderColor: bordeSem,
+                    borderWidth: estaSeleccionado ? 2.5 : 1.5,
+                    borderLeftWidth: 6,
+                    borderLeftColor: franjaSem,
+                    borderRadius: 12,
+                  },
                   esPantallaAncha && estilosLocales.qrTarjetaAncha,
                 ]}
               >
+                {/* Fila superior de Selección Múltiple + Switch de Confirmación de Pegado Físico */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    paddingBottom: 6,
+                    borderBottomWidth: 1,
+                    borderBottomColor: divisorSem,
+                  }}
+                >
+                  <TouchableOpacity
+                    onPress={() => alternarSeleccionQr(reg.id)}
+                    activeOpacity={0.75}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: estaSeleccionado }}
+                  >
+                    <Ionicons
+                      name={estaSeleccionado ? "checkbox" : "square-outline"}
+                      size={20}
+                      color={estaSeleccionado ? tema.colors.primaryDark : tema.colors.textSecondary}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "800",
+                        color: estaSeleccionado ? tema.colors.primaryDark : tema.colors.textSecondary,
+                      }}
+                    >
+                      {estaSeleccionado ? "Seleccionado en lote" : "Seleccionar para lote"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Switch de confirmación de pegado/asignación física en estantería */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: esAsignado ? "#166534" : "#92400e",
+                      }}
+                    >
+                      {esAsignado ? "Pegado en Estante" : "Confirmar Pegado"}
+                    </Text>
+                    <Switch
+                      value={esAsignado}
+                      onValueChange={(val) =>
+                        manejarCambiarEstadoAsignacion(
+                          reg.id,
+                          val ? "asignado_estanteria" : "impreso"
+                        )
+                      }
+                      trackColor={{ false: "#fde68a", true: "#86efac" }}
+                      thumbColor={esAsignado ? "#16a34a" : "#d97706"}
+                    />
+                  </View>
+                </View>
+
                 <View style={estilosLocales.qrTarjetaCuerpo}>
                   <TouchableOpacity
                     activeOpacity={0.85}
                     onPress={() => establecerQrInspeccionado(reg)}
                     accessibilityLabel={`Ver QR ${reg.codigoQr}`}
                   >
-                    <CodigoQrSvg contenido={reg.payloadEmbebido} tamanoPx={94} />
+                    <CodigoQrSvg contenido={reg.payloadEmbebido} tamanoPx={76} />
                   </TouchableOpacity>
 
-                  <View style={{ flex: 1, minWidth: 150, gap: 4 }}>
-                    <View style={estilosLocales.badgeFila}>
+                  <View style={{ flex: 1, minWidth: 150, gap: 3 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 4 }}>
+                      <Text style={estilosLocales.codigoQrTexto}>{reg.codigoQr}</Text>
                       <Insignia label={cfg.label} tone={cfg.tone} icon={cfg.icon} size="sm" />
                     </View>
-                    <Text style={estilosLocales.codigoQrTexto}>{reg.codigoQr}</Text>
                     <Text style={estilosLocales.nombreTexto} numberOfLines={2}>
                       {reg.nombreInsumo}
                     </Text>
                     <Text style={estilosLocales.metaTexto}>
-                      SKU: <Text style={{ fontWeight: "700" }}>{reg.sku}</Text> • {reg.unidad}
+                      SKU: <Text style={{ fontWeight: "800", color: tema.colors.text }}>{reg.sku}</Text> • Unidad: {reg.unidad}
                     </Text>
                     <View style={estilosLocales.ubicacionFila}>
                       <Ionicons name="location-outline" size={13} color={tema.colors.primaryDark} />
@@ -599,39 +1072,28 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
                   </View>
                 </View>
 
-                <View style={estilosLocales.qrAccionesFila}>
+                <View
+                  style={[
+                    estilosLocales.qrAccionesFila,
+                    { borderTopColor: divisorSem, paddingTop: 8 },
+                  ]}
+                >
                   <Boton
-                    title="Ver Datos Embebidos"
+                    title="Datos QR"
                     variant="outline"
                     size="sm"
                     icon="code-slash-outline"
                     onPress={() => establecerQrInspeccionado(reg)}
-                    style={{ flex: 1, minWidth: 135, minHeight: 38 }}
+                    style={{ flex: 1, minHeight: 34, backgroundColor: "#ffffff" }}
                   />
-
-                  {reg.estadoAsignacion === "pendiente_impresion" && (
-                    <Boton
-                      title="Marcar Impreso"
-                      variant="secondary"
-                      size="sm"
-                      icon="print-outline"
-                      onPress={() => manejarCambiarEstadoAsignacion(reg.id, "impreso")}
-                      style={{ flex: 1, minWidth: 130, minHeight: 38 }}
-                    />
-                  )}
-
-                  {reg.estadoAsignacion === "impreso" && (
-                    <Boton
-                      title="Asignar en Estantería"
-                      variant="success"
-                      size="sm"
-                      icon="checkmark-done-outline"
-                      onPress={() =>
-                        manejarCambiarEstadoAsignacion(reg.id, "asignado_estanteria")
-                      }
-                      style={{ flex: 1, minWidth: 145, minHeight: 38 }}
-                    />
-                  )}
+                  <Boton
+                    title="Imprimir Individual"
+                    variant="outline"
+                    size="sm"
+                    icon="print-outline"
+                    onPress={() => manejarImprimirEtiqueta(reg)}
+                    style={{ flex: 1, minHeight: 34, backgroundColor: "#ffffff" }}
+                  />
                 </View>
               </Tarjeta>
             );
@@ -678,7 +1140,7 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
                     <Text
                       style={[
                         estilosLocales.selectorChipSku,
-                        activo && { color: "#f59e0b" },
+                        activo && { color: "#818cf8" },
                       ]}
                     >
                       {p.sku} {yaTiene ? "• Con QR" : "• Sin QR"}
@@ -909,6 +1371,148 @@ export const SeccionQrInsumosAdmin: React.FC<PropiedadesSeccionQrInsumosAdmin> =
             );
           })()}
       </VistaModal>
+
+      {/* ===================================================================== */}
+      {/* MODAL 3: PLANCHA IMPRIMIBLE DEL LOTE EXPORTADO (PDF / PNG)            */}
+      {/* ===================================================================== */}
+      <VistaModal
+        visible={Boolean(modalLotePreview)}
+        onClose={() => establecerModalLotePreview(null)}
+        title={
+          modalLotePreview
+            ? `Lote Imprimible (${modalLotePreview.registros.length} Etiquetas QR • ${modalLotePreview.formato})`
+            : "Lote Imprimible de Etiquetas QR"
+        }
+        subtitle="Vista previa de alta legibilidad del archivo único descargado / listo para imprimir"
+        maxWidth={680}
+      >
+        {modalLotePreview && (
+          <ScrollView style={{ maxHeight: 540 }} showsVerticalScrollIndicator={false}>
+            <View
+              style={{
+                backgroundColor: "#f0fdf4",
+                borderWidth: 1,
+                borderColor: "#86efac",
+                borderRadius: 10,
+                padding: 10,
+                marginBottom: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              <Ionicons name="checkmark-circle" size={18} color="#16a34a" />
+              <Text style={{ fontSize: 12, color: "#166534", fontWeight: "700", flex: 1 }}>
+                Archivo único ({modalLotePreview.formato}) generado con {modalLotePreview.registros.length} etiqueta(s). Verifica a continuación la nitidez del código QR y la legibilidad del SKU, nombre y ubicación física:
+              </Text>
+            </View>
+
+            <View style={{ gap: 10 }}>
+              {modalLotePreview.registros.map((reg, idx) => {
+                const esAsignado = reg.estadoAsignacion === "asignado_estanteria";
+                return (
+                  <View
+                    key={reg.id}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 12,
+                      backgroundColor: "#ffffff",
+                      borderWidth: 2,
+                      borderColor: "#0f172a",
+                      borderLeftWidth: 7,
+                      borderLeftColor: esAsignado ? "#16a34a" : "#d97706",
+                      borderRadius: 10,
+                      padding: 12,
+                    }}
+                  >
+                    <CodigoQrSvg contenido={reg.payloadEmbebido} tamanoPx={96} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: "800",
+                          color: "#b45309",
+                          letterSpacing: 0.6,
+                        }}
+                      >
+                        ETIQUETA #{idx + 1} • FYAG BODEGA
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 16,
+                          fontWeight: "900",
+                          color: "#0f172a",
+                        }}
+                      >
+                        {reg.sku}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontWeight: "800",
+                          color: "#111827",
+                        }}
+                      >
+                        {reg.nombreInsumo}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: "#334155",
+                        }}
+                      >
+                        Código: {reg.codigoQr}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "700",
+                          color: "#0f172a",
+                          marginTop: 2,
+                        }}
+                      >
+                        📍 Ubicación: {reg.ubicacionFisica}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: "#475569" }}>
+                        Categoría: {reg.categoria} • Unidad: {reg.unidad.toUpperCase()}
+                        {reg.lote ? ` • Lote: ${reg.lote}` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+
+            <View style={estilosLocales.modalBotonesFila}>
+              <Boton
+                title="Descargar PNG Único"
+                variant="outline"
+                size="sm"
+                icon="image-outline"
+                onPress={() => descargarLoteQrPngWeb(modalLotePreview.registros)}
+                style={{ flex: 1, minHeight: 42 }}
+              />
+              <Boton
+                title="Imprimir / Guardar PDF Único"
+                variant="primary"
+                size="sm"
+                icon="document-text-outline"
+                onPress={() => exportarLoteQrPdfWeb(modalLotePreview.registros)}
+                style={{ flex: 1.2, minHeight: 42 }}
+              />
+              <Boton
+                title="Cerrar"
+                variant="ghost"
+                size="sm"
+                onPress={() => establecerModalLotePreview(null)}
+                style={{ minHeight: 42 }}
+              />
+            </View>
+          </ScrollView>
+        )}
+      </VistaModal>
     </View>
   );
 };
@@ -1000,7 +1604,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 8,
   },
   filtroChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   filtroChipTexto: {
@@ -1115,7 +1719,7 @@ const estilosLocales = StyleSheet.create({
     maxWidth: 210,
   },
   selectorChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   selectorChipSku: {
@@ -1143,7 +1747,7 @@ const estilosLocales = StyleSheet.create({
     borderColor: tema.colors.borderDark,
   },
   estadoChipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   estadoChipTexto: {
@@ -1211,7 +1815,7 @@ const estilosLocales = StyleSheet.create({
     color: tema.colors.text,
   },
   jsonBox: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderRadius: tema.radius.sm,
     padding: 10,
   },

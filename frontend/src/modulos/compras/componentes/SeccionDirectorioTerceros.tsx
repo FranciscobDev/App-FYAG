@@ -90,8 +90,66 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
   thirdPartyPestana,
 }) => {
   const { actualizarProveedor, actualizarCliente } = usarAplicacion();
+  const { width } = useWindowDimensions();
+  const esMovilEstrecho = width < 440;
   const [fichaModalEntidad, setFichaModalEntidad] = useState<EntidadData | null>(null);
-  const [mostrarModalScrum, setMostrarModalScrum] = useState<boolean>(false);
+  const [filtroDirectorio, setFiltroDirectorio] = useState<"activos" | "destacados" | "archivados">("activos");
+
+  const metricasProveedores = React.useMemo(() => {
+    const lista = proveedores || [];
+    const activos = lista.filter((p: any) => !p.disabled);
+    const archivados = lista.filter((p: any) => Boolean(p.disabled));
+    const destacados = activos.filter((p: any) => (p.ratingAvg ?? 5) >= 4.5);
+    const sumaRating = activos.reduce((acc: number, p: any) => acc + Number(p.ratingAvg ?? 5), 0);
+    const promedio = activos.length > 0 ? (sumaRating / activos.length).toFixed(1) : "5.0";
+
+    return {
+      activosConteo: activos.length,
+      destacadosConteo: destacados.length,
+      archivadosConteo: archivados.length,
+      promedioGlobal: promedio,
+    };
+  }, [proveedores]);
+
+  const proveedoresVisibles = React.useMemo(() => {
+    const base = filtradoProveedores || [];
+    if (filtroDirectorio === "archivados") {
+      return base.filter((p: any) => Boolean(p.disabled));
+    }
+    const activos = base.filter((p: any) => !p.disabled);
+    if (filtroDirectorio === "destacados") {
+      return activos.filter((p: any) => (p.ratingAvg ?? 5) >= 4.5);
+    }
+    return activos;
+  }, [filtradoProveedores, filtroDirectorio]);
+
+  const obtenerEstiloSemaforoProveedor = (ratingAvg = 5, disabled?: boolean) => {
+    if (disabled) {
+      return {
+        fondoTarjeta: "#f1f5f9",
+        bordeTarjeta: "#cbd5e1",
+        franjaLateral: "#64748b",
+        colorTexto: "#334155",
+        divisorColor: "#e2e8f0",
+      };
+    }
+    if (ratingAvg < 4.0) {
+      return {
+        fondoTarjeta: "#fffbeb",
+        bordeTarjeta: "#fcd34d",
+        franjaLateral: "#d97706",
+        colorTexto: "#92400e",
+        divisorColor: "#fde68a",
+      };
+    }
+    return {
+      fondoTarjeta: "#f0fdf4",
+      bordeTarjeta: "#86efac",
+      franjaLateral: "#16a34a",
+      colorTexto: "#166534",
+      divisorColor: "#bbf7d0",
+    };
+  };
 
   const handleGuardarFicha = (data: Required<EntidadData>) => {
     if (data.tipo === "Proveedor") {
@@ -131,215 +189,512 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
           ===================================================================== */}
       {activoPestana === "terceros" && (
         <ScrollView style={estilos.pestanaContenido} contentContainerStyle={estilos.scrollCuerpo}>
-          <View style={estilos.subPestanaBarra}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 210 }}>
-              <View
-                style={[
-                  estilos.subPestanaBoton,
-                  estilos.subPestanaBotonActivo,
-                  { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, minHeight: 40, marginRight: 0 },
-                ]}
-              >
-                <Ionicons name="people-outline" size={16} color={tema.colors.primaryDark} />
-                <Text style={[estilos.subPestanaTexto, estilos.subPestanaTextoActivo]}>
-                  Proveedores Homologados ({proveedores.length})
-                </Text>
+          {/* 1. CABECERA COMPACTA INDUSTRIAL + CALIFICACIÓN MEDIA */}
+          <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    backgroundColor: tema.colors.primaryLight,
+                    borderWidth: 1,
+                    borderColor: tema.colors.primaryBorder,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="business-outline" size={20} color={tema.colors.primaryDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                    Directorio de Proveedores
+                  </Text>
+                  <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                    <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                      {metricasProveedores.activosConteo} homologados activos
+                    </Text>{" "}
+                    • Calificación media: ★ {metricasProveedores.promedioGlobal}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <View style={{ flexDirection: "row", gap: 8, marginLeft: "auto" }}>
               <Boton
-                title="[SCRUM] Comparar Vistas"
-                variant="secondary"
-                size="sm"
-                icon="git-compare-outline"
-                onPress={() => setMostrarModalScrum(true)}
-              />
-              <Boton
-                title="+ Nuevo Proveedor"
+                title="Nuevo Proveedor"
                 variant="primary"
                 size="sm"
+                icon="add-outline"
                 onPress={() => {
                   establecerThirdPartyPestana("proveedores");
                   manejarAbrirPartyModal();
                 }}
                 style={{ minHeight: 40 }}
+                fullWidth={esMovilEstrecho}
               />
             </View>
+          </Tarjeta>
+
+          {/* 2. PESTAÑAS KPI INTERACTIVAS: ACTIVOS / DESTACADOS / ARCHIVADOS */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {[
+              {
+                id: "activos" as const,
+                titulo: "Activos",
+                valor: metricasProveedores.activosConteo,
+                sub: "Habilitados OC",
+                icon: "checkmark-done-circle-outline" as const,
+                bg: "#f0fdf4",
+                border: "#86efac",
+                borderActivo: "#16a34a",
+                textColor: "#166534",
+              },
+              {
+                id: "destacados" as const,
+                titulo: "Top (★ ≥ 4.5)",
+                valor: metricasProveedores.destacadosConteo,
+                sub: "Mejor evaluados",
+                icon: "star-outline" as const,
+                bg: "#fffbeb",
+                border: "#fcd34d",
+                borderActivo: "#d97706",
+                textColor: "#92400e",
+              },
+              {
+                id: "archivados" as const,
+                titulo: "Archivados",
+                valor: metricasProveedores.archivadosConteo,
+                sub: "Inactivos",
+                icon: "archive-outline" as const,
+                bg: "#f1f5f9",
+                border: "#cbd5e1",
+                borderActivo: "#475569",
+                textColor: "#334155",
+              },
+            ].map((kpi) => {
+              const activo = filtroDirectorio === kpi.id;
+              return (
+                <TouchableOpacity
+                  key={kpi.id}
+                  activeOpacity={0.8}
+                  onPress={() => setFiltroDirectorio(kpi.id)}
+                  style={{
+                    flex: 1,
+                    minWidth: 105,
+                    backgroundColor: kpi.bg,
+                    borderWidth: activo ? 2 : 1,
+                    borderColor: activo ? kpi.borderActivo : kpi.border,
+                    borderLeftWidth: 5,
+                    borderLeftColor: kpi.borderActivo,
+                    borderRadius: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: "800",
+                        color: kpi.textColor,
+                        textTransform: "uppercase",
+                      }}
+                      numberOfLines={1}
+                    >
+                      {kpi.titulo}
+                    </Text>
+                    <Ionicons name={kpi.icon} size={14} color={kpi.textColor} />
+                  </View>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                      marginTop: 2,
+                    }}
+                  >
+                    <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                      {kpi.valor}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: activo ? "800" : "600",
+                        color: kpi.textColor,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {activo ? "● Activo" : kpi.sub}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Barra de búsqueda y ordenación de proveedores */}
-          <View style={estilos.partyFiltrarFila}>
-            <View style={{ flex: 1, marginRight: 8 }}>
-              <CampoTexto
-                label="Buscar Proveedor"
+          {/* 3. BUSCADOR CON LUPA + BARRA DE ORDENAMIENTO CON ICONOS VECTORIALES */}
+          <View style={{ gap: 8, marginBottom: 12 }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: tema.colors.card,
+                borderWidth: 1,
+                borderColor: tema.colors.borderDark,
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                height: 42,
+              }}
+            >
+              <Ionicons
+                name="search-outline"
+                size={18}
+                color={tema.colors.textMuted}
+                style={{ marginRight: 8 }}
+              />
+              <TextInput
                 value={thirdPartyBuscar}
                 onChangeText={establecerThirdPartyBuscar}
-                placeholder="Buscar por RUT, Razón Social o Giro..."
+                placeholder="Buscar proveedor por RUT, Razón Social o Giro..."
+                placeholderTextColor={tema.colors.textLight}
+                style={{ flex: 1, minWidth: 0, fontSize: 13, color: tema.colors.text }}
               />
+              {Boolean(thirdPartyBuscar) && (
+                <Pressable onPress={() => establecerThirdPartyBuscar("")} hitSlop={8}>
+                  <Ionicons name="close-circle" size={16} color={tema.colors.textMuted} />
+                </Pressable>
+              )}
             </View>
-            {Boolean(thirdPartyBuscar) && (
-              <Boton
-                title="Limpiar"
-                variant="ghost"
-                size="sm"
-                icon="close-circle-outline"
-                onPress={() => establecerThirdPartyBuscar("")}
-                style={{ alignSelf: "flex-end", marginBottom: 8, marginRight: 8 }}
-              />
-            )}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ maxHeight: 42 }}>
+
+            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textMuted, marginRight: 2 }}>
+                Ordenar:
+              </Text>
               {[
-                { id: "rating_desc", label: "Mayor Calificación ⭐" },
-                { id: "rating_asc", label: "Menor Calificación" },
-                { id: "alpha", label: "Alfabético A-Z" },
-              ].map((s: any) => (
-                <TouchableOpacity
-                  key={s.id}
-                  onPress={() => establecerThirdPartyOrdenar(s.id as any)}
-                  style={[estilos.ordenarChip, thirdPartyOrdenar === s.id && estilos.ordenarChipActivo]}
-                >
-                  <Text style={[estilos.ordenarChipTexto, thirdPartyOrdenar === s.id && estilos.ordenarChipTextoActivo]}>
-                    {s.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                { id: "rating_desc", label: "Mayor Calif.", icon: "star" as const },
+                { id: "rating_asc", label: "Menor Calif.", icon: "trending-down-outline" as const },
+                { id: "alpha", label: "Alfabético A-Z", icon: "text-outline" as const },
+              ].map((s) => {
+                const activo = thirdPartyOrdenar === s.id;
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    onPress={() => establecerThirdPartyOrdenar(s.id as any)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 7,
+                      borderWidth: 1,
+                      backgroundColor: activo ? tema.colors.primaryLight : "#ffffff",
+                      borderColor: activo ? tema.colors.primary : tema.colors.border,
+                    }}
+                  >
+                    <Ionicons
+                      name={s.icon}
+                      size={12}
+                      color={activo ? tema.colors.primaryDark : tema.colors.textMuted}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: activo ? "800" : "600",
+                        color: activo ? tema.colors.primaryDark : tema.colors.textSecondary,
+                      }}
+                    >
+                      {s.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
-          {/* Lista de Proveedores */}
-          {filtradoProveedores.length === 0 ? (
+          {/* 4. LISTA COMPACTA DE PROVEEDORES CON SEMÁFORO DE SUPERFICIE COMPLETA */}
+          {proveedoresVisibles.length === 0 ? (
             <EstadoVacio
-              icon="people-outline"
-              title="No se encontraron proveedores"
+              icon={filtroDirectorio === "archivados" ? "archive-outline" : "people-outline"}
+              title={
+                filtroDirectorio === "archivados"
+                  ? "No hay proveedores archivados"
+                  : "No se encontraron proveedores"
+              }
               description={
                 thirdPartyBuscar
                   ? `No hay proveedores que coincidan con "${thirdPartyBuscar}".`
-                  : "No hay proveedores registrados en el sistema."
+                  : filtroDirectorio === "archivados"
+                  ? "Los proveedores que archives o deshabilites se moverán automáticamente a esta pestaña."
+                  : "No hay proveedores activos registrados en este filtro."
               }
-              actionTitle="+ Nuevo Proveedor"
-              onAction={() => {
-                establecerThirdPartyPestana("proveedores");
-                manejarAbrirPartyModal();
-              }}
+              actionTitle={filtroDirectorio !== "archivados" ? "Nuevo Proveedor" : undefined}
+              onAction={
+                filtroDirectorio !== "archivados"
+                  ? () => {
+                      establecerThirdPartyPestana("proveedores");
+                      manejarAbrirPartyModal();
+                    }
+                  : undefined
+              }
               containerStyle={{ marginVertical: 24 }}
             />
           ) : (
-            filtradoProveedores.map((s: any) => (
-              <Tarjeta
-                key={s.id}
-                variant="default"
-                style={[estilos.partyTarjeta, s.disabled && estilos.deshabilitadoPartyTarjeta]}
-              >
-                <View style={estilos.partySuperior}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Text style={estilos.partyNombre}>{s.businessName}</Text>
-                      {s.disabled && (
-                        <Insignia label="Deshabilitado" tone="mute" size="sm" style={{ marginLeft: 6 }} />
-                      )}
-                    </View>
-                    <Text style={estilos.partyRut}>RUT: {s.rut}</Text>
-                    <Text style={estilos.partyCat}>{s.category}</Text>
-                  </View>
-                  <Insignia
-                    label={`⭐ ${s.ratingAvg?.toFixed(1) || "5.0"} (${s.ratingCount || 1} eval)`}
-                    tone="warn"
-                    size="md"
-                  />
-                </View>
+            proveedoresVisibles.map((s: any) => {
+              const rating = Number(s.ratingAvg ?? 5);
+              const semaforo = obtenerEstiloSemaforoProveedor(rating, s.disabled);
 
-                <View style={estilos.partyContactoCaja}>
-                  <Text style={estilos.contactoLinea}>Contacto: {s.contactName} • {s.phone}</Text>
-                  <Text style={estilos.contactoLinea}>Email: {s.email} • Dirección: {s.address}</Text>
-                </View>
-
-                {/* Sección de Datos Bancarios (SOLO VISIBLE PARA ADMIN) */}
-                {s.bankDetails && rolActual === "admin" ? (
-                  <View style={estilos.bancoCaja}>
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      <Ionicons name="card-outline" size={14} color={tema.colors.primaryDark} style={{ marginRight: 4 }} />
-                      <Text style={estilos.bancoTitulo}>Datos Bancarios (Exclusivo Admin):</Text>
-                    </View>
-                    <Text style={estilos.bancoTexto}>
-                      {s.bankDetails.bank} • Cta. {s.bankDetails.accountType} N° {s.bankDetails.accountNumber}
-                    </Text>
-                    <Text style={estilos.bancoTexto}>Transferencias: {s.bankDetails.transferEmail}</Text>
-                  </View>
-                ) : (
-                  <View style={estilos.restrictedBancoCaja}>
-                    <Ionicons name="lock-closed" size={14} color={tema.colors.textMuted} style={{ marginRight: 4 }} />
-                    <Text style={estilos.restrictedBancoTexto}>
-                      Datos bancarios protegidos (Visible solo para perfil Administrador)
-                    </Text>
-                  </View>
-                )}
-
-                {/* Acción: Ver Ficha, Deshabilitar o Crear OC */}
-                <View style={estilos.partyAcciones}>
-                  <Boton
-                    title={rolActual === "admin" ? "Gestionar Ficha" : "Ver Ficha"}
-                    variant="secondary"
-                    size="sm"
-                    icon="document-text-outline"
-                    onPress={() => {
-                      setFichaModalEntidad({
-                        id: s.id,
-                        rut: s.rut,
-                        nombre: s.businessName,
-                        tipo: "Proveedor",
-                        contacto: s.email,
-                        telefono: s.phone,
-                        direccion: s.address,
-                        calificacionPromedio: s.ratingAvg || 4.7,
-                        banco: s.bankDetails?.bank || "Banco Estado",
-                        tipoCuenta: s.bankDetails?.accountType || "Cuenta Corriente",
-                        numeroCuenta: s.bankDetails?.accountNumber || "12345678-9",
-                        transferEmail: s.bankDetails?.transferEmail || s.email,
-                      });
+              return (
+                <Tarjeta
+                  key={s.id}
+                  variant="outlined"
+                  style={{
+                    marginBottom: 10,
+                    padding: 12,
+                    backgroundColor: semaforo.fondoTarjeta,
+                    borderColor: semaforo.bordeTarjeta,
+                    borderWidth: 1.5,
+                    borderLeftWidth: 6,
+                    borderLeftColor: semaforo.franjaLateral,
+                    borderRadius: 12,
+                  }}
+                >
+                  {/* Cabecera compacta: RUT + Categoría + Nombre a la izquierda / Badge de Calificación a la derecha */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: 8,
                     }}
-                    style={{ marginRight: 8 }}
-                  />
-                  {!s.disabled && rolActual === "admin" && (
-                    <Boton
-                      title="Crear OC"
-                      variant="primary"
-                      size="sm"
-                      icon="cart-outline"
-                      onPress={() => {
-                        manejarAbrirNuevoOrden(s.id);
+                  >
+                    <View style={{ flex: 1, minWidth: 160 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "800",
+                            color: semaforo.colorTexto,
+                            letterSpacing: 0.3,
+                          }}
+                        >
+                          RUT: {s.rut}
+                        </Text>
+                        <View
+                          style={{
+                            backgroundColor: "#ffffff",
+                            borderWidth: 1,
+                            borderColor: semaforo.bordeTarjeta,
+                            paddingHorizontal: 6,
+                            paddingVertical: 1,
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: tema.colors.textSecondary }}>
+                            {s.category}
+                          </Text>
+                        </View>
+                        {s.disabled && <Insignia label="Archivado" tone="mute" size="sm" />}
+                      </View>
+
+                      <Text
+                        style={{
+                          fontSize: 15,
+                          fontWeight: "800",
+                          color: tema.colors.text,
+                          marginTop: 2,
+                          flexShrink: 1,
+                        }}
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        {s.businessName}
+                      </Text>
+                    </View>
+
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        backgroundColor: "#fef3c7",
+                        borderWidth: 1,
+                        borderColor: "#f59e0b",
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 999,
                       }}
-                      style={{ flex: 1, minHeight: 38 }}
-                    />
-                  )}
-                  {rolActual === "admin" && (
+                    >
+                      <Ionicons name="star" size={12} color="#d97706" />
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#92400e" }}>
+                        {rating.toFixed(1)} ({s.ratingCount || 1})
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Caja blanca unificada: Contacto + Datos Bancarios (Cero azul eléctrico) */}
+                  <View
+                    style={{
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: semaforo.divisorColor,
+                      borderRadius: 9,
+                      padding: 10,
+                      marginTop: 8,
+                      gap: 4,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, color: tema.colors.textSecondary }} numberOfLines={1}>
+                      👤 <Text style={{ fontWeight: "700", color: tema.colors.text }}>{s.contactName}</Text> • 📞{" "}
+                      {s.phone} • ✉️ {s.email}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: tema.colors.textMuted }} numberOfLines={1}>
+                      📍 {s.address}
+                    </Text>
+
+                    {s.bankDetails && rolActual === "admin" ? (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 6,
+                          backgroundColor: tema.colors.primaryLight,
+                          borderWidth: 1,
+                          borderColor: tema.colors.primaryBorder,
+                          borderRadius: 7,
+                          paddingHorizontal: 8,
+                          paddingVertical: 5,
+                          marginTop: 4,
+                        }}
+                      >
+                        <Ionicons name="card-outline" size={14} color={tema.colors.primaryDark} />
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: tema.colors.primaryDeep,
+                            flex: 1,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {s.bankDetails.bank} • Cta. {s.bankDetails.accountType} N°{" "}
+                          {s.bankDetails.accountNumber} ({s.bankDetails.transferEmail})
+                        </Text>
+                      </View>
+                    ) : (
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 5,
+                          backgroundColor: tema.colors.surfaceAlt,
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          marginTop: 4,
+                        }}
+                      >
+                        <Ionicons name="lock-closed" size={12} color={tema.colors.textMuted} />
+                        <Text style={{ fontSize: 10, color: tema.colors.textMuted }}>
+                          Datos bancarios protegidos (Exclusivo Administrador)
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Fila compacta de 3 acciones */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 8,
+                      marginTop: 10,
+                    }}
+                  >
                     <Boton
-                      title={s.disabled ? "Habilitar Proveedor" : "Deshabilitar"}
-                      variant={s.disabled ? "success" : "secondary"}
+                      title={rolActual === "admin" ? "Ficha" : "Ver Ficha"}
+                      variant="outline"
                       size="sm"
-                      icon={s.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                      style={{ flex: 1, minHeight: 38 }}
+                      icon="document-text-outline"
                       onPress={() => {
-                        alternarProveedorDeshabilitado(s.id);
-                        mostrarAviso(`Proveedor ${s.businessName} ${s.disabled ? "habilitado" : "deshabilitado"}.`);
+                        setFichaModalEntidad({
+                          id: s.id,
+                          rut: s.rut,
+                          nombre: s.businessName,
+                          tipo: "Proveedor",
+                          contacto: s.email,
+                          telefono: s.phone,
+                          direccion: s.address,
+                          calificacionPromedio: s.ratingAvg || 4.7,
+                          banco: s.bankDetails?.bank || "Banco Estado",
+                          tipoCuenta: s.bankDetails?.accountType || "Cuenta Corriente",
+                          numeroCuenta: s.bankDetails?.accountNumber || "12345678-9",
+                          transferEmail: s.bankDetails?.transferEmail || s.email,
+                        });
                       }}
+                      style={{ flex: 1, minHeight: 34, backgroundColor: "#ffffff" }}
                     />
-                  )}
-                </View>
-              </Tarjeta>
-            ))
+                    {!s.disabled && rolActual === "admin" && (
+                      <Boton
+                        title="Crear OC"
+                        variant="primary"
+                        size="sm"
+                        icon="cart-outline"
+                        onPress={() => {
+                          manejarAbrirNuevoOrden(s.id);
+                        }}
+                        style={{ flex: 1.15, minHeight: 34 }}
+                      />
+                    )}
+                    {rolActual === "admin" && (
+                      <Boton
+                        title={s.disabled ? "Restaurar" : "Archivar"}
+                        variant={s.disabled ? "success" : "outline"}
+                        size="sm"
+                        icon={s.disabled ? "refresh-outline" : "archive-outline"}
+                        style={{
+                          flex: 1,
+                          minHeight: 34,
+                          backgroundColor: s.disabled ? undefined : "#ffffff",
+                        }}
+                        onPress={() => {
+                          alternarProveedorDeshabilitado(s.id);
+                          mostrarAviso(
+                            `Proveedor ${s.businessName} ${
+                              s.disabled
+                                ? "restaurado al directorio activo."
+                                : "movido a Archivados."
+                            }`
+                          );
+                        }}
+                      />
+                    )}
+                  </View>
+                </Tarjeta>
+              );
+            })
           )}
         </ScrollView>
       )}
 
-      {/* Modal de Ficha del Tercero [FRONT-2 / SCRUM] */}
+      {/* Modal de Ficha del Tercero */}
       <Modal
-        visible={Boolean(fichaModalEntidad) || mostrarModalScrum}
+        visible={Boolean(fichaModalEntidad)}
         animationType="slide"
         presentationStyle="pageSheet"
         onRequestClose={() => {
           setFichaModalEntidad(null);
-          setMostrarModalScrum(false);
         }}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: "#f8fafc" }}>
@@ -357,18 +712,15 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
           >
             <View>
               <Text style={{ fontSize: 16, fontWeight: "700", color: "#0f172a" }}>
-                {mostrarModalScrum
-                  ? "[SCRUM] Comparativa de Ficha Técnica"
-                  : `Ficha de ${fichaModalEntidad?.tipo || "Tercero"}`}
+                {`Ficha de ${fichaModalEntidad?.tipo || "Tercero"}`}
               </Text>
               <Text style={{ fontSize: 12, color: "#64748b" }}>
-                FRONT-2: Control de acceso a datos bancarios y calificación promedio
+                Información general, contacto, calificación promedio y datos bancarios
               </Text>
             </View>
             <TouchableOpacity
               onPress={() => {
                 setFichaModalEntidad(null);
-                setMostrarModalScrum(false);
               }}
               style={{
                 padding: 8,
@@ -396,9 +748,8 @@ export const SeccionDirectorioTerceros: React.FC<PropiedadesSeccionDirectorioTer
             onSave={handleGuardarFicha}
             onClose={() => {
               setFichaModalEntidad(null);
-              setMostrarModalScrum(false);
             }}
-            mostrarComparadorScrum={true}
+            mostrarComparadorScrum={false}
           />
         </SafeAreaView>
       </Modal>

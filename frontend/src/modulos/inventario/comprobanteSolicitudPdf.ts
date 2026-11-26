@@ -61,7 +61,7 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: #1c1917;
+      color: #1e1b4b;
       background-color: #ffffff;
       margin: 0;
       padding: 24px;
@@ -70,7 +70,7 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     .hoja {
       max-width: 820px;
       margin: 0 auto;
-      border: 1px solid #d6d3d1;
+      border: 1px solid #cbd5e1;
       border-radius: 8px;
       padding: 28px;
     }
@@ -78,7 +78,7 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      border-bottom: 2px solid #d97706;
+      border-bottom: 2px solid #4f46e5;
       padding-bottom: 16px;
       margin-bottom: 18px;
       gap: 16px;
@@ -86,31 +86,31 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     .empresa-titulo {
       font-size: 18px;
       font-weight: 900;
-      color: #b45309;
+      color: #4338ca;
       margin: 0 0 4px 0;
     }
     .empresa-sub {
       font-size: 12px;
-      color: #44403c;
+      color: #334155;
       margin: 2px 0;
     }
     .folio-bloque {
       text-align: right;
-      border: 1.5px solid #d97706;
-      background-color: #fef3c7;
+      border: 1.5px solid #4f46e5;
+      background-color: #eef2ff;
       border-radius: 8px;
       padding: 10px 14px;
     }
     .doc-tipo {
       font-size: 11px;
       font-weight: 800;
-      color: #78350f;
+      color: #312e81;
       letter-spacing: 0.5px;
     }
     .doc-numero {
       font-size: 18px;
       font-weight: 900;
-      color: #b45309;
+      color: #4338ca;
       margin: 4px 0;
     }
     .estado-pill {
@@ -131,8 +131,8 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
       margin-bottom: 16px;
     }
     .caja-dato {
-      background-color: #fafaf9;
-      border: 1px solid #e7e5e4;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
       border-radius: 6px;
       padding: 10px 12px;
     }
@@ -140,24 +140,24 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
       display: block;
       font-size: 10px;
       font-weight: 700;
-      color: #78716c;
+      color: #64748b;
       letter-spacing: 0.5px;
       margin-bottom: 4px;
     }
     .valor-principal {
       font-size: 13px;
       font-weight: 700;
-      color: #1c1917;
+      color: #1e1b4b;
       margin: 0;
     }
     .valor-secundario {
       font-size: 12px;
-      color: #44403c;
+      color: #334155;
       margin: 2px 0 0 0;
     }
     .caja-notas {
-      background-color: #fef3c7;
-      border: 1px solid #fde68a;
+      background-color: #eef2ff;
+      border: 1px solid #c7d2fe;
       border-radius: 6px;
       padding: 10px 14px;
       margin-bottom: 16px;
@@ -165,7 +165,7 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     .caja-notas p {
       margin: 0;
       font-size: 12px;
-      color: #78350f;
+      color: #312e81;
     }
     table {
       width: 100%;
@@ -174,7 +174,7 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
       margin-bottom: 18px;
     }
     th {
-      background-color: #1c1917;
+      background-color: #1e1b4b;
       color: #ffffff;
       font-size: 11px;
       font-weight: 700;
@@ -184,11 +184,11 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     td {
       font-size: 12px;
       padding: 8px 10px;
-      border-bottom: 1px solid #e7e5e4;
+      border-bottom: 1px solid #e2e8f0;
     }
     .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color: #44403c;
+      color: #334155;
       font-size: 11px;
     }
     .centro { text-align: center; }
@@ -213,11 +213,11 @@ export const generarHtmlComprobanteSolicitud = (solicitud: SolicitudMaterial): s
     }
     .firma-bloque {
       flex: 1;
-      border-top: 1px solid #78716c;
+      border-top: 1px solid #64748b;
       padding-top: 6px;
       text-align: center;
       font-size: 11px;
-      color: #44403c;
+      color: #334155;
     }
     @media print {
       body { padding: 0; }

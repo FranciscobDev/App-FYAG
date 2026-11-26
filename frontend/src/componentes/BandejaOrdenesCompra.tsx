@@ -274,455 +274,320 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
     }
   };
 
+  const obtenerEstiloSemaforoOrden = (status: string, esAuto?: boolean) => {
+    if (status === "recibida" || status === "cerrada") {
+      return {
+        fondoTarjeta: "#f0fdf4",
+        bordeTarjeta: "#86efac",
+        franjaLateral: "#16a34a",
+        divisorColor: "#bbf7d0",
+      };
+    }
+    if (status === "anulada") {
+      return {
+        fondoTarjeta: "#fef2f2",
+        bordeTarjeta: "#fca5a5",
+        franjaLateral: "#dc2626",
+        divisorColor: "#fecaca",
+      };
+    }
+    if (status === "borrador") {
+      return {
+        fondoTarjeta: "#fffbeb",
+        bordeTarjeta: esAuto ? "#f59e0b" : "#fcd34d",
+        franjaLateral: esAuto ? "#dc2626" : "#d97706",
+        divisorColor: "#fde68a",
+      };
+    }
+    // enviada / recibida_parcial
+    return {
+      fondoTarjeta: "#fffbeb",
+      bordeTarjeta: "#fcd34d",
+      franjaLateral: "#d97706",
+      divisorColor: "#fde68a",
+    };
+  };
+
   return (
     <View style={estilosLocales.contenedor}>
-      {/* 1. BANNER EJECUTIVO DE CREACIÓN Y GENERACIÓN AUTOMÁTICA */}
-      {rol === "admin" && (
-        <Tarjeta style={estilosLocales.heroTarjeta}>
-          <View style={estilosLocales.heroContenido}>
-            <View style={estilosLocales.heroIzquierda}>
-              <View style={estilosLocales.heroInsigniaFila}>
-                <Insignia label="Bandeja OC" tone="warn" size="sm" />
-                <Text style={estilosLocales.heroSubtexto}>
-                  Control de Órdenes Automáticas (Stock Mínimo) y Manuales
-                </Text>
-              </View>
-              <Text style={estilosLocales.heroTitulo}>
-                Bandeja de Órdenes de Compra y Aprobación de Borradores
-              </Text>
-              <Text style={estilosLocales.heroDescripcion}>
-                Revisa y aprueba prioritariamente los borradores generados de forma automática por quiebre de stock mínimo, o emite órdenes manuales a proveedores.
-              </Text>
-            </View>
-
-            <View style={estilosLocales.heroBotonesGrupo}>
-              <TouchableOpacity
-                onPress={manejarGenerarBorradorAutoStock}
-                style={estilosLocales.botonSimularAuto}
-                accessibilityRole="button"
-                accessibilityLabel="Generar borrador automático por stock mínimo"
-              >
-                <Ionicons name="flash" size={16} color="#92400E" />
-                <Text style={estilosLocales.botonSimularAutoTexto}>
-                  + Generar Borrador OC Automática
-                </Text>
-              </TouchableOpacity>
-
-              {manejarAbrirNuevoOrden && (
-                <Boton
-                  title="+ Nueva OC Manual"
-                  variant="primary"
-                  size="md"
-                  icon="add-circle-outline"
-                  onPress={() => manejarAbrirNuevoOrden()}
-                />
-              )}
-            </View>
-          </View>
-        </Tarjeta>
-      )}
-
-      {/* 2. ALERTA DESTACADA DE BORRADORES AUTOMÁTICOS PENDIENTES DE APROBACIÓN */}
-      {metricas.borradoresAuto.length > 0 ? (
-        <View style={estilosLocales.alertaBorradoresAutoCaja}>
-          <View style={estilosLocales.alertaBorradoresAutoIzquierda}>
-            <View style={estilosLocales.alertaIconoCirculo}>
-              <Ionicons name="flash" size={20} color="#B45309" />
+      {/* 1. CABECERA COMPACTA INDUSTRIAL + BOTÓN NUEVA OC MANUAL */}
+      <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: tema.colors.primaryLight,
+                borderWidth: 1,
+                borderColor: tema.colors.primaryBorder,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="cart-outline" size={20} color={tema.colors.primaryDark} />
             </View>
             <View style={{ flex: 1 }}>
-              <View style={estilosLocales.alertaTituloFila}>
-                <Text style={estilosLocales.alertaBorradoresAutoTitulo}>
-                  ⚡ {metricas.borradoresAuto.length}{" "}
-                  {metricas.borradoresAuto.length === 1
-                    ? "Borrador de OC Automática pendiente de aprobación"
-                    : "Borradores de OC Automáticas pendientes de aprobación"}
-                </Text>
-                <View style={estilosLocales.badgeUrgente}>
-                  <Text style={estilosLocales.badgeUrgenteTexto}>
-                    ACCIÓN REQUERIDA
-                  </Text>
-                </View>
-              </View>
-              <Text style={estilosLocales.alertaBorradoresAutoSub}>
-                Generados automáticamente por alerta de stock mínimo • Monto total por aprobar:{" "}
-                <Text style={{ fontWeight: "800", color: "#78350F" }}>
-                  {formatearCLP(metricas.montoBorradoresAuto)}
-                </Text>
+              <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                Bandeja de Órdenes de Compra
+              </Text>
+              <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                {metricas.borradoresAuto.length > 0 ? (
+                  <>
+                    <Text style={{ fontWeight: "800", color: tema.colors.danger }}>
+                      {metricas.borradoresAuto.length} borrador(es) automático(s)
+                    </Text>{" "}
+                    por aprobar ({formatearCLP(metricas.montoBorradoresAuto)})
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                      Borradores al día
+                    </Text>{" "}
+                    • {ordenesTotales.length} órdenes registradas
+                  </>
+                )}
               </Text>
             </View>
           </View>
 
-          <View style={estilosLocales.alertaBotonesFila}>
-            <TouchableOpacity
-              onPress={() => {
-                if (filtroOrigen === "borradores_auto") {
-                  establecerFiltroOrigen("todos");
-                } else {
-                  cambiarFiltroEstado("todas");
-                  establecerFiltroOrigen("borradores_auto");
-                }
-              }}
-              style={[
-                estilosLocales.botonVerBorradoresAuto,
-                filtroOrigen === "borradores_auto" &&
-                  estilosLocales.botonVerBorradoresAutoActivo,
-              ]}
-            >
-              <Ionicons
-                name="funnel-outline"
-                size={14}
-                color={filtroOrigen === "borradores_auto" ? "#FFFFFF" : "#92400E"}
-              />
-              <Text
-                style={[
-                  estilosLocales.botonVerBorradoresAutoTexto,
-                  filtroOrigen === "borradores_auto" && { color: "#FFFFFF" },
-                ]}
-              >
-                {filtroOrigen === "borradores_auto"
-                  ? "Mostrando solo borradores auto (Ver todas)"
-                  : "Filtrar Borradores Automáticos"}
-              </Text>
-            </TouchableOpacity>
-
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {rol === "admin" && metricas.borradoresAuto.length > 1 && (
-              <TouchableOpacity
+              <Boton
+                title={`Aprobar Todas (${metricas.borradoresAuto.length})`}
+                variant="success"
+                size="sm"
+                icon="checkmark-done-outline"
                 onPress={manejarAprobarTodosBorradoresAuto}
-                style={estilosLocales.botonAprobarTodasAuto}
-              >
-                <Ionicons
-                  name="checkmark-done-circle-outline"
-                  size={16}
-                  color="#FFFFFF"
-                />
-                <Text style={estilosLocales.botonAprobarTodasAutoTexto}>
-                  Aprobar Todas ({metricas.borradoresAuto.length})
-                </Text>
-              </TouchableOpacity>
+                style={{ minHeight: 40 }}
+              />
+            )}
+            {rol === "admin" && manejarAbrirNuevoOrden && (
+              <Boton
+                title="Nueva OC Manual"
+                variant="primary"
+                size="sm"
+                icon="add-outline"
+                onPress={() => manejarAbrirNuevoOrden()}
+                style={{ minHeight: 40 }}
+              />
             )}
           </View>
         </View>
-      ) : (
-        <View style={estilosLocales.sinBorradoresAutoBanner}>
-          <Ionicons name="checkmark-circle" size={18} color="#059669" />
-          <Text style={estilosLocales.sinBorradoresAutoTexto}>
-            Al día: Todos los borradores de Órdenes de Compra automáticas han sido aprobados y enviados.
-          </Text>
-        </View>
-      )}
+      </Tarjeta>
 
-      {/* 3. HISTORIAL EN PANTALLA DE ÓRDENES APROBADAS EN ESTA SESIÓN ([SCRUM]) */}
-      {aprobacionesRecientes.length > 0 && (
-        <View style={estilosLocales.historialAprobacionCaja}>
-          <View style={estilosLocales.historialEncabezado}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Ionicons name="checkmark-done-circle" size={17} color="#065F46" />
-              <Text style={estilosLocales.historialTitulo}>
-                Órdenes Aprobadas Recientemente en Pantalla ({aprobacionesRecientes.length})
-              </Text>
-            </View>
+      {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS (SIN ETIQUETAS AZULES NI EMOJIS) */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {[
+          {
+            id: "borradores_auto" as FiltroOrigenOrden,
+            titulo: "Borradores Auto",
+            valor: metricas.borradoresAuto.length,
+            sub:
+              metricas.borradoresAuto.length > 0
+                ? formatearCLP(metricas.montoBorradoresAuto)
+                : "Al día (0 pend.)",
+            icon: "flash-outline" as const,
+            bg: metricas.borradoresAuto.length > 0 ? "#fef2f2" : "#fffbeb",
+            border: metricas.borradoresAuto.length > 0 ? "#fca5a5" : "#fcd34d",
+            borderActivo: metricas.borradoresAuto.length > 0 ? "#dc2626" : "#d97706",
+            textColor: metricas.borradoresAuto.length > 0 ? "#991b1b" : "#92400e",
+          },
+          {
+            id: "automatica" as FiltroOrigenOrden,
+            titulo: "OC Automáticas",
+            valor: metricas.totalAutomaticas.length,
+            sub: "Por stock mínimo",
+            icon: "hardware-chip-outline" as const,
+            bg: "#fffbeb",
+            border: "#fcd34d",
+            borderActivo: "#d97706",
+            textColor: "#92400e",
+          },
+          {
+            id: "manual" as FiltroOrigenOrden,
+            titulo: "OC Manuales",
+            valor: metricas.totalManuales.length,
+            sub: "Emitidas manual",
+            icon: "create-outline" as const,
+            bg: "#f0fdf4",
+            border: "#86efac",
+            borderActivo: "#16a34a",
+            textColor: "#166534",
+          },
+          {
+            id: "todos" as FiltroOrigenOrden,
+            titulo: "Todas las OC",
+            valor: ordenesTotales.length,
+            sub: "Historial total",
+            icon: "layers-outline" as const,
+            bg: "#f1f5f9",
+            border: "#cbd5e1",
+            borderActivo: "#334155",
+            textColor: "#0f172a",
+          },
+        ].map((kpi) => {
+          const activo = filtroOrigen === kpi.id;
+          return (
             <TouchableOpacity
-              onPress={() => establecerAprobacionesRecientes([])}
+              key={kpi.id}
+              activeOpacity={0.8}
+              onPress={() => {
+                if (kpi.id === "borradores_auto") {
+                  cambiarFiltroEstado("todas");
+                }
+                establecerFiltroOrigen(kpi.id);
+              }}
+              style={{
+                flexBasis: "48%",
+                flexGrow: 1,
+                minWidth: 140,
+                backgroundColor: kpi.bg,
+                borderWidth: activo ? 2 : 1,
+                borderColor: activo ? kpi.borderActivo : kpi.border,
+                borderLeftWidth: 5,
+                borderLeftColor: kpi.borderActivo,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+              }}
             >
-              <Text style={estilosLocales.historialLimpiar}>Ocultar</Text>
-            </TouchableOpacity>
-          </View>
-          {aprobacionesRecientes.slice(0, 4).map((reg) => (
-            <View key={reg.id} style={estilosLocales.historialFila}>
-              <View style={estilosLocales.historialBadgeTipo}>
-                <Text style={estilosLocales.historialBadgeTipoTexto}>
-                  {reg.esAutomatica ? "⚡ OC AUTOMÁTICA" : "✍️ OC MANUAL"}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    color: kpi.textColor,
+                    textTransform: "uppercase",
+                  }}
+                  numberOfLines={1}
+                >
+                  {kpi.titulo}
+                </Text>
+                <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                  {kpi.valor}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: activo ? "800" : "600",
+                    color: kpi.textColor,
+                  }}
+                  numberOfLines={1}
+                >
+                  {activo ? "● Vista activa" : kpi.sub}
                 </Text>
               </View>
-              <Text style={estilosLocales.historialDetalleTexto}>
-                <Text style={{ fontWeight: "800" }}>{reg.codigoOc}</Text> •{" "}
-                {reg.proveedor} ({formatearCLP(reg.total)}) →{" "}
-                <Text style={{ color: "#059669", fontWeight: "800" }}>
-                  APROBADA Y ENVIADA ({reg.hora})
-                </Text>
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {/* 4. TARJETAS RESUMEN DE DISTINCIÓN: AUTOMÁTICAS VS MANUALES */}
-      <View style={estilosLocales.resumenGrilla}>
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => {
-            cambiarFiltroEstado("todas");
-            establecerFiltroOrigen(
-              filtroOrigen === "borradores_auto" ? "todos" : "borradores_auto"
-            );
-          }}
-          style={[
-            estilosLocales.resumenCelda,
-            estilosLocales.resumenCeldaDestacada,
-            filtroOrigen === "borradores_auto" &&
-              estilosLocales.resumenCeldaSeleccionadaAuto,
-          ]}
-        >
-          <View style={estilosLocales.resumenCeldaTop}>
-            <Text style={estilosLocales.resumenNumeroDestacado}>
-              {metricas.borradoresAuto.length}
-            </Text>
-            <View style={estilosLocales.etiquetaMiniAuto}>
-              <Ionicons name="flash" size={11} color="#92400E" />
-              <Text style={estilosLocales.etiquetaMiniAutoTexto}>
-                PENDIENTE APROBACIÓN
-              </Text>
-            </View>
-          </View>
-          <Text style={estilosLocales.resumenLabelDestacado}>
-            Borradores OC Automáticas
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() =>
-            establecerFiltroOrigen(
-              filtroOrigen === "automatica" ? "todos" : "automatica"
-            )
-          }
-          style={[
-            estilosLocales.resumenCelda,
-            filtroOrigen === "automatica" &&
-              estilosLocales.resumenCeldaSeleccionada,
-          ]}
-        >
-          <View style={estilosLocales.resumenCeldaTop}>
-            <Text style={estilosLocales.resumenNumero}>
-              {metricas.totalAutomaticas.length}
-            </Text>
-            <View style={estilosLocales.etiquetaMiniOrigenAuto}>
-              <Text style={estilosLocales.etiquetaMiniOrigenAutoTexto}>
-                ⚡ AUTOMÁTICAS
-              </Text>
-            </View>
-          </View>
-          <Text style={estilosLocales.resumenLabel}>
-            Total OC por Stock Mínimo
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() =>
-            establecerFiltroOrigen(
-              filtroOrigen === "manual" ? "todos" : "manual"
-            )
-          }
-          style={[
-            estilosLocales.resumenCelda,
-            filtroOrigen === "manual" &&
-              estilosLocales.resumenCeldaSeleccionada,
-          ]}
-        >
-          <View style={estilosLocales.resumenCeldaTop}>
-            <Text style={estilosLocales.resumenNumero}>
-              {metricas.totalManuales.length}
-            </Text>
-            <View style={estilosLocales.etiquetaMiniOrigenManual}>
-              <Text style={estilosLocales.etiquetaMiniOrigenManualTexto}>
-                ✍️ MANUALES
-              </Text>
-            </View>
-          </View>
-          <Text style={estilosLocales.resumenLabel}>
-            Total OC Emitidas Manualmente
-          </Text>
-        </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* 5. BARRA DE BÚSQUEDA Y FILTROS DE ORIGEN Y ESTADO */}
-      <View style={estilosLocales.panelFiltrosCaja}>
-        {/* Buscador */}
+      {/* 3. BUSCADOR COMPACTO + CHIPS DE ESTADO DEL CICLO DE VIDA */}
+      <View style={{ gap: 8, marginBottom: 12 }}>
         <View style={estilosLocales.buscadorCaja}>
-          <Ionicons name="search-outline" size={17} color="#6B7280" />
+          <Ionicons name="search-outline" size={17} color={tema.colors.textMuted} />
           <TextInput
             value={busqueda}
             onChangeText={establecerBusqueda}
-            placeholder="Buscar por código OC (ej. OC-2026-105), proveedor, insumo o etiqueta 'automática' / 'manual'..."
-            placeholderTextColor="#9CA3AF"
+            placeholder="Buscar por código OC, proveedor, RUT o insumo..."
+            placeholderTextColor={tema.colors.textLight}
             style={estilosLocales.buscadorInput}
           />
           {Boolean(busqueda) && (
             <Pressable onPress={() => establecerBusqueda("")}>
-              <Ionicons name="close-circle" size={17} color="#6B7280" />
+              <Ionicons name="close-circle" size={17} color={tema.colors.textMuted} />
             </Pressable>
           )}
         </View>
 
-        {/* Filtro 1: Origen de la Orden (Automática vs Manual) */}
-        <View style={{ marginBottom: 8 }}>
-          <Text style={estilosLocales.filtroSeccionTitulo}>
-            1. Filtrar por origen de generación (Automática vs Manual):
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={estilosLocales.chipsFila}
-          >
-            {[
-              {
-                id: "todos" as FiltroOrigenOrden,
-                label: `Todas (${ordenesTotales.length})`,
-                icon: "layers-outline",
-              },
-              {
-                id: "borradores_auto" as FiltroOrigenOrden,
-                label: `⚡ Borradores Automáticos Pendientes (${metricas.borradoresAuto.length})`,
-                icon: "flash",
-                destacado: true,
-              },
-              {
-                id: "automatica" as FiltroOrigenOrden,
-                label: `⚡ OC Automáticas (${metricas.totalAutomaticas.length})`,
-                icon: "hardware-chip-outline",
-              },
-              {
-                id: "manual" as FiltroOrigenOrden,
-                label: `✍️ OC Manuales (${metricas.totalManuales.length})`,
-                icon: "create-outline",
-              },
-            ].map((item) => {
-              const activo = filtroOrigen === item.id;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  onPress={() => establecerFiltroOrigen(item.id)}
-                  style={[
-                    estilosLocales.origenChip,
-                    item.destacado && estilosLocales.origenChipDestacado,
-                    activo &&
-                      (item.destacado
-                        ? estilosLocales.origenChipDestacadoActivo
-                        : estilosLocales.origenChipActivo),
-                  ]}
-                >
-                  <Ionicons
-                    name={item.icon as any}
-                    size={14}
-                    color={
-                      activo
-                        ? "#FFFFFF"
-                        : item.destacado
-                        ? "#B45309"
-                        : "#374151"
-                    }
-                  />
-                  <Text
-                    style={[
-                      estilosLocales.origenChipTexto,
-                      item.destacado && { color: "#92400E", fontWeight: "800" },
-                      activo && { color: "#FFFFFF", fontWeight: "800" },
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* Filtro 2: Estado de la Orden */}
-        <View>
-          <Text style={estilosLocales.filtroSeccionTitulo}>
-            2. Filtrar por estado del pedido:
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={estilosLocales.chipsFila}
-          >
-            {[
-              { id: "todas", label: "Todos los estados" },
-              {
-                id: "borrador",
-                label: `Borradores / Pendientes (${
-                  ordenesTotales.filter((o) => o.status === "borrador").length
-                })`,
-              },
-              {
-                id: "enviada",
-                label: `Aprobadas / Enviadas (${
-                  ordenesTotales.filter((o) => o.status === "enviada").length
-                })`,
-              },
-              {
-                id: "recibida_parcial",
-                label: "Recibida Parcial",
-              },
-              {
-                id: "recibida",
-                label: "Recibida Conforme",
-              },
-              {
-                id: "cerrada",
-                label: "Cerrada",
-              },
-            ].map((st) => {
-              const activo = filtroEstado === st.id;
-              return (
-                <TouchableOpacity
-                  key={st.id}
-                  onPress={() => cambiarFiltroEstado(st.id)}
-                  style={[
-                    estilosLocales.estadoChip,
-                    activo && estilosLocales.estadoChipActivo,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      estilosLocales.estadoChipTexto,
-                      activo && estilosLocales.estadoChipTextoActivo,
-                    ]}
-                  >
-                    {st.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-
-            {(filtroEstado !== "todas" ||
-              filtroOrigen !== "todos" ||
-              Boolean(busqueda)) && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 6, paddingRight: 8 }}
+        >
+          {[
+            { id: "todas", label: `Todos (${ordenesTotales.length})` },
+            {
+              id: "borrador",
+              label: `Borradores (${ordenesTotales.filter((o) => o.status === "borrador").length})`,
+            },
+            {
+              id: "enviada",
+              label: `Enviadas (${ordenesTotales.filter((o) => o.status === "enviada").length})`,
+            },
+            {
+              id: "recibida_parcial",
+              label: `Parciales (${ordenesTotales.filter((o) => o.status === "recibida_parcial").length})`,
+            },
+            {
+              id: "recibida",
+              label: `Recibidas (${ordenesTotales.filter((o) => o.status === "recibida").length})`,
+            },
+            {
+              id: "cerrada",
+              label: `Cerradas (${ordenesTotales.filter((o) => o.status === "cerrada").length})`,
+            },
+          ].map((st) => {
+            const activo = filtroEstado === st.id;
+            return (
               <TouchableOpacity
-                onPress={() => {
-                  cambiarFiltroEstado("todas");
-                  establecerFiltroOrigen("todos");
-                  establecerBusqueda("");
+                key={st.id}
+                onPress={() => cambiarFiltroEstado(st.id)}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 7,
+                  borderWidth: 1,
+                  backgroundColor: activo ? tema.colors.primaryLight : "#ffffff",
+                  borderColor: activo ? tema.colors.primary : tema.colors.border,
                 }}
-                style={estilosLocales.limpiarChip}
               >
-                <Ionicons
-                  name="close-circle-outline"
-                  size={14}
-                  color="#DC2626"
-                />
-                <Text style={estilosLocales.limpiarChipTexto}>
-                  Restablecer filtros
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: activo ? "800" : "600",
+                    color: activo ? tema.colors.primaryDark : tema.colors.textSecondary,
+                  }}
+                >
+                  {st.label}
                 </Text>
               </TouchableOpacity>
-            )}
-          </ScrollView>
-        </View>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {/* 6. LISTADO DE TARJETAS DE ÓRDENES DE COMPRA */}
+      {/* 4. LISTADO DE TARJETAS DE ÓRDENES DE COMPRA CON SEMÁFORO DE SUPERFICIE */}
       {ordenesFiltradas.length === 0 ? (
         <EstadoVacio
           icon="cart-outline"
           title="No se encontraron órdenes de compra"
           description="No existen órdenes que coincidan con los filtros seleccionados."
           actionTitle={
-            rol === "admin" ? "+ Generar Borrador OC Automática" : undefined
+            rol === "admin" && manejarAbrirNuevoOrden ? "Nueva OC Manual" : undefined
           }
           onAction={
-            rol === "admin" ? manejarGenerarBorradorAutoStock : undefined
+            rol === "admin" && manejarAbrirNuevoOrden ? () => manejarAbrirNuevoOrden() : undefined
           }
           containerStyle={{ marginVertical: 24 }}
         />
@@ -732,120 +597,64 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
           const esAutomatica = Boolean(order.isAutoMinStock);
           const esBorradorAutoDestacado = esDraft && esAutomatica;
           const esRecibido = order.status === "recibida";
+          const semaforo = obtenerEstiloSemaforoOrden(order.status, esAutomatica);
 
           return (
             <Tarjeta
               key={order.id}
-              variant="elevated"
-              style={[
-                estilosLocales.ordenTarjeta,
-                esBorradorAutoDestacado &&
-                  estilosLocales.ordenTarjetaBorradorAuto,
-                esDraft && !esAutomatica && estilosLocales.ordenTarjetaBorradorManual,
-              ]}
+              variant="outlined"
+              style={{
+                marginBottom: 12,
+                padding: 12,
+                backgroundColor: semaforo.fondoTarjeta,
+                borderColor: semaforo.bordeTarjeta,
+                borderWidth: 1.5,
+                borderLeftWidth: 6,
+                borderLeftColor: semaforo.franjaLateral,
+                borderRadius: 12,
+              }}
             >
-              {/* CINTA SUPERIOR EXCLUSIVA PARA BORRADORES AUTOMÁTICOS PENDIENTES DE APROBACIÓN */}
-              {esBorradorAutoDestacado && (
-                <View style={estilosLocales.cintaBorradorAuto}>
-                  <View style={estilosLocales.cintaBorradorAutoIzquierda}>
-                    <Ionicons name="flash" size={15} color="#78350F" />
-                    <Text style={estilosLocales.cintaBorradorAutoTexto}>
-                      BORRADOR GENERADO AUTOMÁTICAMENTE POR STOCK MÍNIMO • PENDIENTE DE APROBACIÓN
-                    </Text>
-                  </View>
-                  <View style={estilosLocales.cintaPastillaPrioridad}>
-                    <Text style={estilosLocales.cintaPastillaPrioridadTexto}>
-                      PRIORITARIO
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* ENCABEZADO DE LA ORDEN CON ETIQUETAS EXPLÍCITAS DE ORIGEN Y ESTADO */}
+              {/* ENCABEZADO COMPACTO DE LA ORDEN */}
               <View style={estilosLocales.ordenSuperior}>
                 <View style={{ flex: 1, marginRight: 8 }}>
                   <View style={estilosLocales.codigoInsigniasFila}>
-                    <Text style={estilosLocales.ordenCodigo}>{order.code}</Text>
+                    <Text style={[estilosLocales.ordenCodigo, { fontSize: 15, fontWeight: "800" }]}>
+                      {order.code}
+                    </Text>
 
-                    {/* [SCRUM] ETIQUETA EXPLÍCITA DE OC AUTOMÁTICA VS OC MANUAL */}
                     {esAutomatica ? (
-                      <View
-                        accessible
-                        accessibilityRole="text"
-                        accessibilityLabel="Etiqueta: OC Automática generada por stock mínimo"
-                        style={estilosLocales.etiquetaOcAutomatica}
-                      >
-                        <Ionicons name="flash" size={13} color="#92400E" />
-                        <Text style={estilosLocales.etiquetaOcAutomaticaTexto}>
-                          OC Automática
-                        </Text>
-                        <View style={estilosLocales.subEtiquetaStockMin}>
-                          <Text style={estilosLocales.subEtiquetaStockMinTexto}>
-                            Stock Mínimo
-                          </Text>
-                        </View>
-                      </View>
+                      <Insignia
+                        label="OC Automática (Stock Mín.)"
+                        tone="warn"
+                        icon="flash-outline"
+                        size="sm"
+                      />
                     ) : (
-                      <View
-                        accessible
-                        accessibilityRole="text"
-                        accessibilityLabel="Etiqueta: OC Manual emitida por usuario"
-                        style={estilosLocales.etiquetaOcManual}
-                      >
-                        <Ionicons
-                          name="create-outline"
-                          size={13}
-                          color="#1E40AF"
-                        />
-                        <Text style={estilosLocales.etiquetaOcManualTexto}>
-                          OC Manual
-                        </Text>
-                      </View>
-                    )}
-
-                    {/* Insignia adicional cuando está pendiente de aprobación */}
-                    {esDraft && (
-                      <View
-                        style={[
-                          estilosLocales.etiquetaPendienteAprobacion,
-                          esAutomatica &&
-                            estilosLocales.etiquetaPendienteAprobacionAuto,
-                        ]}
-                      >
-                        <Ionicons
-                          name="time-outline"
-                          size={13}
-                          color={esAutomatica ? "#991B1B" : "#374151"}
-                        />
-                        <Text
-                          style={[
-                            estilosLocales.etiquetaPendienteAprobacionTexto,
-                            esAutomatica && { color: "#991B1B" },
-                          ]}
-                        >
-                          Pendiente de Aprobación
-                        </Text>
-                      </View>
+                      <Insignia
+                        label="OC Manual"
+                        tone="mute"
+                        icon="create-outline"
+                        size="sm"
+                      />
                     )}
                   </View>
 
-                  <Text style={estilosLocales.ordenProveedor}>
+                  <Text style={[estilosLocales.ordenProveedor, { marginTop: 3 }]}>
                     {order.supplier}
                     {order.supplierRut ? ` • RUT: ${order.supplierRut}` : ""}
                   </Text>
                   <Text style={estilosLocales.ordenFecha}>
-                    Emisión: {formatearFecha(order.date)} • Entrega estimada:{" "}
+                    📅 Emisión: {formatearFecha(order.date)} • Entrega est.:{" "}
                     {formatearFecha(order.expectedDate)}
                   </Text>
                 </View>
 
-                {/* Insignia de estado del ciclo de vida */}
                 <Insignia
                   label={
                     order.status === "borrador"
                       ? "BORRADOR"
                       : order.status === "enviada"
-                      ? "APROBADA Y ENVIADA"
+                      ? "ENVIADA"
                       : order.status === "recibida_parcial"
                       ? "PARCIAL"
                       : order.status.toUpperCase()
@@ -861,25 +670,28 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                       ? "warn"
                       : order.status === "anulada"
                       ? "danger"
-                      : esAutomatica
-                      ? "warn"
-                      : "mute"
+                      : "warn"
                   }
+                  size="sm"
                 />
               </View>
 
-              {/* DETALLE DE ÍTEMS Y NOTAS DE REPOSICIÓN */}
+              {/* DETALLE COMPACTO DE ÍTEMS EN CAJA BLANCA LIMPIA */}
               <View
-                style={[
-                  estilosLocales.ordenElementosCaja,
-                  esBorradorAutoDestacado &&
-                    estilosLocales.ordenElementosCajaAuto,
-                ]}
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderWidth: 1,
+                  borderColor: semaforo.divisorColor,
+                  borderRadius: 9,
+                  padding: 10,
+                  marginTop: 8,
+                  gap: 5,
+                }}
               >
                 {order.items.map((i, idx) => (
                   <View key={idx} style={estilosLocales.itemLineaFila}>
                     <Text style={estilosLocales.itemNombreTexto}>
-                      • {i.quantity} {i.unit} × {i.name}{" "}
+                      • <Text style={{ fontWeight: "800" }}>{i.quantity} {i.unit}</Text> × {i.name}{" "}
                       <Text style={estilosLocales.itemSkuTexto}>({i.sku})</Text>
                     </Text>
                     <Text style={estilosLocales.itemSubtotalTexto}>
@@ -888,13 +700,9 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                   </View>
                 ))}
                 {Boolean(order.notes) && (
-                  <View style={estilosLocales.notaReposicionFila}>
+                  <View style={[estilosLocales.notaReposicionFila, { marginTop: 2 }]}>
                     <Ionicons
-                      name={
-                        esAutomatica
-                          ? "information-circle"
-                          : "document-text-outline"
-                      }
+                      name="information-circle-outline"
                       size={14}
                       color={esAutomatica ? "#B45309" : "#6B7280"}
                     />
@@ -906,6 +714,7 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                           fontWeight: "600",
                         },
                       ]}
+                      numberOfLines={2}
                     >
                       {order.notes}
                     </Text>
@@ -913,12 +722,15 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                 )}
               </View>
 
-              {/* PIE DE TARJETA: MONTO TOTAL Y BOTONES DE ACCIÓN ([SCRUM] APRUEBA LA OC) */}
-              <View style={estilosLocales.ordenInferior}>
+              {/* PIE COMPACTO: MONTO TOTAL Y ACCIONES */}
+              <View
+                style={[
+                  estilosLocales.ordenInferior,
+                  { borderTopColor: semaforo.divisorColor, marginTop: 8, paddingTop: 8 },
+                ]}
+              >
                 <View>
-                  <Text style={estilosLocales.totalEtiqueta}>
-                    Total c/ IVA (19%):
-                  </Text>
+                  <Text style={estilosLocales.totalEtiqueta}>Total c/ IVA (19%):</Text>
                   <Text
                     style={[
                       estilosLocales.totalValor,
@@ -930,55 +742,37 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                 </View>
 
                 <View style={estilosLocales.ordenBotonFila}>
-                  {/* Vista Previa PDF */}
                   {establecerPdfVistaPreviaOrden && (
                     <Boton
-                      title="Vista Previa PDF"
+                      title="Ver PDF"
                       variant="outline"
                       size="sm"
                       icon="document-text-outline"
                       onPress={() => establecerPdfVistaPreviaOrden(order)}
+                      style={{ minHeight: 34, backgroundColor: "#ffffff" }}
                     />
                   )}
 
-                  {/* Editar: disponible en borrador para Admin */}
                   {esDraft && rol === "admin" && manejarAbrirEditarOrden && (
                     <Boton
-                      title="Editar Borrador"
-                      variant="secondary"
+                      title="Editar"
+                      variant="outline"
                       size="sm"
                       icon="create-outline"
                       onPress={() => manejarAbrirEditarOrden(order)}
+                      style={{ minHeight: 34, backgroundColor: "#ffffff" }}
                     />
                   )}
 
-                  {/* [SCRUM] Botón Aprobar OC Automática / Manual y Enviar */}
                   {esDraft && rol === "admin" && (
-                    <TouchableOpacity
+                    <Boton
+                      title={esAutomatica ? "Aprobar OC Auto" : "Aprobar y Enviar"}
+                      variant="success"
+                      size="sm"
+                      icon="checkmark-done-outline"
                       onPress={() => manejarAprobarOrden(order)}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        esAutomatica
-                          ? `Aprobar OC Automática ${order.code} y enviar a proveedor`
-                          : `Aprobar OC Manual ${order.code} y enviar a proveedor`
-                      }
-                      style={[
-                        estilosLocales.botonAprobarPrincipal,
-                        esAutomatica &&
-                          estilosLocales.botonAprobarPrincipalAuto,
-                      ]}
-                    >
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={17}
-                        color="#FFFFFF"
-                      />
-                      <Text style={estilosLocales.botonAprobarPrincipalTexto}>
-                        {esAutomatica
-                          ? "Aprobar OC Automática y Enviar"
-                          : "Aprobar y Enviar"}
-                      </Text>
-                    </TouchableOpacity>
+                      style={{ minHeight: 34 }}
+                    />
                   )}
 
                   {/* Calificar y Cerrar (cuando ya fue recibida) */}

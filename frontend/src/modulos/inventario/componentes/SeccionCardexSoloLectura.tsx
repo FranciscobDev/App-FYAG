@@ -759,15 +759,21 @@ export const SeccionCardexSoloLectura: React.FC<PropiedadesSeccionCardexSoloLect
                 esUltimaLinea && estilosLocales.movimientoTarjetaUltima,
               ]}
             >
-              <View style={estilosLocales.movimientoTop}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={[estilosLocales.movimientoTop, { flexWrap: "wrap", gap: 8 }]}>
+                <View style={{ flex: 1, minWidth: 160 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                     <Text style={estilosLocales.tdSku}>{item.sku}</Text>
                     {esUltimaLinea && (
                       <Insignia label="Última línea" tone="primary" size="sm" />
                     )}
                   </View>
-                  <Text style={estilosLocales.movimientoNombre}>{item.productName}</Text>
+                  <Text
+                    style={[estilosLocales.movimientoNombre, { flexShrink: 1 }]}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {item.productName}
+                  </Text>
                 </View>
                 <Insignia
                   label={item.typeLabel}
@@ -815,9 +821,9 @@ export const SeccionCardexSoloLectura: React.FC<PropiedadesSeccionCardexSoloLect
                 </View>
               </View>
 
-              <View style={estilosLocales.trazabilidadPie}>
+              <View style={[estilosLocales.trazabilidadPie, { flexWrap: "wrap", gap: 6 }]}>
                 <Ionicons name="person-circle-outline" size={16} color={tema.colors.primary} />
-                <Text style={estilosLocales.trazabilidadTexto}>
+                <Text style={[estilosLocales.trazabilidadTexto, { flexShrink: 1 }]}>
                   Registrado por:{" "}
                   <Text style={{ fontWeight: "bold", color: tema.colors.text }}>
                     {item.userName || "Sistema"}
@@ -867,7 +873,7 @@ const estilosLocales = StyleSheet.create({
     alignItems: "center",
     gap: 10,
     flex: 1,
-    minWidth: 240,
+    minWidth: 180,
   },
   bannerIconoCaja: {
     width: 36,
@@ -1055,7 +1061,7 @@ const estilosLocales = StyleSheet.create({
     marginRight: 6,
   },
   chipActivo: {
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     borderColor: tema.colors.primary,
   },
   chipTexto: {
@@ -1105,7 +1111,7 @@ const estilosLocales = StyleSheet.create({
   tablaHeader: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1917",
+    backgroundColor: "#0f172a",
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
