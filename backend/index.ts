@@ -1,40 +1,44 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+import { validarConfiguracionEntorno } from './config/entorno';
 
-import { app } from './app';
-import pool from './config/db';
-import { aplicarMigraciones } from './services/migraciones';
-import { iniciarProcesoDiarioPrestamos } from './controllers/prestamoHerramientaController';
-import { iniciarJobDiarioMantenimiento } from './controllers/mantenimientoHerramientaController';
-import { iniciarJobDiarioRespaldos } from './controllers/respaldoController';
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
-const PORT = Number(process.env.PORT) || 3000;
+const iniciarServidor = async (): Promise<void> => {
+    const configuracion = validarConfiguracionEntorno();
+    const [{ app }, { default: pool }, { aplicarMigraciones }, prestamos, mantenimiento, respaldos] =
+        await Promise.all([
+            import('./app'),
+            import('./config/db'),
+            import('./services/migraciones'),
+            import('./controllers/prestamoHerramientaController'),
+            import('./controllers/mantenimientoHerramientaController'),
+            import('./controllers/respaldoController'),
+        ]);
 
-const probarConexion = async (): Promise<void> => {
-    try {
+    const probarConexion = async (): Promise<void> => {
         const res = await pool.query<{ now: Date }>('SELECT NOW()');
         console.log('--------------------------------------------------');
         console.log('✅ Conexión a PostgreSQL establecida exitosamente');
         console.log(`🕒 Hora actual del servidor DB: ${res.rows[0].now}`);
         console.log('--------------------------------------------------');
-    } catch (err) {
-        const mensaje = err instanceof Error ? err.message : String(err);
-        console.error('❌ Error al conectar a PostgreSQL:', mensaje);
-    }
+    };
+
+    await aplicarMigraciones();
+    app.listen(configuracion.port, '0.0.0.0', () => {
+        console.log(`Servidor en puerto ${configuracion.port}`);
+        prestamos.iniciarProcesoDiarioPrestamos();
+        mantenimiento.iniciarJobDiarioMantenimiento();
+        respaldos.iniciarJobDiarioRespaldos();
+        void probarConexion().catch((error: unknown) => {
+            const mensaje = error instanceof Error ? error.message : String(error);
+            console.error('❌ Error al conectar a PostgreSQL:', mensaje);
+        });
+    });
 };
 
-// Las migraciones son idempotentes: se aplican antes de aceptar tráfico
-aplicarMigraciones()
-    .then(() => {
-        app.listen(PORT, '0.0.0.0', () => {
-            console.log(`Servidor en puerto ${PORT}`);
-            iniciarProcesoDiarioPrestamos();
-            iniciarJobDiarioMantenimiento();
-            iniciarJobDiarioRespaldos();
-            probarConexion();
-        });
-    })
-    .catch((error) => {
-        console.error('❌ No se pudieron aplicar las migraciones; el servidor no arranca:', error);
-        process.exit(1);
-    });
+iniciarServidor().catch((error: unknown) => {
+    const mensaje = error instanceof Error ? error.message : String(error);
+    console.error('❌ No se pudo iniciar el backend:', mensaje);
+    process.exit(1);
+});

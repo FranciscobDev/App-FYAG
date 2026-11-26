@@ -8,7 +8,7 @@ import { login } from '../controllers/authController';
 import { actualizarUsuario, deshabilitarUsuario } from '../controllers/usuarioController';
 import { verificarAdmin, verificarToken } from '../middleware/authMiddleware';
 
-const JWT_SECRET_PRUEBA = 'auth-middleware-test-secret';
+const JWT_SECRET_PRUEBA = 'auth-middleware-test-secret-with-32-characters';
 const jwtSecretOriginal = process.env.JWT_SECRET;
 const consultaOriginal = pool.query;
 const conexionOriginal = pool.connect;
@@ -165,6 +165,19 @@ test('un token sin claim sid (anterior al modelo de sesiones) es rechazado', asy
 
     assert.equal(captura.obtenerStatus(), 401);
     assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+});
+
+test('JWT_SECRET ausente responde error de configuración del servidor', async () => {
+    delete process.env.JWT_SECRET;
+    const req = { headers: { authorization: 'Bearer token-prueba' } } as Request;
+    const captura = crearCapturaRespuesta();
+
+    await verificarToken(req, captura.respuesta, () => undefined);
+
+    assert.equal(captura.obtenerStatus(), 500);
+    assert.deepEqual(captura.obtenerCuerpo(), {
+        mensaje: 'La autenticación no está configurada correctamente',
+    });
 });
 
 test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /deshabilitar)', async () => {

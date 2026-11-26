@@ -5,6 +5,7 @@ import pool from '../config/db';
 import { crearSesion } from '../services/sesiones';
 import { obtenerValorParametro } from '../services/parametros';
 import { obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { obtenerJwtSecret } from '../config/entorno';
 
 interface LoginBody {
     correo_usuario?: string;
@@ -106,7 +107,7 @@ export const login = async (req: Request<Record<string, string>, unknown, LoginB
 
         const token = jwt.sign(
             { id: usuario.id_usuario, rol: usuario.nombre_rol, sid: idSesion },
-            process.env.JWT_SECRET as string,
+            obtenerJwtSecret(),
             { expiresIn: '8h' }
         );
 

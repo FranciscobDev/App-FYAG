@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import pool from '../config/db';
+import { obtenerJwtSecret } from '../config/entorno';
 
 export interface UsuarioTokenPayload extends JwtPayload {
     id: number;
@@ -39,8 +40,17 @@ export const verificarToken = async (req: Request, res: Response, next: NextFunc
     }
 
     let payload: UsuarioTokenPayload;
+    let jwtSecret: string;
     try {
-        payload = jwt.verify(token, process.env.JWT_SECRET as string) as UsuarioTokenPayload;
+        jwtSecret = obtenerJwtSecret();
+    } catch (error) {
+        console.error('JWT_SECRET no está configurado correctamente:', error);
+        res.status(500).json({ mensaje: 'La autenticación no está configurada correctamente' });
+        return;
+    }
+
+    try {
+        payload = jwt.verify(token, jwtSecret) as UsuarioTokenPayload;
     } catch {
         res.status(401).json({ mensaje: 'La sesión expiró o no es válida' });
         return;
