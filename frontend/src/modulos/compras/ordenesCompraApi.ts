@@ -177,10 +177,14 @@ export const aprobarOrdenCompraApi = (idOrden: number, correoDestino?: string) =
     body: JSON.stringify(correoDestino ? { correo_destino: correoDestino } : {}),
   });
 
-export const cambiarEstadoOrdenCompraApi = (idOrden: number, estado: OrdenCompraApi["estado"]) =>
+export const cambiarEstadoOrdenCompraApi = (
+  idOrden: number,
+  estado: OrdenCompraApi["estado"],
+  calificacion?: number | { timeRating?: number; qualityRating?: number; priceRating?: number; average?: number; comment?: string }
+) =>
   peticion<RespuestaAprobacionOcApi>(`${obtenerRuta()}/${idOrden}/estado`, {
     method: "PATCH",
-    body: JSON.stringify({ estado }),
+    body: JSON.stringify({ estado, calificacion }),
   });
 
 export const registrarRecepcionOrdenCompraApi = (

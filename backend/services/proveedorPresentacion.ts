@@ -9,7 +9,7 @@ function rolDe(req: Request): string | undefined {
 }
 
 const CAMPOS_BASE = `p.id_proveedor, p.nombre_proveedor, p.rut_proveedor,
-  p.correo_contacto, p.telefono, p.direccion`;
+  p.correo_contacto, p.telefono, p.direccion, COALESCE(p.calificacion_promedio, 5.0)::float8 AS calificacion_promedio`;
 
 export function createProveedoresRouter(pool: Pool): Router {
   const router = Router();

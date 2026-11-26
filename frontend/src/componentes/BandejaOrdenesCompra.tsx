@@ -775,15 +775,15 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                     />
                   )}
 
-                  {/* Calificar y Cerrar (cuando ya fue recibida) */}
+                  {/* Calificar y Cerrar (cuando ya fue recibida) [H15] */}
                   {esRecibido &&
                     !order.rating &&
                     establecerTarifaModalOrden && (
                       <Boton
-                        title="Calificar y Cerrar"
+                        title="Calificar y Cerrar OC"
                         variant="success"
                         size="sm"
-                        icon="star-outline"
+                        icon="star"
                         onPress={() => {
                           establecerTarifaModalOrden(order);
                           establecerCalificacionTiempo?.(5);
@@ -791,17 +791,33 @@ export const BandejaOrdenesCompra: React.FC<PropiedadesBandejaOrdenesCompra> = (
                           establecerCalificacionPrecio?.(5);
                           establecerCalificacionComentario?.("");
                         }}
+                        style={{ minHeight: 36, backgroundColor: "#15803d" }}
                       />
                     )}
 
                   {order.rating && (
-                    <Insignia
-                      label={`⭐ ${order.rating.average}/5 (${
-                        order.rating.comment || "Calificado"
-                      })`}
-                      tone="ok"
-                      size="sm"
-                    />
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        backgroundColor: "#fef3c7",
+                        borderWidth: 1,
+                        borderColor: "#fde68a",
+                        borderRadius: 8,
+                        paddingHorizontal: 8,
+                        paddingVertical: 5,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <Ionicons name="star" size={14} color="#d97706" />
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#92400e" }}>
+                        ⭐ {order.rating.average} / 5.0
+                      </Text>
+                      <Text style={{ fontSize: 10, color: "#78350f" }} numberOfLines={1}>
+                        • {order.rating.comment ? `"${order.rating.comment}"` : "Cerrada y evaluada"}
+                      </Text>
+                    </View>
                   )}
                 </View>
               </View>

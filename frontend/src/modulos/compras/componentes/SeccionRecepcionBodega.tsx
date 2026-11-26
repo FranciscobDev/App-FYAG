@@ -45,6 +45,11 @@ export interface PropiedadesSeccionRecepcionBodega {
   } | null;
   onLimpiarUltimoEscaneo?: () => void;
   width: any;
+  establecerTarifaModalOrden?: any;
+  establecerCalificacionTiempo?: any;
+  establecerCalificacionQuality?: any;
+  establecerCalificacionPrecio?: any;
+  establecerCalificacionComentario?: any;
 }
 
 export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega> = ({
@@ -65,6 +70,11 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
   ultimoEscaneoRecepcion,
   onLimpiarUltimoEscaneo,
   width,
+  establecerTarifaModalOrden,
+  establecerCalificacionTiempo,
+  establecerCalificacionQuality,
+  establecerCalificacionPrecio,
+  establecerCalificacionComentario,
 }) => {
   const ordenesPendientes = ordenesCompra.filter(
     (o: any) => o.status === "enviada" || o.status === "recibida_parcial"
@@ -1133,6 +1143,62 @@ export const SeccionRecepcionBodega: React.FC<PropiedadesSeccionRecepcionBodega>
                       </Text>
                     </View>
                   ))}
+                </View>
+
+                {/* Botón para calificar y cerrar OC o estado calificado [H15] */}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginTop: 8,
+                    paddingTop: 8,
+                    borderTopWidth: 1,
+                    borderTopColor: "#bbf7d0",
+                    flexWrap: "wrap",
+                    gap: 6,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: "600", color: "#166534" }}>
+                    Cierre y Evaluación [H15]:
+                  </Text>
+                  {oc.rating ? (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        backgroundColor: "#fef3c7",
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 6,
+                        borderWidth: 1,
+                        borderColor: "#fde68a",
+                      }}
+                    >
+                      <Ionicons name="star" size={13} color="#d97706" />
+                      <Text style={{ fontSize: 11, fontWeight: "800", color: "#92400e" }}>
+                        ⭐ {oc.rating.average} / 5.0 • Cerrada
+                      </Text>
+                    </View>
+                  ) : establecerTarifaModalOrden ? (
+                    <Boton
+                      title="Calificar Proveedor y Cerrar OC"
+                      variant="success"
+                      size="sm"
+                      icon="star"
+                      onPress={() => {
+                        establecerTarifaModalOrden(oc);
+                        establecerCalificacionTiempo?.(5);
+                        establecerCalificacionQuality?.(5);
+                        establecerCalificacionPrecio?.(5);
+                        establecerCalificacionComentario?.("");
+                      }}
+                      style={{ minHeight: 32 }}
+                    />
+                  ) : (
+                    <Insignia label="Pendiente de Cierre" tone="warn" size="sm" />
+                  )}
                 </View>
               </Tarjeta>
             ))}

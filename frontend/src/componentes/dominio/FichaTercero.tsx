@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
+import { usarAplicacion } from "@/contexto/ContextoAplicacion";
 
 /**
  * Definición estricta de la estructura de la entidad (Proveedor o Cliente) [FRONT-2]
@@ -26,6 +27,8 @@ export interface EntidadData {
   telefono?: string;
   direccion?: string;
   calificacionPromedio?: number;
+  ratingAvg?: number;
+  ratingCount?: number;
   banco?: string;
   tipoCuenta?: string;
   numeroCuenta?: string;
@@ -63,6 +66,7 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
   mostrarComparadorScrum = true,
 }) => {
   const auth = usarAutenticacion();
+  const app = usarAplicacion();
   const { width } = useWindowDimensions();
   const esDesktop = width >= 768;
 
@@ -90,7 +94,9 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
     contacto: entidadData?.contacto || "contacto@ejemplo.cl",
     telefono: entidadData?.telefono || "+56 9 8765 4321",
     direccion: entidadData?.direccion || "Av. Industrial 4520, Santiago",
-    calificacionPromedio: entidadData?.calificacionPromedio ?? 4.7,
+    calificacionPromedio: entidadData?.calificacionPromedio ?? entidadData?.ratingAvg ?? 0,
+    ratingAvg: entidadData?.ratingAvg ?? entidadData?.calificacionPromedio ?? 0,
+    ratingCount: entidadData?.ratingCount ?? (entidadData?.ratingAvg ? 1 : 0),
     banco: entidadData?.banco || "Banco Estado",
     tipoCuenta: entidadData?.tipoCuenta || "Cuenta Corriente",
     numeroCuenta: entidadData?.numeroCuenta || "12345678-9",
@@ -108,7 +114,9 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
         contacto: entidadData.contacto || "contacto@ejemplo.cl",
         telefono: entidadData.telefono || "+56 9 8765 4321",
         direccion: entidadData.direccion || "Av. Industrial 4520, Santiago",
-        calificacionPromedio: entidadData.calificacionPromedio ?? 4.7,
+        calificacionPromedio: entidadData.calificacionPromedio ?? entidadData.ratingAvg ?? 0,
+        ratingAvg: entidadData.ratingAvg ?? entidadData.calificacionPromedio ?? 0,
+        ratingCount: entidadData.ratingCount ?? (entidadData.ratingAvg ? 1 : 0),
         banco: entidadData.banco || "Banco Estado",
         tipoCuenta: entidadData.tipoCuenta || "Cuenta Corriente",
         numeroCuenta: entidadData.numeroCuenta || "12345678-9",
@@ -116,6 +124,23 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
       });
     }
   }, [entidadData]);
+
+  // Consulta reactiva del proveedor en tiempo real desde el contexto
+  const proveedorEnVivo =
+    formData.tipo === "Proveedor"
+      ? (app?.proveedores || []).find(
+          (p: any) =>
+            (formData.id && p.id === formData.id) ||
+            (formData.rut && p.rut && p.rut.replace(/[.\s-]/g, "") === formData.rut.replace(/[.\s-]/g, "")) ||
+            (formData.nombre && p.businessName && p.businessName.trim().toLowerCase() === formData.nombre.trim().toLowerCase())
+        )
+      : null;
+
+  const rawRating = proveedorEnVivo?.ratingAvg ?? formData.ratingAvg ?? formData.calificacionPromedio;
+  const tieneCalificacion = typeof rawRating === "number" && !isNaN(rawRating) && rawRating > 0;
+  const calificacionPromedioEfectiva = tieneCalificacion ? rawRating : null;
+  const ratingConteoEfectivo =
+    proveedorEnVivo?.ratingCount ?? formData.ratingCount ?? (tieneCalificacion ? 1 : 0);
 
   // Manejador de cambios genérico en los campos del formulario
   const handleChange = (name: keyof EntidadData, value: string | number) => {
@@ -211,16 +236,64 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
           </View>
         </View>
 
-        {/* ⭐ Calificación Promedio: Solo visible si la entidad es Proveedor [FRONT-2] */}
+        {/* ⭐ Calificación Promedio con Estrellas: Solo visible si la entidad es Proveedor [FRONT-2 / H15] */}
         {formData.tipo === "Proveedor" && (
           <View style={estilos.cajaCalificacion}>
-            <Text style={estilos.estrellaIcono}>★</Text>
-            <View>
-              <Text style={estilos.calificacionEtiqueta}>Calificación Promedio</Text>
+            <View style={estilos.cajaCalificacionHeader}>
+              <Text style={estilos.calificacionEtiqueta}>Calificación [H15]</Text>
+              <View
+                style={[
+                  estilos.insigniaPuntaje,
+                  !tieneCalificacion && estilos.insigniaPuntajeVacia,
+                ]}
+              >
+                <Text
+                  style={[
+                    estilos.insigniaPuntajeTexto,
+                    !tieneCalificacion && estilos.insigniaPuntajeTextoVacia,
+                  ]}
+                >
+                  {tieneCalificacion
+                    ? (calificacionPromedioEfectiva! >= 4.5
+                        ? "Excelente"
+                        : calificacionPromedioEfectiva! >= 3.8
+                        ? "Bueno"
+                        : calificacionPromedioEfectiva! >= 3.0
+                        ? "Aceptable"
+                        : "Regular")
+                    : "Sin calificación"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Fila de estrellas vectoriales y promedio actualizado */}
+            <View style={estilos.calificacionFilaEstrellas}>
+              <View style={estilos.estrellasContenedor}>
+                {[1, 2, 3, 4, 5].map((estrella) => {
+                  const llena = tieneCalificacion && estrella <= Math.round(calificacionPromedioEfectiva!);
+                  return (
+                    <Ionicons
+                      key={estrella}
+                      name={llena ? "star" : "star-outline"}
+                      size={18}
+                      color={llena ? "#f59e0b" : "#cbd5e1"}
+                      style={{ marginRight: 2 }}
+                    />
+                  );
+                })}
+              </View>
+
               <Text style={estilos.calificacionValor}>
-                {formData.calificacionPromedio.toFixed(1)} / 5.0
+                {tieneCalificacion ? calificacionPromedioEfectiva!.toFixed(1) : "—"}{" "}
+                <Text style={estilos.calificacionEscala}>/ 5.0</Text>
               </Text>
             </View>
+
+            <Text style={estilos.calificacionConteoTexto}>
+              {tieneCalificacion
+                ? `${ratingConteoEfectivo} ${ratingConteoEfectivo === 1 ? "evaluación registrada" : "evaluaciones registradas"}`
+                : "Aún no registra evaluaciones en órdenes cerradas"}
+            </Text>
           </View>
         )}
       </View>
@@ -343,6 +416,104 @@ export const FichaTercero: React.FC<FichaTerceroProps> = ({
               El perfil Bodeguero cuenta con permisos de solo lectura para información operativa y no tiene acceso a cuentas financieras.
             </Text>
           </View>
+        </View>
+      )}
+
+      {/* ⭐ SECCIÓN DE DESEMPEÑO Y EVALUACIÓN DE ÓRDENES CERRADAS (H15) */}
+      {formData.tipo === "Proveedor" && (
+        <View style={estilos.seccionEvaluacionesH15}>
+          <View style={estilos.encabezadoEvaluaciones}>
+            <Ionicons name="star" size={18} color="#d97706" style={{ marginRight: 6 }} />
+            <Text style={estilos.tituloEvaluaciones}>
+              ⭐ Desempeño Comercial y Evaluación de Órdenes (H15)
+            </Text>
+          </View>
+
+          {/* Criterios evaluados */}
+          <View style={estilos.criteriosCuadricula}>
+            <View style={estilos.criterioItem}>
+              <Text style={estilos.criterioIcono}>⏱️</Text>
+              <Text style={estilos.criterioTitulo}>Cumplimiento Plazos</Text>
+              <Text style={estilos.criterioSub}>Puntualidad en entrega</Text>
+            </View>
+            <View style={estilos.criterioItem}>
+              <Text style={estilos.criterioIcono}>📦</Text>
+              <Text style={estilos.criterioTitulo}>Calidad y Embalaje</Text>
+              <Text style={estilos.criterioSub}>Conforme y sin mermas</Text>
+            </View>
+            <View style={estilos.criterioItem}>
+              <Text style={estilos.criterioIcono}>💲</Text>
+              <Text style={estilos.criterioTitulo}>Precio y Facturación</Text>
+              <Text style={estilos.criterioSub}>Condiciones pactadas</Text>
+            </View>
+          </View>
+
+          {/* Listado de OCs calificadas de este proveedor */}
+          {(() => {
+            const ocsCalificadas = (app?.ordenesCompra || []).filter(
+              (o: any) =>
+                (o.supplierId === (proveedorEnVivo?.id || formData.id) ||
+                  (o.supplier && o.supplier.trim().toLowerCase() === formData.nombre.trim().toLowerCase())) &&
+                Boolean(o.rating)
+            );
+
+            if (ocsCalificadas.length === 0) {
+              return (
+                <View style={estilos.cajaSinEvaluaciones}>
+                  <Ionicons name="chatbox-ellipses-outline" size={18} color="#92400e" style={{ marginRight: 8 }} />
+                  <Text style={estilos.textoSinEvaluaciones}>
+                    Las evaluaciones se generan automáticamente con estrellas al calificar y cerrar una Orden de Compra en el módulo de Compras.
+                  </Text>
+                </View>
+              );
+            }
+
+            return (
+              <View style={{ marginTop: 6, gap: 8 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
+                  Historial de Órdenes Calificadas ({ocsCalificadas.length}):
+                </Text>
+                {ocsCalificadas.map((oc: any) => (
+                  <View key={oc.id} style={estilos.tarjetaOcCalificada}>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: "#1e293b" }}>
+                        {oc.code}
+                      </Text>
+                      <View style={estilos.calificacionPuntajeMini}>
+                        <Ionicons name="star" size={13} color="#d97706" />
+                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#92400e" }}>
+                          {oc.rating.average} / 5.0
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 }}>
+                      <Text style={estilos.desgloseCriterioTexto}>
+                        Plazo: <Text style={{ fontWeight: "700" }}>{oc.rating.timeRating || 5}★</Text>
+                      </Text>
+                      <Text style={estilos.desgloseCriterioTexto}>
+                        Calidad: <Text style={{ fontWeight: "700" }}>{oc.rating.qualityRating || 5}★</Text>
+                      </Text>
+                      <Text style={estilos.desgloseCriterioTexto}>
+                        Precio: <Text style={{ fontWeight: "700" }}>{oc.rating.priceRating || 5}★</Text>
+                      </Text>
+                      {oc.rating.ratedAt && (
+                        <Text style={[estilos.desgloseCriterioTexto, { color: "#64748b" }]}>
+                          📅 {oc.rating.ratedAt}
+                        </Text>
+                      )}
+                    </View>
+
+                    {Boolean(oc.rating.comment) && (
+                      <Text style={estilos.comentarioEvaluacionTexto}>
+                        "{oc.rating.comment}"
+                      </Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
         </View>
       )}
 
@@ -563,30 +734,169 @@ const estilos = StyleSheet.create({
     fontWeight: "500",
   },
   cajaCalificacion: {
-    flexDirection: "row",
-    alignItems: "center",
     backgroundColor: "#fffbeb",
     borderWidth: 1,
     borderColor: "#fde68a",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
+    minWidth: 175,
+  },
+  cajaCalificacionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+    gap: 6,
+  },
+  insigniaPuntaje: {
+    backgroundColor: "#fef3c7",
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "#fde68a",
+  },
+  insigniaPuntajeVacia: {
+    backgroundColor: "#f1f5f9",
+    borderColor: "#cbd5e1",
+  },
+  insigniaPuntajeTexto: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#b45309",
+    textTransform: "uppercase",
+  },
+  insigniaPuntajeTextoVacia: {
+    color: "#64748b",
+  },
+  calificacionFilaEstrellas: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  estrellasContenedor: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   estrellaIcono: {
-    fontSize: 20,
+    fontSize: 18,
     color: "#f59e0b",
     marginRight: 6,
   },
   calificacionEtiqueta: {
     fontSize: 10,
-    fontWeight: "600",
-    color: "#64748b",
+    fontWeight: "700",
+    color: "#92400e",
     textTransform: "uppercase",
   },
   calificacionValor: {
-    fontSize: 14,
-    fontWeight: "800",
+    fontSize: 15,
+    fontWeight: "900",
     color: "#0f172a",
+  },
+  calificacionEscala: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#64748b",
+  },
+  calificacionConteoTexto: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#78350f",
+    marginTop: 2,
+  },
+  seccionEvaluacionesH15: {
+    backgroundColor: "#fffbeb",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+  },
+  encabezadoEvaluaciones: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  tituloEvaluaciones: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#92400e",
+  },
+  criteriosCuadricula: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  criterioItem: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 8,
+    padding: 8,
+    alignItems: "center",
+  },
+  criterioIcono: {
+    fontSize: 18,
+    marginBottom: 2,
+  },
+  criterioTitulo: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#1e293b",
+    textAlign: "center",
+  },
+  criterioSub: {
+    fontSize: 9,
+    color: "#64748b",
+    textAlign: "center",
+    marginTop: 1,
+  },
+  cajaSinEvaluaciones: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 8,
+    padding: 10,
+  },
+  textoSinEvaluaciones: {
+    fontSize: 11,
+    color: "#92400e",
+    flex: 1,
+  },
+  tarjetaOcCalificada: {
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#fde68a",
+    borderRadius: 8,
+    padding: 10,
+  },
+  calificacionPuntajeMini: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#fef3c7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  desgloseCriterioTexto: {
+    fontSize: 11,
+    color: "#475569",
+  },
+  comentarioEvaluacionTexto: {
+    fontSize: 11,
+    fontStyle: "italic",
+    color: "#334155",
+    marginTop: 4,
+    backgroundColor: "#f8fafc",
+    padding: 6,
+    borderRadius: 6,
   },
   seccionFormulario: {
     marginBottom: 16,

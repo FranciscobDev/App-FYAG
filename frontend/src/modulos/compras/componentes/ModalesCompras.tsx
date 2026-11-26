@@ -804,27 +804,47 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
         </View>
       </VistaModal>
 
-      {/* MODAL 3: CALIFICACIÓN DEL PROVEEDOR (ESTRELLAS TIEMPO, CALIDAD, PRECIO) */}
+      {/* MODAL 3: CALIFICACIÓN DEL PROVEEDOR CON ESTRELLAS AL CERRAR OC (H15) */}
       <VistaModal
         visible={Boolean(tarifaModalOrden)}
         onClose={() => establecerTarifaModalOrden(null)}
         title="Calificar Proveedor y Cerrar OC"
         subtitle={tarifaModalOrden ? `${tarifaModalOrden.supplier} • ${tarifaModalOrden.code}` : ""}
+        maxWidth={420}
+        containerStyle={{ width: "90%", alignSelf: "center" }}
       >
-        <Text style={estilos.tarifaInstruct}>
-          Evalúe el desempeño del proveedor para cerrar definitivamente la Orden de Compra:
-        </Text>
+        {/* Banner Informativo H15 */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: "#f0fdf4",
+            borderWidth: 1,
+            borderColor: "#86efac",
+            borderLeftWidth: 5,
+            borderLeftColor: "#16a34a",
+            borderRadius: 8,
+            padding: 10,
+            marginBottom: 12,
+            gap: 8,
+          }}
+        >
+          <Ionicons name="information-circle" size={20} color="#16a34a" />
+          <Text style={{ flex: 1, flexShrink: 1, fontSize: 12, color: "#166534", lineHeight: 16 }}>
+            Evalúe el desempeño del proveedor para cerrar definitivamente la Orden de Compra. El promedio obtenido actualizará el ranking del proveedor en el directorio comercial.
+          </Text>
+        </View>
 
-        {/* Cumplimiento de Tiempo */}
+        {/* 1. Cumplimiento de Plazo y Tiempos */}
         <CalificacionEstrellas
-          label="1. Cumplimiento de Plazo y Tiempo:"
+          label="1. Cumplimiento de Plazo y Tiempos de Entrega:"
           rating={calificacionTiempo}
           onChangeRating={establecerCalificacionTiempo}
           size="md"
           containerStyle={{ marginBottom: 12 }}
         />
 
-        {/* Calidad de Materiales */}
+        {/* 2. Calidad de Materiales y Embalaje */}
         <CalificacionEstrellas
           label="2. Calidad de Materiales y Embalaje:"
           rating={calificacionQuality}
@@ -833,28 +853,68 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
           containerStyle={{ marginBottom: 12 }}
         />
 
-        {/* Condiciones de Precio */}
+        {/* 3. Condiciones de Precio y Facturación */}
         <CalificacionEstrellas
           label="3. Condiciones de Precio y Facturación:"
           rating={calificacionPrecio}
           onChangeRating={establecerCalificacionPrecio}
           size="md"
-          containerStyle={{ marginBottom: 12 }}
+          containerStyle={{ marginBottom: 14 }}
         />
 
-        {/* Promedio calculado en vivo */}
-        <Tarjeta variant="outlined" style={estilos.promedioCalificacionTarjeta}>
-          <Text style={estilos.promedioCalificacionEtiqueta}>Promedio General:</Text>
-          <Text style={estilos.promedioCalificacionScore}>
-            ⭐ {((calificacionTiempo + calificacionQuality + calificacionPrecio) / 3).toFixed(1)} / 5.0
-          </Text>
-        </Tarjeta>
+        {/* Promedio calculado en vivo con visualización de estrellas */}
+        {(() => {
+          const liveAvg = Number(((calificacionTiempo + calificacionQuality + calificacionPrecio) / 3).toFixed(1));
+          const etiquetaRendimiento =
+            liveAvg >= 4.5 ? "Excelente Desempeño" : liveAvg >= 3.8 ? "Buen Desempeño" : liveAvg >= 3.0 ? "Aceptable" : "Bajo Rendimiento";
+          return (
+            <Tarjeta
+              variant="outlined"
+              style={{
+                backgroundColor: "#fffbeb",
+                borderColor: "#fcd34d",
+                borderWidth: 1.5,
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 14,
+              }}
+            >
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#92400e", textTransform: "uppercase" }}>
+                  Promedio Calculado en Vivo [H15]:
+                </Text>
+                <View style={{ backgroundColor: "#fef3c7", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: "#fde68a" }}>
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: "#b45309" }}>
+                    {etiquetaRendimiento}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <Ionicons
+                      key={star}
+                      name={star <= Math.round(liveAvg) ? "star" : "star-outline"}
+                      size={20}
+                      color={star <= Math.round(liveAvg) ? "#f59e0b" : "#cbd5e1"}
+                    />
+                  ))}
+                </View>
+                <Text style={{ fontSize: 18, fontWeight: "900", color: "#b45309" }}>
+                  ⭐ {liveAvg.toFixed(1)} <Text style={{ fontSize: 12, fontWeight: "600", color: "#92400e" }}>/ 5.0</Text>
+                </Text>
+              </View>
+            </Tarjeta>
+          );
+        })()}
 
         <CampoTexto
-          label="Comentario sobre el despacho (opcional)"
+          label="Comentario sobre el despacho / proveedor (opcional)"
           value={calificacionComentario}
           onChangeText={establecerCalificacionComentario}
           placeholder="Ej: Entrega puntual y embalaje en perfecto estado."
+          containerStyle={{ marginBottom: 16 }}
         />
 
         <View style={estilos.modalBotonesFila}>
@@ -862,12 +922,14 @@ export const ModalesCompras: React.FC<PropiedadesModalesCompras> = ({
             title="Cancelar"
             variant="ghost"
             onPress={() => establecerTarifaModalOrden(null)}
-            style={{ marginRight: 8 }}
+            style={{ marginRight: 8, minHeight: 44, flex: 1 }}
           />
           <Boton
-            title="Confirmar Calificación y Cerrar OC"
+            title="Confirmar y Cerrar OC"
             variant="success"
+            icon="checkmark-circle-outline"
             onPress={manejarGuardarCalificacion}
+            style={{ minHeight: 44, flex: 1.5, backgroundColor: "#15803d" }}
           />
         </View>
       </VistaModal>

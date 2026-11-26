@@ -26,10 +26,11 @@ import {
   SeccionUsuariosRoles,
   SeccionAuditoria,
   SeccionParametrosSistema,
+  SeccionPrivacidadDatos,
 } from "./componentes";
 import { CredencialesCreadas } from "./componentes/SeccionUsuariosRoles";
 
-type AdminTab = "usuarios" | "auditoria" | "parametros";
+type AdminTab = "usuarios" | "auditoria" | "parametros" | "privacidad";
 
 function mapearRolDesdeNombreBd(nombreRol: string | null | undefined, idRol?: number): Rol {
   const normalizado = (nombreRol ?? "")
@@ -468,16 +469,16 @@ export const PantallaAdministracion: React.FC = () => {
     establecerSeleccionadoUsuarioHastaAlternar(null);
   };
 
-  const manejarConfirmarAnonimizacion = async () => {
-    if (!usuarioParaAnonimizar) return;
-    if (confirmarPalabraClaveEntrada.trim().toUpperCase() !== "CONFIRMAR") {
-      mostrarFeedback("error", 'Debe escribir exactamente "CONFIRMAR" para autorizar la acción.');
-      return;
-    }
+  const ejecutarAnonimizacionUsuario = async (objetivo: UsuarioSistema): Promise<boolean> => {
+    if (!objetivo) return false;
 
-    const objetivo = usuarioParaAnonimizar;
-    establecerUsuarioParaAnonimizar(null);
-    establecerConfirmarPalabraClaveEntrada("");
+    if (objetivo.role === "admin" && !objetivo.disabled && activoAdministradoresConteo <= 1) {
+      mostrarFeedback(
+        "error",
+        "Operación bloqueada: No se puede anonimizar al único Administrador activo del sistema."
+      );
+      return false;
+    }
 
     if (objetivo.id_usuario) {
       const shortId = String(objetivo.id_usuario).padStart(4, "0");
@@ -505,18 +506,34 @@ export const PantallaAdministracion: React.FC = () => {
           description: `Ejercicio de derecho al olvido y anonimización de titular en PostgreSQL para ID ${objetivo.id_usuario}`,
         });
         mostrarFeedback("ok", "Datos personales del usuario anonimizados conforme a la Ley 19.628.");
+        return true;
       } else {
         mostrarFeedback("error", res.error || "No se pudo anonimizar al usuario.");
+        return false;
       }
-      return;
     }
 
     const res = anonimizarUsuario(objetivo.id);
     if (res.success) {
       mostrarFeedback("ok", "Datos personales del usuario anonimizados conforme a la Ley 19.628.");
+      return true;
     } else {
       mostrarFeedback("error", res.error || "No se pudo anonimizar al usuario.");
+      return false;
     }
+  };
+
+  const manejarConfirmarAnonimizacion = async () => {
+    if (!usuarioParaAnonimizar) return;
+    if (confirmarPalabraClaveEntrada.trim().toUpperCase() !== "CONFIRMAR") {
+      mostrarFeedback("error", 'Debe escribir exactamente "CONFIRMAR" para autorizar la acción.');
+      return;
+    }
+
+    const objetivo = usuarioParaAnonimizar;
+    establecerUsuarioParaAnonimizar(null);
+    establecerConfirmarPalabraClaveEntrada("");
+    await ejecutarAnonimizacionUsuario(objetivo);
   };
 
   // =========================================================================
@@ -670,10 +687,11 @@ export const PantallaAdministracion: React.FC = () => {
             </View>
           )}
 
-          {/* Selector Compacto de 3 Pestañas en 1 Fila Limpia */}
+          {/* Selector de Pestañas con soporte responsivo */}
           <View
             style={{
               flexDirection: "row",
+              flexWrap: "wrap",
               backgroundColor: "#ffffff",
               borderRadius: 12,
               padding: 4,
@@ -699,6 +717,15 @@ export const PantallaAdministracion: React.FC = () => {
                 label: "Parámetros y BD",
                 icon: "options-outline",
               },
+              ...(usuarioActual?.role === "admin"
+                ? [
+                    {
+                      id: "privacidad" as const,
+                      label: "Privacidad y Datos",
+                      icon: "lock-closed-outline",
+                    },
+                  ]
+                : []),
             ].map((tab) => {
               const esActivo = activoPestana === tab.id;
               return (
@@ -706,6 +733,7 @@ export const PantallaAdministracion: React.FC = () => {
                   key={tab.id}
                   style={{
                     flex: 1,
+                    minWidth: esMobile ? 130 : 110,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "center",
@@ -828,6 +856,16 @@ export const PantallaAdministracion: React.FC = () => {
             tieneRespaldoFailure={tieneRespaldoFailure}
             manejarEjecutarRespaldo={manejarEjecutarRespaldo}
             manejarEjecutarRestauracionTest={manejarEjecutarRestauracionTest}
+          />
+
+          <SeccionPrivacidadDatos
+            activoPestana={activoPestana}
+            usuariosSistema={usuariosSistema}
+            usuarioActual={usuarioActual}
+            activoAdministradoresConteo={activoAdministradoresConteo}
+            ejecutarAnonimizacionUsuario={ejecutarAnonimizacionUsuario}
+            mostrarFeedback={mostrarFeedback}
+            width={width}
           />
         </ScrollView>
       </View>
