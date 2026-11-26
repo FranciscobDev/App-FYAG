@@ -4,6 +4,9 @@ dotenv.config();
 import { app } from './app';
 import pool from './config/db';
 import { aplicarMigraciones } from './services/migraciones';
+import { iniciarProcesoDiarioPrestamos } from './controllers/prestamoHerramientaController';
+import { iniciarJobDiarioMantenimiento } from './controllers/mantenimientoHerramientaController';
+import { iniciarJobDiarioRespaldos } from './controllers/respaldoController';
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -25,6 +28,9 @@ aplicarMigraciones()
     .then(() => {
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`Servidor en puerto ${PORT}`);
+            iniciarProcesoDiarioPrestamos();
+            iniciarJobDiarioMantenimiento();
+            iniciarJobDiarioRespaldos();
             probarConexion();
         });
     })

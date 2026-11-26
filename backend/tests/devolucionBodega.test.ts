@@ -35,8 +35,8 @@ const crearEscenario = (opts: { declarada?: number; disponible?: number; estado?
 
     const cliente = {
         query: async (sql: string, p: any[] = []) => {
-            if (sql.includes('bitacora_auditoria')) {
-                estado.auditoria.push(p);
+            if (sql.includes('bitacora_auditoria') || sql.includes('/* fin:')) {
+                if (sql.includes('bitacora_auditoria')) estado.auditoria.push(p);
                 return { rows: [] };
             }
             const etiqueta = /\/\* (dev:[a-z-]+) \*\//.exec(sql)?.[1];

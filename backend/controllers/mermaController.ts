@@ -44,9 +44,18 @@ export const registrarMermaEnTransaccion = async (
         reason?: unknown;
         observacion?: unknown;
         observation?: unknown;
+        id_proyecto?: unknown;
     },
     idUsuario: number | null
 ): Promise<MermaRegistrada> => {
+    const idProyectoMerma =
+        datos.id_proyecto === undefined || datos.id_proyecto === null || datos.id_proyecto === ''
+            ? null
+            : Number(datos.id_proyecto);
+    if (idProyectoMerma !== null && (!Number.isInteger(idProyectoMerma) || idProyectoMerma <= 0)) {
+        throw new ErrorAplicacion(400, 'id_proyecto debe ser un entero positivo');
+    }
+
     const idArt = Number(datos.id_articulo ?? 0);
     const skuInput = typeof datos.sku === 'string' ? datos.sku.trim() : '';
     if ((!Number.isInteger(idArt) || idArt <= 0) && !skuInput) {
@@ -117,11 +126,11 @@ export const registrarMermaEnTransaccion = async (
         `/* merma:insert-cabecera */
          INSERT INTO mermas_bodega (
              codigo_merma, id_articulo, cantidad, motivo, observacion,
-             pmp_unitario, perdida_total, disponible_anterior, disponible_nuevo, id_usuario
+             pmp_unitario, perdida_total, disponible_anterior, disponible_nuevo, id_usuario, id_proyecto
          )
          VALUES (
              'MERMA-' || EXTRACT(YEAR FROM CURRENT_DATE)::text || '-' || LPAD(nextval('seq_codigo_merma')::text, 5, '0'),
-             $1, $2, $3, $4, $5, $6, $7, $8, $9
+             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
          )
          RETURNING id_merma, codigo_merma`,
         [
@@ -134,6 +143,7 @@ export const registrarMermaEnTransaccion = async (
             valorizada.disponible_anterior,
             valorizada.disponible_nuevo,
             idUsuario,
+            idProyectoMerma,
         ]
     );
     const idMerma = Number(insRes.rows[0].id_merma);

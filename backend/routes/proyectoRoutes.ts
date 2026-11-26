@@ -15,7 +15,12 @@ import {
     listarAvancesProyecto,
     obtenerReporteFinalProyecto,
 } from '../controllers/proyectoController';
+import {
+    obtenerEstadoFinancieroProyecto,
+    registrarHorasProyecto,
+} from '../controllers/motorFinancieroProyectoController';
 import { verificarRoles } from '../middleware/authMiddleware';
+import { dashboardRentabilidadProyecto } from '../controllers/dashboardRentabilidadController';
 
 const router = Router();
 
@@ -42,6 +47,11 @@ router.delete('/:id', verificarRoles('admin'), eliminarProyecto);
 router.post('/:id/avances', verificarRoles('admin', 'technician'), registrarAvanceProyecto);
 router.get('/:id/avances', verificarRoles('admin', 'technician'), listarAvancesProyecto);
 router.get('/:id/reporte-final', verificarRoles('admin', 'technician'), obtenerReporteFinalProyecto);
+
+// [BACK-1 / H27 / H41] Motor financiero del proyecto (Costo Real, Margen Estimado, Semáforo) y registro de horas
+router.get('/:id/finanzas', verificarRoles('admin'), obtenerEstadoFinancieroProyecto);
+router.get('/:id/dashboard-rentabilidad', verificarRoles('admin'), dashboardRentabilidadProyecto);
+router.post('/:id/horas', verificarRoles('admin', 'technician'), registrarHorasProyecto);
 
 router.get('/:id/tecnicos', verificarRoles('admin'), obtenerTecnicosDeProyecto);
 router.post('/:id/tecnicos', verificarRoles('admin'), asignarTecnico);

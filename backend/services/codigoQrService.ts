@@ -145,6 +145,60 @@ export const decodificarPayloadQrEscanerH18 = (cadenaCruda: unknown): PayloadQrI
     return obj as PayloadQrInsumoH35;
 };
 
+export type FormatoCodigoDetectadoH18 = 'QR_JSON_H47' | 'CODIGO_QR' | 'CODIGO_BARRAS_O_SKU';
+
+export interface TerminoBusquedaEscanerH18 {
+    codigo_crudo: string;
+    formato_detectado: FormatoCodigoDetectadoH18;
+    codigo_qr_busqueda: string | null;
+    sku_o_barras_busqueda: string;
+    payload_decodificado: PayloadQrInsumoH35 | null;
+}
+
+/**
+ * [BACK-1 / H18] Analiza en microsegundos cualquier entrada del lector óptico
+ * (JSON embebido en etiqueta QR H47, código QR textual FYAG-QR-..., código de barras EAN/Code128 o SKU)
+ * y extrae las claves normalizadas en mayúsculas para consulta indexada (< 200 ms).
+ */
+export const extraerTerminoBusquedaEscanerH18 = (entradaCruda: unknown): TerminoBusquedaEscanerH18 => {
+    const crudo = typeof entradaCruda === 'string' ? entradaCruda.trim() : '';
+    if (!crudo) {
+        throw new ErrorAplicacion(400, 'Debe proporcionar un código QR o código de barras para buscar el insumo');
+    }
+
+    if (crudo.startsWith('{')) {
+        const payload = decodificarPayloadQrEscanerH18(crudo);
+        return {
+            codigo_crudo: crudo,
+            formato_detectado: 'QR_JSON_H47',
+            codigo_qr_busqueda: payload.codigoQr.trim().toUpperCase(),
+            sku_o_barras_busqueda: payload.sku.trim().toUpperCase(),
+            payload_decodificado: payload,
+        };
+    }
+
+    const limpioUpper = crudo.toUpperCase();
+    if (limpioUpper.startsWith('FYAG-QR-') || limpioUpper.startsWith('QR-FYAG-')) {
+        // Extraer también el SKU si el código tiene el formato FYAG-QR-<SKU>-<CORRELATIVO>
+        const matchSku = /^FYAG-QR-(.+)-\d{3,6}$/.exec(limpioUpper);
+        return {
+            codigo_crudo: crudo,
+            formato_detectado: 'CODIGO_QR',
+            codigo_qr_busqueda: limpioUpper,
+            sku_o_barras_busqueda: matchSku ? matchSku[1] : limpioUpper,
+            payload_decodificado: null,
+        };
+    }
+
+    return {
+        codigo_crudo: crudo,
+        formato_detectado: 'CODIGO_BARRAS_O_SKU',
+        codigo_qr_busqueda: limpioUpper,
+        sku_o_barras_busqueda: limpioUpper,
+        payload_decodificado: null,
+    };
+};
+
 /**
  * Genera una matriz QR determinista de 21x21 con los 3 patrones buscadores 7x7 estándar
  * y módulos de datos derivados del payload del insumo.
