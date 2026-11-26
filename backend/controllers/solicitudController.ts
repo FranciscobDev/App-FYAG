@@ -7,6 +7,7 @@ import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { AlertaReposicionH40 } from '../services/motorReposicionService';
 import { generarNumeroComprobanteSolicitud } from '../services/solicitudInsumosService';
 import { ejecutarTransaccion } from '../services/transaccion';
+import { verificarInsumoNoBloqueadoPorConteo } from './conteoFisicoController';
 
 export interface ItemSolicitudEmisionInput {
     id_articulo?: number;
@@ -1961,6 +1962,7 @@ export const registrarEgresoSolicitudEnTransaccion = async (
             cantidad_disponible: number;
             cantidad_comprometida: number;
             pmp: number;
+            bloqueado_por_conteo?: boolean;
         }>(
             `SELECT COALESCE(cantidad_disponible, 0)::float8 AS cantidad_disponible,
                     COALESCE(cantidad_comprometida, 0)::float8 AS cantidad_comprometida,
@@ -1970,6 +1972,14 @@ export const registrarEgresoSolicitudEnTransaccion = async (
              FOR UPDATE`,
             [idArt]
         );
+
+        await verificarInsumoNoBloqueadoPorConteo(cliente, idArt, `${lin.nombre_articulo} (${lin.sku})`);
+        if (stockRes.rows[0]?.bloqueado_por_conteo) {
+            throw new ErrorAplicacion(
+                409,
+                `Movimiento bloqueado: el insumo ${lin.nombre_articulo} (${lin.sku}) se encuentra en proceso de conteo físico.`
+            );
+        }
 
         const dispActual = stockRes.rows[0] ? Number(stockRes.rows[0].cantidad_disponible) : 0;
         const compAnterior = stockRes.rows[0] ? Number(stockRes.rows[0].cantidad_comprometida) : 0;

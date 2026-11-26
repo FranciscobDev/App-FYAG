@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { PoolClient } from 'pg';
-import { confirmarRecepcionDevolucionEnTransaccion } from '../controllers/devolucionController';
+import {
+    confirmarRecepcionDevolucionEnTransaccion,
+    declararDevolucionEnTransaccion,
+} from '../controllers/devolucionController';
+import { verificarBloqueoCierreProyectoPorDevolucionesH34 } from '../controllers/proyectoController';
 import {
     calcularMontoAjusteCosto,
     normalizarCantidadRecibida,
@@ -211,4 +215,102 @@ test('un dato inválido se rechaza ANTES de modificar stock, costo, Cardex o ale
     assert.equal(estado.cardex.length, 0);
     assert.equal(estado.alertas.length, 0);
     assert.equal(estado.cabecera.estado, 'En tránsito');
+});
+
+test('[BACK-2][SCRUM] Intenta declarar una devolución mayor al sobrante real y verifica el bloqueo', async () => {
+    // Escenario: Técnico retiró 10 unidades, utilizó 4 unidades, ya devolvió 2 unidades en tránsito.
+    // Sobrante real = 10 - 4 - 2 = 4 unidades.
+    const clienteMock = {
+        query: async (sql: string, params: any[] = []) => {
+            if (sql.includes('FROM usuario')) {
+                return { rows: [{ id_usuario: 3, nombre: 'Carlos', apellido: 'Técnico', rut: '18.123.456-7' }] };
+            }
+            if (sql.includes('FROM proyecto')) {
+                return { rows: [{ id_proyecto: 5, nombre_proyecto: 'Instalación Fibra', estado_proyecto: 'En ejecución' }] };
+            }
+            if (sql.includes('pg_advisory_xact_lock')) {
+                return { rows: [] };
+            }
+            if (sql.includes('FROM articulo')) {
+                return { rows: [{ id_articulo: 100, sku: 'ELE-CBL-0012', nombre_articulo: 'Cable THHN 12 AWG' }] };
+            }
+            if (sql.includes('FROM salidas_bodega') || sql.includes('FROM egreso_lineas')) {
+                return { rows: [{ id_articulo: 100, total_retirado: 10, total: 10 }] };
+            }
+            if (sql.includes('FROM uso_insumos_proyecto')) {
+                return { rows: [{ id_articulo: 100, total_utilizado: 4, total: 4 }] };
+            }
+            if (sql.includes('FROM devoluciones_tecnico') || sql.includes('FROM devolucion_lineas')) {
+                return { rows: [{ id_articulo: 100, total_devuelto: 2, total: 2 }] };
+            }
+            if (sql.includes('INSERT INTO devoluciones_tecnico')) {
+                return { rows: [{ id_devolucion: 99, codigo: 'DEV-2026-00099', codigo_devolucion: 'DEV-2026-00099', fecha_declaracion: new Date() }] };
+            }
+            if (sql.includes('INSERT INTO devolucion_lineas')) {
+                return { rows: [{ id_devolucion_linea: 1 }] };
+            }
+            if (sql.includes('INSERT INTO alertas_sistema')) {
+                return { rows: [{ id_alerta: 1, tipo: 'devolucion_en_transito', severidad: 'info', titulo: 'Devolución', descripcion: 'Test', id_articulo: 100, leida: false, fecha_creacion: new Date().toISOString() }] };
+            }
+            if (sql.includes('bitacora_auditoria')) {
+                return { rows: [] };
+            }
+            return { rows: [] };
+        },
+    } as unknown as PoolClient;
+
+    // 1. Intento con 5 unidades (excede el sobrante real de 4): DEBE FALLAR con 400
+    await assert.rejects(
+        () => declararDevolucionEnTransaccion(clienteMock, 3, {
+            id_proyecto: 5,
+            items: [{ id_articulo: 100, cantidad_declarada: 5 }],
+        }),
+        (err: any) => {
+            assert.equal(err.estado, 400);
+            assert.match(err.message, /se intentó devolver 5, máximo devolvible 4/);
+            return true;
+        }
+    );
+
+    // 2. Intento con 4 unidades (exactamente el sobrante real): DEBE PASAR y quedar En tránsito
+    const exitosa = await declararDevolucionEnTransaccion(clienteMock, 3, {
+        id_proyecto: 5,
+        items: [{ id_articulo: 100, cantidad_declarada: 4 }],
+    });
+    assert.equal(exitosa.estado, 'En tránsito');
+    assert.equal(exitosa.lineas[0].cantidad_declarada, 4);
+    assert.equal(exitosa.lineas[0].cantidad_maxima_devolvible, 4);
+});
+
+test('[FRONT-2][SCRUM] Declara una devolución desde el celular y verifica que bloquee el cierre del proyecto en H34 mientras esté en tránsito', async () => {
+    // 1. Simulación con devolución en tránsito en devoluciones_tecnico
+    const clienteConDevolucion = {
+        query: async (sql: string, params: any[] = []) => {
+            if (sql.includes("estado = 'En tránsito'")) {
+                return {
+                    rows: [{ id_devolucion: 42, codigo_devolucion: 'DEV-2026-00042' }],
+                };
+            }
+            return { rows: [] };
+        },
+    };
+
+    const bloqueo = await verificarBloqueoCierreProyectoPorDevolucionesH34(clienteConDevolucion, 5);
+    assert.equal(bloqueo.bloqueado, true);
+    assert.equal(bloqueo.devolucionesBloqueantes.length, 1);
+    assert.match(bloqueo.motivoBloqueo!, /existen 1 devolución\(es\) en tránsito pendientes de recepción en bodega/);
+
+    // 2. Cuando el bodeguero recepciona la devolución y ya no hay en tránsito:
+    const clienteRecepcionada = {
+        query: async (sql: string, params: any[] = []) => {
+            if (sql.includes("estado = 'En tránsito'")) {
+                return { rows: [] };
+            }
+            return { rows: [] };
+        },
+    };
+
+    const desbloqueado = await verificarBloqueoCierreProyectoPorDevolucionesH34(clienteRecepcionada, 5);
+    assert.equal(desbloqueado.bloqueado, false);
+    assert.equal(desbloqueado.motivoBloqueo, null);
 });
