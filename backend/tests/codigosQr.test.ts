@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { PoolClient } from 'pg';
 import {
+    buscarInsumoInstantaneoPorCodigo,
     exportarCodigosQrLoteEnTransaccion,
     generarCodigosQrInsumoEnTransaccion,
     marcarCodigoQrAsignadoEnTransaccion,
+    SLA_BUSQUEDA_ESCANER_MS,
 } from '../controllers/codigoQrController';
 import {
     ESTADO_QR_ASIGNADO_OBJETO,
@@ -24,9 +26,17 @@ const crearEscenarioQrH35 = (opts: { tamanoH39Mm?: number } = {}) => {
             {
                 id_articulo: number;
                 sku: string;
+                codigo_barras?: string;
                 nombre_articulo: string;
                 categoria: string;
                 unidad_medida: string;
+                precio_unitario?: number;
+                cantidad_disponible?: number;
+                cantidad_comprometida?: number;
+                cantidad_cuarentena?: number;
+                stock_minimo?: number;
+                cant_reposicion?: number;
+                pmp?: number;
                 ubicacion: string;
                 activo: boolean;
             }
@@ -36,9 +46,17 @@ const crearEscenarioQrH35 = (opts: { tamanoH39Mm?: number } = {}) => {
                 {
                     id_articulo: 500,
                     sku: 'ELE-DIS-0016',
+                    codigo_barras: '7801234560016',
                     nombre_articulo: 'Disyuntor termomagnético 16 A',
                     categoria: 'Materiales',
                     unidad_medida: 'un',
+                    precio_unitario: 6800,
+                    cantidad_disponible: 42,
+                    cantidad_comprometida: 8,
+                    cantidad_cuarentena: 0,
+                    stock_minimo: 10,
+                    cant_reposicion: 30,
+                    pmp: 6500,
                     ubicacion: 'Pasillo A - Estante 3',
                     activo: true,
                 },
@@ -168,6 +186,52 @@ const crearEscenarioQrH35 = (opts: { tamanoH39Mm?: number } = {}) => {
                         if (p[2]) item.ubicacion = String(p[2]);
                     }
                     return { rows: [] };
+                }
+                case 'qr:busqueda-instantanea': {
+                    const codigoQrBusq = p[0] ? String(p[0]).toUpperCase() : null;
+                    const skuOBarrasBusq = String(p[1] ?? '').toUpperCase();
+
+                    const qrMatch = codigoQrBusq
+                        ? estado.codigosQr.find((c) => c.codigo_qr.toUpperCase() === codigoQrBusq)
+                        : undefined;
+
+                    const artMatch = qrMatch
+                        ? estado.catalogoH35.get(qrMatch.id_articulo)
+                        : Array.from(estado.catalogoH35.values()).find(
+                              (a) =>
+                                  a.sku.toUpperCase() === skuOBarrasBusq ||
+                                  (a.codigo_barras && a.codigo_barras.toUpperCase() === skuOBarrasBusq)
+                          );
+
+                    if (!artMatch) return { rows: [] };
+
+                    return {
+                        rows: [
+                            {
+                                id_articulo: artMatch.id_articulo,
+                                sku: artMatch.sku,
+                                codigo_barras: artMatch.codigo_barras ?? null,
+                                nombre_articulo: artMatch.nombre_articulo,
+                                categoria: artMatch.categoria,
+                                unidad_medida: artMatch.unidad_medida,
+                                precio_unitario: artMatch.precio_unitario ?? 0,
+                                activo: artMatch.activo,
+                                cantidad_disponible: artMatch.cantidad_disponible ?? 0,
+                                cantidad_comprometida: artMatch.cantidad_comprometida ?? 0,
+                                cantidad_cuarentena: artMatch.cantidad_cuarentena ?? 0,
+                                stock_minimo: artMatch.stock_minimo ?? 0,
+                                cant_reposicion: artMatch.cant_reposicion ?? 0,
+                                pmp: artMatch.pmp ?? 0,
+                                ubicacion: artMatch.ubicacion,
+                                bloqueado_por_conteo: false,
+                                id_codigo_qr: qrMatch?.id_codigo_qr ?? null,
+                                codigo_qr: qrMatch?.codigo_qr ?? null,
+                                estado_asignacion: qrMatch?.estado_asignacion ?? null,
+                                asignado_objeto_fisico: qrMatch?.asignado_objeto_fisico ?? null,
+                                lote: qrMatch?.lote ?? null,
+                            },
+                        ],
+                    };
                 }
             }
             return { rows: [] };
@@ -376,3 +440,60 @@ test('[BACK-2][SCRUM] Cambia el tamaño de impresión en H39, exporta un lote en
     assert.equal(jsonAudAsignar.estado_asignacion, ESTADO_QR_ASIGNADO_OBJETO);
     assert.equal(jsonAudAsignar.asignado_objeto_fisico, true);
 });
+
+test('[BACK-1][SCRUM] Prueba consultar un código existente (QR y código de barras) y uno inexistente midiendo el tiempo de respuesta (< 200 ms)', async () => {
+    const { cliente } = crearEscenarioQrH35();
+
+    // Generar etiqueta QR real en catálogo para el insumo #500
+    const [qrCreado] = await generarCodigosQrInsumoEnTransaccion(
+        cliente,
+        { id_articulo: 500, lote: 'LOTE-2026-A' },
+        1
+    );
+
+    // 1. [SCRUM] Consultar código QR existente (payload JSON escaneado por cámara H18) y medir tiempo (< 200 ms)
+    const t0Existente = performance.now();
+    const resQr = await buscarInsumoInstantaneoPorCodigo(cliente, qrCreado.payload_qr);
+    const duracionQrMs = performance.now() - t0Existente;
+
+    assert.equal(resQr.valido, true);
+    assert.equal(resQr.formato_detectado, 'QR_JSON_H47');
+    assert.equal(resQr.cumple_sla_200ms, true);
+    assert.ok(
+        resQr.tiempo_respuesta_ms < SLA_BUSQUEDA_ESCANER_MS && duracionQrMs < SLA_BUSQUEDA_ESCANER_MS,
+        `Tiempo de respuesta (${resQr.tiempo_respuesta_ms} ms) debe ser menor a 200 ms`
+    );
+    // Verifica ficha técnica y stock devueltos
+    assert.equal(resQr.insumo.id_articulo, 500);
+    assert.equal(resQr.insumo.sku, 'ELE-DIS-0016');
+    assert.equal(resQr.insumo.nombre_articulo, 'Disyuntor termomagnético 16 A');
+    assert.equal(resQr.insumo.unidad_medida, 'un');
+    assert.equal(resQr.stock.cantidad_disponible, 42);
+    assert.equal(resQr.stock.cantidad_comprometida, 8);
+    assert.equal(resQr.stock.pmp, 6500);
+    assert.equal(resQr.etiqueta_qr?.codigo_qr, 'FYAG-QR-ELE-DIS-0016-0001');
+
+    // 2. Consultar por código de barras EAN-13 existente ('7801234560016') en menos de 200 ms
+    const resBarras = await buscarInsumoInstantaneoPorCodigo(cliente, '7801234560016');
+    assert.equal(resBarras.valido, true);
+    assert.equal(resBarras.insumo.sku, 'ELE-DIS-0016');
+    assert.equal(resBarras.stock.cantidad_disponible, 42);
+    assert.ok(resBarras.tiempo_respuesta_ms < SLA_BUSQUEDA_ESCANER_MS);
+
+    // 3. [SCRUM] Consultar un código inexistente midiendo el tiempo de respuesta (< 200 ms) -> Devuelve 404 claro para bloquear la operación
+    const t0Inexistente = performance.now();
+    await assert.rejects(
+        () => buscarInsumoInstantaneoPorCodigo(cliente, 'FYAG-QR-NO-EXISTE-9999'),
+        (err: any) => {
+            const duracionErrorMs = performance.now() - t0Inexistente;
+            assert.equal(err.estado, 404, 'un código inexistente debe devolver 404 para bloquear la operación');
+            assert.match(err.message, /no existe.*Operación bloqueada/i);
+            assert.ok(
+                duracionErrorMs < SLA_BUSQUEDA_ESCANER_MS,
+                `El rechazo 404 (${duracionErrorMs.toFixed(2)} ms) debe responder en menos de 200 ms`
+            );
+            return true;
+        }
+    );
+});
+

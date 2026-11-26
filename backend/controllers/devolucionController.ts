@@ -13,6 +13,7 @@ import {
 } from '../services/devolucionBodegaService';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { ejecutarTransaccion } from '../services/transaccion';
+import { recalcularFinanzasProyectoEnTransaccion } from './motorFinancieroProyectoController';
 
 export { ESTADO_DEVOLUCION_EN_TRANSITO };
 
@@ -691,6 +692,13 @@ export const confirmarRecepcionDevolucionEnTransaccion = async (
             descripcion: observaciones ?? undefined,
         },
         cliente
+    );
+
+    // [BACK-1 / H27] Recalcular automáticamente motor financiero del proyecto tras la devolución (H36)
+    await recalcularFinanzasProyectoEnTransaccion(
+        cliente,
+        cabecera.proyecto_id,
+        `devolución confirmada en bodega ${cabecera.codigo}`
     );
 
     return {

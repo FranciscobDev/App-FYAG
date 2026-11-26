@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { DatabaseError } from 'pg';
 import pool from '../config/db';
+import { construirOrdenProveedores } from '../services/calificacionProveedorService';
+import { ErrorAplicacion } from '../services/errores';
 
 export interface Proveedor {
     id_proveedor: number;
@@ -23,11 +25,16 @@ const esErrorPg = (error: unknown): error is DatabaseError => {
     return typeof error === 'object' && error !== null && 'code' in error;
 };
 
-export const obtenerProveedores = async (_req: Request, res: Response): Promise<void> => {
+export const obtenerProveedores = async (req: Request, res: Response): Promise<void> => {
     try {
-        const result = await pool.query<Proveedor>('SELECT * FROM proveedor ORDER BY id_proveedor ASC');
+        const orden = construirOrdenProveedores(req.query);
+        const result = await pool.query<Proveedor>(`SELECT * FROM proveedor ORDER BY ${orden}`);
         res.status(200).json(result.rows);
     } catch (error) {
+        if (error instanceof ErrorAplicacion) {
+            res.status(error.estado).json({ mensaje: error.message });
+            return;
+        }
         console.error('Error al obtener proveedores:', error);
         res.status(500).json({ error: 'Error al obtener los proveedores' });
     }

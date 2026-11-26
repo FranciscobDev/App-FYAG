@@ -45,3 +45,20 @@ ALTER TABLE codigos_qr_insumos
 
 CREATE INDEX IF NOT EXISTS idx_codigos_qr_insumos_articulo
     ON codigos_qr_insumos (id_articulo, fecha_creacion DESC);
+
+-- [BACK-1] Índices funcionales B-Tree para búsqueda instantánea (< 200 ms) por código QR, SKU o código de barras (H18)
+CREATE INDEX IF NOT EXISTS idx_codigos_qr_codigo_upper
+    ON codigos_qr_insumos (UPPER(TRIM(codigo_qr)));
+
+CREATE INDEX IF NOT EXISTS idx_codigos_qr_sku_upper
+    ON codigos_qr_insumos (UPPER(TRIM(sku)));
+
+ALTER TABLE insumos
+    ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(80) NULL;
+
+CREATE INDEX IF NOT EXISTS idx_insumos_sku_upper
+    ON insumos (UPPER(TRIM(sku)));
+
+CREATE INDEX IF NOT EXISTS idx_insumos_codigo_barras_upper
+    ON insumos (UPPER(TRIM(codigo_barras)))
+    WHERE codigo_barras IS NOT NULL;

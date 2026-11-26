@@ -10,10 +10,11 @@ import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
 
-// Lectura y validación con el escáner de bodega H18 (Bodeguero y Administrador)
+// [BACK-1] Lectura y búsqueda instantánea (< 200 ms) por código QR o código de barras con el escáner H18
 router.get('/', verificarRoles('admin', 'warehouse'), listarCodigosQrInsumo);
-router.get('/escanear', verificarRoles('admin', 'warehouse'), escanearCodigoQrH18);
-router.post('/escanear', verificarRoles('admin', 'warehouse'), escanearCodigoQrH18);
+router.get('/escanear', verificarRoles('admin', 'warehouse', 'technician'), escanearCodigoQrH18);
+router.post('/escanear', verificarRoles('admin', 'warehouse', 'technician'), escanearCodigoQrH18);
+router.get('/buscar/:codigo', verificarRoles('admin', 'warehouse', 'technician'), escanearCodigoQrH18);
 
 // [BACK-2] Exportación en lote a PDF / PNG con tamaño H39, texto legible y auditoría H14
 router.get('/exportar', verificarRoles('admin'), exportarCodigosQrLote);

@@ -16,6 +16,7 @@ import {
     registrarRecepcionOrdenCompra,
 } from '../controllers/ordenCompraController';
 import { verificarRoles } from '../middleware/authMiddleware';
+import { calificarOrdenCompra } from '../controllers/calificacionProveedorController';
 
 const router = Router();
 
@@ -41,6 +42,7 @@ router.patch('/:id', verificarRoles('admin'), actualizarOrdenCompra);
 router.put('/:id/lineas', verificarRoles('admin'), actualizarOrdenCompra);
 router.patch('/:id/lineas', verificarRoles('admin'), actualizarOrdenCompra);
 router.post('/:id/aprobar', verificarRoles('admin'), aprobarOrdenCompra);
+router.post('/:id/calificacion', verificarRoles('admin'), calificarOrdenCompra);
 router.patch('/:id/aprobar', verificarRoles('admin'), aprobarOrdenCompra);
 router.patch('/:id/estado', verificarRoles('admin', 'warehouse'), cambiarEstadoOrdenCompra);
 

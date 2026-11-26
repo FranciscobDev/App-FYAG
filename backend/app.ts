@@ -17,6 +17,11 @@ import conteoFisicoRoutes from './routes/conteoFisicoRoutes';
 import devolucionProveedorRoutes from './routes/devolucionProveedorRoutes';
 import mermaRoutes from './routes/mermaRoutes';
 import codigoQrRoutes from './routes/codigoQrRoutes';
+import alertaRoutes from './routes/alertaRoutes';
+import herramientaRoutes from './routes/herramientaRoutes';
+import prestamoHerramientaRoutes from './routes/prestamoHerramientaRoutes';
+import reporteRoutes from './routes/reporteRoutes';
+import respaldoRoutes from './routes/respaldoRoutes';
 import verificarToken from './middleware/authMiddleware';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
@@ -68,5 +73,11 @@ app.use('/api/devoluciones-proveedor', verificarToken, devolucionProveedorRoutes
 app.use('/api/cuarentena', verificarToken, devolucionProveedorRoutes);
 app.use('/api/mermas', verificarToken, mermaRoutes);
 app.use('/api/codigos-qr', verificarToken, codigoQrRoutes);
+app.use('/api/alertas', verificarToken, alertaRoutes);
+app.use('/api/notificaciones', verificarToken, alertaRoutes);
+app.use('/api/herramientas', verificarToken, herramientaRoutes);
+app.use('/api/prestamos-herramientas', verificarToken, prestamoHerramientaRoutes);
+app.use('/api/reportes', verificarToken, reporteRoutes);
+app.use('/api/respaldos', verificarToken, respaldoRoutes);
 
 export default app;

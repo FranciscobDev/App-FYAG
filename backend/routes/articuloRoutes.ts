@@ -7,7 +7,11 @@ import {
     deshabilitarArticulo,
     eliminarArticulo,
 } from '../controllers/articuloController';
-import { generarCodigoQrInsumo, listarCodigosQrInsumo } from '../controllers/codigoQrController';
+import {
+    escanearCodigoQrH18,
+    generarCodigoQrInsumo,
+    listarCodigosQrInsumo,
+} from '../controllers/codigoQrController';
 import { verificarRoles } from '../middleware/authMiddleware';
 
 const router = Router();
@@ -18,6 +22,10 @@ const puedeLeer = verificarRoles('admin', 'warehouse', 'technician');
 const puedeEscribir = verificarRoles('admin', 'warehouse');
 
 router.get('/', puedeLeer, obtenerArticulos);
+// [BACK-1] Búsqueda instantánea (< 200 ms) por código QR o código de barras (antes de /:id)
+router.get('/escanear', puedeLeer, escanearCodigoQrH18);
+router.post('/escanear', puedeLeer, escanearCodigoQrH18);
+router.get('/escanear/:codigo', puedeLeer, escanearCodigoQrH18);
 router.get('/:id', puedeLeer, obtenerArticuloPorId);
 router.post('/', puedeEscribir, crearArticulo);
 router.put('/:id', puedeEscribir, actualizarArticulo);

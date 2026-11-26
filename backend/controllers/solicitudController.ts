@@ -8,6 +8,7 @@ import { AlertaReposicionH40 } from '../services/motorReposicionService';
 import { generarNumeroComprobanteSolicitud } from '../services/solicitudInsumosService';
 import { ejecutarTransaccion } from '../services/transaccion';
 import { verificarInsumoNoBloqueadoPorConteo } from './conteoFisicoController';
+import { recalcularFinanzasProyectoEnTransaccion } from './motorFinancieroProyectoController';
 
 export interface ItemSolicitudEmisionInput {
     id_articulo?: number;
@@ -2341,6 +2342,13 @@ export const registrarEgresoSolicitudEnTransaccion = async (
             }). Retira: ${tecnicoNombre} (${tecnicoRut}). Saldo pendiente de retiro: ${totalSaldoPendienteRetiroUnidades} un.`,
         },
         cliente
+    );
+
+    // 9. [BACK-1 / H27] Recalcular automáticamente motor financiero del proyecto tras la salida de bodega
+    await recalcularFinanzasProyectoEnTransaccion(
+        cliente,
+        cabecera.proyecto_id,
+        `salida de bodega ${codigoEgreso}`
     );
 
     return {

@@ -13,6 +13,8 @@ import {
     TAMANO_IMPRESION_QR_MM_DEFECTO,
     construirPayloadQrH35,
     decodificarPayloadQrEscanerH18,
+    extraerTerminoBusquedaEscanerH18,
+    FormatoCodigoDetectadoH18,
     generarPdfEtiquetasQrLote,
     generarPngEtiquetasQrLote,
 } from '../services/codigoQrService';
@@ -685,14 +687,188 @@ export const listarCodigosQrInsumo = async (req: Request, res: Response): Promis
 
 export const escanearCodigoQrH18 = async (req: Request, res: Response): Promise<void> => {
     try {
-        const crudo = String(req.body?.payload ?? req.body?.codigo ?? req.query.codigo ?? '').trim();
-        const decodificado = decodificarPayloadQrEscanerH18(crudo);
-        res.status(200).json({
-            valido: true,
-            formato: 'QR_H47',
-            datos: decodificado,
-        });
+        const crudo = String(
+            req.params.codigo ?? req.body?.payload ?? req.body?.codigo ?? req.query.codigo ?? ''
+        ).trim();
+        const resultado = await buscarInsumoInstantaneoPorCodigo(pool, crudo);
+        res.status(200).json(resultado);
     } catch (error) {
-        enviarErrorHttp(res, error, 'Error al leer el código QR con el escáner H18');
+        enviarErrorHttp(res, error, 'Error al buscar el insumo por código QR o código de barras');
     }
+};
+
+export const SLA_BUSQUEDA_ESCANER_MS = 200;
+
+export interface FichaYStockInsumoEscaneado {
+    valido: true;
+    formato_detectado: FormatoCodigoDetectadoH18;
+    codigo_consultado: string;
+    tiempo_respuesta_ms: number;
+    cumple_sla_200ms: boolean;
+    insumo: {
+        id_articulo: number;
+        sku: string;
+        codigo_barras: string | null;
+        nombre_articulo: string;
+        categoria: string;
+        unidad_medida: string;
+        precio_unitario: number;
+        activo: boolean;
+    };
+    stock: {
+        cantidad_disponible: number;
+        cantidad_comprometida: number;
+        cantidad_cuarentena: number;
+        stock_minimo: number;
+        cant_reposicion: number;
+        pmp: number;
+        ubicacion: string | null;
+        bloqueado_por_conteo: boolean;
+    };
+    etiqueta_qr: {
+        id_codigo_qr: number;
+        codigo_qr: string;
+        estado_asignacion: EstadoAsignacionQr;
+        asignado_objeto_fisico: boolean;
+        lote: string | null;
+    } | null;
+}
+
+/**
+ * [BACK-1] Búsqueda instantánea (< 200 ms) en una sola consulta indexada por código QR (JSON o código único),
+ * código de barras o SKU. Devuelve la ficha técnica y el stock en vivo del insumo.
+ * Si el código no existe o el insumo está inactivo, lanza 404 claro para bloquear la operación en bodega.
+ */
+export const buscarInsumoInstantaneoPorCodigo = async (
+    cliente: Pick<PoolClient, 'query'>,
+    entradaCruda: unknown
+): Promise<FichaYStockInsumoEscaneado> => {
+    const inicioNs = process.hrtime.bigint();
+    const termino = extraerTerminoBusquedaEscanerH18(entradaCruda);
+
+    const res = await cliente.query<{
+        id_articulo: number;
+        sku: string;
+        codigo_barras: string | null;
+        nombre_articulo: string;
+        categoria: string;
+        unidad_medida: string;
+        precio_unitario: number;
+        activo: boolean;
+        cantidad_disponible: number;
+        cantidad_comprometida: number;
+        cantidad_cuarentena: number;
+        stock_minimo: number;
+        cant_reposicion: number;
+        pmp: number;
+        ubicacion: string | null;
+        bloqueado_por_conteo: boolean;
+        id_codigo_qr: number | null;
+        codigo_qr: string | null;
+        estado_asignacion: EstadoAsignacionQr | null;
+        asignado_objeto_fisico: boolean | null;
+        lote: string | null;
+    }>(
+        `/* qr:busqueda-instantanea */
+         SELECT a.id_articulo,
+                COALESCE(a.sku, 'INS-' || a.id_articulo::text) AS sku,
+                i.codigo_barras,
+                a.nombre_articulo,
+                COALESCE(a.categoria::text, 'Materiales') AS categoria,
+                COALESCE(um.codigo, um.nombre, 'un') AS unidad_medida,
+                COALESCE(a.precio_unitario, 0)::float8 AS precio_unitario,
+                COALESCE(a.activo, TRUE) AS activo,
+                COALESCE(s.cantidad_disponible, 0)::float8 AS cantidad_disponible,
+                COALESCE(s.cantidad_comprometida, 0)::float8 AS cantidad_comprometida,
+                COALESCE(s.cantidad_cuarentena, 0)::float8 AS cantidad_cuarentena,
+                COALESCE(s.stock_minimo, 0)::float8 AS stock_minimo,
+                COALESCE(s.cant_reposicion, 0)::float8 AS cant_reposicion,
+                COALESCE(NULLIF(s.pmp, 0), a.precio_unitario, 0)::float8 AS pmp,
+                s.ubicacion,
+                COALESCE(s.bloqueado_por_conteo, FALSE) AS bloqueado_por_conteo,
+                q.id_codigo_qr,
+                q.codigo_qr,
+                q.estado_asignacion,
+                q.asignado_objeto_fisico,
+                q.lote
+         FROM articulo a
+         LEFT JOIN insumos i ON i.id_insumo = a.id_articulo
+         LEFT JOIN unidades_medida um ON um.id_unidad = COALESCE(a.id_unidad, i.id_unidad)
+         LEFT JOIN articulos_stock s ON s.id_articulo = a.id_articulo
+         LEFT JOIN codigos_qr_insumos q
+                ON q.id_articulo = a.id_articulo
+               AND ($1::text IS NOT NULL AND UPPER(TRIM(q.codigo_qr)) = $1)
+         WHERE ($1::text IS NOT NULL AND UPPER(TRIM(q.codigo_qr)) = $1)
+            OR UPPER(TRIM(a.sku)) = $2
+            OR (i.codigo_barras IS NOT NULL AND UPPER(TRIM(i.codigo_barras)) = $2)
+         ORDER BY (q.id_codigo_qr IS NOT NULL) DESC, a.id_articulo ASC
+         LIMIT 1`,
+        [termino.codigo_qr_busqueda, termino.sku_o_barras_busqueda]
+    );
+
+    const elapsedMs = Number((Number(process.hrtime.bigint() - inicioNs) / 1e6).toFixed(3));
+    const fila = res.rows?.[0];
+
+    if (!fila) {
+        throw new ErrorAplicacion(
+            404,
+            `El código "${termino.codigo_qr_busqueda || termino.sku_o_barras_busqueda}" no existe en el catálogo de insumos. Operación bloqueada.`
+        );
+    }
+
+    // Si se escaneó un código QR específico (p. ej. FYAG-QR-SKU-9999) pero esa etiqueta QR no está registrada, bloquear con 404
+    if (
+        (termino.formato_detectado === 'CODIGO_QR' || termino.formato_detectado === 'QR_JSON_H47') &&
+        termino.codigo_qr_busqueda &&
+        (!fila.codigo_qr || fila.codigo_qr.toUpperCase() !== termino.codigo_qr_busqueda)
+    ) {
+        throw new ErrorAplicacion(
+            404,
+            `La etiqueta QR "${termino.codigo_qr_busqueda}" no está registrada para ningún objeto físico. Operación bloqueada.`
+        );
+    }
+
+    if (fila.activo === false) {
+        throw new ErrorAplicacion(
+            404,
+            `El insumo asociado al código "${termino.sku_o_barras_busqueda}" (${fila.nombre_articulo}) se encuentra inactivo. Operación bloqueada.`
+        );
+    }
+
+    return {
+        valido: true,
+        formato_detectado: termino.formato_detectado,
+        codigo_consultado: termino.codigo_crudo,
+        tiempo_respuesta_ms: elapsedMs,
+        cumple_sla_200ms: elapsedMs < SLA_BUSQUEDA_ESCANER_MS,
+        insumo: {
+            id_articulo: Number(fila.id_articulo),
+            sku: fila.sku,
+            codigo_barras: fila.codigo_barras ?? null,
+            nombre_articulo: fila.nombre_articulo,
+            categoria: fila.categoria,
+            unidad_medida: fila.unidad_medida,
+            precio_unitario: Number(fila.precio_unitario),
+            activo: Boolean(fila.activo),
+        },
+        stock: {
+            cantidad_disponible: Number(fila.cantidad_disponible),
+            cantidad_comprometida: Number(fila.cantidad_comprometida),
+            cantidad_cuarentena: Number(fila.cantidad_cuarentena),
+            stock_minimo: Number(fila.stock_minimo),
+            cant_reposicion: Number(fila.cant_reposicion),
+            pmp: Number(fila.pmp),
+            ubicacion: fila.ubicacion ?? null,
+            bloqueado_por_conteo: Boolean(fila.bloqueado_por_conteo),
+        },
+        etiqueta_qr: fila.id_codigo_qr
+            ? {
+                  id_codigo_qr: Number(fila.id_codigo_qr),
+                  codigo_qr: fila.codigo_qr!,
+                  estado_asignacion: fila.estado_asignacion ?? ESTADO_QR_PENDIENTE_IMPRESION,
+                  asignado_objeto_fisico: Boolean(fila.asignado_objeto_fisico),
+                  lote: fila.lote ?? null,
+              }
+            : null,
+    };
 };
