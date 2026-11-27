@@ -305,7 +305,7 @@ export const crearAlertaConDespachoOpcionalEnTransaccion = async (
         null;
 
     if (despacharCorreo && !destinatarioCorreo) {
-        destinatarioCorreo = rolDestino === 'warehouse' ? 'bodega@fyag.cl' : 'admin@fyag.cl';
+        destinatarioCorreo = rolDestino === 'warehouse' ? 'bodegafyag@gmail.com' : 'adminfyag@gmail.com';
     }
 
     let correoEnviado = false;

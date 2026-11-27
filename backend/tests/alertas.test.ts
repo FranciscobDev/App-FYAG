@@ -34,9 +34,9 @@ const crearEscenarioAlertas = () => {
     const estado = {
         diasRetencion: 90,
         configCorreo: new Map<string, { enviar_correo: boolean; correo_destino_defecto: string | null }>([
-            ['discrepancia_factura_recepcion', { enviar_correo: true, correo_destino_defecto: 'admin@fyag.cl' }],
-            ['merma_inventario', { enviar_correo: true, correo_destino_defecto: 'admin@fyag.cl' }],
-            ['devolucion_en_transito', { enviar_correo: false, correo_destino_defecto: 'bodega@fyag.cl' }],
+            ['discrepancia_factura_recepcion', { enviar_correo: true, correo_destino_defecto: 'adminfyag@gmail.com' }],
+            ['merma_inventario', { enviar_correo: true, correo_destino_defecto: 'adminfyag@gmail.com' }],
+            ['devolucion_en_transito', { enviar_correo: false, correo_destino_defecto: 'bodegafyag@gmail.com' }],
         ]),
         alertas: [
             // H3: Stock mínimo con OC borrador -> Admin
@@ -395,7 +395,7 @@ test('[BACK-1] Despacho opcional por correo electrónico según el tipo de alert
             id_articulo: 500,
         });
         assert.equal(alertaConCorreo.correo_enviado, true);
-        assert.equal(alertaConCorreo.destinatario_correo, 'admin@fyag.cl');
+        assert.equal(alertaConCorreo.destinatario_correo, 'adminfyag@gmail.com');
         assert.equal(correosEnviados.length, 1);
         assert.match(correosEnviados[0].asunto, /\[FYAG • H17\]/);
 

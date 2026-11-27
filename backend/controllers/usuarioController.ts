@@ -8,6 +8,7 @@ import { registrarAuditoria } from '../services/auditoriaService';
 import { ejecutarTransaccion } from '../services/transaccion';
 import { snapshotUsuario } from '../services/snapshotUsuario';
 import { revocarSesionesUsuario } from '../services/sesiones';
+import { validarFortalezaClave } from '../services/claves';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
 import { obtenerIdEjecutor } from '../middleware/authMiddleware';
 
@@ -417,6 +418,12 @@ export const crearUsuario = async (req: Request<Record<string, string>, unknown,
             return;
         }
 
+        const errorClave = validarFortalezaClave(String(contrasena));
+        if (errorClave) {
+            res.status(400).json({ mensaje: errorClave });
+            return;
+        }
+
         const hash = await bcrypt.hash(String(contrasena), 10);
         const correoNormalizado = correo_usuario.trim().toLowerCase();
 
@@ -478,6 +485,13 @@ export const actualizarUsuario = async (req: Request<{ id: string }, unknown, Us
                 : null;
 
         // Solo se cifra si se envió una nueva contraseña (el hash nunca se audita)
+        if (contrasena) {
+            const errorClave = validarFortalezaClave(String(contrasena));
+            if (errorClave) {
+                res.status(400).json({ mensaje: errorClave });
+                return;
+            }
+        }
         const hash = contrasena ? await bcrypt.hash(String(contrasena), 10) : null;
 
         const huboCambios =

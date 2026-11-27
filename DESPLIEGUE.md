@@ -29,6 +29,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE fyag_owner IN SCHEMA public
 ```
 
 ### 1.2 Restricción de red y TLS (`postgresql.conf` y `pg_hba.conf`)
+Aplica a un PostgreSQL propio; en Supabase esta capa la gestiona la plataforma.
 No exponer el puerto `5432` a Internet público:
 1. En `postgresql.conf`, escuchar únicamente en loopback o en la subred privada interna y exigir SSL/TLS:
    ```ini
@@ -40,11 +41,25 @@ No exponer el puerto `5432` a Internet público:
    hostssl fyag_db fyag_app 10.0.1.0/24 scram-sha-256
    ```
 
-### 1.2 Ejecución de migraciones
-El backend incluye un motor transaccional de migraciones en `backend/services/migraciones.ts` que aplica automáticamente en orden los archivos SQL de `backend/migraciones/` (`001_autenticacion_y_auditoria.sql` hasta `020_monitor_respaldos.sql`) antes de abrir el puerto HTTP y registra cada versión en la tabla `migraciones_aplicadas`.
+### 1.3 Esquema de base de datos y migraciones
+La base se aprovisiona **una sola vez** con el esquema consolidado y los datos semilla:
 
-* **Arranque automático:** al ejecutar `npm --prefix backend start`, todas las migraciones pendientes se aplican dentro de una transacción antes de aceptar tráfico.
-* **Esquema base y datos semilla:** ver [estructura_db.md](file:///c:/Users/Socius/Desktop/xs/App-FYAG/estructura_db.md) y [datos_iniciales.md](file:///c:/Users/Socius/Desktop/xs/App-FYAG/datos_iniciales.md).
+1. Ejecutar [estructura_db.md](file:///c:/Users/Socius/Desktop/xs/App-FYAG/estructura_db.md) (esquema completo, equivalente a las migraciones `001`–`021`).
+2. Ejecutar [datos_iniciales.md](file:///c:/Users/Socius/Desktop/xs/App-FYAG/datos_iniciales.md) (datos semilla y cuentas principales, equivalente a la migración `022`).
+
+Esos dos archivos son la **fuente de verdad** del esquema. Los scripts de `backend/migraciones/` se conservan solo como historial y **no deben ejecutarse** sobre una base aprovisionada así: algunos chocan con el esquema consolidado (por ejemplo, `devoluciones_tecnico` es una vista de compatibilidad, no una tabla).
+
+El motor `backend/services/migraciones.ts` controla este comportamiento con la variable `APLICAR_MIGRACIONES`:
+
+| Valor | Comportamiento |
+|---|---|
+| `false` (**recomendado** en Supabase y en bases creadas con `estructura_db.md`) | Omite las migraciones al arrancar y lo informa en consola. |
+| sin definir / `true` | Ejecuta en cada arranque, en orden alfabético, todos los `.sql` de `backend/migraciones/`. Son idempotentes (`IF NOT EXISTS` / `ON CONFLICT`), pero **no se registran** en ninguna tabla de control ni se ejecutan en una transacción única. Solo es apto para bases creadas de forma incremental. |
+
+**Cambios futuros al esquema:** aplícalos en la base (por ejemplo, con una migración de Supabase) y actualiza `estructura_db.md` para que siga siendo la fuente de verdad. No agregues scripts nuevos a `backend/migraciones/`.
+
+### 1.4 Supabase (Session Pooler)
+Con `DB_HOST` apuntando a `*.pooler.supabase.com`, el backend activa TLS automáticamente. Usa el usuario `postgres.<project_ref>` y la contraseña de la base (Project Settings → Database). En esta configuración `DB_SSL_REJECT_UNAUTHORIZED` es `false` por defecto; para validar el certificado del servidor, descarga la CA desde Project Settings → Database → SSL, defínela en `DB_SSL_CA` y establece `DB_SSL_REJECT_UNAUTHORIZED=true`. Todas las tablas de `public` tienen RLS activo sin políticas, y `anon`/`authenticated` no tienen permisos: solo el backend accede a los datos, por conexión directa a Postgres.
 
 ---
 
@@ -63,7 +78,8 @@ El servidor valida todas las variables críticas al iniciar (`backend/config/ent
 | `DB_PORT` | **Sí** | Entero `1`–`65535` | Puerto de PostgreSQL (habitualmente `5432`). |
 | `DB_USER` | **Sí** | No vacío | Usuario de base de datos. |
 | `DB_PASSWORD` | **Sí** | No vacío | Contraseña de base de datos. |
-| `DB_DATABASE` | **Sí** | No vacío | Nombre de la base de datos (`fyag_db`). |
+| `DB_DATABASE` | **Sí** | No vacío | Nombre de la base de datos (`fyag_db`; `postgres` en Supabase). |
+| `APLICAR_MIGRACIONES` | Opcional | `false` para omitir | Con `false` no se ejecutan los scripts de `backend/migraciones/` al arrancar. Recomendado en Supabase (ver sección 1.3). |
 | `CORS_ORIGIN` | **Sí (Prod)** | Orígenes `http://` o `https://` separados por coma, sin rutas ni credenciales | Lista blanca explícita de orígenes web permitidos (ej. `https://app.fyag.cl`). |
 | `SMTP_HOST` | **Sí (Prod)** | No vacío en producción | Servidor SMTP para envío de OC, alertas y recuperación de clave. |
 | `SMTP_PORT` | **Sí (Prod)** | Entero `1`–`65535` (`587` o `465`) | Puerto SMTP. |

@@ -289,6 +289,23 @@ test('Base de datos: validarConfiguracionEntorno rechaza superusuarios (postgres
     assert.equal(cfgValida.dbSsl, true);
     assert.deepEqual(resolverSslBaseDatos({ NODE_ENV: 'production' }), { rejectUnauthorized: true });
     assert.equal(resolverSslBaseDatos({ NODE_ENV: 'development' }), false);
+
+    // Soporte nativo de Supabase Session Pooler (por variables DB_* o por DATABASE_URL)
+    const cfgSupabase = validarConfiguracionEntorno({
+        NODE_ENV: 'development',
+        JWT_SECRET: 'secreto-super-seguro-de-al-menos-32-caracteres',
+        DATABASE_URL: 'postgresql://postgres.abcd1234efgh:ClaveSupa2026!@aws-0-sa-east-1.pooler.supabase.com:5432/postgres',
+    });
+    assert.equal(cfgSupabase.dbHost, 'aws-0-sa-east-1.pooler.supabase.com');
+    assert.equal(cfgSupabase.dbUser, 'postgres.abcd1234efgh');
+    assert.equal(cfgSupabase.dbPort, 5432);
+    assert.equal(cfgSupabase.dbSsl, true);
+    assert.deepEqual(
+        resolverSslBaseDatos({
+            DATABASE_URL: 'postgresql://postgres.abcd1234efgh:Clave@aws-0-sa-east-1.pooler.supabase.com:5432/postgres',
+        }),
+        { rejectUnauthorized: false }
+    );
 });
 
 test('Cifrado en reposo AES-256-GCM: cifra con IV aleatorio, descifra exactamente y detecta manipulación', () => {

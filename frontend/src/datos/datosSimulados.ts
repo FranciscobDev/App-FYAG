@@ -31,9 +31,9 @@ import type {
 } from "@/nucleo/tipos";
 
 export const USUARIOS: Record<Usuario["role"], Usuario> = {
-  admin: { rut: construirRut(12456789), name: "Javier Muñoz Contreras", email: "javier.munoz@fyag.cl", initials: "JM", role: "admin" },
-  warehouse: { rut: construirRut(15321654), name: "Camila Vera Soto", email: "camila.vera@fyag.cl", initials: "CV", role: "warehouse" },
-  technician: { rut: construirRut(17894562), name: "Alejandro Rojas Pino", email: "alejandro.rojas@fyag.cl", initials: "AR", role: "technician" },
+  admin: { rut: construirRut(12456789), name: "Javier Muñoz Contreras", email: "adminfyag@gmail.com", initials: "JM", role: "admin" },
+  warehouse: { rut: construirRut(15321654), name: "Camila Vera Soto", email: "bodegafyag@gmail.com", initials: "CV", role: "warehouse" },
+  technician: { rut: construirRut(17894562), name: "Alejandro Rojas Pino", email: "tecnicofyag@gmail.com", initials: "AR", role: "technician" },
 };
 
 export const TECNICOS: Tecnico[] = [
@@ -1702,7 +1702,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_1",
     rut: "12.456.789-5",
     name: "Javier Muñoz Contreras",
-    email: "javier.munoz@fyag.cl",
+    email: "adminfyag@gmail.com",
     role: "admin",
     disabled: false,
     createdAt: "2024-01-10",
@@ -1722,7 +1722,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_3",
     rut: "15.321.654-2",
     name: "Camila Vera Soto",
-    email: "camila.vera@fyag.cl",
+    email: "bodegafyag@gmail.com",
     role: "warehouse",
     disabled: false,
     createdAt: "2024-02-01",
@@ -1742,7 +1742,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_5",
     rut: "17.894.562-3",
     name: "Alejandro Rojas Pino",
-    email: "alejandro.rojas@fyag.cl",
+    email: "tecnicofyag@gmail.com",
     role: "technician",
     disabled: false,
     createdAt: "2024-04-12",
