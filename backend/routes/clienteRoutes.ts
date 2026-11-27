@@ -10,21 +10,24 @@ import {
     actualizarPlanMantencion,
     registrarSeguimientoContacto,
 } from '../controllers/clienteController';
-import { verificarRoles } from '../middleware/authMiddleware';
+import { verificarAdmin } from '../middleware/authMiddleware';
 
 const router = Router();
 
+// Principio de mínimo privilegio: la cartera comercial de clientes y planes de mantención es exclusiva del Administrador
+router.use(verificarAdmin);
+
 // Planes de mantención periódica y seguimiento de contacto (antes de /:id para evitar colisión)
-router.get('/planes/mantencion', verificarRoles('admin', 'technician', 'warehouse'), obtenerPlanesMantencion);
-router.post('/planes/mantencion', verificarRoles('admin'), crearPlanMantencion);
-router.put('/planes/mantencion/:idPlan', verificarRoles('admin'), actualizarPlanMantencion);
-router.post('/planes/mantencion/:idPlan/seguimiento', verificarRoles('admin'), registrarSeguimientoContacto);
+router.get('/planes/mantencion', obtenerPlanesMantencion);
+router.post('/planes/mantencion', crearPlanMantencion);
+router.put('/planes/mantencion/:idPlan', actualizarPlanMantencion);
+router.post('/planes/mantencion/:idPlan/seguimiento', registrarSeguimientoContacto);
 
 // CRUD de Clientes
-router.get('/', verificarRoles('admin', 'technician', 'warehouse'), obtenerClientes);
-router.get('/:id', verificarRoles('admin', 'technician', 'warehouse'), obtenerClientePorId);
-router.post('/', verificarRoles('admin'), crearCliente);
-router.put('/:id', verificarRoles('admin'), actualizarCliente);
-router.patch('/:id/estado', verificarRoles('admin'), cambiarEstadoCliente);
+router.get('/', obtenerClientes);
+router.get('/:id', obtenerClientePorId);
+router.post('/', crearCliente);
+router.put('/:id', actualizarCliente);
+router.patch('/:id/estado', cambiarEstadoCliente);
 
 export default router;

@@ -46,28 +46,34 @@ const obtenerHostMetro = (): string | null => {
 
 /**
  * Lista de URLs candidatas para conectar al backend desde Web o Expo Go en celular.
+ * En producción exige EXPO_PUBLIC_API_URL y no prueba IPs locales de desarrollo.
  */
 export const obtenerUrlsCandidatasApi = (): string[] => {
   const candidatas: string[] = [];
+  const urlConfigurada = typeof process.env.EXPO_PUBLIC_API_URL === "string"
+    ? process.env.EXPO_PUBLIC_API_URL.trim()
+    : "";
 
   if (urlBaseResuelta) {
     candidatas.push(urlBaseResuelta);
   }
 
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    candidatas.push(process.env.EXPO_PUBLIC_API_URL);
+  if (urlConfigurada) {
+    candidatas.push(urlConfigurada);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return Array.from(new Set(candidatas));
   }
 
   if (Platform.OS === "web") {
     candidatas.push("http://localhost:3000/api");
-    candidatas.push("http://10.13.103.8:3000/api");
+    candidatas.push("http://127.0.0.1:3000/api");
   } else {
     const hostMetro = obtenerHostMetro();
     if (hostMetro) {
       candidatas.push(`http://${hostMetro}:3000/api`);
     }
-    // IP Wi-Fi local actual del PC
-    candidatas.push("http://10.13.103.8:3000/api");
     // Emulador Android estándar
     candidatas.push("http://10.0.2.2:3000/api");
     candidatas.push("http://localhost:3000/api");
@@ -78,5 +84,10 @@ export const obtenerUrlsCandidatasApi = (): string[] => {
 
 export const obtenerBaseUrlApi = (): string => {
   if (urlBaseResuelta) return urlBaseResuelta;
-  return obtenerUrlsCandidatasApi()[0] ?? "http://10.13.103.8:3000/api";
+  const primera = obtenerUrlsCandidatasApi()[0];
+  if (primera) return primera;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Falta configurar EXPO_PUBLIC_API_URL en producción");
+  }
+  return "http://localhost:3000/api";
 };

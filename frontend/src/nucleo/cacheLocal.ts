@@ -11,6 +11,13 @@ const memoriaRespaldo = new Map<string, string>();
 
 const PREFIJO_CACHE = "fyag_cache_";
 
+/**
+ * Claves de credenciales sensibles que en navegadores Web NUNCA deben guardarse en window.localStorage
+ * (se mantienen únicamente en memoria / sessionStorage efímero de la pestaña para mitigar robo por XSS).
+ * En Android/iOS persisten en el directorio privado de la aplicación (Paths.document).
+ */
+const CLAVES_SENSIBLES_SIN_LOCALSTORAGE = new Set(["fyag_token", "fyag_refresh_token"]);
+
 const normalizarNombreArchivo = (clave: string): string => {
   const limpia = clave.replace(/[^a-zA-Z0-9_-]/g, "_");
   return `${PREFIJO_CACHE}${limpia}.json`;
@@ -120,3 +127,89 @@ function validarRegistroCache<T>(crudo: string): RegistroCache<T> | null {
   }
   return null;
 }
+
+/**
+ * Elimina una entrada de la caché local tanto en Web (localStorage) como en nativo (expo-file-system).
+ */
+export async function eliminarCache(clave: string): Promise<void> {
+  const claveCompleta = `${PREFIJO_CACHE}${clave}`;
+  memoriaRespaldo.delete(claveCompleta);
+
+  if (Platform.OS === "web") {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem(claveCompleta);
+      }
+    } catch {}
+    return;
+  }
+
+  try {
+    const archivo = new File(Paths.document, normalizarNombreArchivo(clave));
+    if (archivo.exists) {
+      archivo.delete();
+    }
+  } catch {}
+}
+
+/**
+ * Adaptador unificado de almacenamiento clave-valor (compatible con la interfaz de AsyncStorage)
+ * que usa una única estrategia de persistencia en toda la app:
+ * - Android / iOS: archivo JSON en Paths.document vía expo-file-system
+ * - Web: window.localStorage
+ * - Fallback en memoria si el entorno bloquea E/S
+ */
+export const almacenamientoPersistente = {
+  getItem: async (clave: string): Promise<string | null> => {
+    if (Platform.OS === "web" && CLAVES_SENSIBLES_SIN_LOCALSTORAGE.has(clave)) {
+      const claveCompleta = `${PREFIJO_CACHE}${clave}`;
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(claveCompleta);
+        }
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          const enSesion = window.sessionStorage.getItem(claveCompleta);
+          if (enSesion) return enSesion;
+        }
+      } catch {}
+      return memoriaRespaldo.get(claveCompleta) ?? null;
+    }
+    const reg = await leerCache<string>(clave);
+    return typeof reg?.datos === "string" ? reg.datos : null;
+  },
+  setItem: async (clave: string, valor: string): Promise<void> => {
+    if (Platform.OS === "web" && CLAVES_SENSIBLES_SIN_LOCALSTORAGE.has(clave)) {
+      const claveCompleta = `${PREFIJO_CACHE}${clave}`;
+      memoriaRespaldo.set(claveCompleta, valor);
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(claveCompleta);
+        }
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          window.sessionStorage.setItem(claveCompleta, valor);
+        }
+      } catch {}
+      return;
+    }
+    await guardarCache<string>(clave, valor);
+  },
+  removeItem: async (clave: string): Promise<void> => {
+    if (Platform.OS === "web" && CLAVES_SENSIBLES_SIN_LOCALSTORAGE.has(clave)) {
+      const claveCompleta = `${PREFIJO_CACHE}${clave}`;
+      memoriaRespaldo.delete(claveCompleta);
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem(claveCompleta);
+        }
+        if (typeof window !== "undefined" && window.sessionStorage) {
+          window.sessionStorage.removeItem(claveCompleta);
+        }
+      } catch {}
+      return;
+    }
+    await eliminarCache(clave);
+  },
+  multiRemove: async (claves: string[]): Promise<void> => {
+    await Promise.all(claves.map((c) => almacenamientoPersistente.removeItem(c)));
+  },
+};

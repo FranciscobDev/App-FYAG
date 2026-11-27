@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../config/db';
-import { obtenerIdEjecutor } from '../middleware/authMiddleware';
+import { normalizarRol, obtenerIdEjecutor } from '../middleware/authMiddleware';
 import { ErrorAplicacion, enviarErrorHttp } from '../services/errores';
+import { verificarTecnicoAsignadoAProyecto } from './proyectoController';
 import {
     COSTO_HORA_HOMBRE_H39_DEFECTO,
     ColorSemaforoFinanciero,
@@ -184,7 +185,8 @@ export const registrarHorasProyectoEnTransaccion = async (
         descripcion?: string | null;
         fecha_trabajo?: string | null;
     },
-    idEjecutor: number | null
+    idEjecutor: number | null,
+    rolEjecutor?: string | null
 ): Promise<{
     id_registro_hora: number;
     proyecto_id: number;
@@ -197,6 +199,19 @@ export const registrarHorasProyectoEnTransaccion = async (
 }> => {
     if (!Number.isInteger(idProyecto) || idProyecto <= 0) {
         throw new ErrorAplicacion(400, 'Identificador de proyecto inválido');
+    }
+
+    const esTecnico = normalizarRol(rolEjecutor) === 'technician';
+    if (esTecnico) {
+        // Anti-IDOR: el técnico solo puede registrar horas en proyectos que tiene asignados y nunca a nombre de otro técnico
+        if (
+            datos.tecnico_id !== undefined &&
+            datos.tecnico_id !== null &&
+            Number(datos.tecnico_id) !== Number(idEjecutor)
+        ) {
+            throw new ErrorAplicacion(403, 'Acceso denegado: no puedes registrar horas a nombre de otro técnico');
+        }
+        await verificarTecnicoAsignadoAProyecto(cliente, idProyecto, idEjecutor);
     }
 
     const rawHoras = datos.horas ?? datos.hours;
@@ -213,7 +228,7 @@ export const registrarHorasProyectoEnTransaccion = async (
     const horas = Number(numHoras.toFixed(2));
     const costoHoraH39 = await obtenerCostoHoraHombreH39(cliente);
     const costoTotal = Math.round(horas * costoHoraH39);
-    const tecnicoId = datos.tecnico_id !== undefined ? datos.tecnico_id : idEjecutor;
+    const tecnicoId = esTecnico ? idEjecutor : datos.tecnico_id !== undefined ? datos.tecnico_id : idEjecutor;
     const descripcion =
         typeof datos.descripcion === 'string' && datos.descripcion.trim()
             ? datos.descripcion.trim().slice(0, 250)
@@ -283,8 +298,9 @@ export const registrarHorasProyecto = async (
     try {
         const idProyecto = Number(req.params.id ?? req.body?.proyecto_id ?? req.body?.id_proyecto);
         const idEjecutor = obtenerIdEjecutor(req);
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
         const resultado = await ejecutarTransaccion((cliente) =>
-            registrarHorasProyectoEnTransaccion(cliente, idProyecto, req.body ?? {}, idEjecutor)
+            registrarHorasProyectoEnTransaccion(cliente, idProyecto, req.body ?? {}, idEjecutor, payload?.rol)
         );
         res.status(201).json({
             mensaje: `Horas registradas (${resultado.horas} h) y finanzas del proyecto recalculadas (Semáforo: ${resultado.finanzas.semaforo_actual.toUpperCase()}).`,

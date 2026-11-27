@@ -68,6 +68,7 @@ android/
 **/.env.*
 !.env.example
 !backend/.env.example
+!frontend/.env.example
 
 # 7. Caches, linters y compilación TypeScript
 .cache/

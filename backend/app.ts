@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Router } from 'express';
 import cors from 'cors';
 import authRoutes from './routes/authRoutes';
 import articuloRoutes from './routes/articuloRoutes';
@@ -23,67 +23,114 @@ import prestamoHerramientaRoutes from './routes/prestamoHerramientaRoutes';
 import reporteRoutes from './routes/reporteRoutes';
 import respaldoRoutes from './routes/respaldoRoutes';
 import verificarToken from './middleware/authMiddleware';
+import {
+    cabecerasSeguridadHttp,
+    exigirHttpsEnProduccion,
+    limitadorGlobalApi,
+    limitadorPorUsuarioApi,
+    manejadorErroresGlobal,
+    middlewarePaginacionListados,
+    obtenerIpCliente,
+    proteccionCsrfMutaciones,
+    sanitizarUrlParaLog,
+} from './middleware/seguridadHttp';
 import { obtenerOrigenesCors } from './config/entorno';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
 export const app = express();
+app.disable('x-powered-by');
+app.use(cabecerasSeguridadHttp);
+app.use(exigirHttpsEnProduccion);
 
 const origenesPermitidos = obtenerOrigenesCors();
 app.use(cors({
     origin: (origen, callback) => {
         callback(null, !origen || origenesPermitidos.includes(origen));
     },
+    credentials: false,
 }));
+
+app.use('/api', limitadorGlobalApi);
+app.use('/api', proteccionCsrfMutaciones(origenesPermitidos));
+app.use('/api', middlewarePaginacionListados);
 
 // El lote de sincronización lleva fotos en base64: tiene su propio límite de cuerpo (más alto) y se
 // parsea DESPUÉS de validar el token, para no leer cuerpos grandes de peticiones sin sesión.
-const analizadorJsonGeneral = express.json();
+const analizadorJsonGeneral = express.json({ limit: '512kb' });
 app.use((req, res, next) => {
-    if (req.originalUrl.startsWith('/api/sincronizacion')) {
+    if (
+        req.originalUrl.startsWith('/api/sincronizacion') ||
+        req.originalUrl.startsWith('/api/v1/sincronizacion')
+    ) {
         next();
         return;
     }
     analizadorJsonGeneral(req, res, next);
 });
 
-// Log de peticiones entrantes para diagnóstico en desarrollo
+// Log de peticiones entrantes con IP, origen y URL sanitizada (sin filtrar tokens en query strings)
 app.use((req, _res, next) => {
-    console.log(`📡 [${new Date().toLocaleTimeString()}] ${req.method} ${req.originalUrl}`);
+    if (process.env.NODE_ENV !== 'test') {
+        const ip = obtenerIpCliente(req);
+        const origen = typeof req.headers.origin === 'string' ? req.headers.origin : '-';
+        const urlSegura = sanitizarUrlParaLog(req.originalUrl);
+        console.log(`📡 [${new Date().toISOString()}] ${req.method} ${urlSegura} (ip=${ip}, origin=${origen})`);
+    }
     next();
 });
 
+// Router versionado de la API (expuesto en /api/v1 y en /api para compatibilidad con clientes actuales)
+const apiRouter = Router();
+
 // Ruta pública de diagnóstico de conexión
-app.get('/api/health', (_req, res) => {
-    res.status(200).json({ ok: true, mensaje: 'Backend FYAG operativo' });
+apiRouter.get('/health', (_req, res) => {
+    res.status(200).json({ ok: true, version: 'v1', mensaje: 'Backend FYAG operativo' });
 });
 
-// Público: login y flujo de recuperación de contraseña
-app.use('/api/auth', authRoutes);
+// Público: login, 2FA, refresh y flujo de recuperación de contraseña
+apiRouter.use('/auth', authRoutes);
 
-// Protegido: requiere token y sesión válida en el encabezado Authorization
-app.use('/api/articulos', verificarToken, articuloRoutes);
-app.use('/api/proveedores', verificarToken, proveedorRoutes);
-app.use('/api/usuarios', verificarToken, usuarioRoutes);
-app.use('/api/proyectos', verificarToken, proyectoRoutes);
-app.use('/api/kits', verificarToken, kitRoutes);
-app.use('/api/clientes', verificarToken, clienteRoutes);
-app.use('/api/parametros', verificarToken, parametrosRoutes);
-app.use('/api/ordenes-compra', verificarToken, ordenCompraRoutes);
-app.use('/api/solicitudes', verificarToken, solicitudRoutes);
-app.use('/api/devoluciones', verificarToken, devolucionRoutes);
-app.use('/api/sincronizacion', verificarToken, sincronizacionRoutes);
-app.use('/api/cardex', verificarToken, cardexRoutes);
-app.use('/api/conteos', verificarToken, conteoFisicoRoutes);
-app.use('/api/conteos-fisicos', verificarToken, conteoFisicoRoutes);
-app.use('/api/devoluciones-proveedor', verificarToken, devolucionProveedorRoutes);
-app.use('/api/cuarentena', verificarToken, devolucionProveedorRoutes);
-app.use('/api/mermas', verificarToken, mermaRoutes);
-app.use('/api/codigos-qr', verificarToken, codigoQrRoutes);
-app.use('/api/alertas', verificarToken, alertaRoutes);
-app.use('/api/notificaciones', verificarToken, alertaRoutes);
-app.use('/api/herramientas', verificarToken, herramientaRoutes);
-app.use('/api/prestamos-herramientas', verificarToken, prestamoHerramientaRoutes);
-app.use('/api/reportes', verificarToken, reporteRoutes);
-app.use('/api/respaldos', verificarToken, respaldoRoutes);
+// Protegido: requiere token de acceso, sesión válida en servidor y límite de tasa por usuario autenticado
+const autenticado = [verificarToken, limitadorPorUsuarioApi] as const;
+
+apiRouter.use('/articulos', ...autenticado, articuloRoutes);
+apiRouter.use('/proveedores', ...autenticado, proveedorRoutes);
+apiRouter.use('/usuarios', ...autenticado, usuarioRoutes);
+apiRouter.use('/proyectos', ...autenticado, proyectoRoutes);
+apiRouter.use('/kits', ...autenticado, kitRoutes);
+apiRouter.use('/clientes', ...autenticado, clienteRoutes);
+apiRouter.use('/parametros', ...autenticado, parametrosRoutes);
+apiRouter.use('/ordenes-compra', ...autenticado, ordenCompraRoutes);
+apiRouter.use('/solicitudes', ...autenticado, solicitudRoutes);
+apiRouter.use('/devoluciones', ...autenticado, devolucionRoutes);
+apiRouter.use('/sincronizacion', ...autenticado, sincronizacionRoutes);
+apiRouter.use('/cardex', ...autenticado, cardexRoutes);
+apiRouter.use('/conteos', ...autenticado, conteoFisicoRoutes);
+apiRouter.use('/conteos-fisicos', ...autenticado, conteoFisicoRoutes);
+apiRouter.use('/devoluciones-proveedor', ...autenticado, devolucionProveedorRoutes);
+apiRouter.use('/cuarentena', ...autenticado, devolucionProveedorRoutes);
+apiRouter.use('/mermas', ...autenticado, mermaRoutes);
+apiRouter.use('/codigos-qr', ...autenticado, codigoQrRoutes);
+apiRouter.use('/alertas', ...autenticado, alertaRoutes);
+apiRouter.use('/notificaciones', ...autenticado, alertaRoutes);
+apiRouter.use('/herramientas', ...autenticado, herramientaRoutes);
+apiRouter.use('/prestamos-herramientas', ...autenticado, prestamoHerramientaRoutes);
+apiRouter.use('/reportes', ...autenticado, reporteRoutes);
+apiRouter.use('/respaldos', ...autenticado, respaldoRoutes);
+
+// Montaje en /api/v1 (versionado explícito) y /api (alias retrocompatible)
+app.use('/api/v1', apiRouter);
+app.use('/api', apiRouter);
+
+// Respuesta 404 genérica en JSON para endpoints inexistentes
+app.use('/api', (_req, res) => {
+    res.status(404).json({
+        codigo: 'ENDPOINT_NOT_FOUND',
+        mensaje: 'El recurso o endpoint solicitado no existe',
+    });
+});
+
+// Manejador global de errores sin trazas de pila (stack traces)
+app.use(manejadorErroresGlobal);
 
 export default app;

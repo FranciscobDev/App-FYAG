@@ -51,6 +51,53 @@ const esErrorPg = (error: unknown): error is DatabaseError => {
     return typeof error === 'object' && error !== null && 'code' in error;
 };
 
+/**
+ * Principio de mínimo privilegio: oculta campos financieros confidenciales (valor de venta,
+ * presupuestos, costos reales y márgenes) cuando quien consulta es un técnico.
+ */
+export const sanitizarProyectoParaRol = <T extends Record<string, any>>(
+    proyecto: T,
+    esTecnico: boolean
+): T => {
+    if (!esTecnico || !proyecto) return proyecto;
+    const copia: Record<string, any> = { ...proyecto };
+    delete copia.presupuesto_inicial;
+    delete copia.presupuesto_materiales;
+    delete copia.presupuesto_mermas;
+    delete copia.valor_venta;
+    delete copia.costo_real_acumulado;
+    delete copia.margen_estimado;
+    delete copia.porcentaje_consumo_presupuesto;
+    delete copia.semaforo_financiero;
+    return copia as T;
+};
+
+/**
+ * Verifica que un técnico esté asignado activamente al proyecto indicado (protección anti-IDOR).
+ * Lanza ErrorAplicacion(403) si el técnico no pertenece al proyecto.
+ */
+export const verificarTecnicoAsignadoAProyecto = async (
+    cliente: { query: (sql: string, params?: any[]) => Promise<any> },
+    idProyecto: number,
+    idTecnico: number | null
+): Promise<void> => {
+    if (!idTecnico) {
+        throw new ErrorAplicacion(401, 'Debes iniciar sesión');
+    }
+    const asignadoRes = await cliente.query(
+        `/* idor:verificar-asignacion-proyecto */
+         SELECT 1 FROM asignaciones_proyecto WHERE proyecto_id = $1 AND tecnico_id = $2 AND activo = TRUE
+         UNION
+         SELECT 1 FROM proyecto_tecnico WHERE id_proyecto = $1 AND id_usuario = $2
+         UNION
+         SELECT 1 FROM proyecto WHERE id_proyecto = $1 AND id_usuario = $2`,
+        [idProyecto, idTecnico]
+    );
+    if (!asignadoRes.rows || asignadoRes.rows.length === 0) {
+        throw new ErrorAplicacion(403, 'Acceso denegado: no estás asignado a este proyecto');
+    }
+};
+
 // Listar todos
 export const obtenerProyectos = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -67,7 +114,7 @@ export const obtenerProyectos = async (req: Request, res: Response): Promise<voi
                 [payload?.id]
             )
             : await pool.query<Proyecto>('SELECT * FROM proyecto ORDER BY fecha_fin ASC NULLS LAST, id_proyecto ASC');
-        res.status(200).json(result.rows);
+        res.status(200).json(result.rows.map((p) => sanitizarProyectoParaRol(p, esTecnico)));
     } catch (error) {
         console.error('Error al obtener proyectos:', error);
         res.status(500).json({ error: 'Error al obtener los proyectos' });
@@ -99,7 +146,7 @@ export const obtenerProyectoPorId = async (req: Request<{ id: string }>, res: Re
             return;
         }
 
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(sanitizarProyectoParaRol(result.rows[0], esTecnico));
     } catch (error) {
         console.error('Error al obtener proyecto:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
@@ -1001,6 +1048,12 @@ export const listarAvancesProyecto = async (req: Request<{ id: string }>, res: R
             throw new ErrorAplicacion(400, 'Identificador de proyecto inválido');
         }
 
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
+        if (esTecnico) {
+            await verificarTecnicoAsignadoAProyecto(pool, idProyecto, obtenerIdEjecutor(req));
+        }
+
         const result = await pool.query(
             `SELECT a.id_avance,
                     a.proyecto_id,
@@ -1043,6 +1096,12 @@ export const obtenerReporteFinalProyecto = async (req: Request<{ id: string }>, 
         const idProyecto = Number(req.params.id);
         if (!Number.isInteger(idProyecto) || idProyecto <= 0) {
             throw new ErrorAplicacion(400, 'Identificador de proyecto inválido');
+        }
+
+        const payload = typeof req.usuario === 'object' ? req.usuario : null;
+        const esTecnico = normalizarRol(payload?.rol) === 'technician';
+        if (esTecnico) {
+            await verificarTecnicoAsignadoAProyecto(pool, idProyecto, obtenerIdEjecutor(req));
         }
 
         // Datos del proyecto
@@ -1104,7 +1163,7 @@ export const obtenerReporteFinalProyecto = async (req: Request<{ id: string }>, 
         );
 
         res.status(200).json({
-            proyecto: proyRes.rows[0],
+            proyecto: sanitizarProyectoParaRol(proyRes.rows[0], esTecnico),
             avances: avancesRes.rows,
             resumen_materiales: insumosRes.rows.map((r: any) => ({
                 ...r,
