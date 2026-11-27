@@ -15,6 +15,7 @@ import {
     validarPruebaRestauracion,
 } from '../services/respaldoMonitorService';
 import { ejecutarTransaccion } from '../services/transaccion';
+import { purgarDatosAutenticacionExpirados } from '../services/sesiones';
 import { crearAlertaConDespachoOpcionalEnTransaccion } from './alertaController';
 
 type Cliente = Pick<PoolClient, 'query'>;
@@ -225,6 +226,7 @@ export const iniciarJobDiarioRespaldos = (): void => {
         ejecutarTransaccion(async (c) => {
             await ejecutarRespaldoMonitoreado(c, { origen: 'automatico' });
             await verificarSaludRespaldosEnTransaccion(c);
+            await purgarDatosAutenticacionExpirados(c);
         }).catch((e) => console.error('Error en el job diario de respaldos', e));
     const primera = setTimeout(() => {
         correr();

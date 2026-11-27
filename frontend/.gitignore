@@ -7,8 +7,20 @@ node_modules/
 .pnp
 .pnp.js
 
+# Variables de entorno y secretos (NUNCA permitir .env; solo .env.example)
+.env
+.env.*
+*.env
+!.env.example
+.npmrc
+google-services.json
+GoogleService-Info.plist
+*credentials*.json
+*service-account*.json
+
 # Expo & Bundler
 .expo/
+.expo-shared/
 web-build/
 dist/
 dist-ssr/
@@ -31,11 +43,28 @@ out/
 *.mobileprovision
 *.pem
 *.cer
+*.der
+*.crt
+*.pfx
 
-# Binarios
+# Binarios compilados
 *.apk
 *.aab
 *.ipa
+*.app
+*.dSYM/
+
+# Caché offline local y archivos temporales
+fyag_cache_*.json
+.cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
 
 # Logs y depuración
 logs/
@@ -44,23 +73,6 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 pnpm-debug.*
-
-# Variables de entorno locales (se permite .env)
-.env*.local
-!.env
-!.env.example
-
-# Caches y compilación
-.cache/
-.eslintcache
-.stylelintcache
-*.tsbuildinfo
-
-# Archivos de respaldo locales
-*.bak
-*.backup
-*.tmp
-*~
 
 # Sistema Operativo y Editores
 .DS_Store

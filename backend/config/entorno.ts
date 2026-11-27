@@ -5,9 +5,12 @@ export interface ConfiguracionEntorno {
     dbPassword: string;
     dbDatabase: string;
     dbPort: number;
+    dbSsl: boolean;
     jwtSecret: string;
     corsOrigins: string[];
 }
+
+const USUARIOS_BD_PROHIBIDOS_PRODUCCION = new Set(['postgres', 'root', 'sa', 'superuser', 'rdsadmin']);
 
 const leerRequerido = (entorno: NodeJS.ProcessEnv, clave: string): string => {
     const valor = entorno[clave]?.trim();
@@ -65,6 +68,25 @@ export const obtenerOrigenesCors = (entorno: NodeJS.ProcessEnv = process.env): s
     return ['http://localhost:8081', 'http://127.0.0.1:8081', 'http://localhost:19006'];
 };
 
+/**
+ * Resuelve la configuración TLS/SSL para PostgreSQL:
+ * - En producción activa TLS por defecto (salvo que DB_SSL="false" para red local aislada).
+ * - En desarrollo se activa si DB_SSL="true".
+ */
+export const resolverSslBaseDatos = (
+    entorno: NodeJS.ProcessEnv = process.env
+): false | { rejectUnauthorized: boolean; ca?: string } => {
+    const produccion = entorno.NODE_ENV === 'production';
+    const flag = entorno.DB_SSL?.trim().toLowerCase();
+    const habilitarSsl = flag === 'true' || (produccion && flag !== 'false');
+
+    if (!habilitarSsl) return false;
+
+    const rejectUnauthorized = entorno.DB_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase() !== 'false';
+    const ca = entorno.DB_SSL_CA?.trim() || undefined;
+    return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
+};
+
 export const validarConfiguracionEntorno = (
     entorno: NodeJS.ProcessEnv = process.env
 ): ConfiguracionEntorno => {
@@ -83,6 +105,11 @@ export const validarConfiguracionEntorno = (
     const corsOrigins = obtenerOrigenesCors(entorno);
 
     if (produccion) {
+        if (USUARIOS_BD_PROHIBIDOS_PRODUCCION.has(dbUser.toLowerCase())) {
+            throw new Error(
+                `DB_USER no puede ser el superusuario "${dbUser}" en producción; usa una cuenta de aplicación con permisos mínimos`
+            );
+        }
         leerRequerido(entorno, 'SMTP_HOST');
         leerPuerto(entorno, 'SMTP_PORT');
         leerRequerido(entorno, 'SMTP_USER');
@@ -96,6 +123,7 @@ export const validarConfiguracionEntorno = (
         dbPassword,
         dbDatabase,
         dbPort,
+        dbSsl: Boolean(resolverSslBaseDatos(entorno)),
         jwtSecret,
         corsOrigins,
     };

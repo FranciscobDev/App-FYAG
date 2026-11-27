@@ -1,11 +1,8 @@
 # =============================================================================
-# FYAG Multisystem - .gitignore
-# Repositorio: App-FYAG (React Native, Expo, TypeScript, Node.js)
+# FYAG Multisystem - .gitignore (Raíz del Repositorio)
+# Repositorio: App-FYAG (React Native, Expo, TypeScript, Node.js, PostgreSQL)
 # =============================================================================
 
-
-node_modules/
-.expo/
 # 1. Dependencias (Node.js & Gestores de paquetes)
 node_modules/
 **/node_modules/
@@ -17,7 +14,61 @@ node_modules/
 .yarn/install-state.gz
 .pnpm-store/
 
-# 2. Expo, Metro Bundler y Builds Web
+# 2. Variables de entorno, secretos y configuraciones con credenciales (NUNCA versionar)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!**/.env.example
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+.npmrc
+**/.npmrc
+.netrc
+*credentials*.json
+*service-account*.json
+*secret*.json
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+
+# 3. Claves criptográficas, certificados TLS/HTTPS y keystores de firma móvil
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.cer
+*.der
+*.crt
+*.pfx
+*.csr
+*.srl
+
+# 4. Volcados de base de datos, respaldos (cifrados o en claro) y almacenamiento local
+*.dump
+*.dump.enc
+*.enc
+*.sql.gz
+*.sql.bak
+*.sqlite
+*.sqlite3
+*.db
+backups/
+**/backups/
+respaldos/
+**/respaldos/
+uploads/
+**/uploads/
+fyag_cache_*.json
+**/fyag_cache_*.json
+
+# 5. Expo, Metro Bundler y Builds Web / Backend
 .expo/
 **/.expo/
 .expo-shared/
@@ -31,7 +82,7 @@ build/
 out/
 .metro-health-check*
 
-# 3. Android & iOS (Prebuilds y artefactos nativos)
+# 6. Android & iOS (Prebuilds y artefactos nativos)
 ios/
 **/ios/
 android/
@@ -40,36 +91,14 @@ android/
 **/.kotlin/
 *.orig.*
 
-# 4. Claves, certificados de firma y keystores (Seguridad estricta)
-*.jks
-*.keystore
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.pem
-*.cer
-*.der
-*.crt
-*.pfx
-
-# 5. Binarios de aplicación compilados
+# 7. Binarios de aplicación compilados
 *.apk
 *.aab
 *.ipa
 *.app
 *.dSYM/
 
-# 6. Variables de entorno y secretos (nunca commitear secretos)
-.env
-.env.*
-*.env
-**/.env
-**/.env.*
-!.env.example
-!backend/.env.example
-
-# 7. Caches, linters y compilación TypeScript
+# 8. Caches, linters y compilación TypeScript
 .cache/
 **/.cache/
 .vite/
@@ -79,8 +108,9 @@ android/
 .stylelintcache
 *.tsbuildinfo
 
-# 8. Logs y depuración
+# 9. Logs y depuración
 logs/
+**/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -88,12 +118,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# 9. Cobertura de pruebas (Testing)
+# 10. Cobertura de pruebas (Testing)
 coverage/
 **/coverage/
 .nyc_output/
 
-# 10. Archivos de respaldo locales y temporales
+# 11. Archivos de respaldo locales y temporales
 frontend-web-backup/
 **/frontend-web-backup/
 *.bak
@@ -102,7 +132,7 @@ frontend-web-backup/
 *.temp
 *~
 
-# 11. IDEs y Editores de código
+# 12. IDEs y Editores de código
 .idea/
 **/.idea/
 *.sublime-project
@@ -117,7 +147,7 @@ frontend-web-backup/
 !.vscode/extensions.json
 !.vscode/launch.json
 
-# 12. Archivos del Sistema Operativo (Windows / macOS / Linux)
+# 13. Archivos del Sistema Operativo (Windows / macOS / Linux)
 Thumbs.db
 Thumbs.db:encryptable
 ehthumbs.db
@@ -130,12 +160,14 @@ $RECYCLE.BIN/
 Icon?
 ._*
 
-# 13. Asistentes IA y configuraciones locales de agentes
+# 14. Asistentes IA y configuraciones locales de agentes
 .agents/
 **/.agents/
 AGENTS.md
 agents.md
 **/AGENTS.md
 **/agents.md
-
-backend/.env
+.claude/
+**/.claude/
+CLAUDE.md
+**/CLAUDE.md

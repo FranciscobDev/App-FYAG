@@ -42,6 +42,86 @@ export type ValidacionRegistro =
 
 const BASE64_VALIDO = /^[A-Za-z0-9+/]*={0,2}$/;
 const PREFIJO_DATA_URI = /^data:([^;,]+)(?:;[^,]*)?;base64,/i;
+const MIMES_IMAGEN_PERMITIDOS = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']);
+
+/**
+ * Detecta el tipo MIME real de un archivo inspeccionando sus primeros bytes (magic numbers).
+ * Devuelve null si no coincide con una firma conocida.
+ */
+export const detectarMimePorMagicBytes = (buf: Buffer): string | null => {
+    if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+        return 'image/jpeg';
+    }
+    if (
+        buf.length >= 8 &&
+        buf[0] === 0x89 &&
+        buf[1] === 0x50 &&
+        buf[2] === 0x4e &&
+        buf[3] === 0x47 &&
+        buf[4] === 0x0d &&
+        buf[5] === 0x0a &&
+        buf[6] === 0x1a &&
+        buf[7] === 0x0a
+    ) {
+        return 'image/png';
+    }
+    if (
+        buf.length >= 12 &&
+        buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+        buf.subarray(8, 12).toString('ascii') === 'WEBP'
+    ) {
+        return 'image/webp';
+    }
+    if (
+        buf.length >= 6 &&
+        (buf.subarray(0, 6).toString('ascii') === 'GIF87a' || buf.subarray(0, 6).toString('ascii') === 'GIF89a')
+    ) {
+        return 'image/gif';
+    }
+    if (buf.length >= 4 && buf.subarray(0, 4).toString('ascii') === '%PDF') {
+        return 'application/pdf';
+    }
+    return null;
+};
+
+/**
+ * Verifica que el binario de una foto subida no sea un ejecutable, script HTML/SVG ni un archivo
+ * con firma binaria distinta al MIME de imagen declarado.
+ */
+export const esBinarioImagenSeguro = (buf: Buffer, mimeDeclarado: string): boolean => {
+    const mimeNorm = mimeDeclarado === 'image/jpg' ? 'image/jpeg' : mimeDeclarado;
+    if (!MIMES_IMAGEN_PERMITIDOS.has(mimeDeclarado)) {
+        return false; // Rechaza image/svg+xml y tipos no rasterizados
+    }
+
+    // Bloquear ejecutables Windows (MZ), ELF Linux (\x7fELF), ZIP/Office (PK\x03\x04) o PDFs disfrazados
+    if (buf.length >= 2 && buf[0] === 0x4d && buf[1] === 0x5a) return false;
+    if (buf.length >= 4 && buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46) return false;
+    if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return false;
+
+    // Bloquear payloads de texto con etiquetas HTML, SVG o scripts (<script, <svg, <html, <!doctype, <?)
+    const cabeceraTexto = buf.subarray(0, Math.min(buf.length, 256)).toString('utf8').trimStart().toLowerCase();
+    if (
+        cabeceraTexto.startsWith('<svg') ||
+        cabeceraTexto.startsWith('<html') ||
+        cabeceraTexto.startsWith('<!doctype') ||
+        cabeceraTexto.startsWith('<script') ||
+        cabeceraTexto.startsWith('<?xml') ||
+        cabeceraTexto.startsWith('<?php') ||
+        cabeceraTexto.startsWith('#!') ||
+        cabeceraTexto.includes('<script')
+    ) {
+        return false;
+    }
+
+    // Si el archivo tiene una firma binaria reconocida, debe coincidir con el MIME declarado
+    const mimeReal = detectarMimePorMagicBytes(buf);
+    if (mimeReal !== null && mimeReal !== mimeNorm) {
+        return false;
+    }
+
+    return true;
+};
 
 export const formatearMegabytes = (bytes: number): string => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
@@ -115,7 +195,12 @@ export const validarRegistroEntrante = (bruto: unknown): ValidacionRegistro => {
         const mime = String(foto.mime_type ?? coincidencia?.[1] ?? '').toLowerCase();
         const limpio = limpiarBase64(contenido);
 
-        if (!mime.startsWith('image/')) return rechazo('FOTO_INVALIDA', `La foto "${nombre}" debe ser una imagen`);
+        if (!mime.startsWith('image/') || !MIMES_IMAGEN_PERMITIDOS.has(mime)) {
+            return rechazo(
+                'FOTO_INVALIDA',
+                `La foto "${nombre}" debe ser una imagen rasterizada válida (JPEG, PNG, WEBP o GIF)`
+            );
+        }
         if (limpio.length === 0 || limpio.length % 4 !== 0 || !BASE64_VALIDO.test(limpio)) {
             return rechazo('FOTO_INVALIDA', `La foto "${nombre}" no es un base64 válido`);
         }
@@ -125,6 +210,14 @@ export const validarRegistroEntrante = (bruto: unknown): ValidacionRegistro => {
             return rechazo(
                 'FOTO_EXCEDE_5MB',
                 `La foto "${nombre}" pesa ${formatearMegabytes(bytes)} y supera el máximo permitido de 5 MB. Comprímela y vuelve a sincronizar; el registro sigue pendiente en el dispositivo.`
+            );
+        }
+        // Inspeccionar los primeros bytes reales (magic numbers) sin decodificar toda la foto
+        const muestraCabecera = Buffer.from(limpio.slice(0, 360), 'base64');
+        if (!esBinarioImagenSeguro(muestraCabecera, mime)) {
+            return rechazo(
+                'FOTO_INVALIDA',
+                `El contenido real de "${nombre}" no corresponde a una imagen segura o no coincide con ${mime}`
             );
         }
         medidas.push({ nombre, mime, base64: limpio, bytes });

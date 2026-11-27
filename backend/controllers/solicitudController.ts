@@ -9,6 +9,7 @@ import { generarNumeroComprobanteSolicitud } from '../services/solicitudInsumosS
 import { ejecutarTransaccion } from '../services/transaccion';
 import { verificarInsumoNoBloqueadoPorConteo } from './conteoFisicoController';
 import { recalcularFinanzasProyectoEnTransaccion } from './motorFinancieroProyectoController';
+import { verificarTecnicoAsignadoAProyecto } from './proyectoController';
 
 export interface ItemSolicitudEmisionInput {
     id_articulo?: number;
@@ -88,6 +89,7 @@ export const emitirSolicitudInsumosEnTransaccion = async (
         id_proyecto?: number;
         proyecto_id?: number;
         id_usuario?: number | null;
+        rol_ejecutor?: string | null;
         descripcion_solicitud?: string | null;
         items?: ItemSolicitudEmisionInput[];
         lineas?: ItemSolicitudEmisionInput[];
@@ -129,6 +131,11 @@ export const emitirSolicitudInsumosEnTransaccion = async (
             400,
             `Solo se pueden solicitar insumos para proyectos activos. El proyecto "${proyecto.nombre_proyecto}" se encuentra en estado '${proyecto.estado_proyecto}'.`
         );
+    }
+
+    // 1.b Anti-IDOR: si quien solicita es un técnico, debe estar asignado activamente a este proyecto
+    if (normalizarRol(datos.rol_ejecutor) === 'technician') {
+        await verificarTecnicoAsignadoAProyecto(cliente, idProyecto, datos.id_usuario ?? null);
     }
 
     // 2. Resolver usuario solicitante
@@ -400,12 +407,14 @@ export const crearSolicitudInsumos = async (
     res: Response
 ): Promise<void> => {
     const idEjecutor = obtenerIdEjecutor(req);
+    const payload = typeof req.usuario === 'object' ? req.usuario : null;
 
     try {
         const resultado = await ejecutarTransaccion((cliente) =>
             emitirSolicitudInsumosEnTransaccion(cliente, {
                 ...req.body,
                 id_usuario: idEjecutor,
+                rol_ejecutor: payload?.rol,
             })
         );
 
