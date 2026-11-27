@@ -6,6 +6,7 @@ export interface ConfiguracionEntorno {
     dbDatabase: string;
     dbPort: number;
     dbSsl: boolean;
+    databaseUrl?: string;
     jwtSecret: string;
     corsOrigins: string[];
 }
@@ -31,6 +32,12 @@ const leerPuerto = (entorno: NodeJS.ProcessEnv, clave: string, defecto?: number)
         throw new Error(`${clave} debe ser un puerto numérico entre 1 y 65535`);
     }
     return puerto;
+};
+
+export const esHostSupabase = (hostOUrl: string | undefined): boolean => {
+    if (!hostOUrl) return false;
+    const limpio = hostOUrl.toLowerCase();
+    return limpio.includes('.supabase.com') || limpio.includes('.supabase.co');
 };
 
 export const validarOrigenesCors = (valor: string): string[] => {
@@ -70,21 +77,66 @@ export const obtenerOrigenesCors = (entorno: NodeJS.ProcessEnv = process.env): s
 
 /**
  * Resuelve la configuración TLS/SSL para PostgreSQL:
+ * - Si el host o DATABASE_URL apunta a Supabase (*.supabase.com / *.supabase.co), activa TLS
+ *   automáticamente y usa rejectUnauthorized=false por defecto (a menos que se provea DB_SSL_CA
+ *   o DB_SSL_REJECT_UNAUTHORIZED="true") para evitar el error SELF_SIGNED_CERT_IN_CHAIN del pooler.
  * - En producción activa TLS por defecto (salvo que DB_SSL="false" para red local aislada).
- * - En desarrollo se activa si DB_SSL="true".
+ * - En desarrollo se activa si DB_SSL="true" o si el host es Supabase.
  */
 export const resolverSslBaseDatos = (
     entorno: NodeJS.ProcessEnv = process.env
 ): false | { rejectUnauthorized: boolean; ca?: string } => {
     const produccion = entorno.NODE_ENV === 'production';
     const flag = entorno.DB_SSL?.trim().toLowerCase();
-    const habilitarSsl = flag === 'true' || (produccion && flag !== 'false');
+    const supabase = esHostSupabase(entorno.DB_HOST) || esHostSupabase(entorno.DATABASE_URL);
+    const habilitarSsl = flag === 'true' || (supabase && flag !== 'false') || (produccion && flag !== 'false');
 
     if (!habilitarSsl) return false;
 
-    const rejectUnauthorized = entorno.DB_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase() !== 'false';
+    const flagReject = entorno.DB_SSL_REJECT_UNAUTHORIZED?.trim().toLowerCase();
     const ca = entorno.DB_SSL_CA?.trim() || undefined;
+    // En Supabase Pooler sin CA personalizada, rejectUnauthorized debe ser false salvo que se fuerce "true"
+    const rejectUnauthorized =
+        flagReject === 'true'
+            ? true
+            : flagReject === 'false'
+                ? false
+                : supabase && !ca
+                    ? false
+                    : true;
+
     return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
+};
+
+/**
+ * Si se definió DATABASE_URL (p. ej. el URI del Session Pooler de Supabase), extrae sus componentes
+ * como respaldo para DB_HOST, DB_USER, DB_PASSWORD, DB_DATABASE y DB_PORT.
+ */
+const extraerDesdeDatabaseUrl = (
+    databaseUrl: string
+): {
+    dbHost: string;
+    dbUser: string;
+    dbPassword: string;
+    dbDatabase: string;
+    dbPort: number;
+} => {
+    let url: URL;
+    try {
+        url = new URL(databaseUrl);
+    } catch {
+        throw new Error('DATABASE_URL no tiene un formato URI de PostgreSQL válido');
+    }
+    const dbHost = url.hostname;
+    const dbUser = decodeURIComponent(url.username || '');
+    const dbPassword = decodeURIComponent(url.password || '');
+    const dbDatabase = decodeURIComponent(url.pathname.replace(/^\//, '') || 'postgres');
+    const dbPort = url.port ? Number(url.port) : 5432;
+
+    if (!dbHost || !dbUser || !dbPassword) {
+        throw new Error('DATABASE_URL debe incluir usuario, contraseña y host');
+    }
+    return { dbHost, dbUser, dbPassword, dbDatabase, dbPort };
 };
 
 export const validarConfiguracionEntorno = (
@@ -96,16 +148,21 @@ export const validarConfiguracionEntorno = (
     }
 
     const produccion = entorno.NODE_ENV === 'production';
-    const dbHost = leerRequerido(entorno, 'DB_HOST');
-    const dbUser = leerRequerido(entorno, 'DB_USER');
-    const dbPassword = leerRequerido(entorno, 'DB_PASSWORD');
-    const dbDatabase = leerRequerido(entorno, 'DB_DATABASE');
-    const dbPort = leerPuerto(entorno, 'DB_PORT');
+    const databaseUrl = entorno.DATABASE_URL?.trim() || undefined;
+    const desdeUrl = databaseUrl ? extraerDesdeDatabaseUrl(databaseUrl) : null;
+
+    const dbHost = desdeUrl?.dbHost ?? leerRequerido(entorno, 'DB_HOST');
+    const dbUser = desdeUrl?.dbUser ?? leerRequerido(entorno, 'DB_USER');
+    const dbPassword = desdeUrl?.dbPassword ?? leerRequerido(entorno, 'DB_PASSWORD');
+    const dbDatabase = desdeUrl?.dbDatabase ?? leerRequerido(entorno, 'DB_DATABASE');
+    const dbPort = desdeUrl?.dbPort ?? leerPuerto(entorno, 'DB_PORT');
     const port = leerPuerto(entorno, 'PORT', 3000);
     const corsOrigins = obtenerOrigenesCors(entorno);
 
     if (produccion) {
-        if (USUARIOS_BD_PROHIBIDOS_PRODUCCION.has(dbUser.toLowerCase())) {
+        // En Supabase Session Pooler el usuario es "postgres.<project_ref>", lo cual es válido.
+        // Solo se bloquea el superusuario literal "postgres" fuera de Supabase.
+        if (USUARIOS_BD_PROHIBIDOS_PRODUCCION.has(dbUser.toLowerCase()) && !esHostSupabase(dbHost)) {
             throw new Error(
                 `DB_USER no puede ser el superusuario "${dbUser}" en producción; usa una cuenta de aplicación con permisos mínimos`
             );
@@ -124,6 +181,7 @@ export const validarConfiguracionEntorno = (
         dbDatabase,
         dbPort,
         dbSsl: Boolean(resolverSslBaseDatos(entorno)),
+        databaseUrl,
         jwtSecret,
         corsOrigins,
     };

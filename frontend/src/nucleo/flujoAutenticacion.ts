@@ -131,10 +131,7 @@ export const resolverSesionSimulada = (correo: string): SesionAutenticada | null
 
   const roles: Rol[] = ["admin", "warehouse", "technician"];
   for (const r of roles) {
-    if (
-      USUARIOS[r].email.toLowerCase() === correoLimpio ||
-      (correoLimpio === "admin@fyag.cl" && r === "admin")
-    ) {
+    if (USUARIOS[r].email.toLowerCase() === correoLimpio) {
       return {
         idUsuario: r === "admin" ? 1 : r === "warehouse" ? 2 : 3,
         rol: r,

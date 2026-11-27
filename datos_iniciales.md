@@ -97,16 +97,20 @@ ON CONFLICT (id_proveedor) DO UPDATE SET
     correo_transferencia = EXCLUDED.correo_transferencia;
 
 -- =============================================================================
--- 6. USUARIOS DEL SISTEMA (Contraseñas con hash bcrypt $2a$...)
--- Contraseña plana por defecto para desarrollo: AdminPrueba1 / Tecnico123 / Bodega123
+-- 6. USUARIOS DEL SISTEMA (Contraseñas con hash bcrypt de "Fyag2026.")
+-- Cuentas principales del proyecto:
+--   • adminfyag@gmail.com   (Administrador) — Contraseña: Fyag2026.
+--   • bodegafyag@gmail.com  (Bodeguero)     — Contraseña: Fyag2026.
+--   • tecnicofyag@gmail.com (Técnico)       — Contraseña: Fyag2026.
 -- =============================================================================
 INSERT INTO usuario (id_usuario, nombre_usuario, apellido_usuario, correo_usuario, rut, id_rol, especializacion, contrasena_hash, activo, intentos_fallidos, bloqueado_hasta) VALUES
-    (1, 'Javier',    'Muñoz Contreras', 'javier.munoz@fyag.cl',   '12.456.789-5', 1, 'Administración General y Operaciones', '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL),
-    (2, 'Camila',    'Vera Soto',       'camila.vera@fyag.cl',    '15.321.654-2', 2, 'Logística, Bodega y Abastecimiento',   '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL),
-    (3, 'Alejandro', 'Rojas Pino',      'alejandro.rojas@fyag.cl', '17.894.562-8', 3, 'Electricidad SEC clase A',            '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL),
-    (4, 'Matías',    'Fuentes Araya',   'matias.fuentes@fyag.cl',  '16.783.421-3', 3, 'Climatización y Refrigeración',       '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL),
-    (5, 'Constanza', 'Leiva Núñez',     'constanza.leiva@fyag.cl', '18.234.905-9', 3, 'Gasfitería e Instalaciones Sanitarias', '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL),
-    (6, 'Pedro',     'Aguilera Mora',   'pedro.aguilera@fyag.cl',  '14.567.832-4', 3, 'Soldadura y Estructuras Metálicas',   '$2a$10$tZ3dKz8G0h9LpQ5e1uW0wOO1Qo2h6vN3o0d5uP8s8w3R9bQ6vC9h6', TRUE, 0, NULL)
+    (1, 'Javier',    'Muñoz Contreras', 'adminfyag@gmail.com',     '12.456.789-5', 1, 'Administración General y Operaciones', '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (2, 'Camila',    'Vera Soto',       'bodegafyag@gmail.com',    '15.321.654-2', 2, 'Logística, Bodega y Abastecimiento',   '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (3, 'Alejandro', 'Rojas Pino',      'tecnicofyag@gmail.com',   '17.894.562-8', 3, 'Electricidad SEC clase A',            '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (4, 'Matías',    'Fuentes Araya',   'matias.fuentes@fyag.cl',  '16.783.421-3', 3, 'Climatización y Refrigeración',       '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (5, 'Constanza', 'Leiva Núñez',     'constanza.leiva@fyag.cl', '18.234.905-9', 3, 'Gasfitería e Instalaciones Sanitarias', '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (6, 'Pedro',     'Aguilera Mora',   'pedro.aguilera@fyag.cl',  '14.567.832-4', 3, 'Soldadura y Estructuras Metálicas',   '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL),
+    (7, 'Diego',     'Pizarro Tapia',   'diego.pizarro@fyag.cl',   '19.432.109-6', 3, 'Técnico de Respaldo (Prueba Anonimización)', '$2b$10$KHkwmVHST2uvEo2HM8VrjOgOWD2xpE2yQCiWRBubHlyP09l3DwG3S', TRUE, 0, NULL)
 ON CONFLICT (id_usuario) DO UPDATE SET 
     correo_usuario = EXCLUDED.correo_usuario,
     rut = EXCLUDED.rut,
@@ -145,17 +149,49 @@ ON CONFLICT (clave) DO UPDATE SET
 
 -- Poblar tabla parametro_sistema (usada por services/parametros.ts del backend)
 INSERT INTO parametro_sistema (clave, descripcion, valor, valor_minimo, valor_maximo, unidad) VALUES
-    ('intentos_bloqueo',             'Intentos fallidos de login permitidos antes de bloquear la cuenta', 5,  1, 10,   'intentos'),
-    ('minutos_bloqueo',              'Duración del bloqueo de la cuenta tras exceder los intentos',       15, 1, 1440, 'minutos'),
-    ('minutos_inactividad_sesion',   'Minutos de inactividad web antes de expirar la sesión',             30, 5, 480,  'minutos'),
-    ('minutos_validez_enlace_clave', 'Validez del enlace de recuperación de contraseña',                30, 5, 120,  'minutos'),
-    ('alerta_vencimiento_proyecto_horas', 'Anticipación para alertar sobre vencimiento de proyecto (H39)', 48, 1, 720, 'horas')
+    ('intentos_bloqueo',                  'Intentos fallidos de login permitidos antes de bloquear la cuenta', 5,     1,    10,     'intentos'),
+    ('minutos_bloqueo',                   'Duración del bloqueo de la cuenta tras exceder los intentos',       15,    1,    1440,   'minutos'),
+    ('minutos_inactividad_sesion',        'Minutos de inactividad web antes de expirar la sesión',             30,    5,    480,    'minutos'),
+    ('minutos_validez_enlace_clave',      'Validez del enlace de recuperación de contraseña',                  30,    5,    120,    'minutos'),
+    ('alerta_vencimiento_proyecto_horas', 'Anticipación para alertar sobre vencimiento de proyecto (H39)',     48,    1,    720,    'horas'),
+    ('umbral_diferencia_conteo',          'Porcentaje máximo de diferencia en conteo físico sin firma Admin',  5,     1,    50,     '%'),
+    ('tamano_impresion_qr_mm',            'Tamaño en milímetros de etiquetas QR imprimibles (H39)',            35,    15,   120,    'mm'),
+    ('dias_retencion_alertas',            'Días de conservación de alertas y notificaciones en bandeja',       90,    7,    365,    'días'),
+    ('costo_hora_hombre',                 'Costo estándar por hora-hombre de técnico para proyectos (H39)',    15000, 1000, 500000, 'CLP/h'),
+    ('dias_max_prestamo_herramienta',     'Días de préstamo de herramienta antes de alertar atraso',           7,     1,    90,     'días'),
+    ('dias_aviso_mantenimiento_previo',   'Primer aviso de mantenimiento de herramienta antes del vencimiento',7,     2,    60,     'días'),
+    ('dias_aviso_mantenimiento_final',    'Segundo aviso de mantenimiento de herramienta antes del vencimiento',1,    0,    30,     'días'),
+    ('dias_retencion_respaldos',          'Días de conservación de respaldos en la nube',                      30,    7,    365,    'días'),
+    ('horas_max_perdida_datos',           'Objetivo RPO: horas máximas de datos que se pueden perder',         24,    1,    168,    'horas'),
+    ('horas_max_recuperacion',            'Objetivo RTO: horas máximas para restaurar',                        4,     1,    72,     'horas'),
+    ('dias_prueba_restauracion',          'Frecuencia mínima de prueba de restauración (trimestral = 90 días)',90,    30,   365,    'días')
 ON CONFLICT (clave) DO UPDATE SET
     valor = EXCLUDED.valor,
     valor_minimo = EXCLUDED.valor_minimo,
     valor_maximo = EXCLUDED.valor_maximo,
     descripcion = EXCLUDED.descripcion,
     unidad = EXCLUDED.unidad;
+
+-- Poblar configuración de envío de correo por tipo de alerta con los correos principales del proyecto
+INSERT INTO configuracion_correo_alertas (tipo_alerta, codigo_historia, descripcion, enviar_correo, correo_destino_defecto) VALUES
+    ('stock_minimo_oc',                 'H3',  'Stock disponible bajo el mínimo con borrador de OC automático', TRUE,  'adminfyag@gmail.com'),
+    ('merma_inventario',                'H17', 'Baja de stock disponible por merma valorizada a PMP',          TRUE,  'adminfyag@gmail.com'),
+    ('conteo_pendiente_aprobacion',     'H19', 'Conteo físico retenido por diferencia mayor al umbral H39',    TRUE,  'adminfyag@gmail.com'),
+    ('devolucion_en_transito',          'H21', 'Devolución de sobrante declarada por técnico en tránsito',     FALSE, 'bodegafyag@gmail.com'),
+    ('diferencia_devolucion',           'H22', 'Diferencia entre material declarado por técnico y recibido',   TRUE,  'adminfyag@gmail.com'),
+    ('devolucion_proveedor_cuarentena', 'H24', 'Egreso de productos defectuosos desde cuarentena a proveedor', TRUE,  'adminfyag@gmail.com'),
+    ('discrepancia_factura_recepcion',  'H25', 'Discrepancia entre factura de compra y recepción de OC',       TRUE,  'adminfyag@gmail.com'),
+    ('recepcion_discrepancia',          'H33', 'Recepción de OC con ítems defectuosos o faltantes',            FALSE, 'adminfyag@gmail.com'),
+    ('presupuesto_proyecto_amarillo',   'H27', 'Proyecto alcanzó entre 80 % y 100 % de su presupuesto',        TRUE,  'adminfyag@gmail.com'),
+    ('presupuesto_proyecto_rojo',       'H27', 'Proyecto superó el 100 % de su presupuesto (Sobrecosto)',      TRUE,  'adminfyag@gmail.com'),
+    ('herramienta_no_devuelta',         'H43', 'Herramienta no devuelta tras 7 días o al cerrar el proyecto',  TRUE,  'adminfyag@gmail.com'),
+    ('mantenimiento_herramienta_proximo','H40','Mantenimiento de herramienta próximo a vencer',                TRUE,  'adminfyag@gmail.com'),
+    ('respaldo_fallido',                'SIS', 'Falló el respaldo diario de la base de datos en la nube',      TRUE,  'adminfyag@gmail.com'),
+    ('respaldo_desactualizado',         'SIS', 'Sin respaldo exitoso dentro del objetivo de 24 horas (RPO)',   TRUE,  'adminfyag@gmail.com'),
+    ('prueba_restauracion_pendiente',   'SIS', 'Prueba trimestral de restauración vencida',                    TRUE,  'adminfyag@gmail.com')
+ON CONFLICT (tipo_alerta) DO UPDATE SET
+    enviar_correo = EXCLUDED.enviar_correo,
+    correo_destino_defecto = EXCLUDED.correo_destino_defecto;
 
 -- =============================================================================
 -- 8. NOTIFICACIONES CONSOLIDADAS [DB][SCRUM]
@@ -349,14 +385,14 @@ BEGIN
     SELECT COUNT(*)
     INTO alertas_activas
     FROM notificaciones
-    WHERE origen = 'H22'
+    WHERE origen = 'PROYECTOS'
       AND tipo = 'vencimiento_proyecto_48h'
       AND mensaje LIKE '%SCRUM-2026-ACT%';
 
     SELECT COUNT(*)
     INTO alertas_cerradas
     FROM notificaciones
-    WHERE origen = 'H22'
+    WHERE origen = 'PROYECTOS'
       AND tipo = 'vencimiento_proyecto_48h'
       AND mensaje LIKE '%SCRUM-2026-CER%';
 
@@ -606,14 +642,14 @@ SELECT setval('seguimiento_contacto_cliente_id_seguimiento_seq', (SELECT MAX(id_
 -- 19. LOG DE ACCESOS Y AUDITORÍA INICIAL
 -- =============================================================================
 INSERT INTO log_accesos (usuario, id_usuario, fecha, hora, ip, exito, resultado, fecha_hora) VALUES
-    ('javier.munoz@fyag.cl',   1, CURRENT_DATE, '08:00:15', '192.168.1.100', TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '2 hours'),
-    ('camila.vera@fyag.cl',    2, CURRENT_DATE, '08:15:22', '192.168.1.105', TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '1 hour 45 minutes'),
-    ('alejandro.rojas@fyag.cl',3, CURRENT_DATE, '08:30:05', '190.161.45.12',  TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '1 hour 30 minutes'),
+    ('adminfyag@gmail.com',    1, CURRENT_DATE, '08:00:15', '192.168.1.100', TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '2 hours'),
+    ('bodegafyag@gmail.com',   2, CURRENT_DATE, '08:15:22', '192.168.1.105', TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '1 hour 45 minutes'),
+    ('tecnicofyag@gmail.com',  3, CURRENT_DATE, '08:30:05', '190.161.45.12',  TRUE,  'exito',            CURRENT_TIMESTAMP - INTERVAL '1 hour 30 minutes'),
     ('desconocido@fyag.cl',    NULL, CURRENT_DATE, '08:45:10', '201.214.88.5',  FALSE, 'cuenta_inexistente',CURRENT_TIMESTAMP - INTERVAL '1 hour 15 minutes');
 
 INSERT INTO auditoria (usuario, id_usuario, fecha, hora, entidad, accion, campo_modificado, valor_anterior, valor_nuevo, id_registro_afectado, descripcion) VALUES
-    ('javier.munoz@fyag.cl', 1, CURRENT_DATE, '08:05:00', 'parametros', 'UPDATE', 'costo_hora_tecnico', '18000', '18500', NULL, 'Ajuste semestral de tarifa HH técnica'),
-    ('camila.vera@fyag.cl',  2, CURRENT_DATE, '09:00:00', 'insumos',    'UPDATE', 'stock_minimo',       '100',   '150',   1,    'Aumento de stock de seguridad para Cable THHN 12');
+    ('adminfyag@gmail.com',  1, CURRENT_DATE, '08:05:00', 'parametros', 'UPDATE', 'costo_hora_tecnico', '18000', '18500', NULL, 'Ajuste semestral de tarifa HH técnica'),
+    ('bodegafyag@gmail.com', 2, CURRENT_DATE, '09:00:00', 'insumos',    'UPDATE', 'stock_minimo',       '100',   '150',   1,    'Aumento de stock de seguridad para Cable THHN 12');
 
 -- =============================================================================
 -- 20. CARDEX: TRAZABILIDAD HISTÓRICA, SALDO Y PMP POSTERIOR AL MOVIMIENTO [DB][SCRUM]
@@ -903,6 +939,7 @@ INSERT INTO historial_respaldos (
     rto_segundos, mensaje_error
 ) VALUES (
     1, 'Completo', CURRENT_TIMESTAMP - INTERVAL '2 hours 10 minutes', CURRENT_TIMESTAMP - INTERVAL '2 hours',
+    'fyag-2026-11-25.dump.enc',
     'fyag-backups/postgresql/2026/11/fyag-2026-11-25.dump.enc', 'S3-compatible',
     18432000, '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef', TRUE,
     'AES-256', 'Completado', TRUE, CURRENT_TIMESTAMP - INTERVAL '1 hour',
@@ -949,18 +986,18 @@ $$;
 
 -- =============================================================================
 -- 29. ANONIMIZACIÓN IRREVERSIBLE DE TRABAJADORES [DB][SCRUM]
--- El usuario 3 posee un movimiento de Cardex y un evento de auditoría antes
--- de ejecutar el procedimiento; ambos conservan id_usuario = 3 después.
+-- Se utiliza el usuario 7 (creado exclusivamente para esta prueba) para mantener
+-- intacta y activa la cuenta principal del Técnico #3 (tecnicofyag@gmail.com).
 -- =============================================================================
 INSERT INTO movimientos_inventario
     (id_insumo, tipo_movimiento, destino_bolsa, cantidad, referencia, id_usuario)
 VALUES
-    (1, 'Ajuste', 'disponible', 1.000, 'Movimiento SCRUM previo a anonimización del usuario 3', 3);
+    (1, 'Ajuste', 'disponible', 1.000, 'Movimiento SCRUM previo a anonimización del usuario 7', 7);
 
 INSERT INTO auditoria
     (usuario, id_usuario, entidad, accion, campo_modificado, valor_anterior, valor_nuevo, descripcion)
 VALUES
-    ('alejandro.rojas@fyag.cl', 3, 'movimientos_inventario', 'INSERT', NULL, NULL, NULL,
+    ('diego.pizarro@fyag.cl', 7, 'movimientos_inventario', 'INSERT', NULL, NULL, NULL,
      'Evento SCRUM para validar conservación de auditoría al anonimizar el usuario');
 
 DO $$
@@ -973,27 +1010,27 @@ DECLARE
 BEGIN
     SELECT COUNT(*) INTO movimientos_antes
     FROM movimientos_inventario
-    WHERE id_usuario = 3;
+    WHERE id_usuario = 7;
 
-    CALL sp_anonimizar_usuario(3);
+    CALL sp_anonimizar_usuario(7);
 
     SELECT COUNT(*) INTO movimientos_despues
     FROM movimientos_inventario
-    WHERE id_usuario = 3;
+    WHERE id_usuario = 7;
 
     SELECT COUNT(*) INTO auditorias_usuario
     FROM auditoria
-    WHERE id_usuario = 3;
+    WHERE id_usuario = 7;
 
     SELECT identificador_anonimo, correo_usuario
     INTO identificador, correo_actual
     FROM usuario
-    WHERE id_usuario = 3;
+    WHERE id_usuario = 7;
 
     IF movimientos_antes <> movimientos_despues
        OR auditorias_usuario < 1
-       OR identificador <> 'ANON-00000003'
-       OR correo_actual <> 'anon-00000003@anonimizado.invalid' THEN
+       OR identificador <> 'ANON-00000007'
+       OR correo_actual <> 'anon-00000007@anonimizado.invalid' THEN
         RAISE EXCEPTION 'Verificación de anonimización fallida: Cardex antes=% después=%, auditorías=%, identificador=%, correo=%',
             movimientos_antes, movimientos_despues, auditorias_usuario, identificador, correo_actual;
     END IF;
