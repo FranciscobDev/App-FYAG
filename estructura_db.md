@@ -135,8 +135,38 @@ CREATE TABLE herramienta (
     categoria categoria_enum NOT NULL,
     marca_herramienta VARCHAR(250),
     modelo_herramienta VARCHAR(250),
-    frecuencia_mantencion INT
+    frecuencia_mantencion INT,
+    codigo_unico VARCHAR(50) NOT NULL UNIQUE,
+    nombre VARCHAR(100) NOT NULL,
+    valor NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (valor >= 0),
+    estado VARCHAR(20) NOT NULL DEFAULT 'Disponible'
+        CHECK (estado IN ('Disponible', 'Asignada', 'En mantención', 'Dada de baja')),
+    fecha_prox_mantenimiento DATE,
+    codigo_qr VARCHAR(255) UNIQUE,
+    activo BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT chk_herramienta_baja_activo
+        CHECK (activo OR estado = 'Dada de baja')
 );
+
+CREATE INDEX idx_herramienta_estado_activo ON herramienta (estado, activo);
+CREATE INDEX idx_herramienta_fecha_mantenimiento ON herramienta (fecha_prox_mantenimiento)
+    WHERE activo = TRUE;
+
+CREATE OR REPLACE VIEW herramientas AS
+SELECT
+    id_herramienta,
+    codigo_unico,
+    nombre,
+    valor,
+    estado,
+    fecha_prox_mantenimiento,
+    codigo_qr,
+    activo
+FROM herramienta;
+
+CREATE TRIGGER trg_impedir_borrado_herramienta
+BEFORE DELETE ON herramienta
+FOR EACH ROW EXECUTE FUNCTION fn_impedir_borrado_fisico();
 
 -- ==========================================
 -- 3. USUARIOS, AUDITORÍA, ACCESOS Y PROYECTOS
@@ -149,6 +179,9 @@ CREATE TABLE usuario (
     apellido_usuario VARCHAR(50) NOT NULL,
     correo_usuario VARCHAR(250) UNIQUE NOT NULL,
     rut VARCHAR(20) UNIQUE,
+    telefono_usuario VARCHAR(30),
+    identificador_anonimo VARCHAR(30) UNIQUE,
+    fecha_anonimizacion TIMESTAMPTZ NULL,
     id_rol INT NOT NULL,
     especializacion VARCHAR(250),
     contrasena_hash VARCHAR(250) NOT NULL,
@@ -168,6 +201,9 @@ SELECT
     apellido_usuario,
     correo_usuario,
     rut,
+    telefono_usuario,
+    identificador_anonimo,
+    fecha_anonimizacion,
     id_rol,
     especializacion,
     contrasena_hash,
@@ -304,6 +340,72 @@ CREATE TABLE parametro_sistema (
     CONSTRAINT parametro_valor_en_rango CHECK (valor BETWEEN valor_minimo AND valor_maximo)
 );
 
+-- Tabla: Notificaciones (historial consolidado de eventos H3/H17/H19/H21/H22/H24/H25/H33)
+-- Una notificación puede dirigirse a un usuario específico, a un rol completo o a ambos.
+CREATE TABLE notificaciones (
+    id_notificacion SERIAL PRIMARY KEY,
+    usuario_destino_id INT REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    rol_destino roles_enum,
+    origen VARCHAR(3) NOT NULL,
+    tipo VARCHAR(60) NOT NULL,
+    mensaje TEXT NOT NULL,
+    leida BOOLEAN NOT NULL DEFAULT FALSE,
+    enviar_correo BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_notificacion_origen CHECK (origen IN ('H3', 'H17', 'H19', 'H21', 'H22', 'H24', 'H25', 'H33')),
+    CONSTRAINT chk_notificacion_destino CHECK (usuario_destino_id IS NOT NULL OR rol_destino IS NOT NULL),
+    CONSTRAINT chk_notificacion_mensaje_no_vacio CHECK (BTRIM(mensaje) <> '')
+);
+
+CREATE INDEX idx_notificaciones_usuario_estado
+    ON notificaciones (usuario_destino_id, leida, fecha_creacion DESC);
+CREATE INDEX idx_notificaciones_rol_estado
+    ON notificaciones (rol_destino, leida, fecha_creacion DESC);
+CREATE INDEX idx_notificaciones_fecha_creacion
+    ON notificaciones (fecha_creacion);
+CREATE INDEX idx_notificaciones_correo_pendiente
+    ON notificaciones (enviar_correo, fecha_creacion)
+    WHERE enviar_correo = TRUE;
+
+-- Purga automática: conserva el historial de notificaciones durante 90 días.
+CREATE OR REPLACE FUNCTION fn_purgar_notificaciones_expiradas()
+RETURNS INTEGER AS $$
+DECLARE
+    eliminadas INTEGER;
+BEGIN
+    DELETE FROM notificaciones
+    WHERE fecha_creacion < CURRENT_TIMESTAMP - INTERVAL '90 days';
+
+    GET DIAGNOSTICS eliminadas = ROW_COUNT;
+    RETURN eliminadas;
+END;
+$$ LANGUAGE plpgsql;
+
+-- La tarea se registra en pg_cron si la extensión está disponible en el servidor.
+-- Si el entorno no la tiene habilitada, la función queda disponible para el scheduler
+-- administrado por PostgreSQL o por la infraestructura.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'purga-notificaciones-90-dias') THEN
+                PERFORM cron.unschedule('purga-notificaciones-90-dias');
+            END IF;
+
+            PERFORM cron.schedule(
+                'purga-notificaciones-90-dias',
+                '0 3 * * *',
+                'SELECT fn_purgar_notificaciones_expiradas();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para la purga de notificaciones: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
+
 -- Precarga de umbrales requeridos (H1, H19, H27, H22, H23, H24, H41, H47)
 INSERT INTO parametros (clave, valor_actual, valor_defecto, min, max, descripcion, unidad) VALUES
     ('intentos_bloqueo', 5, 5, 1, 10, 'Intentos fallidos de login permitidos antes de bloquear la cuenta (H1)', 'intentos'),
@@ -316,6 +418,7 @@ INSERT INTO parametros (clave, valor_actual, valor_defecto, min, max, descripcio
     ('alerta_reposicion_dias', 7, 7, 1, 60, 'Días de anticipación para alerta de sugerencia de compra (H23)', 'días'),
     ('alerta_cuarentena_horas', 24, 24, 1, 168, 'Tiempo máximo sin resolver ítem en cuarentena (H24)', 'horas'),
     ('edicion_limite_horas', 48, 48, 1, 720, 'Plazo máximo permitido para editar registros o recepciones (H41)', 'horas'),
+    ('alerta_vencimiento_proyecto_horas', 48, 48, 1, 720, 'Anticipación para alertar al técnico sobre el vencimiento de un proyecto activo (H39)', 'horas'),
     ('qr_tamano_pixeles', 250, 250, 100, 1000, 'Tamaño estándar de renderizado de etiquetas QR (H47)', 'px');
 
 -- Tabla: Proyecto
@@ -369,15 +472,112 @@ SELECT
 FROM asignaciones_proyecto
 WHERE activo = TRUE;
 
--- Tabla: Horas_trabajadas
+-- Job: alerta de vencimiento de proyectos activos [BACK-2][SCRUM]
+-- Con fecha_fin de tipo DATE, 48 horas equivalen a dos días calendario para el
+-- job diario. Se excluyen explícitamente los proyectos completados o cancelados.
+CREATE OR REPLACE FUNCTION fn_generar_alertas_vencimiento_proyecto()
+RETURNS INTEGER AS $$
+DECLARE
+    insertadas INTEGER;
+BEGIN
+    INSERT INTO notificaciones (
+        usuario_destino_id, origen, tipo, mensaje, leida, enviar_correo, fecha_creacion
+    )
+    SELECT
+        ap.tecnico_id,
+        'H22',
+        'vencimiento_proyecto_48h',
+        FORMAT('El proyecto %s (%s) vence en 48 horas. Prioriza las tareas pendientes.', p.codigo_proyecto, p.nombre_proyecto),
+        FALSE,
+        FALSE,
+        CURRENT_TIMESTAMP
+    FROM proyecto p
+    INNER JOIN asignaciones_proyecto ap
+        ON ap.proyecto_id = p.id_proyecto
+       AND ap.activo = TRUE
+    WHERE p.estado_proyecto IN ('Planificado', 'En Proceso', 'Pausado')
+      AND p.fecha_fin = CURRENT_DATE + (
+          (SELECT ROUND(valor_actual)::INT
+           FROM parametros
+           WHERE clave = 'alerta_vencimiento_proyecto_horas') / 24
+      )::INT
+      AND NOT EXISTS (
+          SELECT 1
+          FROM notificaciones n
+          WHERE n.usuario_destino_id = ap.tecnico_id
+            AND n.origen = 'H22'
+            AND n.tipo = 'vencimiento_proyecto_48h'
+            AND n.mensaje = FORMAT('El proyecto %s (%s) vence en 48 horas. Prioriza las tareas pendientes.', p.codigo_proyecto, p.nombre_proyecto)
+            AND n.fecha_creacion::DATE = CURRENT_DATE
+      );
+
+    GET DIAGNOSTICS insertadas = ROW_COUNT;
+    RETURN insertadas;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Ejecución diaria a las 00:05. La alerta es visual/push mediante la notificación.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'alertas-vencimiento-proyecto-48h') THEN
+                PERFORM cron.unschedule('alertas-vencimiento-proyecto-48h');
+            END IF;
+            PERFORM cron.schedule(
+                'alertas-vencimiento-proyecto-48h',
+                '5 0 * * *',
+                'SELECT fn_generar_alertas_vencimiento_proyecto();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para alertas de vencimiento: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
+
+-- Tabla: Horas_trabajadas [DB]
 CREATE TABLE horas_trabajadas (
     id_registro_horas SERIAL PRIMARY KEY,
-    id_usuario INT NOT NULL,
-    id_proyecto INT NOT NULL,
-    horas_proyecto_trabajadas NUMERIC(5,2) NOT NULL,
-    CONSTRAINT fk_horas_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
-    CONSTRAINT fk_horas_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+    proyecto_id INT NOT NULL,
+    tecnico_id INT NOT NULL,
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    horas NUMERIC(4,1) NOT NULL,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_horas_proyecto FOREIGN KEY (proyecto_id) REFERENCES proyecto(id_proyecto) ON DELETE CASCADE,
+    CONSTRAINT fk_horas_tecnico FOREIGN KEY (tecnico_id) REFERENCES usuario(id_usuario) ON DELETE CASCADE,
+    CONSTRAINT chk_horas_bloques_media_hora CHECK (horas > 0 AND MOD(horas, 0.5) = 0 AND horas <= 24.0)
 );
+
+CREATE INDEX idx_horas_trabajadas_tecnico_fecha ON horas_trabajadas (tecnico_id, fecha);
+CREATE INDEX idx_horas_trabajadas_proyecto ON horas_trabajadas (proyecto_id);
+
+-- Trigger: Impide superar un total acumulado de 24 horas diarias por técnico entre todos sus proyectos [DB]
+CREATE OR REPLACE FUNCTION fn_validar_maximo_horas_diarias()
+RETURNS TRIGGER AS $$
+DECLARE
+    total_horas NUMERIC(5,1);
+BEGIN
+    SELECT COALESCE(SUM(horas), 0)
+    INTO total_horas
+    FROM horas_trabajadas
+    WHERE tecnico_id = NEW.tecnico_id
+      AND fecha = NEW.fecha
+      AND id_registro_horas <> COALESCE(NEW.id_registro_horas, 0);
+
+    IF (total_horas + NEW.horas) > 24.0 THEN
+        RAISE EXCEPTION 'Límite diario excedido: El técnico no puede registrar más de 24 horas totales en un mismo día (fecha: %, horas registradas: %, intento: %).',
+            NEW.fecha, total_horas, NEW.horas;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_maximo_horas_diarias
+BEFORE INSERT OR UPDATE ON horas_trabajadas
+FOR EACH ROW EXECUTE FUNCTION fn_validar_maximo_horas_diarias();
 
 -- ==========================================
 -- 4. ARTÍCULOS E INVENTARIO (INSUMOS)
@@ -397,6 +597,7 @@ CREATE TABLE insumos (
     precio_unitario INT DEFAULT 0,
     codigo_qr VARCHAR(255) UNIQUE,
     activo BOOLEAN NOT NULL DEFAULT TRUE,
+    bloqueado_por_conteo BOOLEAN NOT NULL DEFAULT FALSE,
     fecha_creacion TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -435,7 +636,8 @@ SELECT
     categoria_enum AS categoria,
     proveedor_id AS id_proveedor,
     id_unidad,
-    activo
+    activo,
+    bloqueado_por_conteo
 FROM insumos;
 
 -- Tabla: Articulo_en_proyecto
@@ -449,6 +651,39 @@ CREATE TABLE articulo_en_proyecto (
     CONSTRAINT fk_art_proj_insumo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo),
     CONSTRAINT fk_art_proj_unidad FOREIGN KEY (id_unidad) REFERENCES unidades_medida(id_unidad)
 );
+
+-- Tabla: Avances_proyecto [DB]
+CREATE TABLE avances_proyecto (
+    id_avance SERIAL PRIMARY KEY,
+    proyecto_id INT NOT NULL,
+    tecnico_id INT NOT NULL,
+    porcentaje NUMERIC(5,2) NOT NULL,
+    comentario TEXT,
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    hora TIME NOT NULL DEFAULT CURRENT_TIME,
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_avance_porcentaje_rango CHECK (porcentaje >= 0.00 AND porcentaje <= 100.00),
+    CONSTRAINT fk_avances_proyecto FOREIGN KEY (proyecto_id) REFERENCES proyecto(id_proyecto) ON DELETE CASCADE,
+    CONSTRAINT fk_avances_tecnico FOREIGN KEY (tecnico_id) REFERENCES usuario(id_usuario) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_avances_proyecto_proyecto ON avances_proyecto (proyecto_id, fecha DESC);
+CREATE INDEX idx_avances_proyecto_tecnico ON avances_proyecto (tecnico_id);
+
+-- Tabla: Avance_materiales_usados [DB]
+CREATE TABLE avance_materiales_usados (
+    id_avance_material SERIAL PRIMARY KEY,
+    id_avance INT NOT NULL,
+    id_articulo INT NOT NULL,
+    cantidad_usada NUMERIC(12,3) NOT NULL CHECK (cantidad_usada > 0),
+    id_unidad INT,
+    CONSTRAINT fk_avance_mat_avance FOREIGN KEY (id_avance) REFERENCES avances_proyecto(id_avance) ON DELETE CASCADE,
+    CONSTRAINT fk_avance_mat_insumo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    CONSTRAINT fk_avance_mat_unidad FOREIGN KEY (id_unidad) REFERENCES unidades_medida(id_unidad)
+);
+
+CREATE INDEX idx_avance_mat_avance ON avance_materiales_usados (id_avance);
+CREATE INDEX idx_avance_mat_insumo ON avance_materiales_usados (id_articulo);
 
 -- Tabla: Articulos_stock
 CREATE TABLE articulos_stock (
@@ -466,6 +701,30 @@ CREATE TABLE articulos_stock (
     CONSTRAINT fk_stock_insumo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo) ON DELETE CASCADE
 );
 
+-- Tabla: Contenedor_stock (Contenedores fraccionables como rollos o bobinas con remanente en 3 decimales)
+CREATE TABLE contenedor_stock (
+    id_contenedor SERIAL PRIMARY KEY,
+    id_articulo INT NOT NULL REFERENCES insumos(id_insumo),
+    capacidad_inicial NUMERIC(12,3) NOT NULL CHECK (capacidad_inicial > 0),
+    cantidad_restante NUMERIC(12,3) NOT NULL CHECK (cantidad_restante >= 0),
+    activo BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- Tabla: Codigos_qr_insumos [DB] (Trazabilidad por unidad física rotulada; múltiples QR únicos por insumo)
+CREATE TABLE codigos_qr_insumos (
+    id_qr SERIAL PRIMARY KEY,
+    codigo_unico VARCHAR(100) NOT NULL UNIQUE,
+    insumo_id INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE CASCADE,
+    sku VARCHAR(100) NOT NULL,
+    nombre VARCHAR(250) NOT NULL,
+    unidad_medida VARCHAR(50) NOT NULL,
+    asignado_fisicamente BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_codigos_qr_insumo ON codigos_qr_insumos (insumo_id);
+CREATE INDEX idx_codigos_qr_asignado ON codigos_qr_insumos (asignado_fisicamente);
+
 -- Tabla: Movimiento_Inventario
 CREATE TABLE movimiento_inventario (
     id_movimiento SERIAL PRIMARY KEY,
@@ -478,19 +737,24 @@ CREATE TABLE movimiento_inventario (
     CONSTRAINT fk_mov_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
 
--- Tabla: Mermas
+-- Tabla: Mermas [DB] (Bajas de inventario con motivo tipificado y justificación obligatoria)
 CREATE TABLE mermas (
     id_merma SERIAL PRIMARY KEY,
-    id_insumo INT NOT NULL,
-    precio_unitario INT DEFAULT 0,
-    cantidad_baja NUMERIC(12,3) NOT NULL CHECK (cantidad_baja > 0),
-    fecha_merma DATE DEFAULT CURRENT_DATE,
-    id_usuario INT,
-    observacion_merma VARCHAR(250),
-    perdida_valor_total INT DEFAULT 0,
-    CONSTRAINT fk_mermas_insumo FOREIGN KEY (id_insumo) REFERENCES insumos(id_insumo),
-    CONSTRAINT fk_mermas_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
+    insumo_id INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    bodeguero_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    motivo VARCHAR(30) NOT NULL,
+    observacion VARCHAR(250) NOT NULL,
+    cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
+    costo_pmp_total NUMERIC(14,2) NOT NULL DEFAULT 0.00 CHECK (costo_pmp_total >= 0),
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_merma_motivo CHECK (motivo IN ('daño', 'caducidad', 'pérdida', 'otro')),
+    CONSTRAINT chk_merma_observacion_no_vacia CHECK (TRIM(observacion) <> '')
 );
+
+CREATE INDEX idx_mermas_insumo ON mermas (insumo_id);
+CREATE INDEX idx_mermas_bodeguero ON mermas (bodeguero_id);
+CREATE INDEX idx_mermas_fecha ON mermas (fecha);
 
 -- Tabla: Auditoria_stock
 CREATE TABLE auditoria_stock (
@@ -505,6 +769,28 @@ CREATE TABLE auditoria_stock (
     CONSTRAINT fk_auditoria_insumo FOREIGN KEY (id_insumo) REFERENCES insumos(id_insumo),
     CONSTRAINT fk_auditoria_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
+
+-- Tabla: Conteos_fisicos [DB] (Control de arqueos periódicos y diferencias valorizadas)
+CREATE TABLE conteos_fisicos (
+    id_conteo SERIAL PRIMARY KEY,
+    insumo_id INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    stock_sistema NUMERIC(12,3) NOT NULL CHECK (stock_sistema >= 0),
+    conteo_real NUMERIC(12,3) NOT NULL CHECK (conteo_real >= 0),
+    diferencia_cant NUMERIC(12,3) NOT NULL,
+    diferencia_valor_pmp NUMERIC(14,2) NOT NULL DEFAULT 0.00,
+    estado VARCHAR(30) NOT NULL DEFAULT 'Pendiente aprobación' 
+        CHECK (estado IN ('Ajustado', 'Pendiente aprobación', 'Aprobado', 'Rechazado')),
+    fecha_conteo DATE NOT NULL DEFAULT CURRENT_DATE,
+    id_usuario_conteo INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    id_usuario_aprobacion INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    fecha_aprobacion TIMESTAMPTZ NULL,
+    observaciones VARCHAR(250) NULL,
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_conteos_fisicos_insumo ON conteos_fisicos (insumo_id);
+CREATE INDEX idx_conteos_fisicos_estado ON conteos_fisicos (estado);
+CREATE INDEX idx_insumos_bloqueado_conteo ON insumos (bloqueado_por_conteo) WHERE bloqueado_por_conteo = TRUE;
 
 -- ==========================================
 -- 5. COMPRAS, RECEPCIÓN Y FACTURACIÓN
@@ -535,6 +821,97 @@ CREATE TABLE oc_lineas (
     CONSTRAINT fk_oc_lineas_cabecera FOREIGN KEY (id_orden_compra) REFERENCES ordenes_compra(id_orden_compra) ON DELETE CASCADE,
     CONSTRAINT fk_oc_lineas_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
 );
+
+-- 5.1.1 Calificaciones de proveedores por Orden de Compra [DB] (H15)
+CREATE TABLE calificaciones_proveedor (
+    id_calificacion SERIAL PRIMARY KEY,
+    oc_id INT NOT NULL UNIQUE,
+    proveedor_id INT NOT NULL,
+    puntos_tiempo INT NOT NULL CHECK (puntos_tiempo BETWEEN 1 AND 5),
+    puntos_calidad INT NOT NULL CHECK (puntos_calidad BETWEEN 1 AND 5),
+    puntos_precio INT NOT NULL CHECK (puntos_precio BETWEEN 1 AND 5),
+    promedio NUMERIC(3,2) GENERATED ALWAYS AS (
+        ROUND((puntos_tiempo + puntos_calidad + puntos_precio)::NUMERIC / 3, 2)
+    ) STORED,
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    CONSTRAINT fk_calificacion_oc
+        FOREIGN KEY (oc_id) REFERENCES ordenes_compra(id_orden_compra) ON DELETE RESTRICT,
+    CONSTRAINT fk_calificacion_proveedor
+        FOREIGN KEY (proveedor_id) REFERENCES proveedor(id_proveedor) ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_calificaciones_proveedor ON calificaciones_proveedor (proveedor_id, fecha DESC);
+
+-- Solo se puede calificar una OC recibida o cerrada y el proveedor debe coincidir.
+CREATE OR REPLACE FUNCTION fn_validar_calificacion_proveedor()
+RETURNS TRIGGER AS $$
+DECLARE
+    estado_oc_actual estado_oc_enum;
+    proveedor_oc INT;
+BEGIN
+    SELECT estado, proveedor_id
+    INTO estado_oc_actual, proveedor_oc
+    FROM ordenes_compra
+    WHERE id_orden_compra = NEW.oc_id;
+
+    IF estado_oc_actual NOT IN ('Recibida', 'Cerrada') THEN
+        RAISE EXCEPTION 'La OC % no puede calificarse porque su estado es %; debe estar Recibida o Cerrada.',
+            NEW.oc_id, estado_oc_actual;
+    END IF;
+
+    IF proveedor_oc <> NEW.proveedor_id THEN
+        RAISE EXCEPTION 'El proveedor % no corresponde al proveedor % de la OC %.',
+            NEW.proveedor_id, proveedor_oc, NEW.oc_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_calificacion_proveedor
+BEFORE INSERT OR UPDATE ON calificaciones_proveedor
+FOR EACH ROW EXECUTE FUNCTION fn_validar_calificacion_proveedor();
+
+-- Actualiza el promedio general visible en la ficha del proveedor.
+CREATE OR REPLACE FUNCTION fn_actualizar_promedio_proveedor()
+RETURNS TRIGGER AS $$
+DECLARE
+    proveedor_anterior INT;
+    proveedor_actual INT;
+BEGIN
+    proveedor_anterior := CASE WHEN TG_OP = 'DELETE' THEN OLD.proveedor_id ELSE NULL END;
+    proveedor_actual := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE NEW.proveedor_id END;
+
+    IF proveedor_anterior IS NOT NULL THEN
+        UPDATE proveedor
+        SET calificacion_promedio = COALESCE((
+            SELECT ROUND(AVG(promedio), 2)
+            FROM calificaciones_proveedor
+            WHERE proveedor_id = proveedor_anterior
+        ), 5.00)
+        WHERE id_proveedor = proveedor_anterior;
+    END IF;
+
+    IF proveedor_actual IS NOT NULL THEN
+        UPDATE proveedor
+        SET calificacion_promedio = COALESCE((
+            SELECT ROUND(AVG(promedio), 2)
+            FROM calificaciones_proveedor
+            WHERE proveedor_id = proveedor_actual
+        ), 5.00)
+        WHERE id_proveedor = proveedor_actual;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_actualizar_promedio_proveedor
+AFTER INSERT OR UPDATE OR DELETE ON calificaciones_proveedor
+FOR EACH ROW EXECUTE FUNCTION fn_actualizar_promedio_proveedor();
 
 -- Índices optimizados para detección de insumos bajo mínimo sin OC abierta [DB]
 CREATE INDEX idx_ordenes_compra_estado_abierta
@@ -611,6 +988,7 @@ CREATE TABLE movimientos_inventario (
     id_orden_compra INT NULL,
     id_recepcion INT NULL,
     id_recepcion_linea INT NULL,
+    id_proyecto INT NULL,
     tipo_movimiento tipo_movimiento_enum NOT NULL DEFAULT 'Entrada',
     destino_bolsa VARCHAR(30) NOT NULL DEFAULT 'disponible',
     cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
@@ -624,8 +1002,51 @@ CREATE TABLE movimientos_inventario (
     CONSTRAINT fk_mov_inv_oc FOREIGN KEY (id_orden_compra) REFERENCES ordenes_compra(id_orden_compra) ON DELETE SET NULL,
     CONSTRAINT fk_mov_inv_recepcion FOREIGN KEY (id_recepcion) REFERENCES recepciones(id_recepcion) ON DELETE CASCADE,
     CONSTRAINT fk_mov_inv_recepcion_linea FOREIGN KEY (id_recepcion_linea) REFERENCES recepcion_lineas(id_recepcion_linea) ON DELETE CASCADE,
+    CONSTRAINT fk_mov_inv_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto) ON DELETE SET NULL,
     CONSTRAINT fk_mov_inv_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario) ON DELETE SET NULL
 );
+
+-- Índices compuestos para responder consultas históricas de Cardex de forma inmediata [DB]
+CREATE INDEX idx_movimientos_inv_insumo_fecha 
+    ON movimientos_inventario (id_insumo, fecha_movimiento DESC);
+
+CREATE INDEX idx_movimientos_inv_proyecto_fecha 
+    ON movimientos_inventario (id_proyecto, fecha_movimiento DESC);
+
+CREATE INDEX idx_movimientos_inv_recepcion_linea 
+    ON movimientos_inventario (id_recepcion_linea);
+
+-- Vista Cardex: Expone entradas, salidas, saldo resultante y PMP histórico tras cada operación [DB][SCRUM]
+CREATE OR REPLACE VIEW vw_cardex_movimientos AS
+SELECT
+    m.id_movimiento,
+    m.id_insumo,
+    i.sku,
+    i.nombre AS insumo,
+    m.fecha_movimiento,
+    m.tipo_movimiento::text AS tipo_movimiento,
+    m.destino_bolsa,
+    m.id_proyecto,
+    p.nombre_proyecto,
+    CASE 
+        WHEN m.tipo_movimiento = 'Entrada' THEN m.cantidad 
+        ELSE 0.000 
+    END AS cantidad_entrada,
+    CASE 
+        WHEN m.tipo_movimiento = 'Salida' THEN m.cantidad 
+        ELSE 0.000 
+    END AS cantidad_salida,
+    m.costo_unitario,
+    m.saldo_historico AS saldo_resultante,
+    m.pmp_historico,
+    m.valor_total_historico,
+    m.referencia,
+    m.id_usuario,
+    TRIM(CONCAT(u.nombre_usuario, ' ', u.apellido_usuario)) AS usuario_responsable
+FROM movimientos_inventario m
+JOIN insumos i ON i.id_insumo = m.id_insumo
+LEFT JOIN proyecto p ON p.id_proyecto = m.id_proyecto
+LEFT JOIN usuario u ON u.id_usuario = m.id_usuario;
 
 CREATE TABLE registro_recepcion_articulo (
     id_registro_recepcion_articulo SERIAL PRIMARY KEY,
@@ -705,6 +1126,55 @@ CREATE TABLE factura_detalle (
     CONSTRAINT fk_factura_detalle_cabecera FOREIGN KEY (id_factura) REFERENCES factura(id_factura) ON DELETE CASCADE,
     CONSTRAINT fk_factura_detalle_articulo FOREIGN KEY (id_articulo) REFERENCES insumos(id_insumo)
 );
+
+-- 5.4 Devoluciones a Proveedores [DB] (Opera exclusivamente sobre saldo en cuarentena)
+CREATE TABLE devoluciones_proveedor (
+    id_devolucion_proveedor SERIAL PRIMARY KEY,
+    proveedor_id INT NOT NULL REFERENCES proveedor(id_proveedor) ON DELETE RESTRICT,
+    insumo_id INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    cantidad NUMERIC(12,3) NOT NULL CHECK (cantidad > 0),
+    motivo VARCHAR(250) NOT NULL,
+    nro_guia VARCHAR(80) NULL,
+    estado VARCHAR(30) NOT NULL DEFAULT 'Pendiente de resolución'
+        CHECK (estado IN ('Pendiente de resolución', 'Resuelta')),
+    resolucion_nota_credito_o_reposicion VARCHAR(50) NULL
+        CHECK (resolucion_nota_credito_o_reposicion IS NULL OR resolucion_nota_credito_o_reposicion IN ('Nota de crédito', 'Reposición')),
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_resolucion TIMESTAMPTZ NULL,
+    id_usuario_registro INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    id_usuario_resolucion INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    observaciones VARCHAR(250) NULL,
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT chk_resolucion_obligatoria_al_resolver
+        CHECK (estado <> 'Resuelta' OR resolucion_nota_credito_o_reposicion IS NOT NULL)
+);
+
+CREATE INDEX idx_dev_prov_proveedor ON devoluciones_proveedor (proveedor_id);
+CREATE INDEX idx_dev_prov_insumo ON devoluciones_proveedor (insumo_id);
+CREATE INDEX idx_dev_prov_estado ON devoluciones_proveedor (estado);
+
+CREATE OR REPLACE FUNCTION fn_validar_devolucion_proveedor_cuarentena()
+RETURNS TRIGGER AS $$
+DECLARE
+    saldo_cuarentena NUMERIC(12,3);
+BEGIN
+    SELECT COALESCE(cuarentena, 0.000)
+    INTO saldo_cuarentena
+    FROM stock_insumos
+    WHERE insumo_id = NEW.insumo_id;
+
+    IF saldo_cuarentena < NEW.cantidad THEN
+        RAISE EXCEPTION 'Operación rechazada: La devolución al proveedor solo puede realizarse sobre insumos con saldo en cuarentena. Insumo ID: %, Saldo en cuarentena: %, Cantidad a devolver: %.',
+            NEW.insumo_id, saldo_cuarentena, NEW.cantidad;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_validar_devolucion_proveedor_cuarentena
+BEFORE INSERT ON devoluciones_proveedor
+FOR EACH ROW EXECUTE FUNCTION fn_validar_devolucion_proveedor_cuarentena();
 
 -- ==========================================
 -- 6. SOLICITUDES, KITS Y HERRAMIENTAS
@@ -806,6 +1276,76 @@ CREATE TRIGGER trg_inmutabilidad_egreso_lineas
 BEFORE UPDATE OR DELETE ON egreso_lineas
 FOR EACH ROW EXECUTE FUNCTION fn_impedir_modificacion_egreso();
 
+-- ==========================================
+-- Tablas: Devoluciones de Obra y Sobrantes de Terreno [DB]
+-- ==========================================
+
+-- Tabla: Uso_insumos_proyecto (Consumo real en terreno; base para determinar el sobrante devuelto)
+CREATE TABLE uso_insumos_proyecto (
+    id_uso SERIAL PRIMARY KEY,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    id_articulo INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    cantidad_utilizada NUMERIC(12,3) NOT NULL CHECK (cantidad_utilizada > 0),
+    fecha_registro TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario_registro INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_uso_insumos_proyecto_tecnico ON uso_insumos_proyecto (proyecto_id, tecnico_id, id_articulo);
+
+-- Tabla: Devoluciones_obra (Cabecera de sobrantes devueltos; estados 'En tránsito' y 'Recibida')
+CREATE TABLE devoluciones_obra (
+    id_devolucion SERIAL PRIMARY KEY,
+    codigo_devolucion VARCHAR(40) NULL UNIQUE,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tecnico_rut VARCHAR(20) NOT NULL DEFAULT '',
+    tecnico_nombre VARCHAR(150) NOT NULL,
+    estado VARCHAR(20) NOT NULL DEFAULT 'En tránsito' CHECK (estado IN ('En tránsito', 'Recibida')),
+    fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_declaracion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id_usuario_declara INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    fecha_recepcion_bodega TIMESTAMPTZ NULL,
+    id_usuario_recibe INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    observaciones VARCHAR(250) NULL
+);
+
+CREATE INDEX idx_devoluciones_obra_proyecto ON devoluciones_obra (proyecto_id, tecnico_id);
+CREATE INDEX idx_devoluciones_obra_estado ON devoluciones_obra (estado);
+
+-- Vista de compatibilidad para código y migraciones previas que consultan 'devoluciones_tecnico'
+CREATE OR REPLACE VIEW devoluciones_tecnico AS
+SELECT 
+    id_devolucion,
+    codigo_devolucion,
+    proyecto_id,
+    tecnico_id,
+    tecnico_rut,
+    tecnico_nombre,
+    estado,
+    fecha,
+    fecha_declaracion,
+    id_usuario_declara
+FROM devoluciones_obra;
+
+-- Tabla: Devolucion_lineas (Detalle de insumos devueltos, retirados, utilizados y validados en bodega)
+CREATE TABLE devolucion_lineas (
+    id_devolucion_linea SERIAL PRIMARY KEY,
+    id_devolucion INT NOT NULL REFERENCES devoluciones_obra(id_devolucion) ON DELETE CASCADE,
+    id_articulo INT NOT NULL REFERENCES insumos(id_insumo) ON DELETE RESTRICT,
+    cantidad_retirada NUMERIC(12,3) NOT NULL CHECK (cantidad_retirada >= 0),
+    cantidad_utilizada NUMERIC(12,3) NOT NULL CHECK (cantidad_utilizada >= 0),
+    cantidad_declarada NUMERIC(12,3) NOT NULL CHECK (cantidad_declarada > 0),
+    cantidad_recibida NUMERIC(12,3) NULL CHECK (cantidad_recibida >= 0),
+    CONSTRAINT chk_devolucion_no_excede_sobrante
+        CHECK (cantidad_declarada <= (cantidad_retirada - cantidad_utilizada)),
+    CONSTRAINT chk_devolucion_recibida_valida
+        CHECK (cantidad_recibida IS NULL OR cantidad_recibida <= cantidad_declarada)
+);
+
+CREATE INDEX idx_devolucion_lineas_devolucion ON devolucion_lineas (id_devolucion);
+CREATE INDEX idx_devolucion_lineas_articulo ON devolucion_lineas (id_articulo);
+
 -- Tabla: Solicitudes (Compatibilidad)
 CREATE TABLE solicitudes (
     id_solicitud SERIAL PRIMARY KEY,
@@ -863,6 +1403,35 @@ CREATE TABLE herramienta_en_proyecto (
     CONSTRAINT fk_herram_proj_usuario FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario)
 );
 
+-- Tabla: Prestamos_herramientas (historial completo de entregas y devoluciones)
+CREATE TABLE prestamos_herramientas (
+    id_prestamo SERIAL PRIMARY KEY,
+    herramienta_id INT NOT NULL,
+    tecnico_id INT NOT NULL,
+    proyecto_id INT NOT NULL,
+    fecha_entrega DATE NOT NULL DEFAULT CURRENT_DATE,
+    fecha_devolucion DATE,
+    estado_devolucion VARCHAR(10) CHECK (estado_devolucion IN ('Bueno', 'Dañado')),
+    observacion VARCHAR(500),
+    CONSTRAINT fk_prestamo_herramienta
+        FOREIGN KEY (herramienta_id) REFERENCES herramienta(id_herramienta) ON DELETE RESTRICT,
+    CONSTRAINT fk_prestamo_tecnico
+        FOREIGN KEY (tecnico_id) REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    CONSTRAINT fk_prestamo_proyecto
+        FOREIGN KEY (proyecto_id) REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    CONSTRAINT chk_prestamo_fechas
+        CHECK (fecha_devolucion IS NULL OR fecha_devolucion >= fecha_entrega),
+    CONSTRAINT chk_prestamo_devolucion
+        CHECK (fecha_devolucion IS NULL OR estado_devolucion IS NOT NULL)
+);
+
+CREATE INDEX idx_prestamos_herramienta_fecha
+    ON prestamos_herramientas (herramienta_id, fecha_entrega DESC);
+CREATE INDEX idx_prestamos_tecnico
+    ON prestamos_herramientas (tecnico_id, fecha_entrega DESC);
+CREATE INDEX idx_prestamos_proyecto
+    ON prestamos_herramientas (proyecto_id, fecha_entrega DESC);
+
 -- ==========================================
 -- 7. SEGUIMIENTO POST-VENTA Y PLANES DE MANTENCIÓN PERIÓDICA
 -- ==========================================
@@ -901,5 +1470,205 @@ CREATE TABLE seguimiento_contacto_cliente (
 );
 
 CREATE INDEX idx_seguimiento_contacto_plan ON seguimiento_contacto_cliente (id_plan);
+
+-- ==========================================
+-- 8. HOJAS DE SERVICIO, CHECKLISTS DE TERRENO Y ADJUNTOS CONCURRENTE/MÓVIL [DB]
+-- ==========================================
+
+-- Tabla: Hojas_servicio (Control de versiones para ediciones concurrentes entre móvil y central)
+CREATE TABLE hojas_servicio (
+    id_hoja_servicio SERIAL PRIMARY KEY,
+    uuid_registro VARCHAR(36) NOT NULL, -- Identificador lógico del documento compartido entre versiones
+    version INT NOT NULL DEFAULT 1 CHECK (version >= 1),
+    id_version_padre INT NULL REFERENCES hojas_servicio(id_hoja_servicio) ON DELETE SET NULL,
+    origen_edicion VARCHAR(20) NOT NULL DEFAULT 'central' CHECK (origen_edicion IN ('movil', 'central')),
+    estado_sincronizacion VARCHAR(30) NOT NULL DEFAULT 'sincronizado' CHECK (estado_sincronizacion IN ('sincronizado', 'conflicto', 'borrador_local', 'resuelto')),
+    es_version_activa BOOLEAN NOT NULL DEFAULT TRUE,
+    codigo_hoja VARCHAR(50) NOT NULL,
+    proyecto_id INT NOT NULL REFERENCES proyecto(id_proyecto) ON DELETE RESTRICT,
+    tecnico_id INT NOT NULL REFERENCES usuario(id_usuario) ON DELETE RESTRICT,
+    tipo_servicio VARCHAR(50) NOT NULL DEFAULT 'Mantencion',
+    estado_servicio VARCHAR(30) NOT NULL DEFAULT 'Borrador' CHECK (estado_servicio IN ('Borrador', 'En Proceso', 'Firmada', 'Cerrada', 'En Conflicto')),
+    fecha_servicio DATE NOT NULL DEFAULT CURRENT_DATE,
+    hora_inicio TIME NULL,
+    hora_fin TIME NULL,
+    descripcion_trabajo TEXT NOT NULL,
+    observaciones TEXT NULL,
+    firma_cliente_nombre VARCHAR(150) NULL,
+    firma_cliente_rut VARCHAR(20) NULL,
+    hash_firma_digital CHAR(64) NULL,
+    creado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modificado_en TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    modificado_por INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    -- Clave única compuesta que permite almacenar versiones en conflicto sin sobreescribir datos
+    CONSTRAINT uk_hojas_servicio_uuid_version_origen UNIQUE (uuid_registro, version, origen_edicion)
+);
+
+CREATE INDEX idx_hojas_servicio_uuid ON hojas_servicio (uuid_registro);
+CREATE INDEX idx_hojas_servicio_proyecto ON hojas_servicio (proyecto_id);
+CREATE INDEX idx_hojas_servicio_conflicto ON hojas_servicio (estado_sincronizacion) WHERE estado_sincronizacion = 'conflicto';
+
+-- Tabla: Checklists_terreno (Revisiones e inspecciones técnicas vinculadas a la versión de la hoja)
+CREATE TABLE checklists_terreno (
+    id_checklist SERIAL PRIMARY KEY,
+    id_hoja_servicio INT NOT NULL REFERENCES hojas_servicio(id_hoja_servicio) ON DELETE CASCADE,
+    categoria_inspeccion VARCHAR(100) NOT NULL,
+    item_evaluado VARCHAR(250) NOT NULL,
+    estado_conformidad VARCHAR(20) NOT NULL DEFAULT 'Conforme' CHECK (estado_conformidad IN ('Conforme', 'No Conforme', 'No Aplica')),
+    valor_medido VARCHAR(50) NULL,
+    observaciones TEXT NULL,
+    orden INT NOT NULL DEFAULT 1
+);
+
+CREATE INDEX idx_checklists_hoja ON checklists_terreno (id_hoja_servicio);
+
+-- Tabla: Adjuntos_servicio (Metadatos de archivos, fotos, evidencias y firmas con trazabilidad de versión)
+CREATE TABLE adjuntos_servicio (
+    id_adjunto SERIAL PRIMARY KEY,
+    id_hoja_servicio INT NOT NULL REFERENCES hojas_servicio(id_hoja_servicio) ON DELETE CASCADE,
+    nombre_archivo VARCHAR(255) NOT NULL,
+    tipo_mime VARCHAR(100) NOT NULL,
+    tamano_bytes BIGINT NOT NULL CHECK (tamano_bytes > 0),
+    hash_sha256 CHAR(64) NOT NULL,
+    ruta_almacenamiento VARCHAR(500) NOT NULL,
+    categoria_adjunto VARCHAR(50) NOT NULL DEFAULT 'Fotografia' CHECK (categoria_adjunto IN ('Fotografia', 'Firma', 'Informe_PDF', 'Documento')),
+    origen_dispositivo VARCHAR(80) NULL,
+    metadatos_extra JSONB NULL,
+    version_hoja INT NOT NULL DEFAULT 1,
+    creado_por INT NULL REFERENCES usuario(id_usuario) ON DELETE SET NULL,
+    fecha_subida TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_adjuntos_hoja ON adjuntos_servicio (id_hoja_servicio);
+CREATE INDEX idx_adjuntos_hash ON adjuntos_servicio (hash_sha256);
+
+-- Procedimiento: anonimización irreversible de trabajadores [DB]
+-- Mantiene id_usuario en Cardex, auditoría y documentos legales; solo ofusca
+-- los datos personales de la ficha y desactiva la cuenta. La llamada es atómica:
+-- si falla una actualización, toda la transacción se revierte.
+CREATE OR REPLACE PROCEDURE sp_anonimizar_usuario(p_id_usuario INT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    identificador VARCHAR(30);
+    correo_anonimo VARCHAR(250);
+BEGIN
+    SELECT identificador_anonimo
+    INTO identificador
+    FROM usuario
+    WHERE id_usuario = p_id_usuario
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No existe el usuario %.', p_id_usuario;
+    END IF;
+
+    -- Idempotencia: una cuenta ya anonimizada no vuelve a modificar su identidad.
+    IF identificador IS NOT NULL THEN
+        RETURN;
+    END IF;
+
+    identificador := 'ANON-' || LPAD(p_id_usuario::TEXT, 8, '0');
+    correo_anonimo := LOWER(identificador) || '@anonimizado.invalid';
+
+    UPDATE usuario
+    SET nombre_usuario = 'ANONIMO',
+        apellido_usuario = identificador,
+        correo_usuario = correo_anonimo,
+        rut = identificador,
+        telefono_usuario = identificador,
+        especializacion = 'ANONIMIZADO',
+        activo = FALSE,
+        identificador_anonimo = identificador,
+        fecha_anonimizacion = CURRENT_TIMESTAMP
+    WHERE id_usuario = p_id_usuario;
+
+    -- Los logs operacionales conservan su FK y dejan de exponer el correo original.
+    UPDATE log_accesos
+    SET usuario = correo_anonimo
+    WHERE id_usuario = p_id_usuario;
+
+    -- No se actualizan ni eliminan auditoria, Cardex ni documentos legales:
+    -- sus id_usuario permanecen intactos para conservar la trazabilidad.
+END;
+$$;
+
+-- Tabla: Historial de respaldos diarios cifrados [DB]
+-- El archivo lo genera un runner externo con pg_dump, lo cifra con AES-256 y lo
+-- sube a almacenamiento cloud; esta tabla registra el resultado verificable.
+CREATE TABLE historial_respaldos (
+    id_respaldo BIGSERIAL PRIMARY KEY,
+    tipo_respaldo VARCHAR(20) NOT NULL DEFAULT 'Completo'
+        CHECK (tipo_respaldo IN ('Completo', 'Incremental')),
+    fecha_inicio TIMESTAMPTZ NOT NULL,
+    fecha_fin TIMESTAMPTZ,
+    nombre_archivo VARCHAR(255) NOT NULL,
+    ubicacion_nube VARCHAR(500) NOT NULL,
+    proveedor_nube VARCHAR(50) NOT NULL,
+    tamano_bytes BIGINT CHECK (tamano_bytes IS NULL OR tamano_bytes > 0),
+    hash_sha256 CHAR(64),
+    cifrado BOOLEAN NOT NULL DEFAULT TRUE,
+    algoritmo_cifrado VARCHAR(20) NOT NULL DEFAULT 'AES-256'
+        CHECK (algoritmo_cifrado = 'AES-256'),
+    estado VARCHAR(20) NOT NULL
+        CHECK (estado IN ('Iniciado', 'Completado', 'Fallido', 'Expirado')),
+    fecha_expiracion TIMESTAMPTZ GENERATED ALWAYS AS
+        (COALESCE(fecha_fin, fecha_inicio) + INTERVAL '30 days') STORED,
+    restauracion_verificada BOOLEAN NOT NULL DEFAULT FALSE,
+    fecha_restauracion TIMESTAMPTZ,
+    rto_segundos INTEGER CHECK (rto_segundos IS NULL OR rto_segundos >= 0),
+    mensaje_error TEXT,
+    CONSTRAINT chk_respaldo_fecha_fin CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio),
+    CONSTRAINT chk_respaldo_cifrado CHECK (cifrado = TRUE),
+    CONSTRAINT chk_respaldo_rto CHECK (rto_segundos IS NULL OR rto_segundos < 14400),
+    CONSTRAINT chk_respaldo_restauracion
+        CHECK (NOT restauracion_verificada OR (fecha_restauracion IS NOT NULL AND rto_segundos IS NOT NULL)),
+    CONSTRAINT chk_respaldo_hash CHECK (hash_sha256 IS NULL OR hash_sha256 ~ '^[0-9a-fA-F]{64}$')
+);
+
+CREATE INDEX idx_historial_respaldos_fecha_fin
+    ON historial_respaldos (fecha_fin DESC);
+CREATE INDEX idx_historial_respaldos_estado
+    ON historial_respaldos (estado, fecha_fin DESC);
+CREATE INDEX idx_historial_respaldos_expiracion
+    ON historial_respaldos (fecha_expiracion);
+
+-- Purga diaria: conserva exactamente los respaldos de los últimos 30 días.
+CREATE OR REPLACE FUNCTION fn_purgar_historial_respaldos()
+RETURNS INTEGER AS $$
+DECLARE
+    eliminados INTEGER;
+BEGIN
+    DELETE FROM historial_respaldos
+    WHERE COALESCE(fecha_fin, fecha_inicio) < CURRENT_TIMESTAMP - INTERVAL '30 days';
+
+    GET DIAGNOSTICS eliminados = ROW_COUNT;
+    RETURN eliminados;
+END;
+$$ LANGUAGE plpgsql;
+
+-- El runner externo debe ejecutar diariamente en horario de baja actividad:
+-- pg_dump --format=custom --file=... | openssl enc -aes-256-cbc -pbkdf2 -salt
+-- y subir el resultado cifrado a ubicacion_nube, registrando aquí su checksum.
+-- La tarea SQL solo realiza la purga diaria del historial.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'pg_cron') THEN
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_cron;
+            IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'purga-historial-respaldos-30-dias') THEN
+                PERFORM cron.unschedule('purga-historial-respaldos-30-dias');
+            END IF;
+            PERFORM cron.schedule(
+                'purga-historial-respaldos-30-dias',
+                '30 2 * * *',
+                'SELECT fn_purgar_historial_respaldos();'
+            );
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'No fue posible registrar pg_cron para purga de respaldos: %', SQLERRM;
+        END;
+    END IF;
+END;
+$$;
 ```
 
