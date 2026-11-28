@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
     obtenerArticulos,
     obtenerArticuloPorId,
+    obtenerCatalogoStock,
     crearArticulo,
     actualizarArticulo,
     deshabilitarArticulo,
@@ -22,10 +23,15 @@ const puedeLeer = verificarRoles('admin', 'warehouse', 'technician');
 const puedeEscribir = verificarRoles('admin', 'warehouse');
 
 router.get('/', puedeLeer, obtenerArticulos);
+<<<<<<< HEAD
+router.get('/catalogo', puedeLeer, obtenerCatalogoStock);
+
+=======
 // [BACK-1] Búsqueda instantánea (< 200 ms) por código QR o código de barras (antes de /:id)
 router.get('/escanear', puedeLeer, escanearCodigoQrH18);
 router.post('/escanear', puedeLeer, escanearCodigoQrH18);
 router.get('/escanear/:codigo', puedeLeer, escanearCodigoQrH18);
+>>>>>>> 84fdad5739d5c521828911885345aecb0befca1c
 router.get('/:id', puedeLeer, obtenerArticuloPorId);
 router.post('/', puedeEscribir, crearArticulo);
 router.put('/:id', puedeEscribir, actualizarArticulo);

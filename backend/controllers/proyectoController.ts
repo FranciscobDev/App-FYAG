@@ -340,6 +340,30 @@ export const actualizarProyecto = async (req: Request<{ id: string }, unknown, P
         presupuesto_inicial, presupuesto_horas, valor_venta, porcentaje_avance, estado_proyecto, id_usuario
     } = req.body;
 
+        // Verificar si el proyecto ya está cerrado antes de editar
+        const actual = await pool.query<Proyecto>('SELECT estado_proyecto FROM proyecto WHERE id_proyecto = $1', [id]);
+        if (actual.rows.length === 0) {
+            res.status(404).json({ mensaje: 'Proyecto no encontrado para actualizar' });
+            return;
+        }
+        
+        if (actual.rows[0].estado_proyecto === 'Cerrado') {
+            res.status(400).json({ mensaje: 'No se puede editar un proyecto cerrado' });
+            return;
+        }
+
+        // Si se intenta cerrar el proyecto, verificar pendientes
+        if (estado_proyecto === 'Cerrado') {
+            const pendientes = await pool.query(
+                'SELECT count(*) FROM solicitud_material WHERE id_proyecto = $1 AND estado = $2',
+                [id, 'Pendiente']
+            );
+            if (parseInt(pendientes.rows[0].count) > 0) {
+                res.status(400).json({ mensaje: 'No se puede cerrar un proyecto con solicitudes pendientes' });
+                return;
+            }
+        }
+
     try {
         const proyectoPrevio = await pool.query<Proyecto>('SELECT * FROM proyecto WHERE id_proyecto = $1', [id]);
         if (proyectoPrevio.rows.length === 0) {
@@ -540,6 +564,7 @@ export const obtenerTecnicosDeProyecto = async (req: Request<{ id: string }>, re
 };
 
 // Asignar un técnico a un proyecto (solo usuarios con rol técnico)
+
 export const asignarTecnico = async (
     req: Request<{ id: string }, unknown, { id_usuario?: number }>,
     res: Response
@@ -553,15 +578,35 @@ export const asignarTecnico = async (
     }
 
     try {
+<<<<<<< HEAD
+        // Validar proyecto Activo
+        const proyecto = await pool.query<Proyecto>('SELECT estado_proyecto FROM proyecto WHERE id_proyecto = $1', [id]);
+        if (proyecto.rows.length === 0 || proyecto.rows[0].estado_proyecto !== 'Activo') {
+            res.status(400).json({ mensaje: 'Solo se pueden asignar técnicos a proyectos Activos' });
+            return;
+        }
+
+        // Validar técnico habilitado y rol
+        const usuario = await pool.query(
+            `SELECT u.activo, r.nombre_rol 
+             FROM usuario u
+             JOIN roles r ON r.id_rol = u.id_rol
+             WHERE u.id_usuario = $1`,
+=======
         const esTecnico = await pool.query(
             `SELECT u.id_usuario
              FROM usuario u
              LEFT JOIN roles r ON r.id_rol = u.id_rol
              WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol::text) LIKE '%tecnic%')`,
+>>>>>>> 84fdad5739d5c521828911885345aecb0befca1c
             [id_usuario]
         );
-        if (esTecnico.rows.length === 0) {
+        if (usuario.rows.length === 0 || usuario.rows[0].nombre_rol !== 'Tecnico') {
             res.status(400).json({ mensaje: 'El usuario seleccionado no es un técnico' });
+            return;
+        }
+        if (!usuario.rows[0].activo) {
+            res.status(400).json({ mensaje: 'El técnico seleccionado está deshabilitado' });
             return;
         }
 
