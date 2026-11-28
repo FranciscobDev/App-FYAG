@@ -47,7 +47,7 @@ export const TarjetaKpi: React.FC<KpiCardProps> = ({
         </View>
       </View>
       <Text style={[estilos.valor, { color: tonoEstilo.text }]}>{value}</Text>
-      
+
       <View style={estilos.pieFila}>
         {subtitle && <Text style={estilos.subtitulo}>{subtitle}</Text>}
         {trend && (
@@ -80,52 +80,58 @@ export const TarjetaKpi: React.FC<KpiCardProps> = ({
 const estilos = StyleSheet.create({
   tarjeta: {
     backgroundColor: tema.colors.card,
-    borderRadius: tema.radius.xl,
-    padding: tema.spacing.md,
+    borderRadius: tema.radius.lg,
+    padding: 14,
     borderWidth: tema.borders.thin,
     borderColor: tema.colors.border,
     borderLeftWidth: 4,
     ...tema.shadows.subtle,
     flex: 1,
-    minWidth: 140,
-    margin: tema.spacing.xs,
+    minWidth: 148,
   },
   encabezado: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: tema.spacing.xs,
+    marginBottom: 8,
+    gap: 6,
   },
   etiqueta: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: 10.5,
+    fontWeight: tema.fontWeight.bold,
     color: tema.colors.textMuted,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     flex: 1,
+    flexShrink: 1,
   },
   iconoContenedor: {
-    width: 32,
-    height: 32,
-    borderRadius: tema.radius.full,
+    width: 30,
+    height: 30,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 6,
+    flexShrink: 0,
   },
   valor: {
-    fontSize: tema.fontSize.xl,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.3,
+    lineHeight: 28,
     marginVertical: 2,
   },
   subtitulo: {
-    fontSize: tema.fontSize.xs,
+    fontSize: 11.5,
     color: tema.colors.textMuted,
+    flexShrink: 1,
   },
   pieFila: {
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 4,
+    gap: 6,
+    marginTop: 6,
   },
   trendInsignia: {
     flexDirection: "row",

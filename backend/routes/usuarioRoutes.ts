@@ -8,6 +8,8 @@ import {
     cambiarRolUsuario,
     deshabilitarUsuario,
     eliminarUsuario,
+    exportarDatosPersonalesUsuario,
+    anonimizarUsuario,
 } from '../controllers/usuarioController';
 import { verificarAdmin } from '../middleware/authMiddleware';
 
@@ -20,6 +22,10 @@ router.post('/', crearUsuario);
 
 // Debe ir antes de '/:id'
 router.get('/roles', listarRoles);
+
+router.get('/:id/exportar', exportarDatosPersonalesUsuario);
+router.get('/:id/exportar/:formato', exportarDatosPersonalesUsuario);
+router.post('/:id/anonimizar', anonimizarUsuario);
 
 router.get('/:id', obtenerUsuarioPorId);
 router.put('/:id', actualizarUsuario);

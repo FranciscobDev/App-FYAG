@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Platform,
   ScrollView,
@@ -27,7 +27,12 @@ import {
 } from "@/componentes/comunes";
 import { MovimientoCardex, Producto, Proyecto, RegistroMerma } from "@/nucleo/tipos";
 import { estilos } from "./estilos";
+import { construirQueryCardex, descargarCardexExcel, obtenerCardexApi } from "./cardexApi";
 import { SeccionInformeMovimientos, SeccionInformeInventario, SeccionInformeProyectos, SeccionInformeMateriales, SeccionInformeGastos, SeccionInformeMermas } from "./componentes";
+import {
+  exportarInformeExcelWeb,
+  exportarInformePdfWeb,
+} from "./exportarReporteMovimientos";
 
 export type PestanaInforme =
   | "movimientos"
@@ -37,7 +42,13 @@ export type PestanaInforme =
   | "gastos"
   | "mermas";
 
-type PeriodFilter = "30dias" | "7dias" | "mes_actual" | "todo";
+type PeriodFilter = "30dias" | "7dias" | "mes_actual" | "todo" | "personalizado";
+
+const obtenerFechaIsoDesplazada = (diasAtras: number): string => {
+  const fecha = new Date();
+  fecha.setDate(fecha.getDate() - diasAtras);
+  return fecha.toISOString().slice(0, 10);
+};
 
 export const PantallaInformes: React.FC = () => {
   const { width } = useWindowDimensions();
@@ -46,7 +57,6 @@ export const PantallaInformes: React.FC = () => {
   const {
     productos,
     proyectos,
-    cardex,
     solicitudesMaterial,
     facturasCompra,
     registrosMerma,
@@ -56,14 +66,39 @@ export const PantallaInformes: React.FC = () => {
   // Subcategoría activa
   const [activoPestana, establecerActivoPestana] = useState<PestanaInforme>("movimientos");
 
-  // Filtros globales y locales
+  // Filtros globales y locales (por defecto carga los últimos 30 días)
   const [buscarQuery, establecerBuscarQuery] = useState("");
   const [period, establecerPeriod] = useState<PeriodFilter>("30dias");
+  const [fechaDesde, establecerFechaDesde] = useState<string>(() => obtenerFechaIsoDesplazada(30));
+  const [fechaHasta, establecerFechaHasta] = useState<string>(() => obtenerFechaIsoDesplazada(0));
   const [seleccionadoProyectoCodigo, establecerSeleccionadoProyectoCodigo] = useState<string>("todos");
   const [seleccionadoMovementTipo, establecerSeleccionadoMovementTipo] = useState<string>("todos");
   const [seleccionadoCategoria, establecerSeleccionadoCategoria] = useState<string>("todas");
   const [seleccionadoExistenciaEstado, establecerSeleccionadoExistenciaEstado] = useState<string>("todos");
   const [seleccionadoMermaMotivo, establecerSeleccionadoMermaMotivo] = useState<string>("todos");
+
+  // Seleccionar período rápido y sincronizar el rango Desde / Hasta
+  const manejarSeleccionarPeriodo = (nuevoPeriodo: PeriodFilter) => {
+    establecerPeriod(nuevoPeriodo);
+    const hoy = obtenerFechaIsoDesplazada(0);
+    if (nuevoPeriodo === "30dias") {
+      establecerFechaDesde(obtenerFechaIsoDesplazada(30));
+      establecerFechaHasta(hoy);
+    } else if (nuevoPeriodo === "7dias") {
+      establecerFechaDesde(obtenerFechaIsoDesplazada(7));
+      establecerFechaHasta(hoy);
+    } else if (nuevoPeriodo === "mes_actual") {
+      const ahora = new Date();
+      const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1)
+        .toISOString()
+        .slice(0, 10);
+      establecerFechaDesde(inicioMes);
+      establecerFechaHasta(hoy);
+    } else if (nuevoPeriodo === "todo") {
+      establecerFechaDesde("");
+      establecerFechaHasta("");
+    }
+  };
 
   // Modo de vista: Tarjetas o Tabla
   const [vistaModo, establecerVistaModo] = useState<"auto" | "cards" | "table">("auto");
@@ -76,20 +111,33 @@ export const PantallaInformes: React.FC = () => {
     setTimeout(() => establecerAvisoMensaje(null), 3500);
   };
 
-  // Helper para validar fechas en períodos
+  // Helper para validar fechas según rango seleccionado (últimos 30 días por defecto o rango personalizado)
   const esWithinPeriod = (dateStr: string) => {
     if (period === "todo") return true;
+    const fechaNormalizada = String(dateStr || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaNormalizada)) return true;
+
+    if (period === "personalizado") {
+      if (fechaDesde.trim() && /^\d{4}-\d{2}-\d{2}$/.test(fechaDesde.trim())) {
+        if (fechaNormalizada < fechaDesde.trim()) return false;
+      }
+      if (fechaHasta.trim() && /^\d{4}-\d{2}-\d{2}$/.test(fechaHasta.trim())) {
+        if (fechaNormalizada > fechaHasta.trim()) return false;
+      }
+      return true;
+    }
+
     const now = new Date();
-    const elementoFecha = new Date(dateStr);
+    const elementoFecha = new Date(`${fechaNormalizada}T00:00:00`);
     if (isNaN(elementoFecha.getTime())) return true;
 
     if (period === "7dias") {
       const diferenciaDias = (now.getTime() - elementoFecha.getTime()) / (1000 * 3600 * 24);
-      return diferenciaDias <= 7 && diferenciaDias >= 0;
+      return diferenciaDias <= 7 && diferenciaDias >= -1;
     }
     if (period === "30dias") {
       const diferenciaDias = (now.getTime() - elementoFecha.getTime()) / (1000 * 3600 * 24);
-      return diferenciaDias <= 30 && diferenciaDias >= 0;
+      return diferenciaDias <= 30 && diferenciaDias >= -1;
     }
     if (period === "mes_actual") {
       return (
@@ -101,10 +149,33 @@ export const PantallaInformes: React.FC = () => {
   };
 
   // =========================================================================
-  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD)
+  // 1. REPORTE DE MOVIMIENTOS (CARDEX TRAZABILIDAD) - datos reales desde /api/cardex
   // =========================================================================
+  const [cardexApi, establecerCardexApi] = useState<MovimientoCardex[]>([]);
+  const queryCardex = useMemo(
+    () => construirQueryCardex(period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos),
+    [period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, proyectos]
+  );
+
+  useEffect(() => {
+    let cancelado = false;
+    obtenerCardexApi(queryCardex, proyectos)
+      .then((lista) => {
+        if (!cancelado) establecerCardexApi(lista);
+      })
+      .catch((err: Error) => {
+        if (!cancelado) {
+          establecerCardexApi([]);
+          mostrarAviso(err.message);
+        }
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [queryCardex, proyectos]);
+
   const filtradoCardex = useMemo(() => {
-    return cardex.filter((item) => {
+    return cardexApi.filter((item) => {
       const coincidenciasPeriod = esWithinPeriod(item.date);
       const coincidenciasTipo =
         seleccionadoMovementTipo === "todos" || item.type === seleccionadoMovementTipo;
@@ -122,7 +193,7 @@ export const PantallaInformes: React.FC = () => {
 
       return coincidenciasPeriod && coincidenciasTipo && coincidenciasProyecto && coincidenciasQuery;
     });
-  }, [cardex, period, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
+  }, [cardexApi, period, fechaDesde, fechaHasta, seleccionadoMovementTipo, seleccionadoProyectoCodigo, buscarQuery]);
 
   const cardexTotals = useMemo(() => {
     let totalIn = 0;
@@ -339,6 +410,16 @@ export const PantallaInformes: React.FC = () => {
   // EXPORTACIÓN A EXCEL / CSV
   // =========================================================================
   const manejarExportar = (format: "pdf" | "excel") => {
+    // Cardex: el Excel sale del backend con los mismos filtros de la pantalla
+    if (format === "excel" && activoPestana === "movimientos") {
+      if (Platform.OS !== "web") {
+        mostrarAviso("La descarga del Excel del Cardex está disponible desde la versión web por ahora.");
+        return;
+      }
+      descargarCardexExcel(queryCardex).catch((err: Error) => mostrarAviso(err.message));
+      return;
+    }
+
     let headers: string[] = [];
     let filas: any[] = [];
     let filename = `reporte_${activoPestana}`;
@@ -424,36 +505,59 @@ export const PantallaInformes: React.FC = () => {
       });
     }
 
-    if (format === "excel" || format === "pdf") {
-      if (Platform.OS === "web" && typeof window !== "undefined") {
-        const csvFilas = [headers.join(",")];
-        filas.forEach((r) => {
-          csvFilas.push(
-            headers
-              .map((h) => {
-                const valor = r[h] !== undefined ? String(r[h]) : "";
-                return `"${valor.replace(/"/g, '""')}"`;
-              })
-              .join(",")
-          );
-        });
-        const csvContenido =
-          "data:text/csv;charset=utf-8,\uFEFF" + encodeURIComponent(csvFilas.join("\n"));
-        const enlace = document.createElement("a");
-        enlace.setAttribute("href", csvContenido);
-        enlace.setAttribute(
-          "download",
-          `${filename}_${new Date().toISOString().slice(0, 10)}.csv`
-        );
-        document.body.appendChild(enlace);
-        enlace.click();
-        document.body.removeChild(enlace);
-        mostrarAviso(
-          `Reporte exportado exitosamente (${filas.length} registros incluidos).`
-        );
-      } else {
-        mostrarAviso("Exportación generada en formato compatible.");
-      }
+    const rangoFechasTexto =
+      period === "todo"
+        ? "Todo el historial"
+        : `${fechaDesde || "Inicio"} a ${fechaHasta || "Hoy"}`;
+    const resumenFiltros = [
+      seleccionadoMovementTipo !== "todos" ? `Tipo: ${seleccionadoMovementTipo}` : null,
+      seleccionadoProyectoCodigo !== "todos" ? `Proyecto: ${seleccionadoProyectoCodigo}` : null,
+      buscarQuery.trim() ? `Búsqueda: "${buscarQuery.trim()}"` : null,
+    ]
+      .filter(Boolean)
+      .join(" • ");
+
+    let filaTotales: Record<string, string | number> | undefined;
+    if (activoPestana === "movimientos") {
+      filaTotales = {
+        Fecha: "TOTALES",
+        Tipo: `${cardexTotals.count} mov.`,
+        SKU: "",
+        Insumo: "TOTALES CONSOLIDADOS",
+        Referencia: "",
+        Entrada: `+${cardexTotals.totalIn}`,
+        Salida: `-${cardexTotals.totalOut}`,
+        Saldo: "-",
+        PMP: "-",
+        Total_CLP: formatearCLP(cardexTotals.totalValue),
+      };
+    }
+
+    const titulosPestana: Record<PestanaInforme, string> = {
+      movimientos: "Reporte de Movimientos (Cardex)",
+      inventario: "Reporte de Inventario y Stock Valorizado",
+      proyectos: "Estado Financiero de Proyectos y Obras",
+      materiales: "Materiales Asignados a Faenas",
+      gastos: "Reporte de Gastos en Stock",
+      mermas: "Reporte de Mermas y Bajas",
+    };
+
+    const paramsExport = {
+      titulo: titulosPestana[activoPestana],
+      nombreArchivo: filename,
+      rangoFechas: rangoFechasTexto,
+      resumenFiltros: resumenFiltros || "Sin filtros adicionales",
+      headers,
+      filas,
+      filaTotales,
+    };
+
+    if (format === "excel") {
+      const res = exportarInformeExcelWeb(paramsExport);
+      mostrarAviso(res.mensaje);
+    } else if (format === "pdf") {
+      const res = exportarInformePdfWeb(paramsExport);
+      mostrarAviso(res.mensaje);
     }
   };
 
@@ -620,13 +724,23 @@ export const PantallaInformes: React.FC = () => {
                 <Text style={estilos.filtrarTarjetaTitulo}>Parámetros de Recopilación</Text>
               </View>
 
-              {/* Botón de Exportación */}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <BotonExportar
-                  onExport={manejarExportar}
-                  title="Descargar Informe"
+              {/* Botones directos de descarga PDF y Excel */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                <Boton
+                  title="Descargar PDF"
+                  variant="outline"
+                  size="sm"
+                  icon="document-text-outline"
+                  onPress={() => manejarExportar("pdf")}
+                  style={{ minHeight: 38 }}
+                />
+                <Boton
+                  title="Descargar Excel"
                   variant="primary"
                   size="sm"
+                  icon="grid-outline"
+                  onPress={() => manejarExportar("excel")}
+                  style={{ minHeight: 38 }}
                 />
               </View>
             </View>
@@ -649,17 +763,17 @@ export const PantallaInformes: React.FC = () => {
                 )}
               </View>
 
-              {/* Selector de Período de Tiempo */}
-              <View style={estilos.periodFila}>
+              {/* Selector de Período Rápido (por defecto 30 días) */}
+              <View style={[estilos.periodFila, { flexWrap: "wrap" }]}>
                 {[
-                  { id: "30dias", label: "30 Días" },
+                  { id: "30dias", label: "Últimos 30 días" },
                   { id: "7dias", label: "7 Días" },
                   { id: "mes_actual", label: "Mes Actual" },
                   { id: "todo", label: "Todo" },
                 ].map((p) => (
                   <TouchableOpacity
                     key={p.id}
-                    onPress={() => establecerPeriod(p.id as PeriodFilter)}
+                    onPress={() => manejarSeleccionarPeriodo(p.id as PeriodFilter)}
                     style={[
                       estilos.periodChip,
                       period === p.id && estilos.periodChipActivo,
@@ -675,6 +789,88 @@ export const PantallaInformes: React.FC = () => {
                     </Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+            </View>
+
+            {/* Rango de fechas personalizable (Desde / Hasta) */}
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 10,
+                marginTop: 10,
+                paddingTop: 10,
+                borderTopWidth: 1,
+                borderTopColor: tema.colors.borderLight,
+              }}
+            >
+              <View style={{ flex: 1, minWidth: 150 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textMuted, marginBottom: 4 }}>
+                  Fecha Desde (AAAA-MM-DD)
+                </Text>
+                <TextInput
+                  value={fechaDesde}
+                  onChangeText={(val) => {
+                    establecerFechaDesde(val);
+                    establecerPeriod("personalizado");
+                  }}
+                  placeholder="2026-10-25"
+                  placeholderTextColor={tema.colors.textLight}
+                  style={{
+                    minHeight: 38,
+                    borderWidth: 1,
+                    borderColor: tema.colors.border,
+                    borderRadius: tema.radius.md,
+                    paddingHorizontal: 10,
+                    fontSize: 12.5,
+                    color: tema.colors.text,
+                    backgroundColor: tema.colors.surfaceAlt,
+                  }}
+                />
+              </View>
+
+              <View style={{ flex: 1, minWidth: 150 }}>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textMuted, marginBottom: 4 }}>
+                  Fecha Hasta (AAAA-MM-DD)
+                </Text>
+                <TextInput
+                  value={fechaHasta}
+                  onChangeText={(val) => {
+                    establecerFechaHasta(val);
+                    establecerPeriod("personalizado");
+                  }}
+                  placeholder="2026-11-24"
+                  placeholderTextColor={tema.colors.textLight}
+                  style={{
+                    minHeight: 38,
+                    borderWidth: 1,
+                    borderColor: tema.colors.border,
+                    borderRadius: tema.radius.md,
+                    paddingHorizontal: 10,
+                    fontSize: 12.5,
+                    color: tema.colors.text,
+                    backgroundColor: tema.colors.surfaceAlt,
+                  }}
+                />
+              </View>
+
+              <View style={{ justifyContent: "flex-end", paddingTop: 16 }}>
+                <Insignia
+                  label={
+                    period === "personalizado"
+                      ? `Rango: ${fechaDesde || "Inicio"} → ${fechaHasta || "Hoy"}`
+                      : period === "30dias"
+                        ? "Por defecto: Últimos 30 días"
+                        : period === "7dias"
+                          ? "Últimos 7 días"
+                          : period === "mes_actual"
+                            ? "Mes en curso"
+                            : "Todo el historial"
+                  }
+                  tone={period === "personalizado" ? "primary" : "info"}
+                  size="sm"
+                />
               </View>
             </View>
 
@@ -863,59 +1059,59 @@ export const PantallaInformes: React.FC = () => {
             </View>
 
             {/* TAB 1: MOVIMIENTOS */}
-      <SeccionInformeMovimientos
-        activoPestana={activoPestana}
-        cardexTotals={cardexTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoCardex={filtradoCardex}
-        width={width}
-      />
+            <SeccionInformeMovimientos
+              activoPestana={activoPestana}
+              cardexTotals={cardexTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoCardex={filtradoCardex}
+              width={width}
+            />
 
             {/* TAB 2: INVENTARIO */}
-      <SeccionInformeInventario
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProductos={filtradoProductos}
-        inventarioTotals={inventarioTotals}
-        width={width}
-      />
+            <SeccionInformeInventario
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProductos={filtradoProductos}
+              inventarioTotals={inventarioTotals}
+              width={width}
+            />
 
             {/* TAB 3: PROYECTOS */}
-      <SeccionInformeProyectos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoProyectos={filtradoProyectos}
-        proyectosTotals={proyectosTotals}
-        width={width}
-      />
+            <SeccionInformeProyectos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoProyectos={filtradoProyectos}
+              proyectosTotals={proyectosTotals}
+              width={width}
+            />
 
             {/* TAB 4: MATERIALES EN PROYECTOS */}
-      <SeccionInformeMateriales
-        activoPestana={activoPestana}
-        asignadoMateriales={asignadoMateriales}
-        asignadoMaterialesTotals={asignadoMaterialesTotals}
-        effectiveVistaModo={effectiveVistaModo}
-        width={width}
-      />
+            <SeccionInformeMateriales
+              activoPestana={activoPestana}
+              asignadoMateriales={asignadoMateriales}
+              asignadoMaterialesTotals={asignadoMaterialesTotals}
+              effectiveVistaModo={effectiveVistaModo}
+              width={width}
+            />
 
             {/* TAB 5: GASTOS Y COMPRAS DEL MES */}
-      <SeccionInformeGastos
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoPurchases={filtradoPurchases}
-        purchasesTotals={purchasesTotals}
-        width={width}
-      />
+            <SeccionInformeGastos
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoPurchases={filtradoPurchases}
+              purchasesTotals={purchasesTotals}
+              width={width}
+            />
 
             {/* TAB 6: MERMAS */}
-      <SeccionInformeMermas
-        activoPestana={activoPestana}
-        effectiveVistaModo={effectiveVistaModo}
-        filtradoWastes={filtradoWastes}
-        mermaTotals={mermaTotals}
-        productos={productos}
-        width={width}
-      />
+            <SeccionInformeMermas
+              activoPestana={activoPestana}
+              effectiveVistaModo={effectiveVistaModo}
+              filtradoWastes={filtradoWastes}
+              mermaTotals={mermaTotals}
+              productos={productos}
+              width={width}
+            />
           </Tarjeta>
         </ScrollView>
       </View>

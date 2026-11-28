@@ -10,7 +10,7 @@ export const estilos = StyleSheet.create({
     flex: 1,
   },
   scrollContenido: {
-    padding: tema.spacing.lg,
+    padding: tema.spacing.md,
     paddingBottom: 40,
   },
 
@@ -23,7 +23,7 @@ export const estilos = StyleSheet.create({
   },
   kpiColumna: {
     flex: 1,
-    minWidth: 220,
+    minWidth: "46%",
   },
 
   // Subcategory Tabs
@@ -80,20 +80,26 @@ export const estilos = StyleSheet.create({
 
   // Filters Card
   filtrarTarjeta: {
-    padding: tema.spacing.md,
+    padding: 14,
     marginBottom: tema.spacing.md,
+    borderWidth: 1,
+    borderColor: tema.colors.border,
+    borderRadius: tema.radius.lg,
   },
   filtrarEncabezadoFila: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    paddingBottom: 10,
     marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: tema.colors.borderLight,
     flexWrap: "wrap",
     gap: 8,
   },
   filtrarTarjetaTitulo: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: tema.fontWeight.bold,
+    fontSize: 14,
+    fontWeight: "800",
     color: tema.colors.text,
   },
   filtrarCamposFila: {
@@ -112,7 +118,7 @@ export const estilos = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     flex: 1,
-    minWidth: 260,
+    minWidth: 180,
   },
   buscarEntrada: {
     flex: 1,

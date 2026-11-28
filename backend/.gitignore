@@ -1,0 +1,61 @@
+# =============================================================================
+# FYAG Backend - .gitignore (Node.js, Express & PostgreSQL)
+# =============================================================================
+
+# Dependencias y compilación
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Variables de entorno y secretos (NUNCA versionar .env; solo .env.example)
+.env
+.env.*
+*.env
+!.env.example
+.npmrc
+*credentials*.json
+credentials.json
+*service-account*.json
+*secret*.json
+.supabase/
+.railway/
+.render/
+.vercel/
+
+# Certificados TLS/SSL y llaves privadas
+*.key
+*.pem
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.csr
+
+# Volcados de base de datos, respaldos cifrados y archivos subidos
+*.dump
+*.dump.enc
+*.enc
+*.sql.gz
+*.sql.bak
+*.sqlite
+*.sqlite3
+*.db
+backups/
+respaldos/
+uploads/
+
+# Logs, cobertura y temporales
+logs/
+*.log
+npm-debug.log*
+coverage/
+.nyc_output/
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db

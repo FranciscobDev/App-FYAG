@@ -1,34 +1,28 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
-  Pressable,
   ScrollView,
-  StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { usarAplicacion } from "@/contexto/ContextoAplicacion";
-import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import {
   Insignia,
   Boton,
   Tarjeta,
-  DialogoConfirmacion,
   EstadoVacio,
-  BotonExportar,
-  CampoTexto,
-  VistaModal,
   EncabezadoPagina,
   BarraProgreso,
-  ContenedorEstadoPantalla,
-  NotificacionFlotante,
 } from "@/componentes/comunes";
-import { Proyecto, TipoProyecto, EstadoProyecto } from "@/nucleo/tipos";
+import { AsignacionTecnicos } from "@/componentes/AsignacionTecnicos";
+import {
+  DistintivoEstadoProyecto,
+  IndicadorUltimaSincronizacion,
+} from "@/componentes/DistintivoEstadoProyecto";
 import { estilos } from "../estilos";
+import { PanelGraficosRentabilidadProyecto } from "./SeccionRentabilidadFinalAdmin";
 
 export interface PropiedadesVistaDetalleProyecto {
   asignarTecnicosAProyecto: any;
@@ -63,24 +57,36 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
   seleccionadoProyecto,
   tecnicos,
 }) => {
+  const [ultimaSincronizacion, establecerUltimaSincronizacion] = useState<Date>(
+    () => new Date()
+  );
+
   return (
     <>
-        <View style={estilos.vistaEnvoltorio}>
-          {/* Encabezado con Migas de Pan y Botón Volver (Ancho completo edge-to-edge) */}
-          <EncabezadoPagina
-            title={`${seleccionadoProyecto.code} - ${seleccionadoProyecto.name}`}
-            subtitle={`Cliente: ${seleccionadoProyecto.client} • Dirección: ${seleccionadoProyecto.address}`}
-            breadcrumbs={[
-              { label: "Inicio" },
-              { label: "Proyectos", onPress: () => establecerSeleccionadoProyecto(null) },
-              { label: seleccionadoProyecto.code },
-            ]}
-            onBack={() => establecerSeleccionadoProyecto(null)}
+      <View style={estilos.vistaEnvoltorio}>
+        {/* Encabezado con Migas de Pan y Botón Volver (Ancho completo edge-to-edge) */}
+        <EncabezadoPagina
+          title={`${seleccionadoProyecto.code} - ${seleccionadoProyecto.name}`}
+          subtitle={`Cliente: ${seleccionadoProyecto.client} • Dirección: ${seleccionadoProyecto.address}`}
+          breadcrumbs={[
+            { label: "Inicio" },
+            { label: "Proyectos", onPress: () => establecerSeleccionadoProyecto(null) },
+            { label: seleccionadoProyecto.code },
+          ]}
+          onBack={() => establecerSeleccionadoProyecto(null)}
+        />
+
+        <ScrollView style={estilos.detalleContenedor} contentContainerStyle={estilos.detalleScroll}>
+          {/* [FRONT-2] Indicador de última sincronización */}
+          <IndicadorUltimaSincronizacion
+            ultimaSincronizacion={ultimaSincronizacion}
+            onSincronizar={() => establecerUltimaSincronizacion(new Date())}
+            compacto
+            style={{ marginBottom: 12 }}
           />
 
-          <ScrollView style={estilos.detalleContenedor} contentContainerStyle={estilos.detalleScroll}>
-            {/* Encabezado del Proyecto */}
-            <Tarjeta variant="elevated" style={estilos.detalleEncabezadoTarjeta}>
+          {/* Encabezado del Proyecto */}
+          <Tarjeta variant="elevated" style={estilos.detalleEncabezadoTarjeta}>
             <View style={estilos.detalleSuperiorFila}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -96,15 +102,10 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                 <Text style={estilos.detalleCliente}>Cliente: {seleccionadoProyecto.client}</Text>
               </View>
 
-              <Insignia
-                label={seleccionadoProyecto.status.toUpperCase()}
-                tone={
-                  seleccionadoProyecto.status === "activo"
-                    ? "ok"
-                    : seleccionadoProyecto.status === "cerrado"
-                    ? "mute"
-                    : "info"
-                }
+              <DistintivoEstadoProyecto
+                estado={seleccionadoProyecto.status}
+                tamano="md"
+                mostrarPrefijo
               />
             </View>
 
@@ -142,10 +143,10 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                       />
                     </>
                   ) : (
-                    <Insignia
-                      label="🔒 Cerrado"
-                      tone="mute"
-                      size="md"
+                    <DistintivoEstadoProyecto
+                      estado="Cerrado"
+                      tamano="md"
+                      mostrarPrefijo
                     />
                   )}
                 </>
@@ -193,18 +194,11 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                     ? Math.round((estimatedRentabilidad / seleccionadoProyecto.saleValue) * 100)
                     : 0;
 
-                // Regla del semáforo:
-                // Verde: < 80 %
-                // Amarillo: 80 - 100 %
-                // Rojo: > 100 %
                 let semTono: "ok" | "warn" | "danger" = "ok";
-                let semTexto = "Verde: < 80% (Bajo control)";
                 if (ratio > 1.0) {
                   semTono = "danger";
-                  semTexto = "Rojo: > 100% (Sobregiro Presupuestario)";
                 } else if (ratio >= 0.8) {
                   semTono = "warn";
-                  semTexto = "Amarillo: 80–100% (Cerca del límite presupuestado)";
                 }
 
                 return (
@@ -285,49 +279,11 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
 
           {/* ---------------- 2. PESTAÑA TÉCNICOS (SIN DUPLICADOS) ---------------- */}
           {detallePestana === "tecnicos" && (
-            <Tarjeta variant="default">
-              <Text style={estilos.subTitulo}>Equipo Técnico Asignado a la Faena</Text>
-              <Text style={estilos.subDescripcion}>
-                Asignación de personal operativo en terreno (validación estricta sin duplicados):
-              </Text>
-
-              {tecnicos.map((t: any) => {
-                const esAsignado = seleccionadoProyecto.technicianRuts.includes(t.rut);
-                return (
-                  <View key={t.rut} style={estilos.tecnicoFila}>
-                    <View style={estilos.tecnicoAvatar}>
-                      <Ionicons name="person" size={16} color={tema.colors.primary} />
-                    </View>
-                    <View style={estilos.tecnicoInfoColumna}>
-                      <Text style={estilos.tecnicoNombre}>{t.name}</Text>
-                      <Text style={estilos.tecnicoSpecialty}>{t.specialty} • RUT: {t.rut}</Text>
-                    </View>
-
-                    {/* Botón Asignar / Desasignar (bloqueado si cerrado) */}
-                    {seleccionadoProyecto.status !== "cerrado" && rolActual === "admin" && (
-                      <Boton
-                        title={esAsignado ? "Desasignar" : "Asignar"}
-                        variant={esAsignado ? "danger" : "outline"}
-                        size="sm"
-                        onPress={() => {
-                          const actualRuts = seleccionadoProyecto.technicianRuts;
-                          const siguienteRuts = esAsignado
-                            ? actualRuts.filter((r: any) => r !== t.rut)
-                            : Array.from(new Set([...actualRuts, t.rut])); // Garantiza sin duplicados
-                          asignarTecnicosAProyecto(seleccionadoProyecto.id, siguienteRuts);
-                          establecerSeleccionadoProyecto({ ...seleccionadoProyecto, technicianRuts: siguienteRuts });
-                          mostrarAviso(
-                            esAsignado
-                              ? `Técnico ${t.name} desasignado.`
-                              : `Técnico ${t.name} asignado al proyecto.`
-                          );
-                        }}
-                      />
-                    )}
-                  </View>
-                );
-              })}
-            </Tarjeta>
+            <AsignacionTecnicos
+              proyectoIdInicial={seleccionadoProyecto.id}
+              onAviso={mostrarAviso}
+              titulo={`Asignación de Técnicos — ${seleccionadoProyecto.code}`}
+            />
           )}
 
           {/* ---------------- 3. PESTAÑA INSUMOS Y EGRESOS ---------------- */}
@@ -457,164 +413,14 @@ export const VistaDetalleProyecto: React.FC<PropiedadesVistaDetalleProyecto> = (
                   </Text>
                 </View>
               ) : (
-                <View style={estilos.rentabilityContenido}>
-                  <View style={estilos.auditoriaCerradoAviso}>
-                    <Ionicons name="checkmark-done-circle" size={20} color={tema.colors.ok} style={{ marginRight: 6 }} />
-                    <Text style={estilos.cerradoAtNota}>
-                      Proyecto liquidado y cerrado por: <Text style={{ fontWeight: "bold" }}>{seleccionadoProyecto.closedBy || "Administración"}</Text> el {formatearFecha(seleccionadoProyecto.closedAt || "")}
-                    </Text>
-                  </View>
-
-                  {/* Barras Comparativas Planificado vs Real por Materiales, Mermas y Horas */}
-                  <Text style={estilos.compSeccionTitulo}>Comparativo Planificado vs Real por Categoría:</Text>
-
-                  {/* 1. Materiales */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>1. Insumos y Materiales</Text>
-                      <Text style={estilos.catEncabezadoValor}>
-                        Real: {formatearCLP(seleccionadoProyecto.costRealMaterials || 0)} / Plan: {formatearCLP(seleccionadoProyecto.budgetMaterials)}
-                      </Text>
-                    </View>
-                    <BarraProgreso
-                      value={seleccionadoProyecto.costRealMaterials || 0}
-                      max={seleccionadoProyecto.budgetMaterials}
-                      height={6}
-                      showPercentage
-                      semaforo
-                    />
-                    <Text style={estilos.catDesviationTexto}>
-                      Desviación: {formatearCLP((seleccionadoProyecto.costRealMaterials || 0) - seleccionadoProyecto.budgetMaterials)} (
-                      {seleccionadoProyecto.budgetMaterials > 0
-                        ? ((((seleccionadoProyecto.costRealMaterials || 0) - seleccionadoProyecto.budgetMaterials) / seleccionadoProyecto.budgetMaterials) * 100).toFixed(1)
-                        : "0"}%)
-                    </Text>
-                  </View>
-
-                  {/* 2. Horas Hombre */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>2. Mano de Obra (Horas Hombre)</Text>
-                      <Text style={estilos.catEncabezadoValor}>
-                        Real: {formatearCLP(seleccionadoProyecto.costRealHours || 0)} / Plan: {formatearCLP(seleccionadoProyecto.budgetHours * 18750)}
-                      </Text>
-                    </View>
-                    <BarraProgreso
-                      value={seleccionadoProyecto.costRealHours || 0}
-                      max={seleccionadoProyecto.budgetHours * 18750}
-                      height={6}
-                      showPercentage
-                      semaforo
-                    />
-                    <Text style={estilos.catDesviationTexto}>
-                      Desviación: {formatearCLP((seleccionadoProyecto.costRealHours || 0) - seleccionadoProyecto.budgetHours * 18750)} (
-                      {seleccionadoProyecto.budgetHours > 0
-                        ? ((((seleccionadoProyecto.costRealHours || 0) - seleccionadoProyecto.budgetHours * 18750) / (seleccionadoProyecto.budgetHours * 18750)) * 100).toFixed(1)
-                        : "0"}%)
-                    </Text>
-                  </View>
-
-                  {/* 3. Mermas y Daños */}
-                  <View style={estilos.comparisonCategoriaCaja}>
-                    <View style={estilos.catEncabezadoFila}>
-                      <Text style={estilos.catEncabezadoTitulo}>3. Mermas y Daños Imputados a Obra</Text>
-                      <Text style={[estilos.catEncabezadoValor, { color: tema.colors.danger }]}>
-                        {formatearCLP(seleccionadoProyecto.costRealWaste || 0)}
-                      </Text>
-                    </View>
-                    <Text style={estilos.catDesviationTexto}>
-                      Pérdida neta de materiales en faena absorbida por el margen del proyecto.
-                    </Text>
-                  </View>
-
-                  {/* Torta / Composición Gráfica de Costos */}
-                  <Text style={[estilos.compSeccionTitulo, { marginTop: 16 }]}>Composición del Costo Real Total:</Text>
-                  {(() => {
-                    const totalCosto = seleccionadoProyecto.costReal || 1;
-                    const materialCosto = seleccionadoProyecto.costRealMaterials || 0;
-                    const hrsCosto = seleccionadoProyecto.costRealHours || 0;
-                    const wstCosto = seleccionadoProyecto.costRealWaste || 0;
-
-                    const materialPorcentaje = Math.round((materialCosto / totalCosto) * 100);
-                    const hrsPorcentaje = Math.round((hrsCosto / totalCosto) * 100);
-                    const wstPorcentaje = Math.round((wstCosto / totalCosto) * 100);
-
-                    return (
-                      <View style={estilos.pieContenedor}>
-                        {/* Barra segmentada representativa */}
-                        <View style={estilos.pieSegmentedBarra}>
-                          <View style={[estilos.pieSegment, { flex: materialPorcentaje, backgroundColor: "#2563eb" }]} />
-                          <View style={[estilos.pieSegment, { flex: hrsPorcentaje, backgroundColor: "#7c3aed" }]} />
-                          <View style={[estilos.pieSegment, { flex: wstPorcentaje, backgroundColor: "#dc2626" }]} />
-                        </View>
-
-                        <View style={estilos.pieLegendFila}>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#2563eb" }]} />
-                            <Text style={estilos.pieLegendTexto}>Materiales: {materialPorcentaje}% ({formatearCLP(materialCosto)})</Text>
-                          </View>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#7c3aed" }]} />
-                            <Text style={estilos.pieLegendTexto}>Horas: {hrsPorcentaje}% ({formatearCLP(hrsCosto)})</Text>
-                          </View>
-                          <View style={estilos.pieLegendElemento}>
-                            <View style={[estilos.piePunto, { backgroundColor: "#dc2626" }]} />
-                            <Text style={estilos.pieLegendTexto}>Mermas: {wstPorcentaje}% ({formatearCLP(wstCosto)})</Text>
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })()}
-
-                  {/* Desviación Total en Monto y % */}
-                  {(() => {
-                    const totalDev = seleccionadoProyecto.costReal - seleccionadoProyecto.budget;
-                    const totalDevPorcentaje =
-                      seleccionadoProyecto.budget > 0
-                        ? ((totalDev / seleccionadoProyecto.budget) * 100).toFixed(1)
-                        : "0";
-                    const netoRentabilidad = seleccionadoProyecto.saleValue - seleccionadoProyecto.costReal;
-                    const rentabilidadMargenPorcentaje =
-                      seleccionadoProyecto.saleValue > 0
-                        ? ((netoRentabilidad / seleccionadoProyecto.saleValue) * 100).toFixed(1)
-                        : "0";
-
-                    return (
-                      <View style={estilos.finalAuditoriaTarjeta}>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Presupuesto Total Contratado:</Text>
-                          <Text style={estilos.auditoriaValor}>{formatearCLP(seleccionadoProyecto.budget)}</Text>
-                        </View>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Costo Real Final Auditado:</Text>
-                          <Text style={estilos.auditoriaValor}>{formatearCLP(seleccionadoProyecto.costReal)}</Text>
-                        </View>
-                        <View style={estilos.auditoriaLinea}>
-                          <Text style={estilos.auditoriaLbl}>Desviación Presupuestaria Total:</Text>
-                          <Text style={[estilos.auditoriaValor, totalDev > 0 ? { color: tema.colors.danger } : { color: tema.colors.ok }]}>
-                            {totalDev > 0 ? `+${formatearCLP(totalDev)}` : formatearCLP(totalDev)} ({totalDevPorcentaje}%)
-                          </Text>
-                        </View>
-                        <View style={[estilos.auditoriaLinea, estilos.auditoriaFinalLinea]}>
-                          <Text style={estilos.auditoriaFinalLbl}>Utilidad Neta del Proyecto:</Text>
-                          <Text
-                            style={[
-                              estilos.auditoriaFinalValor,
-                              netoRentabilidad >= 0 ? { color: tema.colors.ok } : { color: tema.colors.danger },
-                            ]}
-                          >
-                            {formatearCLP(netoRentabilidad)} (Margen: {rentabilidadMargenPorcentaje}%)
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })()}
+                <View style={{ marginTop: 10 }}>
+                  <PanelGraficosRentabilidadProyecto proyecto={seleccionadoProyecto} />
                 </View>
               )}
             </Tarjeta>
           )}
-          </ScrollView>
-        </View>
+        </ScrollView>
+      </View>
     </>
   );
 };

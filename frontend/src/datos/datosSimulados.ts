@@ -31,9 +31,9 @@ import type {
 } from "@/nucleo/tipos";
 
 export const USUARIOS: Record<Usuario["role"], Usuario> = {
-  admin: { rut: construirRut(12456789), name: "Javier Muñoz Contreras", email: "javier.munoz@fyag.cl", initials: "JM", role: "admin" },
-  warehouse: { rut: construirRut(15321654), name: "Camila Vera Soto", email: "camila.vera@fyag.cl", initials: "CV", role: "warehouse" },
-  technician: { rut: construirRut(17894562), name: "Alejandro Rojas Pino", email: "alejandro.rojas@fyag.cl", initials: "AR", role: "technician" },
+  admin: { rut: construirRut(12456789), name: "Javier Muñoz Contreras", email: "adminfyag@gmail.com", initials: "JM", role: "admin" },
+  warehouse: { rut: construirRut(15321654), name: "Camila Vera Soto", email: "bodegafyag@gmail.com", initials: "CV", role: "warehouse" },
+  technician: { rut: construirRut(17894562), name: "Alejandro Rojas Pino", email: "tecnicofyag@gmail.com", initials: "AR", role: "technician" },
 };
 
 export const TECNICOS: Tecnico[] = [
@@ -42,6 +42,11 @@ export const TECNICOS: Tecnico[] = [
   { rut: construirRut(18234905), name: "Constanza Leiva Núñez", phone: "+56 9 9345 8812", specialty: "Gasfitería" },
   { rut: construirRut(14567832), name: "Pedro Aguilera Mora", phone: "+56 9 6678 2290", specialty: "Soldadura y estructuras" },
 ];
+
+const calcularFechaPlazoRelativo = (diasRelativos: number): string => {
+  const d = new Date(Date.now() + diasRelativos * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+};
 
 export const PROYECTOS: Proyecto[] = [
   {
@@ -65,7 +70,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 450000,
     hoursReal: 384,
     startDate: "2026-08-01",
-    deadline: "2026-10-14T11:00:00",
+    deadline: calcularFechaPlazoRelativo(1), // [SCRUM H39] 1 día restante (Rojo - Crítico)
     dispatches: [
       { id: "dsp1", date: "10-10-2026", dispatchCode: "DESP-2026-089", sku: "ELE-CBL-0012", productName: "Cable THHN 12 AWG", quantity: 400, unit: "m", unitCost: 635, totalCost: 254000, deliveredTo: "Alejandro Rojas" },
       { id: "dsp2", date: "05-10-2026", dispatchCode: "DESP-2026-082", sku: "ELE-DIS-0016", productName: "Disyuntor termomagnético 16 A", quantity: 35, unit: "un", unitCost: 4200, totalCost: 147000, deliveredTo: "Pedro Aguilera" },
@@ -103,7 +108,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 220000,
     hoursReal: 208,
     startDate: "2026-09-15",
-    deadline: "2026-10-16T17:00:00",
+    deadline: calcularFechaPlazoRelativo(4), // [SCRUM H39] 4 días restantes (Amarillo - Alerta)
     dispatches: [
       { id: "dsp21", date: "08-10-2026", dispatchCode: "DESP-2026-085", sku: "CLI-GAS-R410", productName: "Gas refrigerante R410A 11,3 kg", quantity: 6, unit: "cilindro", unitCost: 85000, totalCost: 510000, deliveredTo: "Matías Fuentes" },
       { id: "dsp22", date: "25-09-2026", dispatchCode: "DESP-2026-071", sku: "CLI-FLT-HEPA", productName: "Filtros antibacterianos y repuestos", quantity: 1, unit: "kit", unitCost: 6290000, totalCost: 6290000, deliveredTo: "Matías Fuentes" },
@@ -137,7 +142,7 @@ export const PROYECTOS: Proyecto[] = [
     costRealWaste: 200000,
     hoursReal: 249,
     startDate: "2026-09-01",
-    deadline: "2026-10-31T18:00:00",
+    deadline: calcularFechaPlazoRelativo(6), // [SCRUM H39] 6 días restantes (Normal - En plazo)
     dispatches: [
       { id: "dsp31", date: "02-10-2026", dispatchCode: "DESP-2026-079", sku: "GAS-TUB-0020", productName: "Tubo cobre tipo L 3/4\" 6 m", quantity: 60, unit: "un", unitCost: 42000, totalCost: 2520000, deliveredTo: "Constanza Leiva" },
       { id: "dsp32", date: "15-09-2026", dispatchCode: "DESP-2026-063", sku: "INC-VAL-0040", productName: "Válvulas mariposa y rociadores certificados", quantity: 1, unit: "kit", unitCost: 6680000, totalCost: 6680000, deliveredTo: "Constanza Leiva" },
@@ -961,6 +966,44 @@ export const CLIENTES: Cliente[] = [
 
 export const ORDENES_COMPRA: OrdenCompra[] = [
   {
+    id: "oc_auto_105",
+    code: "OC-2026-105",
+    supplierId: "sup5",
+    supplier: "Seguridad Industrial 3M Chile SpA",
+    supplierRut: "79.543.210-9",
+    status: "borrador",
+    isAutoMinStock: true,
+    items: [
+      { sku: "EPP-CAS-0001", name: "Casco de seguridad blanco", quantity: 30, unitPrice: 5490, unit: "un" },
+    ],
+    subtotal: 164700,
+    iva: 31293,
+    total: 195993,
+    itemsCount: 1,
+    date: "15-10-2026",
+    expectedDate: "19-10-2026",
+    notes: "Borrador generado automáticamente por quiebre de stock mínimo en EPP-CAS-0001 (Stock actual: 0 un / Mínimo: 15 un). Pendiente de aprobación.",
+  },
+  {
+    id: "oc_auto_104",
+    code: "OC-2026-104",
+    supplierId: "sup1",
+    supplier: "Schneider Electric Chile S.A.",
+    supplierRut: "76.432.890-K",
+    status: "borrador",
+    isAutoMinStock: true,
+    items: [
+      { sku: "ELE-DIS-0016", name: "Disyuntor termomagnético 16 A", quantity: 50, unitPrice: 4590, unit: "un" },
+    ],
+    subtotal: 229500,
+    iva: 43605,
+    total: 273105,
+    itemsCount: 1,
+    date: "14-10-2026",
+    expectedDate: "18-10-2026",
+    notes: "Borrador generado automáticamente por alerta de stock bajo mínimo en ELE-DIS-0016 (Stock actual: 12 un / Mínimo: 30 un). Pendiente de aprobación.",
+  },
+  {
     id: "oc1",
     code: "OC-2026-103",
     supplierId: "sup1",
@@ -1314,6 +1357,19 @@ export const HERRAMIENTAS: Herramienta[] = [
     nextMaintenanceDate: "2026-11-20", // Al día
     loans: [
       {
+        id: "ln_1b",
+        toolId: "tool_1",
+        technicianRut: TECNICOS[2].rut,
+        technicianName: "Constanza Leiva Núñez",
+        projectCode: "OB-2026-009",
+        projectName: "Bodega Logística Quilicura",
+        loanDate: "10-10-2026",
+        returnDate: "18-10-2026",
+        initialCondition: "Operativo con maletín y set de brocas SDS",
+        returnCondition: "bueno",
+        returnNotes: "Retorno con accesorios completos y prueba operativa OK",
+      },
+      {
         id: "ln_1",
         toolId: "tool_1",
         technicianRut: USUARIOS.technician.rut,
@@ -1646,7 +1702,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_1",
     rut: "12.456.789-5",
     name: "Javier Muñoz Contreras",
-    email: "javier.munoz@fyag.cl",
+    email: "adminfyag@gmail.com",
     role: "admin",
     disabled: false,
     createdAt: "2024-01-10",
@@ -1666,7 +1722,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_3",
     rut: "15.321.654-2",
     name: "Camila Vera Soto",
-    email: "camila.vera@fyag.cl",
+    email: "bodegafyag@gmail.com",
     role: "warehouse",
     disabled: false,
     createdAt: "2024-02-01",
@@ -1686,7 +1742,7 @@ export const USUARIOS_SISTEMA: UsuarioSistema[] = [
     id: "usr_5",
     rut: "17.894.562-3",
     name: "Alejandro Rojas Pino",
-    email: "alejandro.rojas@fyag.cl",
+    email: "tecnicofyag@gmail.com",
     role: "technician",
     disabled: false,
     createdAt: "2024-04-12",

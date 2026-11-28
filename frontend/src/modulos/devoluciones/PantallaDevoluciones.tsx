@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ScrollView,
   Text,
@@ -14,6 +14,13 @@ import { Insignia } from "@/componentes/base/Insignia";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
 import { OrdenDevolucion, ItemOrdenDevolucion, DevolucionProveedor } from "@/nucleo/tipos";
+import {
+  DevolucionServidor,
+  SobranteInsumoServidor,
+  declararDevolucionTecnico,
+  listarMisDevoluciones,
+  obtenerSobranteProyecto,
+} from "./devolucionesApi";
 import { estilos } from "./estilos";
 import {
   SeccionDevolucionesTecnico,
@@ -23,13 +30,59 @@ import {
 } from "./componentes";
 
 interface ReturnItemForm {
+  id_articulo: number;
   sku: string;
+  name: string;
+  unit: string;
   quantityRetrieved: number;
   quantityUsed: number;
+  /** Máximo devolvible calculado por el servidor (retirado − usado − ya declarado). */
+  maximo: number;
   quantityReturned: number;
 }
 
-export const PantallaDevoluciones: React.FC = () => {
+/** Convierte una devolución del servidor al modelo que usa el seguimiento. */
+const aOrdenDevolucion = (d: DevolucionServidor): OrdenDevolucion => ({
+  id: String(d.id_devolucion),
+  code: d.codigo_devolucion ?? `DEV-${d.id_devolucion}`,
+  projectId: String(d.proyecto_id),
+  projectCode: d.codigo_proyecto ?? "PROJ",
+  projectName: d.nombre_proyecto,
+  technicianName: d.tecnico_nombre,
+  technicianRut: d.tecnico_rut,
+  itemsCount: d.lineas.length,
+  summary: d.lineas.map((l) => `${l.cantidad_declarada} ${l.unidad} ${l.nombre_articulo}`).join(", "),
+  date: d.fecha_declaracion,
+  status: d.estado === "Recibida" ? "recibida" : "en_transito",
+  items: d.lineas.map((l) => ({
+    sku: l.sku ?? "",
+    name: l.nombre_articulo,
+    quantityRetrieved: l.cantidad_retirada,
+    quantityUsed: l.cantidad_utilizada,
+    quantityReturned: l.cantidad_declarada,
+    quantityReceivedReal: l.cantidad_recibida ?? undefined,
+    unit: l.unidad,
+  })),
+});
+
+const aItemFormulario = (s: SobranteInsumoServidor): ReturnItemForm => ({
+  id_articulo: s.id_articulo,
+  sku: s.sku,
+  name: s.nombre_articulo,
+  unit: s.unidad,
+  quantityRetrieved: s.cantidad_retirada,
+  quantityUsed: s.cantidad_utilizada,
+  maximo: s.cantidad_maxima_devolvible,
+  quantityReturned: Math.max(0, s.cantidad_maxima_devolvible),
+});
+
+export interface PropiedadesPantallaDevoluciones {
+  showHeader?: boolean;
+}
+
+export const PantallaDevoluciones: React.FC<PropiedadesPantallaDevoluciones> = ({
+  showHeader = true,
+}) => {
   const {
     proyectos,
     productos,
@@ -50,56 +103,89 @@ export const PantallaDevoluciones: React.FC = () => {
   );
 
   // -------------------------------------------------------------
-  // 1. TÉCNICO: FORMULARIO DE DEVOLUCIÓN DE SOBRANTE
+  // 1. TÉCNICO: FORMULARIO DE DEVOLUCIÓN DE SOBRANTE (datos reales del servidor)
   // -------------------------------------------------------------
+  const esTecnico = rolActual === "technician";
   const activoProyectos = proyectos.filter((p) => p.status !== "cerrado");
   const [seleccionadoProyectoId, establecerSeleccionadoProyectoId] = useState(activoProyectos[0]?.id || "");
-  const [retElementos, establecerRetElementos] = useState<ReturnItemForm[]>([
-    {
-      sku: productos[0]?.sku || "GAS-TUB-0020",
-      quantityRetrieved: 10,
-      quantityUsed: 6,
-      quantityReturned: 4,
-    },
-  ]);
+  const [sobranteProyecto, establecerSobranteProyecto] = useState<SobranteInsumoServidor[]>([]);
+  const [cargandoSobrante, establecerCargandoSobrante] = useState(false);
+  const [misDevoluciones, establecerMisDevoluciones] = useState<OrdenDevolucion[]>([]);
+  const [retElementos, establecerRetElementos] = useState<ReturnItemForm[]>([]);
   const [retError, establecerRetError] = useState("");
   const [retExito, establecerRetExito] = useState("");
 
-  const manejarAgregarDevolucionElemento = () => {
-    const disponibleProducto = productos.find((p) => !retElementos.some((ri) => ri.sku === p.sku)) || productos[0];
-    if (disponibleProducto) {
-      establecerRetElementos((prev) => [
-        ...prev,
-        {
-          sku: disponibleProducto.sku,
-          quantityRetrieved: 5,
-          quantityUsed: 3,
-          quantityReturned: 2,
-        },
-      ]);
+  const cargarSobrante = async (idProyecto: string) => {
+    if (!idProyecto) {
+      establecerSobranteProyecto([]);
+      return;
     }
+    establecerCargandoSobrante(true);
+    const res = await obtenerSobranteProyecto(idProyecto);
+    establecerCargandoSobrante(false);
+    if (res.ok && res.data) {
+      establecerSobranteProyecto(res.data.items);
+    } else {
+      establecerSobranteProyecto([]);
+      establecerRetError(res.error ?? "No se pudo cargar el sobrante del proyecto");
+    }
+  };
+
+  const cargarMisDevoluciones = async () => {
+    const res = await listarMisDevoluciones();
+    if (res.ok && res.data) {
+      establecerMisDevoluciones(res.data.map(aOrdenDevolucion));
+    }
+  };
+
+  // Al elegir proyecto (o al entrar), se cargan sus insumos con sobrante real y se limpia el formulario
+  useEffect(() => {
+    if (!esTecnico) return;
+    if (!seleccionadoProyectoId && activoProyectos.length > 0) {
+      establecerSeleccionadoProyectoId(activoProyectos[0].id);
+      return;
+    }
+    establecerRetElementos([]);
+    establecerRetError("");
+    establecerRetExito("");
+    cargarSobrante(seleccionadoProyectoId);
+  }, [seleccionadoProyectoId, esTecnico, activoProyectos.length]);
+
+  useEffect(() => {
+    if (esTecnico) cargarMisDevoluciones();
+  }, [esTecnico]);
+
+  const manejarAgregarDevolucionElemento = () => {
+    const agregados = new Set(retElementos.map((r) => r.id_articulo));
+    const siguiente =
+      sobranteProyecto.find((s) => !agregados.has(s.id_articulo) && s.cantidad_maxima_devolvible > 0) ??
+      sobranteProyecto.find((s) => !agregados.has(s.id_articulo));
+    if (!siguiente) {
+      establecerRetError("No hay más insumos con sobrante en este proyecto.");
+      return;
+    }
+    establecerRetError("");
+    establecerRetElementos((prev) => [...prev, aItemFormulario(siguiente)]);
   };
 
   const manejarQuitarDevolucionElemento = (index: number) => {
-    if (retElementos.length > 1) {
-      establecerRetElementos((prev) => prev.filter((_, idx) => idx !== index));
-    }
+    establecerRetElementos((prev) => prev.filter((_, idx) => idx !== index));
   };
 
   const validationErrores = retElementos.map((item) => {
-    const maximoAllowed = Math.max(0, item.quantityRetrieved - item.quantityUsed);
-    if (item.quantityReturned > maximoAllowed) {
-      return `Excede el sobrante máximo (${maximoAllowed}).`;
-    }
     if (item.quantityReturned <= 0) {
-      return `La cantidad a devolver debe ser mayor a 0.`;
+      return "La cantidad a devolver debe ser mayor a 0.";
+    }
+    if (item.quantityReturned > item.maximo) {
+      return `Excede el sobrante máximo (${item.maximo}).`;
     }
     return null;
   });
 
-  const tieneFormularioErrores = validationErrores.some((err) => err !== null);
+  const tieneFormularioErrores =
+    cargandoSobrante || retElementos.length === 0 || validationErrores.some((err) => err !== null);
 
-  const manejarGuardarTecnicoDevolucion = () => {
+  const manejarGuardarTecnicoDevolucion = async () => {
     establecerRetError("");
     establecerRetExito("");
 
@@ -108,38 +194,23 @@ export const PantallaDevoluciones: React.FC = () => {
       return;
     }
 
-    const elementosHastaEnviar: ItemOrdenDevolucion[] = retElementos.map((i) => {
-      const p = productos.find((prod) => prod.sku === i.sku);
-      return {
-        sku: i.sku,
-        name: p ? p.name : i.sku,
-        quantityRetrieved: i.quantityRetrieved,
-        quantityUsed: i.quantityUsed,
-        quantityReturned: i.quantityReturned,
-        unit: p ? p.unit : "un",
-      };
-    });
-
-    const resultado = crearDevolucionTecnico(
+    // El servidor vuelve a validar el sobrante; el formulario solo envía cantidades
+    const res = await declararDevolucionTecnico(
       seleccionadoProyectoId,
-      usuario.rut,
-      usuario.name,
-      elementosHastaEnviar
+      retElementos.map((i) => ({ id_articulo: i.id_articulo, cantidad_declarada: i.quantityReturned }))
     );
 
-    if (!resultado.success) {
-      establecerRetError(resultado.error || "Error al registrar la devolución.");
-    } else {
-      establecerRetExito("Devolución registrada exitosamente. Se encuentra 'En tránsito' hacia Bodega Central.");
-      establecerRetElementos([
-        {
-          sku: productos[1]?.sku || "ELE-CBL-0012",
-          quantityRetrieved: 15,
-          quantityUsed: 10,
-          quantityReturned: 5,
-        },
-      ]);
+    if (!res.ok || !res.data) {
+      establecerRetError(res.error ?? "No se pudo registrar la devolución");
+      await cargarSobrante(seleccionadoProyectoId);
+      return;
     }
+
+    establecerRetExito(
+      `Devolución ${res.data.devolucion.codigo_devolucion} registrada. Se encuentra 'En tránsito' hacia Bodega Central.`
+    );
+    establecerRetElementos([]);
+    await Promise.all([cargarSobrante(seleccionadoProyectoId), cargarMisDevoluciones()]);
   };
 
   // -------------------------------------------------------------
@@ -148,6 +219,7 @@ export const PantallaDevoluciones: React.FC = () => {
   const [confirmarDevolucionModal, establecerConfirmarDevolucionModal] = useState<OrdenDevolucion | null>(null);
   const [verificadoLista, establecerVerificadoLista] = useState<{ sku: string; quantityReceivedReal: number }[]>([]);
   const [discrepancyNota, establecerDiscrepancyNota] = useState("");
+  const [avisoBodega, establecerAvisoBodega] = useState("");
 
   const manejarAbrirConfirmarDevolucion = (ret: OrdenDevolucion) => {
     establecerConfirmarDevolucionModal(ret);
@@ -168,6 +240,8 @@ export const PantallaDevoluciones: React.FC = () => {
 
   const manejarConfirmarBodegaRecepcion = () => {
     if (!confirmarDevolucionModal) return;
+    const codigoConfirmado = confirmarDevolucionModal.code;
+    const tecnicoConfirmado = confirmarDevolucionModal.technicianName;
     confirmarDevolucionBodega(
       confirmarDevolucionModal.id,
       verificadoLista,
@@ -175,6 +249,9 @@ export const PantallaDevoluciones: React.FC = () => {
       usuario.name
     );
     establecerConfirmarDevolucionModal(null);
+    establecerAvisoBodega(
+      `Devolución ${codigoConfirmado} marcada como Recibida. Stock y Cardex actualizados, y estado reflejado en el móvil de ${tecnicoConfirmado}.`
+    );
   };
 
   // -------------------------------------------------------------
@@ -183,16 +260,26 @@ export const PantallaDevoluciones: React.FC = () => {
   const [nuevoProveedorDevolucionModal, establecerNuevoProveedorDevolucionModal] = useState(false);
   const [supRetProveedorId, establecerSupRetProveedorId] = useState(proveedores[0]?.id || "");
   const [supRetSku, establecerSupRetSku] = useState(productos[0]?.sku || "");
-  const [supRetCantidad, establecerSupRetCantidad] = useState("5");
+  const [supRetCantidad, establecerSupRetCantidad] = useState("1");
   const [supRetMotivo, establecerSupRetMotivo] = useState("Bobina magnética defectuosa de fábrica detectada en recepción");
   const [supRetGuia, establecerSupRetGuia] = useState("GD-2026-905");
   const [supRetError, establecerSupRetError] = useState("");
+  const [avisoProveedor, establecerAvisoProveedor] = useState("");
 
   const [resolverDevolucionModal, establecerResolverDevolucionModal] = useState<DevolucionProveedor | null>(null);
   const [resolverTipo, establecerResolverTipo] = useState<"nota_credito" | "reemplazo_producto" | "reembolso">("nota_credito");
   const [resolverNotas, establecerResolverNotas] = useState("");
 
   const cuarentenaProductos = productos.filter((p) => (p.quarantine || 0) > 0);
+
+  const manejarAbrirModalNuevaDevolucionProveedor = () => {
+    establecerSupRetError("");
+    if (cuarentenaProductos.length > 0) {
+      establecerSupRetSku(cuarentenaProductos[0].sku);
+      establecerSupRetCantidad(String(Math.min(1, cuarentenaProductos[0].quarantine || 1)));
+    }
+    establecerNuevoProveedorDevolucionModal(true);
+  };
 
   const manejarGuardarProveedorDevolucion = () => {
     establecerSupRetError("");
@@ -216,21 +303,35 @@ export const PantallaDevoluciones: React.FC = () => {
       supRetGuia.trim()
     );
     establecerNuevoProveedorDevolucionModal(false);
+    establecerAvisoProveedor(
+      `Devolución emitida con Guía N° ${supRetGuia.trim()}. Quedó en estado Pendiente de resolución para seguimiento del Administrador.`
+    );
   };
 
   const manejarConfirmarResolution = () => {
     if (!resolverDevolucionModal) return;
+    const codigoCerrado = resolverDevolucionModal.code;
+    const viaTexto =
+      resolverTipo === "nota_credito"
+        ? "Nota de Crédito"
+        : resolverTipo === "reemplazo_producto"
+        ? "Reposición de Producto (stock reingresado al Cardex)"
+        : "Reembolso";
     resolverDevolucionProveedor(
       resolverDevolucionModal.id,
       resolverTipo,
-      resolverNotas.trim() || "Resolución formal registrada por el proveedor."
+      resolverNotas.trim() || "Resolución formal registrada por Administración."
     );
     establecerResolverDevolucionModal(null);
+    establecerAvisoProveedor(
+      `Devolución ${codigoCerrado} cambiada a estado Resuelta mediante ${viaTexto}.`
+    );
   };
 
   // Filtrado de búsquedas
   const [transitBuscar, establecerTransitBuscar] = useState("");
-  const filtradoTransitDevoluciones = ordenesDevolucion.filter((r) => {
+  const ordenesSeguimiento = esTecnico ? misDevoluciones : ordenesDevolucion;
+  const filtradoTransitDevoluciones = ordenesSeguimiento.filter((r) => {
     const q = transitBuscar.toLowerCase();
     return (
       r.code.toLowerCase().includes(q) ||
@@ -239,7 +340,7 @@ export const PantallaDevoluciones: React.FC = () => {
     );
   });
 
-  const inTransitConteo = ordenesDevolucion.filter((r) => r.status === "en_transito").length;
+  const inTransitConteo = ordenesSeguimiento.filter((r) => r.status === "en_transito").length;
   const proveedorPendienteConteo = devolucionesProveedor.filter((s) => s.status === "pendiente_resolucion").length;
 
   const pestanas =
@@ -287,10 +388,12 @@ export const PantallaDevoluciones: React.FC = () => {
   return (
     <ContenedorEstadoPantalla screenTitle="Devoluciones de Stock" skeletonType="cards">
       <View style={estilos.contenedor}>
-        <EncabezadoPagina
-          title="Devoluciones de Stock"
-          subtitle="Reingreso físico de sobrantes de obra en Cardex y gestión de garantías con proveedores"
-        />
+        {showHeader && (
+          <EncabezadoPagina
+            title="Devoluciones de Stock"
+            subtitle="Reingreso físico de sobrantes de obra en Cardex y gestión de garantías con proveedores"
+          />
+        )}
 
         {/* BARRA ÚNICA DE PESTAÑAS LIMPIA (Sin barra duplicada de Paso 1, 2, 3) */}
         <View style={estilos.pestanaBarraEnvoltorio}>
@@ -338,7 +441,7 @@ export const PantallaDevoluciones: React.FC = () => {
           manejarAgregarDevolucionElemento={manejarAgregarDevolucionElemento}
           manejarGuardarTecnicoDevolucion={manejarGuardarTecnicoDevolucion}
           manejarQuitarDevolucionElemento={manejarQuitarDevolucionElemento}
-          ordenesDevolucion={ordenesDevolucion}
+          ordenesDevolucion={misDevoluciones}
           productos={productos}
           retElementos={retElementos}
           retError={retError}
@@ -350,21 +453,27 @@ export const PantallaDevoluciones: React.FC = () => {
 
         <SeccionDevolucionesBodega
           activoPestana={activoPestana}
+          avisoBodega={avisoBodega}
           establecerTransitBuscar={establecerTransitBuscar}
           filtradoTransitDevoluciones={filtradoTransitDevoluciones}
           inTransitConteo={inTransitConteo}
           manejarAbrirConfirmarDevolucion={manejarAbrirConfirmarDevolucion}
+          onCerrarAvisoBodega={() => establecerAvisoBodega("")}
           transitBuscar={transitBuscar}
         />
 
         <SeccionDevolucionesProveedor
           activoPestana={activoPestana}
+          avisoProveedor={avisoProveedor}
+          cuarentenaConteo={cuarentenaProductos.length}
           devolucionesProveedor={devolucionesProveedor}
           establecerNuevoProveedorDevolucionModal={establecerNuevoProveedorDevolucionModal}
           establecerResolverDevolucionModal={establecerResolverDevolucionModal}
           establecerResolverNotas={establecerResolverNotas}
           establecerResolverTipo={establecerResolverTipo}
           establecerSupRetError={establecerSupRetError}
+          onAbrirModalNuevaDevolucion={manejarAbrirModalNuevaDevolucionProveedor}
+          onCerrarAvisoProveedor={() => establecerAvisoProveedor("")}
           rolActual={rolActual}
           width={width}
         />

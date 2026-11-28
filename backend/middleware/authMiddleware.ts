@@ -1,18 +1,22 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import pool from '../config/db';
+import { obtenerJwtSecret } from '../config/entorno';
 
 export interface UsuarioTokenPayload extends JwtPayload {
     id: number;
     rol: string | null;
     /** Identificador de la sesión del servidor (tabla sesion_usuario). */
     sid?: string;
+    /** Tipo de token: 'access' (por defecto), 'refresh' o '2fa_challenge'. */
+    tipo?: 'access' | 'refresh' | '2fa_challenge';
 }
 
 declare global {
     namespace Express {
         interface Request {
             usuario?: string | UsuarioTokenPayload;
+            sid?: string;
         }
     }
 }
@@ -20,6 +24,10 @@ declare global {
 /** ID del usuario autenticado que ejecuta la petición, o null si no hay sesión. */
 export const obtenerIdEjecutor = (req: Request): number | null =>
     typeof req.usuario === 'object' && req.usuario ? Number(req.usuario.id) : null;
+
+/** Identificador de la sesión activa (claim `sid`) asociada a la petición autenticada. */
+export const obtenerSidEjecutor = (req: Request): string | null =>
+    typeof req.sid === 'string' && req.sid ? req.sid : null;
 
 /**
  * Valida el JWT y la sesión del servidor:
@@ -39,14 +47,27 @@ export const verificarToken = async (req: Request, res: Response, next: NextFunc
     }
 
     let payload: UsuarioTokenPayload;
+    let jwtSecret: string;
     try {
-        payload = jwt.verify(token, process.env.JWT_SECRET as string) as UsuarioTokenPayload;
+        jwtSecret = obtenerJwtSecret();
+    } catch (error) {
+        console.error('JWT_SECRET no está configurado correctamente:', error);
+        res.status(500).json({ mensaje: 'La autenticación no está configurada correctamente' });
+        return;
+    }
+
+    try {
+        payload = jwt.verify(token, jwtSecret) as UsuarioTokenPayload;
     } catch {
         res.status(401).json({ mensaje: 'La sesión expiró o no es válida' });
         return;
     }
 
-    if (!Number.isInteger(Number(payload.id)) || !payload.sid) {
+    if (
+        !Number.isInteger(Number(payload.id)) ||
+        !payload.sid ||
+        (payload.tipo !== undefined && payload.tipo !== 'access')
+    ) {
         res.status(401).json({ codigo: 'SESSION_REVOKED', mensaje: 'La sesión no es válida' });
         return;
     }
@@ -104,6 +125,7 @@ export const verificarToken = async (req: Request, res: Response, next: NextFunc
         );
 
         req.usuario = { id: Number(fila.id_usuario), rol: fila.nombre_rol };
+        req.sid = payload.sid;
         next();
     } catch (error) {
         console.error('Error al validar la sesión:', error);

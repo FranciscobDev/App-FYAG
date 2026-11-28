@@ -5,13 +5,17 @@ import { tema } from "@/nucleo/tema";
 
 interface OfflineBannerProps {
   onToggle?: (isOffline: boolean) => void;
+  onlyWhenOffline?: boolean;
 }
 
 /**
  * Banner de Modo Sin Conexión para Técnico en Terreno (Contexto 3: Celular)
  * Permite simular y operar sin conexión cuando se está en faenas remotas.
  */
-export const BannerSinConexion: React.FC<OfflineBannerProps> = ({ onToggle }) => {
+export const BannerSinConexion: React.FC<OfflineBannerProps> = ({
+  onToggle,
+  onlyWhenOffline = false,
+}) => {
   const [esSinConexion, establecerEsSinConexion] = useState(false);
 
   const manejarAlternar = () => {
@@ -19,6 +23,10 @@ export const BannerSinConexion: React.FC<OfflineBannerProps> = ({ onToggle }) =>
     establecerEsSinConexion(siguiente);
     if (onToggle) onToggle(siguiente);
   };
+
+  if (onlyWhenOffline && !esSinConexion) {
+    return null;
+  }
 
   return (
     <TouchableOpacity
@@ -58,7 +66,7 @@ export const BannerSinConexion: React.FC<OfflineBannerProps> = ({ onToggle }) =>
           { backgroundColor: esSinConexion ? tema.colors.primary : tema.colors.transit },
         ]}
       >
-        <Text style={[estilos.insigniaTexto, !esSinConexion && { color: "#f59e0b" }]}>
+        <Text style={estilos.insigniaTexto}>
           {esSinConexion ? "OFFLINE" : "ONLINE"}
         </Text>
       </View>
@@ -71,51 +79,58 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 10,
     minHeight: tema.touchTargets.minHeight,
-    paddingVertical: 8,
-    paddingHorizontal: tema.spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     borderRadius: tema.radius.md,
     marginHorizontal: tema.spacing.md,
     marginTop: tema.spacing.sm,
     marginBottom: tema.spacing.xs,
     borderWidth: tema.borders.thin,
+    borderLeftWidth: 4,
   },
   bannerEnLinea: {
     backgroundColor: tema.colors.surfaceAlt,
     borderColor: tema.colors.border,
+    borderLeftColor: tema.colors.ok,
   },
   bannerSinConexion: {
     backgroundColor: tema.colors.primaryLight,
     borderColor: tema.colors.primaryBorder,
+    borderLeftColor: tema.colors.primary,
   },
   izquierdaColumna: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    marginRight: 8,
+    minWidth: 0,
   },
   textoColumna: {
-    marginLeft: 8,
+    marginLeft: 10,
     flex: 1,
+    minWidth: 0,
   },
   titulo: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: 12.5,
+    fontWeight: tema.fontWeight.bold,
   },
   subtitulo: {
-    fontSize: tema.fontSize.caption,
+    fontSize: 11,
     color: tema.colors.textMuted,
-    marginTop: 1,
+    marginTop: 2,
+    lineHeight: 16,
   },
   insigniaIndicator: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: tema.radius.full,
+    flexShrink: 0,
   },
   insigniaTexto: {
     color: tema.colors.textInverse,
-    fontSize: 9,
-    fontWeight: tema.fontWeight.semibold,
+    fontSize: 10,
+    fontWeight: tema.fontWeight.bold,
     letterSpacing: 0.5,
   },
 });

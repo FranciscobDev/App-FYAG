@@ -52,20 +52,23 @@ export const estilos = StyleSheet.create({
     flexWrap: "wrap",
     backgroundColor: tema.colors.card,
     borderRadius: tema.radius.lg,
-    padding: 6,
+    padding: 5,
     marginBottom: tema.spacing.md,
     borderWidth: 1,
     borderColor: tema.colors.border,
     gap: 6,
   },
   pestanaBoton: {
+    flex: 1,
+    minWidth: 135,
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    justifyContent: "center",
+    paddingVertical: 9,
+    paddingHorizontal: 10,
     borderRadius: tema.radius.md,
-    minHeight: 44, // WCAG AA
-    gap: 8,
+    minHeight: 40,
+    gap: 6,
   },
   pestanaBotonActivo: {
     backgroundColor: tema.colors.primaryLight,
@@ -73,7 +76,7 @@ export const estilos = StyleSheet.create({
     borderColor: tema.colors.primary,
   },
   pestanaBotonTexto: {
-    fontSize: tema.fontSize.sm,
+    fontSize: 12,
     fontWeight: "600",
     color: tema.colors.textSecondary,
   },
@@ -86,12 +89,12 @@ export const estilos = StyleSheet.create({
   kpiGrilla: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    gap: 10,
     marginBottom: tema.spacing.md,
   },
   kpiTarjetaElemento: {
     flex: 1,
-    minWidth: 200,
+    minWidth: "46%",
   },
 
   tarjetaCaja: {

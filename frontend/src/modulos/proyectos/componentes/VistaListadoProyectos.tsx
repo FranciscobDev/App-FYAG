@@ -1,33 +1,27 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { usarAplicacion } from "@/contexto/ContextoAplicacion";
-import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 import { formatearCLP, formatearFecha } from "@/nucleo/formato";
 import { tema } from "@/nucleo/tema";
 import {
   Insignia,
   Boton,
   Tarjeta,
-  DialogoConfirmacion,
   EstadoVacio,
-  BotonExportar,
-  CampoTexto,
-  VistaModal,
   EncabezadoPagina,
-  BarraProgreso,
-  ContenedorEstadoPantalla,
-  NotificacionFlotante,
 } from "@/componentes/comunes";
-import { Proyecto, TipoProyecto, EstadoProyecto } from "@/nucleo/tipos";
+import {
+  DistintivoEstadoProyecto,
+  IndicadorUltimaSincronizacion,
+  LeyendaAccesibilidadEstados,
+} from "@/componentes/DistintivoEstadoProyecto";
 import { estilos } from "../estilos";
 
 export interface PropiedadesVistaListadoProyectos {
@@ -53,45 +47,79 @@ export const VistaListadoProyectos: React.FC<PropiedadesVistaListadoProyectos> =
   manejarAbrirNuevoProyecto,
   rolActual,
 }) => {
+  const [ultimaSincronizacion, establecerUltimaSincronizacion] = useState<Date>(
+    () => new Date()
+  );
+  const [sincronizando, establecerSincronizando] = useState(false);
+
+  const manejarSincronizar = () => {
+    establecerSincronizando(true);
+    setTimeout(() => {
+      establecerUltimaSincronizacion(new Date());
+      establecerSincronizando(false);
+    }, 300);
+  };
+
   return (
     <>
-        <View style={estilos.vistaEnvoltorio}>
-          {/* Encabezado Principal Limpio (Ancho completo edge-to-edge sin recuadro blanco) */}
-          <EncabezadoPagina
-            title="Control de Obras y Proyectos"
-            subtitle="Monitoreo presupuestario en tiempo real con semáforo de costo y margen"
-            breadcrumbs={["Inicio", "Proyectos", "Proyectos y Obras"]}
+      <View style={estilos.vistaEnvoltorio}>
+        {/* Encabezado Principal Limpio (Ancho completo edge-to-edge sin recuadro blanco) */}
+        <EncabezadoPagina
+          title="Control de Obras y Proyectos"
+          subtitle="Monitoreo presupuestario en tiempo real con semáforo de costo y margen"
+          breadcrumbs={["Inicio", "Proyectos", "Proyectos y Obras"]}
+        />
+
+        <ScrollView style={estilos.listaContenedor} contentContainerStyle={estilos.scrollCuerpo}>
+          {/* [FRONT-2] Indicador de última sincronización */}
+          <IndicadorUltimaSincronizacion
+            ultimaSincronizacion={ultimaSincronizacion}
+            sincronizando={sincronizando}
+            onSincronizar={manejarSincronizar}
+            fuenteDatos="Datos de obras y estados sincronizados en tiempo real"
+            style={{ marginBottom: 12 }}
           />
 
-          <ScrollView style={estilos.listaContenedor} contentContainerStyle={estilos.scrollCuerpo}>
-            {/* BANNER PROMINENTE PARA CREAR NUEVO PROYECTO */}
-            {rolActual === "admin" && (
-              <Tarjeta style={estilos.crearProyectoHeroTarjeta}>
-                <View style={estilos.crearProyectoHeroContenido}>
-                  <View style={estilos.crearProyectoHeroIzquierda}>
-                    <View style={estilos.heroInsigniaFila}>
-                      <Insignia label="Obras" tone="primary" size="sm" />
-                      <Text style={estilos.heroInsigniaHint}>Monitoreo H27 y H28</Text>
-                    </View>
-                    <Text style={estilos.crearProyectoHeroTitulo}>Registrar Nueva Obra o Proyecto</Text>
-                    <Text style={estilos.crearProyectoHeroDescripcion}>
-                      Crea una obra o contrato de mantención para imputar HH, compras de insumos y controlar el margen en tiempo real.
-                    </Text>
-                  </View>
-                  <Boton
-                    title="+ Crear Nuevo Proyecto"
-                    variant="primary"
-                    size="md"
-                    icon="add-circle-outline"
-                    onPress={manejarAbrirNuevoProyecto}
-                    style={estilos.botonCrearProyectoGrande}
-                  />
-                </View>
-              </Tarjeta>
-            )}
+          {/* [SCRUM] Leyenda y accesibilidad visual de estados en pantalla móvil */}
+          <LeyendaAccesibilidadEstados
+            estadoSeleccionado={listaEstadoFiltrar}
+            onSeleccionarEstado={(est) => {
+              const norm = est.toLowerCase();
+              if (norm === "en curso") establecerListaEstadoFiltrar("activo");
+              else if (norm === "planificado") establecerListaEstadoFiltrar("planificado");
+              else if (norm === "finalizado") establecerListaEstadoFiltrar("cerrado");
+              else establecerListaEstadoFiltrar(norm);
+            }}
+          />
 
-            {/* Buscador de Proyecto */}
-            <View style={estilos.buscarCajaEnvoltorio}>
+          {/* BANNER PROMINENTE PARA CREAR NUEVO PROYECTO */}
+          {rolActual === "admin" && (
+            <Tarjeta style={estilos.crearProyectoHeroTarjeta}>
+              <View style={estilos.crearProyectoHeroContenido}>
+                <View style={estilos.crearProyectoHeroIzquierda}>
+                  <View style={estilos.heroInsigniaFila}>
+                    <Insignia label="Obras" tone="primary" size="sm" />
+                    <Text style={estilos.heroInsigniaHint}>Monitoreo de Costos y Avance</Text>
+                  </View>
+                  <Text style={estilos.crearProyectoHeroTitulo}>Registrar Nueva Obra o Proyecto</Text>
+                  <Text style={estilos.crearProyectoHeroDescripcion}>
+                    Crea una obra o contrato de mantención para imputar HH, compras de insumos y controlar el margen en tiempo real.
+                  </Text>
+                </View>
+                <Boton
+                  title="+ Crear Nuevo Proyecto"
+                  variant="primary"
+                  size="md"
+                  icon="add-circle-outline"
+                  onPress={manejarAbrirNuevoProyecto}
+                  style={estilos.botonCrearProyectoGrande}
+                />
+              </View>
+            </Tarjeta>
+          )}
+
+          {/* Buscador de Proyecto */}
+          <View style={estilos.buscarCajaEnvoltorio}>
             <Ionicons name="search-outline" size={18} color={tema.colors.textMuted} style={{ marginRight: 6 }} />
             <TextInput
               value={buscarProyecto}
@@ -111,9 +139,9 @@ export const VistaListadoProyectos: React.FC<PropiedadesVistaListadoProyectos> =
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.filtrarScroll}>
             {[
               { id: "todos", label: "Todos los Estados" },
-              { id: "activo", label: "Activos" },
+              { id: "activo", label: "Activos / En curso" },
               { id: "planificado", label: "Planificados" },
-              { id: "cerrado", label: "Cerrados" },
+              { id: "cerrado", label: "Cerrados / Finalizados" },
             ].map((f: any) => (
               <TouchableOpacity
                 key={f.id}
@@ -155,116 +183,104 @@ export const VistaListadoProyectos: React.FC<PropiedadesVistaListadoProyectos> =
           ) : (
             filtradoProyectos.map((proj: any) => {
               const ratio = proj.budget > 0 ? proj.costReal / proj.budget : 0;
-            const porcentaje = Math.round(ratio * 100);
+              const porcentaje = Math.round(ratio * 100);
 
-            // Semáforo de costo:
-            // Verde: < 80%
-            // Amarillo: 80-100%
-            // Rojo: > 100%
-            let semTono: "ok" | "warn" | "danger" = "ok";
-            let semTexto = "Verde (< 80%)";
-            if (ratio > 1.0) {
-              semTono = "danger";
-              semTexto = "Rojo (> 100%)";
-            } else if (ratio >= 0.8) {
-              semTono = "warn";
-              semTexto = "Amarillo (80–100%)";
-            }
+              let semTono: "ok" | "warn" | "danger" = "ok";
+              if (ratio > 1.0) {
+                semTono = "danger";
+              } else if (ratio >= 0.8) {
+                semTono = "warn";
+              }
 
-            return (
-              <TouchableOpacity
-                key={proj.id}
-                onPress={() => {
-                  establecerSeleccionadoProyecto(proj);
-                  establecerDetallePestana("resumen");
-                }}
-                activeOpacity={0.8}
-              >
-                <Tarjeta variant="elevated" style={estilos.proyectoListaTarjeta}>
-                  <View style={estilos.tarjetaSuperior}>
-                    <View style={{ flex: 1 }}>
-                      <View style={estilos.codigoFila}>
-                        <Text style={estilos.codigoTexto}>{proj.code}</Text>
-                        <Insignia
-                          label={proj.kind === "obra" ? "OBRA" : "MANTENCIÓN"}
-                          tone={proj.kind === "obra" ? "info" : "warn"}
-                          size="sm"
-                          style={{ marginLeft: 6 }}
-                        />
+              return (
+                <TouchableOpacity
+                  key={proj.id}
+                  onPress={() => {
+                    establecerSeleccionadoProyecto(proj);
+                    establecerDetallePestana("resumen");
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Tarjeta variant="elevated" style={estilos.proyectoListaTarjeta}>
+                    <View style={estilos.tarjetaSuperior}>
+                      <View style={{ flex: 1 }}>
+                        <View style={estilos.codigoFila}>
+                          <Text style={estilos.codigoTexto}>{proj.code}</Text>
+                          <Insignia
+                            label={proj.kind === "obra" ? "OBRA" : "MANTENCIÓN"}
+                            tone={proj.kind === "obra" ? "info" : "warn"}
+                            size="sm"
+                            style={{ marginLeft: 6 }}
+                          />
+                        </View>
+                        <Text style={estilos.nombreTexto}>{proj.name}</Text>
+                        <Text style={estilos.clienteTexto}>Cliente: {proj.client}</Text>
                       </View>
-                      <Text style={estilos.nombreTexto}>{proj.name}</Text>
-                      <Text style={estilos.clienteTexto}>Cliente: {proj.client}</Text>
-                    </View>
 
-                    <Insignia
-                      label={proj.status.toUpperCase()}
-                      tone={
-                        proj.status === "activo"
-                          ? "ok"
-                          : proj.status === "cerrado"
-                          ? "mute"
-                          : "info"
-                      }
-                    />
-                  </View>
-
-                  {/* Semáforo de Costo como indicador pequeño */}
-                  <View style={estilos.costoSemaphoreFila}>
-                    <View style={estilos.costoSemaphoreIzquierda}>
-                      <Text style={estilos.costoEtiqueta}>Costo:</Text>
-                      <Text style={estilos.costoValoresTexto}>
-                        {formatearCLP(proj.costReal)}{" "}
-                        <Text style={{ color: tema.colors.textMuted, fontWeight: "normal" }}>
-                          / {formatearCLP(proj.budget)}
-                        </Text>
-                      </Text>
-                    </View>
-
-                    <View style={estilos.semaphoreIndicatorPastilla}>
-                      <View
-                        style={[
-                          estilos.semaphorePunto,
-                          {
-                            backgroundColor:
-                              semTono === "ok"
-                                ? tema.colors.ok
-                                : semTono === "warn"
-                                ? tema.colors.warn
-                                : tema.colors.danger,
-                          },
-                        ]}
+                      <DistintivoEstadoProyecto
+                        estado={proj.status}
+                        tamano="md"
+                        mostrarPrefijo
                       />
-                      <Text
-                        style={[
-                          estilos.semaphorePorcentajeTexto,
-                          {
-                            color:
-                              semTono === "ok"
-                                ? tema.colors.ok
-                                : semTono === "warn"
-                                ? tema.colors.warnDark
-                                : tema.colors.danger,
-                          },
-                        ]}
-                      >
-                        {porcentaje}%
-                      </Text>
                     </View>
-                  </View>
 
-                  <View style={estilos.tarjetaInferiorFila}>
-                    <Text style={estilos.fechasTexto}>
-                      Plazo: {formatearFecha(proj.deadline)} • Inicio: {formatearFecha(proj.startDate)}
-                    </Text>
-                    <Ionicons name="chevron-forward" size={18} color={tema.colors.textMuted} />
-                  </View>
-                </Tarjeta>
-              </TouchableOpacity>
-            );
-          })
-        )}
-          </ScrollView>
-        </View>
+                    {/* Semáforo de Costo como indicador pequeño */}
+                    <View style={estilos.costoSemaphoreFila}>
+                      <View style={estilos.costoSemaphoreIzquierda}>
+                        <Text style={estilos.costoEtiqueta}>Costo:</Text>
+                        <Text style={estilos.costoValoresTexto}>
+                          {formatearCLP(proj.costReal)}{" "}
+                          <Text style={{ color: tema.colors.textMuted, fontWeight: "normal" }}>
+                            / {formatearCLP(proj.budget)}
+                          </Text>
+                        </Text>
+                      </View>
+
+                      <View style={estilos.semaphoreIndicatorPastilla}>
+                        <View
+                          style={[
+                            estilos.semaphorePunto,
+                            {
+                              backgroundColor:
+                                semTono === "ok"
+                                  ? tema.colors.ok
+                                  : semTono === "warn"
+                                  ? tema.colors.warn
+                                  : tema.colors.danger,
+                            },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            estilos.semaphorePorcentajeTexto,
+                            {
+                              color:
+                                semTono === "ok"
+                                  ? tema.colors.ok
+                                  : semTono === "warn"
+                                  ? tema.colors.warnDark
+                                  : tema.colors.danger,
+                            },
+                          ]}
+                        >
+                          {porcentaje}%
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={estilos.tarjetaInferiorFila}>
+                      <Text style={estilos.fechasTexto}>
+                        Plazo: {formatearFecha(proj.deadline)} • Inicio: {formatearFecha(proj.startDate)}
+                      </Text>
+                      <Ionicons name="chevron-forward" size={18} color={tema.colors.textMuted} />
+                    </View>
+                  </Tarjeta>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
+      </View>
     </>
   );
 };

@@ -1,10 +1,5 @@
 import React from "react";
-import {
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
 import { ParametroSistema, RegistroRespaldo } from "@/nucleo/tipos";
@@ -22,7 +17,6 @@ export interface PropiedadesSeccionParametrosSistema {
   parametroGrupoFiltrar: "seguridad" | "inventario" | "costos" | "alertas";
   parametroValores: { [id: string]: string | number };
   parametrosSistema: ParametroSistema[];
-  // Respaldos integrados
   registrosRespaldo: RegistroRespaldo[];
   tieneRespaldoFailure: boolean;
   manejarEjecutarRespaldo: () => void;
@@ -47,39 +41,109 @@ export const SeccionParametrosSistema: React.FC<PropiedadesSeccionParametrosSist
 
   return (
     <View style={estilos.seccion}>
-      {/* Selector de Grupo de Parámetros */}
-      <View style={estilos.parametroGrupoPestanas}>
+      {/* Grilla 2x2 de Categorías de Parámetros */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
         {[
-          { id: "seguridad", label: "Seguridad y Accesos", icon: "lock-closed-outline" },
-          { id: "inventario", label: "Inventario y Stock", icon: "cube-outline" },
-          { id: "costos", label: "Costos y Tarifas", icon: "cash-outline" },
-          { id: "alertas", label: "Umbrales de Alertas", icon: "notifications-outline" },
+          {
+            id: "seguridad" as const,
+            label: "Seguridad y Accesos",
+            sub: "Políticas de sesión",
+            icon: "lock-closed-outline" as const,
+            bg: "#f0fdf4",
+            border: "#86efac",
+            borderActivo: "#16a34a",
+            color: "#166534",
+          },
+          {
+            id: "inventario" as const,
+            label: "Inventario y Stock",
+            sub: "Umbrales de bodega",
+            icon: "cube-outline" as const,
+            bg: "#fffbeb",
+            border: "#fcd34d",
+            borderActivo: "#d97706",
+            color: "#92400e",
+          },
+          {
+            id: "costos" as const,
+            label: "Costos y Tarifas",
+            sub: "IVA y mano de obra",
+            icon: "cash-outline" as const,
+            bg: "#fff7ed",
+            border: "#fdba74",
+            borderActivo: "#ea580c",
+            color: "#9a3412",
+          },
+          {
+            id: "alertas" as const,
+            label: "Umbrales de Alertas",
+            sub: "Notificaciones SLA",
+            icon: "notifications-outline" as const,
+            bg: "#f1f5f9",
+            border: "#cbd5e1",
+            borderActivo: "#334155",
+            color: "#0f172a",
+          },
         ].map((grp) => {
-          const isSelected = parametroGrupoFiltrar === grp.id;
+          const activo = parametroGrupoFiltrar === grp.id;
+          const countGrp = parametrosSistema.filter((p) => p.group === grp.id).length;
           return (
             <TouchableOpacity
               key={grp.id}
-              style={[estilos.parametroGrupoPestana, isSelected && estilos.parametroGrupoPestanaActivo]}
-              onPress={() => establecerParametroGrupoFiltrar(grp.id as any)}
-              activeOpacity={0.7}
+              activeOpacity={0.8}
+              onPress={() => establecerParametroGrupoFiltrar(grp.id)}
+              style={{
+                flexBasis: "48%",
+                flexGrow: 1,
+                minWidth: 140,
+                backgroundColor: grp.bg,
+                borderWidth: activo ? 2 : 1,
+                borderColor: activo ? grp.borderActivo : grp.border,
+                borderLeftWidth: 5,
+                borderLeftColor: grp.borderActivo,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+              }}
             >
-              <Ionicons
-                name={grp.icon as any}
-                size={16}
-                color={isSelected ? tema.colors.primaryDark : tema.colors.textMuted}
-              />
-              <Text style={[estilos.parametroGrupoPestanaTexto, isSelected && estilos.parametroGrupoPestanaTextoActivo]}>
-                {grp.label}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    color: grp.color,
+                    textTransform: "uppercase",
+                  }}
+                  numberOfLines={1}
+                >
+                  {grp.label}
+                </Text>
+                <Ionicons name={grp.icon} size={15} color={grp.color} />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ fontSize: 18, fontWeight: "900", color: grp.color }}>
+                  {countGrp}
+                </Text>
+                <Text style={{ fontSize: 10, fontWeight: activo ? "800" : "600", color: grp.color }}>
+                  {activo ? "● Grupo activo" : grp.sub}
+                </Text>
+              </View>
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* Formulario Agrupado con Valores por Defecto y Botón Restablecer */}
+      {/* Formulario Agrupado de Parámetros */}
       <Tarjeta style={estilos.tarjetaCaja}>
         <View style={estilos.grupoEncabezadoFila}>
-          <Ionicons name="settings" size={20} color={tema.colors.primary} />
+          <Ionicons name="settings-outline" size={20} color={tema.colors.primaryDark} />
           <Text style={estilos.grupoEncabezadoTitulo}>
             Parámetros Operativos:{" "}
             <Text style={{ color: tema.colors.primaryDark, textTransform: "capitalize" }}>
@@ -96,12 +160,25 @@ export const SeccionParametrosSistema: React.FC<PropiedadesSeccionParametrosSist
             const esDifferentDesdePredeterminado = actualValor !== param.defaultValue;
 
             return (
-              <View key={param.id} style={estilos.parametroElementoFila}>
-                <View style={estilos.parametroInfoColumna}>
+              <View
+                key={param.id}
+                style={{
+                  backgroundColor: esDifferentDesdePredeterminado ? "#fffbeb" : "#f8fafc",
+                  borderWidth: 1,
+                  borderColor: esDifferentDesdePredeterminado ? "#fcd34d" : tema.colors.border,
+                  borderLeftWidth: 4,
+                  borderLeftColor: esDifferentDesdePredeterminado ? "#d97706" : "#16a34a",
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 10,
+                  gap: 8,
+                }}
+              >
+                <View>
                   <Text style={estilos.parametroTitulo}>{param.name}</Text>
                   <Text style={estilos.parametroDescripcion}>{param.description}</Text>
-                  <View style={estilos.parametroMetaFila}>
-                    <View style={estilos.predeterminadoValorInsignia}>
+                  <View style={[estilos.parametroMetaFila, { marginTop: 6 }]}>
+                    <View style={[estilos.predeterminadoValorInsignia, { backgroundColor: "#ffffff" }]}>
                       <Text style={estilos.predeterminadoValorTexto}>
                         Valor de Fábrica: {param.defaultValue} {param.unit || ""}
                       </Text>
@@ -114,8 +191,8 @@ export const SeccionParametrosSistema: React.FC<PropiedadesSeccionParametrosSist
                   </View>
                 </View>
 
-                <View style={estilos.parametroControlColumna}>
-                  <View style={estilos.entradaWithUnidad}>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <View style={[estilos.entradaWithUnidad, { backgroundColor: "#ffffff" }]}>
                     <TextInput
                       style={estilos.parametroEntrada}
                       value={String(actualValor)}
@@ -125,22 +202,24 @@ export const SeccionParametrosSistema: React.FC<PropiedadesSeccionParametrosSist
                     {param.unit && <Text style={estilos.unidadSuffix}>{param.unit}</Text>}
                   </View>
 
-                  <View style={estilos.parametroAccionBotones}>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
                     <Boton
-                      variant="secondary"
+                      variant="primary"
                       size="sm"
                       title="Guardar"
                       icon="checkmark"
                       onPress={() => manejarGuardarParametro(param)}
+                      style={{ minHeight: 36 }}
                     />
 
                     <Boton
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       title="Restablecer"
                       icon="refresh-outline"
                       onPress={() => manejarRestablecerParametro(param)}
                       disabled={!esDifferentDesdePredeterminado}
+                      style={{ minHeight: 36, backgroundColor: "#ffffff" }}
                     />
                   </View>
                 </View>
@@ -151,80 +230,116 @@ export const SeccionParametrosSistema: React.FC<PropiedadesSeccionParametrosSist
 
       {/* SECCIÓN INTEGRADA DE RESPALDOS Y CONTINUIDAD */}
       <Tarjeta style={estilos.tarjetaCaja}>
-        <View style={estilos.grupoEncabezadoFila}>
-          <Ionicons name="cloud-upload-outline" size={20} color={tema.colors.primary} />
-          <Text style={estilos.grupoEncabezadoTitulo}>Respaldos y Continuidad de Base de Datos</Text>
-        </View>
-
-        {tieneRespaldoFailure && (
-          <View style={[estilos.respaldoFailAlerta, { marginBottom: 12 }]}>
-            <Ionicons name="alert-circle" size={22} color="#ffffff" />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={estilos.respaldoFailTitulo}>
-                Se detectó un fallo en un respaldo automático previo
-              </Text>
-              <Text style={estilos.respaldoFailDescripcion}>
-                Se recomienda ejecutar un respaldo manual de contingencia para asegurar la réplica.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        <View style={estilos.respaldoAccionesBarra}>
-          <View style={estilos.respaldoStatTarjeta}>
-            <Ionicons name="cloud-done-outline" size={24} color={tema.colors.ok} />
-            <View style={{ marginLeft: 10 }}>
-              <Text style={estilos.respaldoStatEtiqueta}>Último Respaldo Exitoso</Text>
-              <Text style={estilos.respaldoStatValor}>
-                {registrosRespaldo.find((b) => b.status === "exito")?.timestamp || "Sin datos"}
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flex: 1, minWidth: 200 }}>
+            <Ionicons name="cloud-done-outline" size={22} color={tema.colors.okDark} />
+            <View style={{ flex: 1 }}>
+              <Text style={estilos.grupoEncabezadoTitulo}>Respaldos y Continuidad de Base de Datos</Text>
+              <Text style={{ fontSize: 11, color: tema.colors.textSecondary }}>
+                Último exitoso: {registrosRespaldo.find((b) => b.status === "exito")?.timestamp || "Sin datos"}
               </Text>
             </View>
           </View>
 
-          <View style={estilos.respaldoBotonCluster}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Boton
               variant="primary"
               size="sm"
               title="Respaldo Manual"
               icon="save-outline"
               onPress={manejarEjecutarRespaldo}
+              style={{ minHeight: 38 }}
             />
             <Boton
-              variant="secondary"
+              variant="outline"
               size="sm"
               title="Probar Restauración"
               icon="flask-outline"
               onPress={manejarEjecutarRestauracionTest}
+              style={{ minHeight: 38 }}
             />
           </View>
         </View>
 
-        <View style={{ marginTop: 8 }}>
-          {registrosRespaldo.slice(0, 4).map((item) => (
-            <View
-              key={item.id}
-              style={[
-                estilos.parametroElementoFila,
-                item.status === "fallo" && estilos.tablaFilaFallo,
-              ]}
-            >
-              <View style={{ flex: 1, minWidth: 200 }}>
-                <Text style={estilos.respaldoFilename}>{item.filename}</Text>
-                <Text style={{ fontSize: 11, color: tema.colors.textMuted, marginTop: 2 }}>
-                  {item.timestamp} • {item.type.toUpperCase()} • {item.sizeMb > 0 ? `${item.sizeMb} MB` : "0 MB"}
-                </Text>
-                {item.errorReason && (
-                  <Text style={estilos.respaldoErrorNota}>Motivo: {item.errorReason}</Text>
-                )}
-              </View>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        {tieneRespaldoFailure && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              backgroundColor: "#fef2f2",
+              borderWidth: 1.5,
+              borderColor: "#fca5a5",
+              borderLeftWidth: 5,
+              borderLeftColor: "#dc2626",
+              borderRadius: 10,
+              padding: 10,
+              marginBottom: 12,
+              gap: 8,
+            }}
+          >
+            <Ionicons name="alert-circle" size={20} color="#dc2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, fontWeight: "800", color: "#991b1b" }}>
+                Fallo detectado en un respaldo automático previo
+              </Text>
+              <Text style={{ fontSize: 11, color: "#7f1d1d" }}>
+                Ejecute un respaldo manual de contingencia para asegurar la réplica.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <View style={{ gap: 8 }}>
+          {registrosRespaldo.slice(0, 4).map((item) => {
+            const esExito = item.status === "exito";
+            return (
+              <View
+                key={item.id}
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  backgroundColor: esExito ? "#f0fdf4" : "#fef2f2",
+                  borderWidth: 1.5,
+                  borderColor: esExito ? "#86efac" : "#fca5a5",
+                  borderLeftWidth: 5,
+                  borderLeftColor: esExito ? "#16a34a" : "#dc2626",
+                  borderRadius: 10,
+                  padding: 10,
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1, minWidth: 190 }}>
+                  <Text style={{ fontSize: 13, fontWeight: "800", color: tema.colors.text }}>
+                    {item.filename}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: esExito ? "#166534" : "#991b1b", fontWeight: "600", marginTop: 1 }}>
+                    {item.timestamp} • {item.type.toUpperCase()} • {item.sizeMb > 0 ? `${item.sizeMb} MB` : "0 MB"}
+                  </Text>
+                  {item.errorReason && (
+                    <Text style={{ fontSize: 11, color: "#991b1b", fontWeight: "700", marginTop: 2 }}>
+                      Motivo: {item.errorReason}
+                    </Text>
+                  )}
+                </View>
+
                 <InsigniaEstado
-                  status={item.status === "exito" ? "aprobada" : "rechazada"}
-                  label={item.status === "exito" ? "Éxito" : "Fallo"}
+                  status={esExito ? "aprobada" : "rechazada"}
+                  label={esExito ? "Éxito" : "Fallo"}
                 />
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </Tarjeta>
     </View>

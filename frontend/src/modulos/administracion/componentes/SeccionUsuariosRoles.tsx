@@ -12,12 +12,13 @@ import { tema } from "@/nucleo/tema";
 import { Rol, UsuarioSistema } from "@/nucleo/tipos";
 import { Boton } from "@/componentes/base/Boton";
 import { Tarjeta } from "@/componentes/base/Tarjeta";
+import { Insignia } from "@/componentes/base/Insignia";
 import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
+import { CampoBusqueda } from "@/componentes/formularios/CampoBusqueda";
 import { CampoTexto } from "@/componentes/formularios/CampoTexto";
 import { CampoContrasena } from "@/componentes/formularios/CampoContrasena";
 import { VistaModal } from "@/componentes/superposicion/VistaModal";
-import { TarjetaKpi } from "@/componentes/datos/TarjetaKpi";
 import { estilos } from "../estilos";
 
 export interface CredencialesCreadas {
@@ -98,8 +99,8 @@ const etiquetaRol = (rol: Rol) =>
   rol === "admin"
     ? "Administrador"
     : rol === "warehouse"
-    ? "Bodeguero"
-    : "Técnico";
+      ? "Bodeguero"
+      : "Técnico";
 
 export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = ({
   activoAdministradoresConteo,
@@ -166,420 +167,574 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
 }) => {
   if (activoPestana !== "usuarios") return null;
 
+  const bodeguerosActivos = usuariosSistema.filter(
+    (u) => u.role === "warehouse" && !u.disabled
+  ).length;
+  const tecnicosActivos = usuariosSistema.filter(
+    (u) => u.role === "technician" && !u.disabled
+  ).length;
+  const usuariosActivosTotal = usuariosSistema.filter((u) => !u.disabled).length;
+  const usuariosInactivosTotal = usuariosSistema.filter((u) => u.disabled).length;
+
   return (
     <View style={estilos.seccion}>
-      {/* KPI Cards de Usuarios */}
-      <View style={estilos.kpiGrilla}>
-        <View style={estilos.kpiTarjetaElemento}>
-          <TarjetaKpi
-            label="Total Usuarios"
-            value={usuariosSistema.length}
-            icon="people"
-            tone="primary"
-          />
-        </View>
-        <View style={estilos.kpiTarjetaElemento}>
-          <TarjetaKpi
-            label="Admins Activos"
-            value={activoAdministradoresConteo}
-            icon="shield-outline"
-            tone={activoAdministradoresConteo <= 1 ? "warn" : "ok"}
-            subtitle={activoAdministradoresConteo <= 1 ? "Bloqueo preventivo activo" : "Redundancia segura"}
-          />
-        </View>
-        <View style={estilos.kpiTarjetaElemento}>
-          <TarjetaKpi
-            label="Bodegueros"
-            value={usuariosSistema.filter((u) => u.role === "warehouse" && !u.disabled).length}
-            icon="cube-outline"
-            tone="info"
-          />
-        </View>
-        <View style={estilos.kpiTarjetaElemento}>
-          <TarjetaKpi
-            label="Técnicos Activos"
-            value={usuariosSistema.filter((u) => u.role === "technician" && !u.disabled).length}
-            icon="hammer-outline"
-            tone="info"
-          />
-        </View>
-      </View>
-
-      {/* Barra de Acciones y Filtros */}
-      <Tarjeta style={estilos.tarjetaCaja}>
-        <View style={estilos.filtrarFila}>
-          <View style={estilos.buscarCaja}>
-            <Ionicons name="search" size={18} color={tema.colors.textMuted} />
-            <TextInput
-              style={estilos.buscarEntrada}
-              placeholder="Buscar por nombre, correo o RUT..."
-              placeholderTextColor={tema.colors.textMuted}
-              value={usuarioBuscar}
-              onChangeText={establecerUsuarioBuscar}
-            />
-          </View>
-
-          {/* Filtro por Rol */}
-          <View style={estilos.chipFila}>
-            {["todos", "admin", "warehouse", "technician"].map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[estilos.pequenoChip, usuarioRolFiltrar === r && estilos.pequenoChipActivo]}
-                onPress={() => establecerUsuarioRolFiltrar(r)}
-              >
-                <Text
-                  style={[
-                    estilos.pequenoChipTexto,
-                    usuarioRolFiltrar === r && estilos.pequenoChipTextoActivo,
-                  ]}
-                >
-                  {r === "todos"
-                    ? "Todos"
-                    : r === "admin"
-                    ? "Administrador"
-                    : r === "warehouse"
-                    ? "Bodeguero"
-                    : "Técnico"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {(usuarioBuscar !== "" || usuarioRolFiltrar !== "todos") && (
-            <Boton
-              variant="ghost"
-              size="sm"
-              title="Limpiar"
-              icon="close-circle-outline"
-              onPress={() => {
-                establecerUsuarioBuscar("");
-                establecerUsuarioRolFiltrar("todos");
+      {/* 1. CABECERA COMPACTA INDUSTRIAL + SINCRONIZACIÓN BD + NUEVO USUARIO */}
+      <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 210 }}>
+            <View
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                backgroundColor: tema.colors.primaryLight,
+                borderWidth: 1,
+                borderColor: tema.colors.primaryBorder,
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
-          )}
+            >
+              <Ionicons name="people-outline" size={20} color={tema.colors.primaryDark} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <Text style={{ fontSize: 16, fontWeight: "800", color: tema.colors.text }}>
+                  Cuentas de Usuario y Control de Roles
+                </Text>
+                {manejarRecargarUsuarios && (
+                  <TouchableOpacity
+                    disabled={cargandoUsuariosBd}
+                    onPress={manejarRecargarUsuarios}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      backgroundColor: "#f0fdf4",
+                      borderWidth: 1,
+                      borderColor: "#86efac",
+                      borderRadius: 999,
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                    }}
+                  >
+                    {cargandoUsuariosBd ? (
+                      <ActivityIndicator size="small" color="#166534" />
+                    ) : (
+                      <Ionicons name="sync-outline" size={11} color="#166534" />
+                    )}
+                    <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#166534" }}>
+                      {cargandoUsuariosBd ? "Sincronizando..." : "PostgreSQL"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                <Text style={{ fontWeight: "800", color: tema.colors.okDark }}>
+                  {usuariosActivosTotal} cuentas activas
+                </Text>
+                {` • ${usuariosInactivosTotal} deshabilitada(s) • Protección Ley 19.628`}
+              </Text>
+            </View>
+          </View>
 
-          {manejarRecargarUsuarios && (
-            <Boton
-              variant="secondary"
-              size="sm"
-              title={cargandoUsuariosBd ? "Sincronizando..." : "Sincronizar BD"}
-              icon="refresh-outline"
-              onPress={manejarRecargarUsuarios}
-              disabled={cargandoUsuariosBd}
-            />
-          )}
-
-          {/* Botón Nuevo Usuario */}
           <Boton
             variant="primary"
+            size="sm"
             title="Nuevo Usuario"
-            icon="person-add"
+            icon="person-add-outline"
             onPress={manejarAbrirCrearUsuario}
+            style={{ minHeight: 40 }}
           />
         </View>
       </Tarjeta>
 
-      {/* Tabla / Tarjetas de Usuarios Responsiva */}
-      <Tarjeta style={estilos.tarjetaCaja}>
-        <View style={estilos.tablaTarjetaEncabezadoBarra}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={estilos.tablaTarjetaTitulo}>
-              Usuarios Registrados ({filtradoUsuarios.length})
-            </Text>
-            {cargandoUsuariosBd && (
-              <ActivityIndicator size="small" color={tema.colors.primary} />
-            )}
-          </View>
-          <View style={estilos.vistaModoAlternarFila}>
+      {/* 2. GRILLA 2x2 DE TARJETAS KPI INTERACTIVAS POR ROL (UNIFICA KPIS Y FILTROS) */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {[
+          {
+            id: "admin",
+            titulo: "Admins Activos",
+            valor: activoAdministradoresConteo,
+            sub: activoAdministradoresConteo <= 1 ? "Bloqueo preventivo" : "Redundancia segura",
+            icon: "shield-checkmark-outline" as const,
+            bg: "#f0fdf4",
+            border: "#86efac",
+            borderActivo: "#16a34a",
+            textColor: "#166534",
+          },
+          {
+            id: "warehouse",
+            titulo: "Bodegueros",
+            valor: bodeguerosActivos,
+            sub: "Control stock y OC",
+            icon: "cube-outline" as const,
+            bg: "#fffbeb",
+            border: "#fcd34d",
+            borderActivo: "#d97706",
+            textColor: "#92400e",
+          },
+          {
+            id: "technician",
+            titulo: "Técnicos Activos",
+            valor: tecnicosActivos,
+            sub: "Cuadrillas en faena",
+            icon: "hammer-outline" as const,
+            bg: "#fff7ed",
+            border: "#fdba74",
+            borderActivo: "#ea580c",
+            textColor: "#9a3412",
+          },
+          {
+            id: "todos",
+            titulo: "Total Usuarios",
+            valor: usuariosSistema.length,
+            sub: "Directorio completo",
+            icon: "people-outline" as const,
+            bg: "#f1f5f9",
+            border: "#cbd5e1",
+            borderActivo: "#0f172a",
+            textColor: "#0f172a",
+          },
+        ].map((kpi) => {
+          const activo = usuarioRolFiltrar === kpi.id;
+          return (
             <TouchableOpacity
-              style={[estilos.vistaModoBoton, effectiveVistaModo === "cards" && estilos.vistaModoBotonActivo]}
-              onPress={() => establecerUsuarioVistaModo("cards")}
-              activeOpacity={0.7}
+              key={kpi.id}
+              activeOpacity={0.8}
+              onPress={() => establecerUsuarioRolFiltrar(kpi.id)}
+              style={{
+                flexBasis: "48%",
+                flexGrow: 1,
+                minWidth: 140,
+                backgroundColor: kpi.bg,
+                borderWidth: activo ? 2 : 1,
+                borderColor: activo ? kpi.borderActivo : kpi.border,
+                borderLeftWidth: 5,
+                borderLeftColor: kpi.borderActivo,
+                borderRadius: 10,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+              }}
             >
-              <Ionicons
-                name="grid-outline"
-                size={13}
-                color={effectiveVistaModo === "cards" ? "#ffffff" : tema.colors.textSecondary}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[estilos.vistaModoBotonTexto, effectiveVistaModo === "cards" && estilos.vistaModoBotonTextoActivo]}>
-                Tarjetas
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "800",
+                    color: kpi.textColor,
+                    textTransform: "uppercase",
+                  }}
+                  numberOfLines={1}
+                >
+                  {kpi.titulo}
+                </Text>
+                <Ionicons name={kpi.icon} size={15} color={kpi.textColor} />
+              </View>
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ fontSize: 20, fontWeight: "900", color: kpi.textColor }}>
+                  {kpi.valor}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: activo ? "800" : "600",
+                    color: kpi.textColor,
+                  }}
+                  numberOfLines={1}
+                >
+                  {activo ? "● Vista activa" : kpi.sub}
+                </Text>
+              </View>
             </TouchableOpacity>
+          );
+        })}
+      </View>
 
-            <TouchableOpacity
-              style={[estilos.vistaModoBoton, effectiveVistaModo === "table" && estilos.vistaModoBotonActivo]}
-              onPress={() => establecerUsuarioVistaModo("table")}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name="list-outline"
-                size={13}
-                color={effectiveVistaModo === "table" ? "#ffffff" : tema.colors.textSecondary}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[estilos.vistaModoBotonTexto, effectiveVistaModo === "table" && estilos.vistaModoBotonTextoActivo]}>
-                Tabla
-              </Text>
-            </TouchableOpacity>
-          </View>
+      {/* 3. BARRA DE BÚSQUEDA + ALTERNADOR TARJETAS / TABLA */}
+      <View
+        style={{
+          flexDirection: "row",
+          flexWrap: "wrap",
+          gap: 10,
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <View style={{ flex: 1, minWidth: 210 }}>
+          <CampoBusqueda
+            value={usuarioBuscar}
+            onChangeText={establecerUsuarioBuscar}
+            placeholder="Buscar usuario por nombre, correo, RUT o especialidad..."
+          />
         </View>
 
+        <View style={estilos.vistaModoAlternarFila}>
+          <TouchableOpacity
+            style={[estilos.vistaModoBoton, effectiveVistaModo === "cards" && estilos.vistaModoBotonActivo]}
+            onPress={() => establecerUsuarioVistaModo("cards")}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="grid-outline"
+              size={13}
+              color={effectiveVistaModo === "cards" ? "#ffffff" : tema.colors.textSecondary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[estilos.vistaModoBotonTexto, effectiveVistaModo === "cards" && estilos.vistaModoBotonTextoActivo]}>
+              Tarjetas
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[estilos.vistaModoBoton, effectiveVistaModo === "table" && estilos.vistaModoBotonActivo]}
+            onPress={() => establecerUsuarioVistaModo("table")}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="list-outline"
+              size={13}
+              color={effectiveVistaModo === "table" ? "#ffffff" : tema.colors.textSecondary}
+              style={{ marginRight: 4 }}
+            />
+            <Text style={[estilos.vistaModoBotonTexto, effectiveVistaModo === "table" && estilos.vistaModoBotonTextoActivo]}>
+              Tabla
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 4. LISTADO DE USUARIOS CON SEMÁFORO DE SUPERFICIE */}
+      <View>
         {filtradoUsuarios.length === 0 ? (
           <EstadoVacio
             icon="people-outline"
             title="Sin usuarios coincidentes"
             description="No se encontraron usuarios con los filtros de rol o búsqueda aplicados."
-            actionTitle="+ Nuevo Usuario"
-            onAction={manejarAbrirCrearUsuario}
-            containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
+            actionTitle={usuarioRolFiltrar !== "todos" ? "Ver Todos los Usuarios" : "+ Nuevo Usuario"}
+            onAction={
+              usuarioRolFiltrar !== "todos"
+                ? () => establecerUsuarioRolFiltrar("todos")
+                : manejarAbrirCrearUsuario
+            }
+            containerStyle={{ paddingVertical: 24 }}
           />
         ) : effectiveVistaModo === "cards" ? (
-          /* VISTA RESPONSIVA MÓVIL: TARJETAS ERGONÓMICAS */
-          <View style={estilos.mobileTarjetasContenedor}>
+          <View style={{ gap: 10 }}>
             {filtradoUsuarios.map((u) => {
               const esOnlyAdmin = !u.disabled && u.role === "admin" && activoAdministradoresConteo <= 1;
               const yaAnonimizado = u.rut.startsWith("XX.");
 
+              const semaforo = u.disabled
+                ? {
+                  bg: "#f1f5f9",
+                  border: "#cbd5e1",
+                  stripe: "#64748b",
+                  text: "#334155",
+                  divider: "#e2e8f0",
+                  rolTone: "mute" as const,
+                }
+                : u.role === "admin"
+                  ? {
+                    bg: "#f0fdf4",
+                    border: "#86efac",
+                    stripe: "#16a34a",
+                    text: "#166534",
+                    divider: "#bbf7d0",
+                    rolTone: "ok" as const,
+                  }
+                  : {
+                    bg: "#fffbeb",
+                    border: "#fcd34d",
+                    stripe: "#d97706",
+                    text: "#92400e",
+                    divider: "#fde68a",
+                    rolTone: "warn" as const,
+                  };
+
               return (
-                <View key={u.id} style={[estilos.mobileUsuarioTarjeta, u.disabled && estilos.mobileUsuarioTarjetaDeshabilitado]}>
-                  <View style={estilos.mobileUsuarioTarjetaEncabezado}>
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={estilos.mobileUsuarioNombre}>{u.name}</Text>
-                      <Text style={estilos.mobileUsuarioCorreo}>{u.email}</Text>
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                        <View style={[estilos.mobileRutInsignia, { marginTop: 0 }]}>
-                          <Ionicons name="card-outline" size={12} color={tema.colors.textSecondary} style={{ marginRight: 4 }} />
-                          <Text style={estilos.mobileRutTexto}>{u.rut || "Sin RUT"}</Text>
+                <Tarjeta
+                  key={u.id}
+                  variant="outlined"
+                  style={{
+                    padding: 12,
+                    backgroundColor: semaforo.bg,
+                    borderColor: semaforo.border,
+                    borderWidth: 1.5,
+                    borderLeftWidth: 6,
+                    borderLeftColor: semaforo.stripe,
+                    borderRadius: 12,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    <View style={{ flex: 1, minWidth: 185 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                        <Text style={{ fontSize: 15, fontWeight: "800", color: tema.colors.text }}>
+                          {u.name}
+                        </Text>
+                        <Insignia label={etiquetaRol(u.role)} tone={semaforo.rolTone} size="sm" />
+                      </View>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: semaforo.text, marginTop: 2 }}>
+                        {u.email}
+                      </Text>
+                    </View>
+
+                    <InsigniaEstado
+                      status={u.disabled ? "rechazada" : "aprobada"}
+                      label={u.disabled ? "Inactivo" : "Activo"}
+                    />
+                  </View>
+
+                  {/* Ficha Blanca Interna: RUT, Especialidad y Estado de Acceso */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      flexWrap: "wrap",
+                      backgroundColor: "#ffffff",
+                      borderWidth: 1,
+                      borderColor: semaforo.divider,
+                      borderRadius: 9,
+                      paddingHorizontal: 10,
+                      paddingVertical: 7,
+                      marginTop: 8,
+                      gap: 8,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Ionicons name="card-outline" size={13} color={tema.colors.textMuted} />
+                        <Text style={{ fontSize: 11.5, fontWeight: "700", color: tema.colors.text }}>
+                          RUT: {u.rut || "Sin RUT"}
+                        </Text>
+                      </View>
+
+                      {u.especializacion ? (
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                          <Ionicons name="construct-outline" size={13} color={tema.colors.primaryDark} />
+                          <Text style={{ fontSize: 11.5, fontWeight: "700", color: tema.colors.primaryDark }}>
+                            {u.especializacion}
+                          </Text>
                         </View>
-                        {u.especializacion ? (
-                          <View style={[estilos.mobileRutInsignia, { marginTop: 0 }]}>
-                            <Ionicons name="construct-outline" size={12} color={tema.colors.primaryDark} style={{ marginRight: 4 }} />
-                            <Text style={[estilos.mobileRutTexto, { color: tema.colors.primaryDark }]}>
-                              {u.especializacion}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
+                      ) : null}
                     </View>
 
-                    <View style={estilos.mobileBadgesColumna}>
-                      <View
-                        style={[
-                          estilos.rolInsignia,
-                          u.role === "admin" && estilos.rolInsigniaAdmin,
-                          u.role === "warehouse" && estilos.rolInsigniaBodega,
-                          u.role === "technician" && estilos.rolInsigniaTecnico,
-                        ]}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                      <Ionicons
+                        name={u.disabled ? "lock-closed-outline" : "checkmark-circle-outline"}
+                        size={13}
+                        color={u.disabled ? tema.colors.danger : tema.colors.okDark}
+                      />
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: tema.colors.textSecondary }}>
+                        {u.disabled ? "Login bloqueado" : "Login habilitado"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Botonera de Acciones con Fondo Blanco de Alto Contraste */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      gap: 8,
+                      marginTop: 10,
+                    }}
+                  >
+                    {!yaAnonimizado && (
+                      <Boton
+                        variant="outline"
+                        size="sm"
+                        title="Editar / Clave"
+                        icon="key-outline"
+                        onPress={() => manejarAbrirEditarUsuario(u)}
+                        style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
+                      />
+                    )}
+                    {esOnlyAdmin ? (
+                      <TouchableOpacity
+                        style={[estilos.lockedBoton, { flex: 1, justifyContent: "center", minHeight: 36, backgroundColor: "#ffffff" }]}
+                        onPress={() =>
+                          mostrarFeedback(
+                            "error",
+                            "Operación bloqueada: No se puede deshabilitar al último Administrador activo."
+                          )
+                        }
+                        activeOpacity={0.7}
                       >
-                        <Text
-                          style={[
-                            estilos.rolInsigniaTexto,
-                            u.role === "admin" && estilos.rolInsigniaTextoAdmin,
-                            u.role === "warehouse" && estilos.rolInsigniaTextoBodega,
-                            u.role === "technician" && estilos.rolInsigniaTextoTecnico,
-                          ]}
-                        >
-                          {etiquetaRol(u.role)}
-                        </Text>
-                      </View>
-
-                      <View style={{ marginTop: 6, alignSelf: "flex-end" }}>
-                        <InsigniaEstado
-                          status={u.disabled ? "rechazada" : "aprobada"}
-                          label={u.disabled ? "Inactivo" : "Activo"}
-                        />
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={estilos.mobileUsuarioTarjetaDivisor} />
-
-                  <View style={estilos.mobileUsuarioTarjetaPie}>
-                    <View style={estilos.mobileInicioSesionInfo}>
-                      <Text style={estilos.mobileInicioSesionEtiqueta}>ACCESO LOGIN</Text>
-                      <View style={{ flexDirection: "row", alignItems: "center", marginTop: 2 }}>
-                        <Ionicons
-                          name={u.disabled ? "lock-closed-outline" : "checkmark-circle-outline"}
-                          size={13}
-                          color={u.disabled ? tema.colors.danger : tema.colors.ok}
-                          style={{ marginRight: 4 }}
-                        />
-                        <Text style={estilos.mobileInicioSesionValor}>
-                          {u.disabled ? "Bloqueado" : "Habilitado en BD"}
-                        </Text>
-                      </View>
-                    </View>
-
-                    <View style={[estilos.mobileAccionCaja, { flexDirection: "row", flexWrap: "wrap", gap: 6 }]}>
-                      {!yaAnonimizado && (
-                        <Boton
-                          variant="secondary"
-                          size="sm"
-                          title="Editar / Clave"
-                          icon="key-outline"
-                          onPress={() => manejarAbrirEditarUsuario(u)}
-                        />
-                      )}
-                      {esOnlyAdmin ? (
-                        <TouchableOpacity
-                          style={estilos.lockedBoton}
-                          onPress={() =>
-                            mostrarFeedback(
-                              "error",
-                              "Operación bloqueada: No se puede deshabilitar al último Administrador activo."
-                            )
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
-                          <Text style={estilos.lockedBotonTexto}>Último Admin</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <>
-                          {!yaAnonimizado && (
-                            <Boton
-                              variant="ghost"
-                              size="sm"
-                              title="Anonimizar"
-                              icon="finger-print-outline"
-                              onPress={() => {
-                                establecerConfirmarPalabraClaveEntrada("");
-                                establecerUsuarioParaAnonimizar(u);
-                              }}
-                            />
-                          )}
+                        <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
+                        <Text style={estilos.lockedBotonTexto}>Último Admin</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <>
+                        {!yaAnonimizado && (
                           <Boton
-                            variant={u.disabled ? "secondary" : "danger"}
+                            variant="outline"
                             size="sm"
-                            title={u.disabled ? "Habilitar" : "Deshabilitar"}
-                            icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                            onPress={() => manejarAlternarUsuario(u)}
+                            title="Anonimizar"
+                            icon="finger-print-outline"
+                            onPress={() => {
+                              establecerConfirmarPalabraClaveEntrada("");
+                              establecerUsuarioParaAnonimizar(u);
+                            }}
+                            style={{ flex: 1, minHeight: 36, backgroundColor: "#ffffff" }}
                           />
-                        </>
-                      )}
-                    </View>
+                        )}
+                        <Boton
+                          variant={u.disabled ? "primary" : "danger"}
+                          size="sm"
+                          title={u.disabled ? "Habilitar" : "Deshabilitar"}
+                          icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                          onPress={() => manejarAlternarUsuario(u)}
+                          style={{ flex: 1, minHeight: 36 }}
+                        />
+                      </>
+                    )}
                   </View>
-                </View>
+                </Tarjeta>
               );
             })}
           </View>
         ) : (
           /* VISTA ESCRITORIO / TABLA */
-          <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 980 }}>
-            <View style={{ minWidth: 980, flex: 1 }}>
-              <View style={estilos.tablaEncabezadoFila}>
-                <Text style={[estilos.thCelda, { width: 220 }]}>Usuario & Correo Login</Text>
-                <Text style={[estilos.thCelda, { width: 120 }]}>RUT</Text>
-                <Text style={[estilos.thCelda, { width: 150 }]}>Rol Asignado</Text>
-                <Text style={[estilos.thCelda, { width: 100 }]}>Estado</Text>
-                <Text style={[estilos.thCelda, { width: 110 }]}>Especialidad</Text>
-                <Text style={[estilos.thCelda, { width: 280, textAlign: "right" }]}>Acciones de Cuenta y Privacidad</Text>
-              </View>
+          <Tarjeta style={estilos.tarjetaCaja}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 980 }}>
+              <View style={{ minWidth: 980, flex: 1 }}>
+                <View style={estilos.tablaEncabezadoFila}>
+                  <Text style={[estilos.thCelda, { width: 220 }]}>Usuario & Correo Login</Text>
+                  <Text style={[estilos.thCelda, { width: 120 }]}>RUT</Text>
+                  <Text style={[estilos.thCelda, { width: 150 }]}>Rol Asignado</Text>
+                  <Text style={[estilos.thCelda, { width: 100 }]}>Estado</Text>
+                  <Text style={[estilos.thCelda, { width: 110 }]}>Especialidad</Text>
+                  <Text style={[estilos.thCelda, { width: 280, textAlign: "right" }]}>Acciones de Cuenta y Privacidad</Text>
+                </View>
 
-              {filtradoUsuarios.map((u) => {
-                const esOnlyAdmin = !u.disabled && u.role === "admin" && activoAdministradoresConteo <= 1;
-                const yaAnonimizado = u.rut.startsWith("XX.");
+                {filtradoUsuarios.map((u) => {
+                  const esOnlyAdmin = !u.disabled && u.role === "admin" && activoAdministradoresConteo <= 1;
+                  const yaAnonimizado = u.rut.startsWith("XX.");
 
-                return (
-                  <View key={u.id} style={[estilos.tablaFila, u.disabled && estilos.tablaFilaDeshabilitado]}>
-                    <View style={{ width: 220, paddingRight: 8 }}>
-                      <Text style={estilos.usuarioNombreTexto}>{u.name}</Text>
-                      <Text style={estilos.usuarioCorreoTexto}>{u.email}</Text>
-                    </View>
+                  return (
+                    <View key={u.id} style={[estilos.tablaFila, u.disabled && estilos.tablaFilaDeshabilitado]}>
+                      <View style={{ width: 220, paddingRight: 8 }}>
+                        <Text style={estilos.usuarioNombreTexto}>{u.name}</Text>
+                        <Text style={estilos.usuarioCorreoTexto}>{u.email}</Text>
+                      </View>
 
-                    <Text style={[estilos.tdCelda, { width: 120, fontWeight: "600" }]}>
-                      {u.rut || "Sin RUT"}
-                    </Text>
+                      <Text style={[estilos.tdCelda, { width: 120, fontWeight: "600" }]}>
+                        {u.rut || "Sin RUT"}
+                      </Text>
 
-                    <View style={{ width: 150 }}>
-                      <View
-                        style={[
-                          estilos.rolInsignia,
-                          u.role === "admin" && estilos.rolInsigniaAdmin,
-                          u.role === "warehouse" && estilos.rolInsigniaBodega,
-                          u.role === "technician" && estilos.rolInsigniaTecnico,
-                        ]}
-                      >
-                        <Text
+                      <View style={{ width: 150 }}>
+                        <View
                           style={[
-                            estilos.rolInsigniaTexto,
-                            u.role === "admin" && estilos.rolInsigniaTextoAdmin,
-                            u.role === "warehouse" && estilos.rolInsigniaTextoBodega,
-                            u.role === "technician" && estilos.rolInsigniaTextoTecnico,
+                            estilos.rolInsignia,
+                            u.role === "admin" && estilos.rolInsigniaAdmin,
+                            u.role === "warehouse" && estilos.rolInsigniaBodega,
+                            u.role === "technician" && estilos.rolInsigniaTecnico,
                           ]}
                         >
-                          {etiquetaRol(u.role)}
-                        </Text>
+                          <Text
+                            style={[
+                              estilos.rolInsigniaTexto,
+                              u.role === "admin" && estilos.rolInsigniaTextoAdmin,
+                              u.role === "warehouse" && estilos.rolInsigniaTextoBodega,
+                              u.role === "technician" && estilos.rolInsigniaTextoTecnico,
+                            ]}
+                          >
+                            {etiquetaRol(u.role)}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={{ width: 100 }}>
+                        <InsigniaEstado
+                          status={u.disabled ? "rechazada" : "aprobada"}
+                          label={u.disabled ? "Inactivo" : "Activo"}
+                        />
+                      </View>
+
+                      <Text style={[estilos.tdCelda, { width: 110, color: tema.colors.textMuted }]}>
+                        {u.especializacion || "General"}
+                      </Text>
+
+                      <View style={{ width: 280, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 6 }}>
+                        {!yaAnonimizado && (
+                          <Boton
+                            variant="secondary"
+                            size="sm"
+                            title="Editar / Clave"
+                            icon="key-outline"
+                            onPress={() => manejarAbrirEditarUsuario(u)}
+                          />
+                        )}
+                        {esOnlyAdmin ? (
+                          <TouchableOpacity
+                            style={estilos.lockedBoton}
+                            onPress={() =>
+                              mostrarFeedback(
+                                "error",
+                                "Operación bloqueada: No se puede deshabilitar al último Administrador activo."
+                              )
+                            }
+                            activeOpacity={0.7}
+                          >
+                            <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
+                            <Text style={estilos.lockedBotonTexto}>Último Admin</Text>
+                          </TouchableOpacity>
+                        ) : (
+                          <>
+                            {!yaAnonimizado && (
+                              <Boton
+                                variant="ghost"
+                                size="sm"
+                                title="Anonimizar"
+                                icon="finger-print-outline"
+                                onPress={() => {
+                                  establecerConfirmarPalabraClaveEntrada("");
+                                  establecerUsuarioParaAnonimizar(u);
+                                }}
+                              />
+                            )}
+                            <Boton
+                              variant={u.disabled ? "secondary" : "danger"}
+                              size="sm"
+                              title={u.disabled ? "Habilitar" : "Deshabilitar"}
+                              icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
+                              onPress={() => manejarAlternarUsuario(u)}
+                            />
+                          </>
+                        )}
                       </View>
                     </View>
-
-                    <View style={{ width: 100 }}>
-                      <InsigniaEstado
-                        status={u.disabled ? "rechazada" : "aprobada"}
-                        label={u.disabled ? "Inactivo" : "Activo"}
-                      />
-                    </View>
-
-                    <Text style={[estilos.tdCelda, { width: 110, color: tema.colors.textMuted }]}>
-                      {u.especializacion || "General"}
-                    </Text>
-
-                    <View style={{ width: 280, flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 6 }}>
-                      {!yaAnonimizado && (
-                        <Boton
-                          variant="secondary"
-                          size="sm"
-                          title="Editar / Clave"
-                          icon="key-outline"
-                          onPress={() => manejarAbrirEditarUsuario(u)}
-                        />
-                      )}
-                      {esOnlyAdmin ? (
-                        <TouchableOpacity
-                          style={estilos.lockedBoton}
-                          onPress={() =>
-                            mostrarFeedback(
-                              "error",
-                              "Operación bloqueada: No se puede deshabilitar al último Administrador activo."
-                            )
-                          }
-                          activeOpacity={0.7}
-                        >
-                          <Ionicons name="lock-closed" size={14} color="#b45309" style={{ marginRight: 4 }} />
-                          <Text style={estilos.lockedBotonTexto}>Último Admin</Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <>
-                          {!yaAnonimizado && (
-                            <Boton
-                              variant="ghost"
-                              size="sm"
-                              title="Anonimizar"
-                              icon="finger-print-outline"
-                              onPress={() => {
-                                establecerConfirmarPalabraClaveEntrada("");
-                                establecerUsuarioParaAnonimizar(u);
-                              }}
-                            />
-                          )}
-                          <Boton
-                            variant={u.disabled ? "secondary" : "danger"}
-                            size="sm"
-                            title={u.disabled ? "Habilitar" : "Deshabilitar"}
-                            icon={u.disabled ? "checkmark-circle-outline" : "ban-outline"}
-                            onPress={() => manejarAlternarUsuario(u)}
-                          />
-                        </>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          </ScrollView>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </Tarjeta>
         )}
-      </Tarjeta>
+      </View>
 
       {/* Modal Formulario Crear / Editar Usuario */}
       <VistaModal
@@ -762,8 +917,8 @@ export const SeccionUsuariosRoles: React.FC<PropiedadesSeccionUsuariosRoles> = (
                 guardandoUsuario
                   ? "Guardando..."
                   : usuarioEditando
-                  ? "Guardar Cambios"
-                  : "Crear Cuenta"
+                    ? "Guardar Cambios"
+                    : "Crear Cuenta"
               }
               icon={usuarioEditando ? "save-outline" : "person-add-outline"}
               onPress={manejarGuardarUsuario}

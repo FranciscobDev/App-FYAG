@@ -1,33 +1,21 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { Rol, Usuario } from "@/nucleo/tipos";
-import { establecerToken } from "@/nucleo/sesion";
-import { UsuarioApi, loginApi } from "@/modulos/autenticacion/authApi";
-
-// Normaliza el nombre del rol desde la BD (sin tildes ni sensibilidad a mayúsculas)
-const resolverRolDesdeBd = (nombreRol?: string | null, idRol?: number | null): Rol | null => {
-  const limpio = (nombreRol ?? "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
-  if (limpio.includes("admin") || limpio.includes("geren") || limpio.includes("jefe")) {
-    return "admin";
-  }
-  if (limpio.includes("bodeg") || limpio.includes("almac") || limpio.includes("invent")) {
-    return "warehouse";
-  }
-  if (limpio.includes("tecnic") || limpio.includes("terreno") || limpio.includes("oper")) {
-    return "technician";
-  }
-
-  // Respaldo por id_rol si nombre_rol viene nulo o distinto
-  if (idRol === 1) return "admin";
-  if (idRol === 2) return "warehouse";
-  if (idRol === 3) return "technician";
-
-  return null;
-};
+import { almacenamientoPersistente as AsyncStorage } from "@/nucleo/cacheLocal";
+import {
+  encabezadosAuth,
+  establecerToken,
+  fijarBaseUrlApi,
+  obtenerBaseUrlApi,
+} from "@/nucleo/sesion";
+import { loginApi, logoutApi, verificar2faApi } from "@/modulos/autenticacion/authApi";
+import {
+  Desafio2faPendiente,
+  SesionAutenticada,
+  cerrarSesionSegura,
+  procesarInicioSesion,
+  procesarVerificacion2fa,
+  restaurarSesionGuardada,
+} from "@/nucleo/flujoAutenticacion";
 
 const USUARIO_VACIO: Usuario = {
   rut: "",
@@ -37,87 +25,135 @@ const USUARIO_VACIO: Usuario = {
   role: "technician",
 };
 
-interface Sesion {
-  usuario: Usuario;
-  rol: Rol;
-  idUsuario: number;
-}
-
 interface TipoContextoAutenticacion {
   haySesion: boolean;
+  cargandoSesion: boolean;
   usuario: Usuario;
   rolActual: Rol;
   idUsuario: number | null;
+  pendiente2fa: Desafio2faPendiente | null;
   iniciarSesion: (correo: string, contrasena: string) => Promise<string | null>;
+  confirmarCodigo2fa: (codigo: string) => Promise<string | null>;
+  cancelar2fa: () => void;
   cerrarSesion: () => void;
-  // Se mantiene para compatibilidad con los selectores de rol de las plantillas.
-  // Ya no cambia el rol: el rol lo define la base de datos.
   establecerRol: (rol: Rol) => void;
 }
 
 const ContextoAutenticacion = createContext<TipoContextoAutenticacion>({
   haySesion: false,
+  cargandoSesion: true,
   usuario: USUARIO_VACIO,
   rolActual: "technician",
   idUsuario: null,
+  pendiente2fa: null,
   iniciarSesion: async () => "Sin proveedor de autenticación",
+  confirmarCodigo2fa: async () => "Sin proveedor de autenticación",
+  cancelar2fa: () => {},
   cerrarSesion: () => {},
   establecerRol: () => {},
 });
 
-const construirSesion = (u: UsuarioApi): Sesion | null => {
-  const rol = resolverRolDesdeBd(u.nombre_rol, u.id_rol);
-  if (!rol) return null; // Sin rol reconocido: no se da acceso
-
-  const nombre = `${u.nombre_usuario} ${u.apellido_usuario}`.trim();
-  const iniciales = `${u.nombre_usuario?.charAt(0) ?? ""}${u.apellido_usuario?.charAt(0) ?? ""}`.toUpperCase();
-
-  return {
-    idUsuario: u.id_usuario,
-    rol,
-    usuario: {
-      rut: u.rut ?? "",
-      name: nombre,
-      email: u.correo_usuario,
-      initials: iniciales,
-      role: rol,
-    },
-  };
-};
-
 export const ProveedorAutenticacion: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [sesion, establecerSesion] = useState<Sesion | null>(null);
+  const [sesion, establecerSesion] = useState<SesionAutenticada | null>(null);
+  const [cargandoSesion, establecerCargandoSesion] = useState(true);
+  const [pendiente2fa, establecerPendiente2fa] = useState<Desafio2faPendiente | null>(null);
 
-  // Devuelve null si entró, o el mensaje de error si falló
+  useEffect(() => {
+    let cancelado = false;
+
+    const restaurar = async () => {
+      try {
+        const resultado = await restaurarSesionGuardada({
+          almacenamiento: AsyncStorage,
+          fetchFn: fetch,
+          obtenerUrlBase: obtenerBaseUrlApi,
+          fijarUrlBase: fijarBaseUrlApi,
+          fijarToken: establecerToken,
+          encabezadosAuth,
+        });
+        if (!cancelado && resultado.sesion) {
+          establecerSesion(resultado.sesion);
+        }
+      } finally {
+        if (!cancelado) establecerCargandoSesion(false);
+      }
+    };
+
+    restaurar();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
   const iniciarSesion = async (correo: string, contrasena: string): Promise<string | null> => {
-    const res = await loginApi(correo, contrasena);
-    if (!res.ok || !res.data) {
-      return res.error ?? "No se pudo iniciar sesión";
+    const resultado = await procesarInicioSesion({
+      correo,
+      contrasena,
+      loginFn: loginApi,
+      almacenamiento: AsyncStorage,
+      obtenerUrlBase: obtenerBaseUrlApi,
+      fijarToken: establecerToken,
+      nodeEnv: process.env.NODE_ENV,
+      permitirMockEnv: process.env.EXPO_PUBLIC_PERMITIR_MOCK,
+    });
+
+    if (resultado.desafio2fa) {
+      establecerPendiente2fa(resultado.desafio2fa);
+      return null;
     }
 
-    const nueva = construirSesion(res.data.usuario);
-    if (!nueva) {
-      return "Tu rol no tiene acceso a la aplicación";
-    }
+    establecerPendiente2fa(null);
+    establecerSesion(resultado.sesion);
+    return resultado.error;
+  };
 
-    establecerToken(res.data.token);
-    establecerSesion(nueva);
-    return null;
+  const confirmarCodigo2fa = async (codigo: string): Promise<string | null> => {
+    if (!pendiente2fa) {
+      return "No hay una verificación de segundo factor pendiente";
+    }
+    const resultado = await procesarVerificacion2fa({
+      desafioToken: pendiente2fa.desafioToken,
+      codigo,
+      verificarFn: verificar2faApi,
+      almacenamiento: AsyncStorage,
+      obtenerUrlBase: obtenerBaseUrlApi,
+      fijarToken: establecerToken,
+    });
+
+    if (resultado.sesion) {
+      establecerPendiente2fa(null);
+      establecerSesion(resultado.sesion);
+      return null;
+    }
+    return resultado.error;
+  };
+
+  const cancelar2fa = () => {
+    establecerPendiente2fa(null);
   };
 
   const cerrarSesion = () => {
-    establecerToken(null);
+    establecerPendiente2fa(null);
     establecerSesion(null);
+    void cerrarSesionSegura({
+      almacenamiento: AsyncStorage,
+      fijarToken: establecerToken,
+      logoutFn: () => logoutApi(fetch),
+    });
   };
 
   return (
     <ContextoAutenticacion.Provider
       value={{
         haySesion: sesion !== null,
+        cargandoSesion,
         usuario: sesion?.usuario ?? USUARIO_VACIO,
         rolActual: sesion?.rol ?? "technician",
         idUsuario: sesion?.idUsuario ?? null,
+        pendiente2fa,
         iniciarSesion,
+        confirmarCodigo2fa,
+        cancelar2fa,
         cerrarSesion,
         establecerRol: () => {},
       }}

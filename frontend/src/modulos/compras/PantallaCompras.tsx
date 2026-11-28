@@ -42,6 +42,20 @@ import {
 } from "@/nucleo/tipos";
 import { estilos } from "./estilos";
 import { SeccionOrdenesCompra, SeccionFacturasProveedor, SeccionRecepcionBodega, SeccionDirectorioTerceros, ModalesCompras } from "./componentes";
+import {
+  formatearTiempoEscaneo,
+  resolverCodigoEscaneadoBodega,
+  ResultadoResolucionCodigoBodega,
+} from "@/modulos/inventario/escanerBodegaUtils";
+import {
+  aplicarEntregaChecklistEnOrden,
+  calcularSaldoPendienteLineaOc,
+  construirChecklistInicialDesdeOc,
+} from "./recepcionChecklistUtils";
+import {
+  calcularTotalesFacturaCascada,
+  detectarDiscrepanciasFacturaConRecepcion,
+} from "./facturaCalculoUtils";
 
 export type PestanaCompras = "ordenes" | "facturas" | "recepcion" | "terceros";
 
@@ -65,7 +79,9 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     clientes,
     productos,
     crearOrdenCompra,
+    actualizarOrdenCompra,
     aprobarYEnviarOrden,
+    anularOrdenCompra,
     calificarProveedor,
     crearFactura,
     confirmarRecepcionOrden,
@@ -148,14 +164,43 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
   };
 
   const manejarGuardarCompraOrden = (asDraft = true) => {
+    if (editandoPo && editandoPo.status !== "borrador") {
+      establecerPoError("Solo se pueden editar órdenes en estado Borrador.");
+      return;
+    }
+
     const sup = proveedores.find((s) => s.id === seleccionadoProveedorId);
     if (!sup) {
       establecerPoError("Seleccione un proveedor válido.");
       return;
     }
     if (poElementos.length === 0) {
-      establecerPoError("Debe incluir al menos un insumo en la orden.");
+      establecerPoError("Debe incluir al menos una línea de compra en la orden.");
       return;
+    }
+
+    const skusRegistrados = new Set<string>();
+    for (const item of poElementos) {
+      if (!item.sku) {
+        establecerPoError("Cada línea debe tener un insumo seleccionado.");
+        return;
+      }
+      if (skusRegistrados.has(item.sku)) {
+        establecerPoError(
+          `El insumo ${item.sku} está repetido en las líneas. Ajusta la cantidad en una sola fila.`
+        );
+        return;
+      }
+      skusRegistrados.add(item.sku);
+
+      if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
+        establecerPoError(`La cantidad para ${item.sku} debe ser mayor a 0.`);
+        return;
+      }
+      if (!Number.isFinite(item.unitPrice) || item.unitPrice < 0) {
+        establecerPoError(`El precio unitario para ${item.sku} no puede ser negativo.`);
+        return;
+      }
     }
 
     const elementosHastaEnviar: ItemOrdenCompra[] = poElementos.map((it) => {
@@ -163,28 +208,49 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       return {
         sku: it.sku,
         name: p ? p.name : it.sku,
-        quantity: it.quantity,
-        unitPrice: it.unitPrice,
+        quantity: Math.round(it.quantity),
+        unitPrice: Math.round(it.unitPrice),
         unit: p ? p.unit : "un",
       };
     });
 
-    const resultado = crearOrdenCompra({
+    const estadoDestino = asDraft ? ("borrador" as const) : ("enviada" as const);
+    const datosOrden = {
       supplierId: sup.id,
       supplier: sup.businessName,
       supplierRut: sup.rut,
-      status: asDraft ? "borrador" : "enviada",
+      status: estadoDestino,
       isAutoMinStock: poEsAutomaticoMinimo,
       items: elementosHastaEnviar,
       expectedDate: poEsperadoFecha,
-      notes: poNotas,
-    });
+      notes: poNotas.trim(),
+    };
 
-    if (resultado.success) {
-      mostrarAviso(asDraft ? "Orden de compra guardada en borrador." : "Orden aprobada y enviada a proveedor.");
+    if (editandoPo) {
+      const resultadoEdicion = actualizarOrdenCompra(editandoPo.id, datosOrden);
+      if (resultadoEdicion.success) {
+        mostrarAviso(
+          asDraft
+            ? `Borrador ${editandoPo.code} actualizado correctamente.`
+            : `Orden ${editandoPo.code} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+        );
+        establecerPoModal(false);
+      } else {
+        establecerPoError(resultadoEdicion.error || "Error al actualizar la orden de compra.");
+      }
+      return;
+    }
+
+    const resultadoCreacion = crearOrdenCompra(datosOrden);
+    if (resultadoCreacion.success) {
+      mostrarAviso(
+        asDraft
+          ? `Orden ${resultadoCreacion.code || ""} guardada en estado Borrador.`
+          : `Orden ${resultadoCreacion.code || ""} aprobada: PDF corporativo generado y enviado por correo a ${sup.email || sup.businessName}.`
+      );
       establecerPoModal(false);
     } else {
-      establecerPoError(resultado.error || "Error al crear la orden de compra.");
+      establecerPoError(resultadoCreacion.error || "Error al crear la orden de compra.");
     }
   };
 
@@ -222,44 +288,75 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
   ]);
   const [invError, establecerInvError] = useState("");
 
-  // Cálculo en cascada en vivo para cada ítem:
+  // Cálculo en cascada en vivo para cada ítem (idéntico al backend):
   // Paso 1: P1 = Bruto * (1 - d1/100)
   // Paso 2: P2 = P1 * (1 - d2/100)
-  // Paso 3: Neto = P2 * (1 - d3/100)
-  const calculatedFacturaElementos: ItemFacturaCompra[] = invElementos.map((i) => {
+  // Paso 3: Neto = Math.round(P2 * (1 - d3/100))
+  const entradasFacturaConCatalogo = invElementos.map((i) => {
     const p = productos.find((prod) => prod.sku === i.sku);
-    const paso1 = i.grossPrice * (1 - (i.disc1 || 0) / 100);
-    const paso2 = paso1 * (1 - (i.disc2 || 0) / 100);
-    const netoUnidadPrecio = Math.round(paso2 * (1 - (i.disc3 || 0) / 100));
-    const subtotalNeto = netoUnidadPrecio * (i.quantity || 0);
     return {
       sku: i.sku,
       name: p ? p.name : i.sku,
+      unit: p ? p.unit : "un",
       quantity: i.quantity,
       grossPrice: i.grossPrice,
-      discount1Pct: i.disc1,
-      discount2Pct: i.disc2,
-      discount3Pct: i.disc3,
-      netUnitPrice: netoUnidadPrecio,
-      subtotalNet: subtotalNeto,
-      unit: p ? p.unit : "un",
+      disc1: i.disc1,
+      disc2: i.disc2,
+      disc3: i.disc3,
+      stockActual: p?.stock ?? 0,
+      pmpActual: p?.pmp || p?.unitCost || i.grossPrice,
     };
   });
 
-  const facturaSubtotalNeto = calculatedFacturaElementos.reduce((acc, i) => acc + i.subtotalNet, 0);
-  const facturaIva = Math.round(facturaSubtotalNeto * 0.19);
-  const facturaTotal = facturaSubtotalNeto + facturaIva;
+  const desgloseTotalesFactura = calcularTotalesFacturaCascada(entradasFacturaConCatalogo);
+  const calculatedFacturaElementos: ItemFacturaCompra[] = desgloseTotalesFactura.lineas.map((l) => ({
+    sku: l.sku,
+    name: l.name,
+    quantity: l.quantity,
+    grossPrice: l.grossPrice,
+    discount1Pct: l.discount1Pct,
+    discount2Pct: l.discount2Pct,
+    discount3Pct: l.discount3Pct,
+    priceAfterDisc1: l.priceAfterDisc1,
+    discount1UnitAmount: l.discount1UnitAmount,
+    priceAfterDisc2: l.priceAfterDisc2,
+    discount2UnitAmount: l.discount2UnitAmount,
+    discount3UnitAmount: l.discount3UnitAmount,
+    effectiveDiscountPct: l.effectiveDiscountPct,
+    subtotalGross: l.subtotalGross,
+    totalDiscountLine: l.totalDiscountLine,
+    netUnitPrice: l.netUnitPrice,
+    subtotalNet: l.subtotalNet,
+    unit: l.unit,
+  }));
+
+  const facturaSubtotalBruto = desgloseTotalesFactura.subtotalGross;
+  const facturaTotalDescuentos = desgloseTotalesFactura.totalDiscounts;
+  const facturaSubtotalNeto = desgloseTotalesFactura.subtotalNet;
+  const facturaIva = desgloseTotalesFactura.iva;
+  const facturaTotal = desgloseTotalesFactura.total;
+
+  const ordenCompraVinculadaFactura = invOrdenCodigo.trim()
+    ? ordenesCompra.find(
+        (o) => o.code.trim().toUpperCase() === invOrdenCodigo.trim().toUpperCase()
+      ) || null
+    : null;
+
+  const discrepanciaFacturaRecepcion = detectarDiscrepanciasFacturaConRecepcion(
+    entradasFacturaConCatalogo,
+    ordenCompraVinculadaFactura
+  );
 
   // Validación de duplicado de factura por proveedor
   const seleccionadoInvProveedor = proveedores.find((s) => s.id === invProveedorId);
   const esFacturaDuplicate = Boolean(
     invNumero.trim() &&
-      seleccionadoInvProveedor &&
-      facturasCompra.some(
-        (inv) =>
-          inv.supplierRut.replace(/[.\s-]/g, "") === seleccionadoInvProveedor.rut.replace(/[.\s-]/g, "") &&
-          inv.number.trim().toLowerCase() === invNumero.trim().toLowerCase()
-      )
+    seleccionadoInvProveedor &&
+    facturasCompra.some(
+      (inv) =>
+        inv.supplierRut.replace(/[.\s-]/g, "") === seleccionadoInvProveedor.rut.replace(/[.\s-]/g, "") &&
+        inv.number.trim().toLowerCase() === invNumero.trim().toLowerCase()
+    )
   );
 
   const manejarGuardarFactura = () => {
@@ -276,6 +373,10 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       establecerInvError(`La factura N° ${invNumero} ya fue ingresada para el proveedor ${seleccionadoInvProveedor.businessName}.`);
       return;
     }
+    if (invElementos.length === 0 || invElementos.some((i) => !i.sku || Number(i.quantity) <= 0)) {
+      establecerInvError("Todos los ítems de la factura deben tener un insumo y cantidad mayor a 0.");
+      return;
+    }
 
     const nuevoFactura: FacturaCompra = {
       id: `inv_${Date.now()}`,
@@ -286,18 +387,25 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
       orderCode: invOrdenCodigo.trim() || undefined,
       date: new Date().toISOString().slice(0, 10),
       items: calculatedFacturaElementos,
+      subtotalGross: facturaSubtotalBruto,
       subtotalNet: facturaSubtotalNeto,
-      totalDiscounts: 0,
+      totalDiscounts: facturaTotalDescuentos,
       iva: facturaIva,
       total: facturaTotal,
       status: "registrada",
+      hasReceptionDiscrepancy: discrepanciaFacturaRecepcion.tieneDiscrepancia,
+      discrepancyNotes: discrepanciaFacturaRecepcion.resumenAlertas,
     };
 
     const res = crearFactura(nuevoFactura);
     if (!res.success) {
       establecerInvError(res.error || "Error al registrar la factura.");
     } else {
-      mostrarAviso(`Factura N° ${invNumero} registrada exitosamente.`);
+      mostrarAviso(
+        discrepanciaFacturaRecepcion.tieneDiscrepancia
+          ? `Factura N° ${invNumero} registrada con aviso de discrepancia respecto a la recepción de ${ordenCompraVinculadaFactura?.code}.`
+          : `Factura N° ${invNumero} registrada exitosamente.`
+      );
       establecerInvNumero("");
       establecerInvOrdenCodigo("");
     }
@@ -319,24 +427,21 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
     scanned?: boolean;
   }[]>([]);
 
-  // Escáner QR / Barras con la cámara de la tablet
+  // Escáner QR / Barras con la cámara de la tablet (H33)
   const [escanerAbrir, establecerEscanerAbrir] = useState(false);
   const [scanningTargetSku, establecerScanningTargetSku] = useState<string | null>(null);
+  const [ultimoEscaneoRecepcion, establecerUltimoEscaneoRecepcion] = useState<{
+    tipo: "ok" | "alerta";
+    sku?: string;
+    nombre?: string;
+    tiempoTexto: string;
+    mensaje: string;
+  } | null>(null);
 
   useEffect(() => {
     if (activoRecepcionOrden) {
-      establecerRecepcionListaChequeo(
-        activoRecepcionOrden.items.map((it) => {
-          const pendiente = Math.max(0, it.quantity - (it.receivedQuantity || 0));
-          return {
-            sku: it.sku,
-            received: pendiente,
-            defective: 0,
-            missing: 0,
-            scanned: false,
-          };
-        })
-      );
+      establecerRecepcionListaChequeo(construirChecklistInicialDesdeOc(activoRecepcionOrden));
+      establecerUltimoEscaneoRecepcion(null);
 
       // Vincular automáticamente la factura asociada si ya existe registrada
       const linkedInv = facturasCompra.find((inv) => inv.orderCode === activoRecepcionOrden.code);
@@ -346,36 +451,57 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
         establecerSeleccionadoFacturaNumero("");
       }
     }
-  }, [seleccionadoOcCodigo]);
+  }, [seleccionadoOcCodigo, activoRecepcionOrden]);
 
   const manejarAbrirEscaner = (targetSku?: string) => {
     establecerScanningTargetSku(targetSku || null);
     establecerEscanerAbrir(true);
   };
 
-  const manejarEscanearCodigo = (scannedCode: string) => {
+  const manejarEscanearCodigo = (
+    scannedCode: string,
+    meta?: ResultadoResolucionCodigoBodega
+  ) => {
     establecerEscanerAbrir(false);
-    const clean = scannedCode.trim();
+    const resolucion =
+      meta && meta.valido && meta.producto
+        ? meta
+        : resolverCodigoEscaneadoBodega(scannedCode, productos);
+    const tiempoTexto = formatearTiempoEscaneo(resolucion.tiempoMs);
 
     // 1. Validar si el código existe en el catálogo maestro
-    const matchedProducto = productos.find((p) => p.sku === clean || p.barcode === clean);
-    if (!matchedProducto) {
-      mostrarAviso(`El código "${clean}" no existe en el catálogo del sistema.`);
+    if (!resolucion.valido || !resolucion.producto) {
+      const msg =
+        resolucion.mensajeError ||
+        `El código "${scannedCode.trim()}" no existe en el catálogo del sistema. Flujo detenido.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
+    const matchedProducto = resolucion.producto;
     if (!activoRecepcionOrden) return;
 
     // 2. Validar si el insumo pertenece a la OC activa
     const poElemento = activoRecepcionOrden.items.find((it) => it.sku === matchedProducto.sku);
     if (!poElemento) {
-      mostrarAviso(
-        `El insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`
-      );
+      const msg = `Flujo detenido: el insumo ${matchedProducto.name} (${matchedProducto.sku}) no pertenece a la OC ${activoRecepcionOrden.code}.`;
+      establecerUltimoEscaneoRecepcion({
+        tipo: "alerta",
+        sku: matchedProducto.sku,
+        nombre: matchedProducto.name,
+        tiempoTexto,
+        mensaje: msg,
+      });
+      mostrarAviso(msg);
       return;
     }
 
-    // 3. Marcar como verificado y autocompletar la cantidad pendiente como conforme
+    // 3. Autocompletar el SKU sin digitar, marcar como escaneado y completar saldo pendiente conforme
     const pendiente = Math.max(0, poElemento.quantity - (poElemento.receivedQuantity || 0));
     establecerRecepcionListaChequeo((prev) =>
       prev.map((c) =>
@@ -384,22 +510,56 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
           : c
       )
     );
-    mostrarAviso(`✓ Insumo identificado y validado: ${matchedProducto.name} (${matchedProducto.sku})`);
+    const etiquetaFormato =
+      resolucion.formatoDetectado === "QR_H47" ? "código QR" : "código";
+    const msgOk = `SKU ${matchedProducto.sku} autocompletado (${matchedProducto.name}) vía ${etiquetaFormato} en ${tiempoTexto}.`;
+    establecerUltimoEscaneoRecepcion({
+      tipo: "ok",
+      sku: matchedProducto.sku,
+      nombre: matchedProducto.name,
+      tiempoTexto,
+      mensaje: msgOk,
+    });
+    mostrarAviso(`✓ ${msgOk}`);
   };
 
-  // Alerta de discrepancia en recepción física vs esperada
+  // Alerta de discrepancia en recepción física vs esperada o vs factura asociada
+  const facturaAsociadaActual = facturasCompra.find(
+    (inv) =>
+      (seleccionadoFacturaNumero && inv.number === seleccionadoFacturaNumero) ||
+      (activoRecepcionOrden && inv.orderCode === activoRecepcionOrden.code)
+  );
+
   const tieneRecepcionDiscrepancy = recepcionListaChequeo.some((item) => {
     const poItem = activoRecepcionOrden?.items.find((i) => i.sku === item.sku);
-    const pending = poItem ? Math.max(0, poItem.quantity - (poItem.receivedQuantity || 0)) : 0;
+    const pending = poItem ? calcularSaldoPendienteLineaOc(poItem) : 0;
     const totalContado = item.received + item.defective + item.missing;
-    return totalContado !== pending || item.defective > 0 || item.missing > 0;
+    const invItem = facturaAsociadaActual?.items.find((fi) => fi.sku === item.sku);
+    const recibidoAcumulado = (poItem?.receivedQuantity || 0) + item.received;
+    const difiereDeFactura = Boolean(invItem && recibidoAcumulado !== invItem.quantity);
+    return totalContado !== pending || item.defective > 0 || item.missing > 0 || difiereDeFactura;
   });
 
   const manejarConfirmarRecepcion = () => {
-    if (!seleccionadoOcCodigo) return;
+    if (!seleccionadoOcCodigo || !activoRecepcionOrden) return;
+    const simulacion = aplicarEntregaChecklistEnOrden(
+      activoRecepcionOrden,
+      recepcionListaChequeo,
+      facturaAsociadaActual ?? null,
+      seleccionadoFacturaNumero || undefined
+    );
     confirmarRecepcionOrden(seleccionadoOcCodigo, recepcionListaChequeo, seleccionadoFacturaNumero || undefined);
-    mostrarAviso(`Recepción confirmada para ${seleccionadoOcCodigo}. Stock actualizado y PMP recalculado.`);
-    establecerSeleccionadoOcCodigo("");
+
+    if (simulacion.esRecepcionCompleta) {
+      mostrarAviso(
+        `Recepción completa confirmada para ${seleccionadoOcCodigo}. Stock disponible actualizado y OC en estado Recibida.`
+      );
+      establecerSeleccionadoOcCodigo("");
+    } else {
+      mostrarAviso(
+        `Entrega parcial registrada en ${seleccionadoOcCodigo} (+${simulacion.totalConformeHoy} a stock, ${simulacion.totalDefectuosoHoy} a cuarentena). Saldo pendiente: ${simulacion.totalSaldoPendienteOc} un.`
+      );
+    }
   };
 
   // =========================================================================
@@ -550,70 +710,65 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
   // =========================================================================
   return (
     <ContenedorEstadoPantalla screenTitle="Compras y Terceros" skeletonType="table">
-    <View style={estilos.contenedor}>
-      {/* Toast Notification */}
-      <NotificacionFlotante
-        visible={Boolean(avisoMensaje)}
-        message={avisoMensaje || ""}
-        onDismiss={() => establecerAvisoMensaje(null)}
-      />
-      {/* ENCABEZADO PRINCIPAL */}
-      <EncabezadoPagina
-        title={
-          propTitle && hideTabBar
-            ? propTitle
-            : rolActual === "warehouse"
-            ? activoPestana === "recepcion"
-              ? "Recepción en Bodega"
-              : activoPestana === "facturas"
-              ? "Facturas de Compra"
-              : "Órdenes de Compra"
-            : activoPestana === "terceros"
-            ? "Directorio de Proveedores"
-            : activoPestana === "ordenes"
-            ? "Órdenes de Compra"
-            : activoPestana === "recepcion"
-            ? "Recepción en Bodega"
-            : "Facturas de Proveedor"
-        }
-        subtitle={
-          propSubtitle && hideTabBar
-            ? propSubtitle
-            : rolActual === "warehouse"
-            ? activoPestana === "recepcion"
-              ? "Control físico y calidad contra OC. Conforme a stock; defectuoso a cuarentena"
-              : activoPestana === "facturas"
-              ? "Registro de facturas con hasta 3 descuentos sucesivos y recálculo de PMP"
-              : "Seguimiento de órdenes de compra emitidas y estado de cumplimiento"
-            : activoPestana === "terceros"
-            ? "Consulta y alta de proveedores homologados, contactos y cuentas bancarias"
-            : activoPestana === "ordenes"
-            ? "Emisión, seguimiento y control del ciclo de vida de órdenes de compra"
-            : activoPestana === "recepcion"
-            ? "Verificación física y control de conformidad de mercadería en bodega o faena"
-            : "Ingreso de facturas con hasta 3 descuentos sucesivos y conciliación con OC"
-        }
-      />
+      <View style={estilos.contenedor}>
+        {/* Toast Notification */}
+        <NotificacionFlotante
+          visible={Boolean(avisoMensaje)}
+          message={avisoMensaje || ""}
+          onDismiss={() => establecerAvisoMensaje(null)}
+        />
+        {/* ENCABEZADO PRINCIPAL */}
+        <EncabezadoPagina
+          title={
+            propTitle && hideTabBar
+              ? propTitle
+              : rolActual === "warehouse"
+                ? activoPestana === "recepcion"
+                  ? "Recepción en Bodega"
+                  : activoPestana === "facturas"
+                    ? "Facturas de Compra"
+                    : "Órdenes de Compra"
+                : activoPestana === "terceros"
+                  ? "Directorio de Proveedores"
+                  : activoPestana === "ordenes"
+                    ? "Órdenes de Compra"
+                    : activoPestana === "recepcion"
+                      ? "Recepción en Bodega"
+                      : "Facturas de Proveedor"
+          }
+          subtitle={
+            propSubtitle && hideTabBar
+              ? propSubtitle
+              : rolActual === "warehouse"
+                ? activoPestana === "recepcion"
+                  ? "Control físico y calidad contra OC. Conforme a stock; defectuoso a cuarentena"
+                  : activoPestana === "facturas"
+                    ? "Registro de facturas con hasta 3 descuentos sucesivos y recálculo de PMP"
+                    : "Seguimiento de órdenes de compra emitidas y estado de cumplimiento"
+                : activoPestana === "terceros"
+                  ? "Consulta y alta de proveedores homologados, contactos y cuentas bancarias"
+                  : activoPestana === "ordenes"
+                    ? "Emisión, seguimiento y control del ciclo de vida de órdenes de compra"
+                    : activoPestana === "recepcion"
+                      ? "Verificación física y control de conformidad de mercadería en bodega o faena"
+                      : "Ingreso de facturas con hasta 3 descuentos sucesivos y conciliación con OC"
+          }
+        />
 
-      {/* PESTAÑAS DE NAVEGACIÓN CONTEXTUAL (Ocultas en vistas independientes) */}
-      {!hideTabBar && (
-        <View style={estilos.pestanaBarraContenedor}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={estilos.pestanaScrollContenido}
-          >
-            {(rolActual === "warehouse"
-              ? [
+        {/* PESTAÑAS DE NAVEGACIÓN CONTEXTUAL (Ocultas en vistas independientes) */}
+        {!hideTabBar && (
+          <View style={estilos.pestanaBarraContenedor}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={estilos.pestanaScrollContenido}
+            >
+              {(rolActual === "warehouse"
+                ? [
                   {
                     id: "recepcion" as PestanaCompras,
                     label: `Recepción en Bodega (${pendienteRecepcionOrdenes.length} pend.)`,
                     icon: "checkmark-circle-outline",
-                  },
-                  {
-                    id: "facturas" as PestanaCompras,
-                    label: `Facturas (${facturasCompra.length})`,
-                    icon: "receipt-outline",
                   },
                   {
                     id: "ordenes" as PestanaCompras,
@@ -621,7 +776,7 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     icon: "cart-outline",
                   },
                 ]
-              : [
+                : [
                   {
                     id: "ordenes" as PestanaCompras,
                     label: `Órdenes Emitidas (${ordenesCompra.length})`,
@@ -633,180 +788,190 @@ export const PantallaCompras: React.FC<PropiedadesPantallaCompras> = ({
                     icon: "checkmark-circle-outline",
                   },
                 ]
-            ).map((tab) => {
-              const esActivo = activoPestana === tab.id;
-              return (
-                <TouchableOpacity
-                  key={tab.id}
-                  style={[estilos.pestanaElemento, esActivo && estilos.pestanaElementoActivo]}
-                  onPress={() => establecerActivoPestana(tab.id)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: esActivo }}
-                >
-                  <Ionicons
-                    name={tab.icon as any}
-                    size={18}
-                    color={esActivo ? tema.colors.primary : tema.colors.textMuted}
-                  />
-                  <Text style={[estilos.pestanaEtiqueta, esActivo && estilos.pestanaEtiquetaActivo]}>
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+              ).map((tab) => {
+                const esActivo = activoPestana === tab.id;
+                return (
+                  <TouchableOpacity
+                    key={tab.id}
+                    style={[estilos.pestanaElemento, esActivo && estilos.pestanaElementoActivo]}
+                    onPress={() => establecerActivoPestana(tab.id)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: esActivo }}
+                  >
+                    <Ionicons
+                      name={tab.icon as any}
+                      size={18}
+                      color={esActivo ? tema.colors.primary : tema.colors.textMuted}
+                    />
+                    <Text style={[estilos.pestanaEtiqueta, esActivo && estilos.pestanaEtiquetaActivo]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
-      <SeccionOrdenesCompra
-        activoPestana={activoPestana}
-        aprobarYEnviarOrden={aprobarYEnviarOrden}
-        establecerCalificacionComentario={establecerCalificacionComentario}
-        establecerCalificacionPrecio={establecerCalificacionPrecio}
-        establecerCalificacionQuality={establecerCalificacionQuality}
-        establecerCalificacionTiempo={establecerCalificacionTiempo}
-        establecerPdfVistaPreviaOrden={establecerPdfVistaPreviaOrden}
-        establecerPoFiltrarEstado={establecerPoFiltrarEstado}
-        establecerTarifaModalOrden={establecerTarifaModalOrden}
-        filtradoOrdenes={filtradoOrdenes}
-        manejarAbrirEditarOrden={manejarAbrirEditarOrden}
-        manejarAbrirNuevoOrden={manejarAbrirNuevoOrden}
-        mostrarAviso={mostrarAviso}
-        poFiltrarEstado={poFiltrarEstado}
-        rolActual={rolActual}
-      />
+        <SeccionOrdenesCompra
+          activoPestana={activoPestana}
+          aprobarYEnviarOrden={aprobarYEnviarOrden}
+          establecerCalificacionComentario={establecerCalificacionComentario}
+          establecerCalificacionPrecio={establecerCalificacionPrecio}
+          establecerCalificacionQuality={establecerCalificacionQuality}
+          establecerCalificacionTiempo={establecerCalificacionTiempo}
+          establecerPdfVistaPreviaOrden={establecerPdfVistaPreviaOrden}
+          establecerPoFiltrarEstado={establecerPoFiltrarEstado}
+          establecerTarifaModalOrden={establecerTarifaModalOrden}
+          filtradoOrdenes={filtradoOrdenes}
+          manejarAbrirEditarOrden={manejarAbrirEditarOrden}
+          manejarAbrirNuevoOrden={manejarAbrirNuevoOrden}
+          mostrarAviso={mostrarAviso}
+          poFiltrarEstado={poFiltrarEstado}
+          rolActual={rolActual}
+        />
 
-      <SeccionFacturasProveedor
-        activoPestana={activoPestana}
-        calculatedFacturaElementos={calculatedFacturaElementos}
-        esFacturaDuplicate={esFacturaDuplicate}
-        establecerInvElementos={establecerInvElementos}
-        establecerInvNumero={establecerInvNumero}
-        establecerInvOrdenCodigo={establecerInvOrdenCodigo}
-        establecerInvProveedorId={establecerInvProveedorId}
-        facturaIva={facturaIva}
-        facturaSubtotalNeto={facturaSubtotalNeto}
-        facturaTotal={facturaTotal}
-        invElementos={invElementos}
-        invError={invError}
-        invNumero={invNumero}
-        invOrdenCodigo={invOrdenCodigo}
-        invProveedorId={invProveedorId}
-        manejarGuardarFactura={manejarGuardarFactura}
-        productos={productos}
-        proveedores={proveedores}
-      />
+        <SeccionFacturasProveedor
+          activoPestana={activoPestana}
+          calculatedFacturaElementos={calculatedFacturaElementos}
+          discrepanciaFacturaRecepcion={discrepanciaFacturaRecepcion}
+          esFacturaDuplicate={esFacturaDuplicate}
+          establecerInvElementos={establecerInvElementos}
+          establecerInvNumero={establecerInvNumero}
+          establecerInvOrdenCodigo={establecerInvOrdenCodigo}
+          establecerInvProveedorId={establecerInvProveedorId}
+          facturaIva={facturaIva}
+          facturaSubtotalBruto={facturaSubtotalBruto}
+          facturaSubtotalNeto={facturaSubtotalNeto}
+          facturaTotal={facturaTotal}
+          facturaTotalDescuentos={facturaTotalDescuentos}
+          facturasCompra={facturasCompra}
+          invElementos={invElementos}
+          invError={invError}
+          invNumero={invNumero}
+          invOrdenCodigo={invOrdenCodigo}
+          invProveedorId={invProveedorId}
+          manejarGuardarFactura={manejarGuardarFactura}
+          ordenCompraVinculadaFactura={ordenCompraVinculadaFactura}
+          ordenesCompra={ordenesCompra}
+          productos={productos}
+          proveedores={proveedores}
+        />
 
-      {/* =====================================================================
+        {/* =====================================================================
           3. TAB RECEPCIÓN CHECKLIST Y CONTROL DE CALIDAD
           ===================================================================== */}
-      <SeccionRecepcionBodega
-        activoPestana={activoPestana}
-        activoRecepcionOrden={activoRecepcionOrden}
-        establecerRecepcionListaChequeo={establecerRecepcionListaChequeo}
-        establecerSeleccionadoFacturaNumero={establecerSeleccionadoFacturaNumero}
-        establecerSeleccionadoOcCodigo={establecerSeleccionadoOcCodigo}
-        facturasCompra={facturasCompra}
-        manejarAbrirEscaner={manejarAbrirEscaner}
-        manejarConfirmarRecepcion={manejarConfirmarRecepcion}
-        ordenesCompra={ordenesCompra}
-        productos={productos}
-        recepcionListaChequeo={recepcionListaChequeo}
-        seleccionadoFacturaNumero={seleccionadoFacturaNumero}
-        seleccionadoOcCodigo={seleccionadoOcCodigo}
-        tieneRecepcionDiscrepancy={tieneRecepcionDiscrepancy}
-        width={width}
-      />
+        <SeccionRecepcionBodega
+          activoPestana={activoPestana}
+          activoRecepcionOrden={activoRecepcionOrden}
+          establecerRecepcionListaChequeo={establecerRecepcionListaChequeo}
+          establecerSeleccionadoFacturaNumero={establecerSeleccionadoFacturaNumero}
+          establecerSeleccionadoOcCodigo={establecerSeleccionadoOcCodigo}
+          facturasCompra={facturasCompra}
+          manejarAbrirEscaner={manejarAbrirEscaner}
+          manejarConfirmarRecepcion={manejarConfirmarRecepcion}
+          ordenesCompra={ordenesCompra}
+          productos={productos}
+          recepcionListaChequeo={recepcionListaChequeo}
+          seleccionadoFacturaNumero={seleccionadoFacturaNumero}
+          seleccionadoOcCodigo={seleccionadoOcCodigo}
+          tieneRecepcionDiscrepancy={tieneRecepcionDiscrepancy}
+          ultimoEscaneoRecepcion={ultimoEscaneoRecepcion}
+          onLimpiarUltimoEscaneo={() => establecerUltimoEscaneoRecepcion(null)}
+          width={width}
+        />
 
-      <SeccionDirectorioTerceros
-        activoPestana={activoPestana}
-        alternarClienteDeshabilitado={alternarClienteDeshabilitado}
-        alternarProveedorDeshabilitado={alternarProveedorDeshabilitado}
-        clientes={clientes}
-        establecerActivoPestana={establecerActivoPestana}
-        establecerThirdPartyBuscar={establecerThirdPartyBuscar}
-        establecerThirdPartyOrdenar={establecerThirdPartyOrdenar}
-        establecerThirdPartyPestana={establecerThirdPartyPestana}
-        filtradoClientes={filtradoClientes}
-        filtradoProveedores={filtradoProveedores}
-        manejarAbrirNuevoOrden={manejarAbrirNuevoOrden}
-        manejarAbrirPartyModal={manejarAbrirPartyModal}
-        mostrarAviso={mostrarAviso}
-        partyNombre={partyNombre}
-        partyRut={partyRut}
-        proveedores={proveedores}
-        rolActual={rolActual}
-        thirdPartyBuscar={thirdPartyBuscar}
-        thirdPartyOrdenar={thirdPartyOrdenar}
-        thirdPartyPestana={thirdPartyPestana}
-      />
+        <SeccionDirectorioTerceros
+          activoPestana={activoPestana}
+          alternarClienteDeshabilitado={alternarClienteDeshabilitado}
+          alternarProveedorDeshabilitado={alternarProveedorDeshabilitado}
+          clientes={clientes}
+          establecerActivoPestana={establecerActivoPestana}
+          establecerThirdPartyBuscar={establecerThirdPartyBuscar}
+          establecerThirdPartyOrdenar={establecerThirdPartyOrdenar}
+          establecerThirdPartyPestana={establecerThirdPartyPestana}
+          filtradoClientes={filtradoClientes}
+          filtradoProveedores={filtradoProveedores}
+          manejarAbrirNuevoOrden={manejarAbrirNuevoOrden}
+          manejarAbrirPartyModal={manejarAbrirPartyModal}
+          mostrarAviso={mostrarAviso}
+          partyNombre={partyNombre}
+          partyRut={partyRut}
+          proveedores={proveedores}
+          rolActual={rolActual}
+          thirdPartyBuscar={thirdPartyBuscar}
+          thirdPartyOrdenar={thirdPartyOrdenar}
+          thirdPartyPestana={thirdPartyPestana}
+        />
 
-      <ModalesCompras
-        bancoNombre={bancoNombre}
-        calificacionComentario={calificacionComentario}
-        calificacionPrecio={calificacionPrecio}
-        calificacionQuality={calificacionQuality}
-        calificacionTiempo={calificacionTiempo}
-        cuentaNumero={cuentaNumero}
-        cuentaTipo={cuentaTipo}
-        editandoPo={editandoPo}
-        escanerAbrir={escanerAbrir}
-        establecerBancoNombre={establecerBancoNombre}
-        establecerCalificacionComentario={establecerCalificacionComentario}
-        establecerCalificacionPrecio={establecerCalificacionPrecio}
-        establecerCalificacionQuality={establecerCalificacionQuality}
-        establecerCalificacionTiempo={establecerCalificacionTiempo}
-        establecerCuentaNumero={establecerCuentaNumero}
-        establecerCuentaTipo={establecerCuentaTipo}
-        establecerEscanerAbrir={establecerEscanerAbrir}
-        establecerPartyCategoria={establecerPartyCategoria}
-        establecerPartyContacto={establecerPartyContacto}
-        establecerPartyCorreo={establecerPartyCorreo}
-        establecerPartyDireccion={establecerPartyDireccion}
-        establecerPartyModal={establecerPartyModal}
-        establecerPartyNombre={establecerPartyNombre}
-        establecerPartyRut={establecerPartyRut}
-        establecerPartyTelefono={establecerPartyTelefono}
-        establecerPartyTradeNombre={establecerPartyTradeNombre}
-        establecerPdfVistaPreviaOrden={establecerPdfVistaPreviaOrden}
-        establecerPoElementos={establecerPoElementos}
-        establecerPoEsAutomaticoMinimo={establecerPoEsAutomaticoMinimo}
-        establecerPoEsperadoFecha={establecerPoEsperadoFecha}
-        establecerPoModal={establecerPoModal}
-        establecerPoNotas={establecerPoNotas}
-        establecerSeleccionadoProveedorId={establecerSeleccionadoProveedorId}
-        establecerTarifaModalOrden={establecerTarifaModalOrden}
-        manejarEscanearCodigo={manejarEscanearCodigo}
-        manejarGuardarCalificacion={manejarGuardarCalificacion}
-        manejarGuardarCompraOrden={manejarGuardarCompraOrden}
-        manejarGuardarParty={manejarGuardarParty}
-        mostrarAviso={mostrarAviso}
-        partyCategoria={partyCategoria}
-        partyContacto={partyContacto}
-        partyCorreo={partyCorreo}
-        partyDireccion={partyDireccion}
-        partyError={partyError}
-        partyModal={partyModal}
-        partyNombre={partyNombre}
-        partyRut={partyRut}
-        partyTelefono={partyTelefono}
-        partyTradeNombre={partyTradeNombre}
-        pdfVistaPreviaOrden={pdfVistaPreviaOrden}
-        poElementos={poElementos}
-        poError={poError}
-        poEsAutomaticoMinimo={poEsAutomaticoMinimo}
-        poEsperadoFecha={poEsperadoFecha}
-        poModal={poModal}
-        poNotas={poNotas}
-        productos={productos}
-        proveedores={proveedores}
-        scanningTargetSku={scanningTargetSku}
-        seleccionadoProveedorId={seleccionadoProveedorId}
-        tarifaModalOrden={tarifaModalOrden}
-        thirdPartyPestana={thirdPartyPestana}
-        width={width}
-      />
-    </View>
+        <ModalesCompras
+          bancoNombre={bancoNombre}
+          calificacionComentario={calificacionComentario}
+          calificacionPrecio={calificacionPrecio}
+          calificacionQuality={calificacionQuality}
+          calificacionTiempo={calificacionTiempo}
+          cuentaNumero={cuentaNumero}
+          cuentaTipo={cuentaTipo}
+          editandoPo={editandoPo}
+          escanerAbrir={escanerAbrir}
+          establecerBancoNombre={establecerBancoNombre}
+          establecerCalificacionComentario={establecerCalificacionComentario}
+          establecerCalificacionPrecio={establecerCalificacionPrecio}
+          establecerCalificacionQuality={establecerCalificacionQuality}
+          establecerCalificacionTiempo={establecerCalificacionTiempo}
+          establecerCuentaNumero={establecerCuentaNumero}
+          establecerCuentaTipo={establecerCuentaTipo}
+          establecerEscanerAbrir={establecerEscanerAbrir}
+          establecerPartyCategoria={establecerPartyCategoria}
+          establecerPartyContacto={establecerPartyContacto}
+          establecerPartyCorreo={establecerPartyCorreo}
+          establecerPartyDireccion={establecerPartyDireccion}
+          establecerPartyModal={establecerPartyModal}
+          establecerPartyNombre={establecerPartyNombre}
+          establecerPartyRut={establecerPartyRut}
+          establecerPartyTelefono={establecerPartyTelefono}
+          establecerPartyTradeNombre={establecerPartyTradeNombre}
+          establecerPdfVistaPreviaOrden={establecerPdfVistaPreviaOrden}
+          establecerPoElementos={establecerPoElementos}
+          establecerPoEsAutomaticoMinimo={establecerPoEsAutomaticoMinimo}
+          establecerPoEsperadoFecha={establecerPoEsperadoFecha}
+          establecerPoModal={establecerPoModal}
+          establecerPoNotas={establecerPoNotas}
+          establecerSeleccionadoProveedorId={establecerSeleccionadoProveedorId}
+          establecerTarifaModalOrden={establecerTarifaModalOrden}
+          manejarEscanearCodigo={manejarEscanearCodigo}
+          manejarGuardarCalificacion={manejarGuardarCalificacion}
+          manejarGuardarCompraOrden={manejarGuardarCompraOrden}
+          manejarGuardarParty={manejarGuardarParty}
+          mostrarAviso={mostrarAviso}
+          partyCategoria={partyCategoria}
+          partyContacto={partyContacto}
+          partyCorreo={partyCorreo}
+          partyDireccion={partyDireccion}
+          partyError={partyError}
+          partyModal={partyModal}
+          partyNombre={partyNombre}
+          partyRut={partyRut}
+          partyTelefono={partyTelefono}
+          partyTradeNombre={partyTradeNombre}
+          pdfVistaPreviaOrden={pdfVistaPreviaOrden}
+          poElementos={poElementos}
+          poError={poError}
+          poEsAutomaticoMinimo={poEsAutomaticoMinimo}
+          poEsperadoFecha={poEsperadoFecha}
+          poModal={poModal}
+          poNotas={poNotas}
+          aprobarYEnviarOrden={aprobarYEnviarOrden}
+          productos={productos}
+          proveedores={proveedores}
+          scanningTargetSku={scanningTargetSku}
+          sugerenciaSkusRecepcion={activoRecepcionOrden?.items.map((it) => it.sku) || []}
+          seleccionadoProveedorId={seleccionadoProveedorId}
+          tarifaModalOrden={tarifaModalOrden}
+          thirdPartyPestana={thirdPartyPestana}
+          width={width}
+        />
+      </View>
     </ContenedorEstadoPantalla>
   );
 };

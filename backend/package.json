@@ -1,19 +1,23 @@
 {
   "name": "fyag-backend",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "tsx index.ts",
+    "start": "node dist/index.js",
+    "start:tsx": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/authMiddleware.test.ts tests/parametros.test.ts tests/articulos.test.ts",
-    "test:integracion": "tsx tests/scrum.integracion.test.ts && tsx tests/articulos.integracion.test.ts"
+    "audit:security": "npm audit --audit-level=high",
+    "test": "tsx --test tests/authMiddleware.test.ts tests/configuracionEntorno.test.ts tests/usuarios.test.ts tests/parametros.test.ts tests/articulos.test.ts tests/ordenesCompra.test.ts tests/sincronizacion.test.ts tests/devolucionBodega.test.ts tests/avancesProyecto.test.ts tests/conteoFisico.test.ts tests/devolucionProveedor.test.ts tests/mermas.test.ts tests/codigosQr.test.ts tests/alertas.test.ts tests/motorFinancieroProyecto.test.ts tests/herramientas.test.ts tests/prestamosHerramientas.test.ts tests/mantenimientoHerramientas.test.ts tests/reporteMovimientos.test.ts tests/calificacionProveedor.test.ts tests/dashboardRentabilidad.test.ts tests/monitorRespaldos.test.ts tests/seguridadHttp.test.ts",
+    "test:integracion": "tsx tests/scrum.integracion.test.ts && tsx tests/articulos.integracion.test.ts",
+    "test:devoluciones": "tsx tests/devoluciones.integracion.test.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.3",
     "nodemailer": "^10.4.0",
@@ -21,6 +25,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
+    "@types/exceljs": "^0.5.3",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",

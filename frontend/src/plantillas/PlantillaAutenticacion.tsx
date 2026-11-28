@@ -34,7 +34,8 @@ export interface PropiedadesPlantillaAutenticacion {
 export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion> = ({
   initialView = "login",
 }) => {
-  const { iniciarSesion } = usarAutenticacion();
+  const { iniciarSesion, pendiente2fa, confirmarCodigo2fa, cancelar2fa } = usarAutenticacion();
+  const [codigo2fa, establecerCodigo2fa] = useState("");
   const { parametrosSistema } = usarAplicacion();
   const maxAttempts = Number(parametrosSistema?.find((p) => p.id === "sec_attempts")?.value ?? 3);
   const lockoutMinutos = Number(parametrosSistema?.find((p) => p.id === "sec_lockout_duration")?.value ?? 15);
@@ -128,6 +129,12 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
       const error = await iniciarSesion(correo.trim(), contrasena);
 
       if (error) {
+        const esErrorConexion = error.toLowerCase().includes("no se pudo conectar");
+        if (esErrorConexion) {
+          mostrarAviso("Servidor apagado o inaccesible. Inicia el backend (npm run dev en la carpeta backend).", "danger");
+          return;
+        }
+
         const siguienteAttempts = failedAttempts + 1;
         establecerFailedAttempts(siguienteAttempts);
 
@@ -140,11 +147,30 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
         return;
       }
 
-      // Login exitoso: NavegadorRaiz cambia de pantalla automáticamente
+      // Login exitoso o paso a verificación 2FA
       establecerFailedAttempts(0);
       establecerLockoutSegundos(0);
+      establecerCodigo2fa("");
     } catch {
       mostrarAviso("Ocurrió un error inesperado al iniciar sesión.", "danger");
+    } finally {
+      establecerCargando(false);
+    }
+  };
+
+  const manejarConfirmar2fa = async () => {
+    if (!/^\d{6}$/.test(codigo2fa.trim())) {
+      mostrarAviso("Ingresa el código numérico de 6 dígitos enviado a tu correo.", "warn");
+      return;
+    }
+    establecerCargando(true);
+    try {
+      const error = await confirmarCodigo2fa(codigo2fa.trim());
+      if (error) {
+        mostrarAviso(error, "danger");
+        return;
+      }
+      establecerCodigo2fa("");
     } finally {
       establecerCargando(false);
     }
@@ -221,8 +247,47 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
             width < 380 && { padding: tema.spacing.lg },
           ]}
         >
-          {/* VISTA 1: LOGIN */}
-          {vista === "login" && (
+          {/* VISTA 1: LOGIN (O VERIFICACIÓN 2FA PARA ADMINISTRADOR) */}
+          {vista === "login" && pendiente2fa && (
+            <View>
+              <Text style={estilos.tarjetaTitulo}>Verificación en Dos Pasos (2FA)</Text>
+              <Text style={estilos.tarjetaDescripcion}>
+                {pendiente2fa.mensaje} ({pendiente2fa.correo})
+              </Text>
+
+              <CampoTexto
+                label="Código de Seguridad (6 dígitos)"
+                value={codigo2fa}
+                onChangeText={establecerCodigo2fa}
+                placeholder="123456"
+                icon="shield-checkmark-outline"
+                keyboardType="number-pad"
+                autoCapitalize="none"
+                required
+              />
+
+              <Boton
+                title="Verificar Código y Acceder"
+                variant="primary"
+                size="md"
+                loading={cargando}
+                onPress={() => manejarConfirmar2fa()}
+                style={{ marginTop: 8 }}
+              />
+
+              <TouchableOpacity
+                onPress={() => {
+                  establecerCodigo2fa("");
+                  cancelar2fa();
+                }}
+                style={estilos.backHastaInicioSesionBoton}
+              >
+                <Text style={estilos.enlaceTextoSub}>← Volver a Iniciar Sesión</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {vista === "login" && !pendiente2fa && (
             <View>
               <Text style={estilos.tarjetaTitulo}>Iniciar Sesión</Text>
               <Text style={estilos.tarjetaDescripcion}>
@@ -245,16 +310,18 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
                       Podrás intentar en: {formatearTiempo(lockoutSegundos)}
                     </Text>
                   </View>
-                  <TouchableOpacity
-                    onPress={() => {
-                      establecerLockoutSegundos(0);
-                      establecerFailedAttempts(0);
-                      mostrarAviso("Bloqueo reiniciado para pruebas", "info");
-                    }}
-                    style={estilos.restablecerLockoutBoton}
-                  >
-                    <Text style={estilos.restablecerLockoutTexto}>[Prueba: Restablecer bloqueo]</Text>
-                  </TouchableOpacity>
+                  {process.env.NODE_ENV === "development" && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        establecerLockoutSegundos(0);
+                        establecerFailedAttempts(0);
+                        mostrarAviso("Bloqueo reiniciado para pruebas", "info");
+                      }}
+                      style={estilos.restablecerLockoutBoton}
+                    >
+                      <Text style={estilos.restablecerLockoutTexto}>[Prueba: Restablecer bloqueo]</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               ) : failedAttempts > 0 ? (
                 <View style={estilos.advertenciaBanner}>
@@ -381,50 +448,52 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
             <View>
               <Text style={estilos.tarjetaTitulo}>Restablecer Contraseña</Text>
 
-              {/* Selector de Estado de Enlace para Pruebas (Válido, Vencido, Ya usado) */}
-              <View style={estilos.enlaceEstadoSelector}>
-                <Text style={estilos.enlaceEstadoTitulo}>Estado del enlace recibido:</Text>
-                <View style={estilos.enlaceEstadoBotones}>
-                  <TouchableOpacity
-                    style={[
-                      estilos.estadoChip,
-                      restablecerEnlaceEstado === "valid" && estilos.estadoChipActivo,
-                    ]}
-                    onPress={() => {
-                      establecerRestablecerEnlaceEstado("valid");
-                      establecerRestablecerExito(false);
-                    }}
-                  >
-                    <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "valid" && estilos.estadoChipTextoActivo]}>
-                      Vigente
-                    </Text>
-                  </TouchableOpacity>
+              {/* Selector de Estado de Enlace para Pruebas (solo en desarrollo) */}
+              {process.env.NODE_ENV === "development" && (
+                <View style={estilos.enlaceEstadoSelector}>
+                  <Text style={estilos.enlaceEstadoTitulo}>Estado del enlace recibido:</Text>
+                  <View style={estilos.enlaceEstadoBotones}>
+                    <TouchableOpacity
+                      style={[
+                        estilos.estadoChip,
+                        restablecerEnlaceEstado === "valid" && estilos.estadoChipActivo,
+                      ]}
+                      onPress={() => {
+                        establecerRestablecerEnlaceEstado("valid");
+                        establecerRestablecerExito(false);
+                      }}
+                    >
+                      <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "valid" && estilos.estadoChipTextoActivo]}>
+                        Vigente
+                      </Text>
+                    </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[
-                      estilos.estadoChip,
-                      restablecerEnlaceEstado === "expired" && estilos.estadoChipPeligro,
-                    ]}
-                    onPress={() => establecerRestablecerEnlaceEstado("expired")}
-                  >
-                    <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "expired" && estilos.estadoChipTextoPeligro]}>
-                      Vencido (24h)
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        estilos.estadoChip,
+                        restablecerEnlaceEstado === "expired" && estilos.estadoChipPeligro,
+                      ]}
+                      onPress={() => establecerRestablecerEnlaceEstado("expired")}
+                    >
+                      <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "expired" && estilos.estadoChipTextoPeligro]}>
+                        Vencido (24h)
+                      </Text>
+                    </TouchableOpacity>
 
-                  <TouchableOpacity
-                    style={[
-                      estilos.estadoChip,
-                      restablecerEnlaceEstado === "used" && estilos.estadoChipAdvertencia,
-                    ]}
-                    onPress={() => establecerRestablecerEnlaceEstado("used")}
-                  >
-                    <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "used" && estilos.estadoChipTextoAdvertencia]}>
-                      Ya usado
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        estilos.estadoChip,
+                        restablecerEnlaceEstado === "used" && estilos.estadoChipAdvertencia,
+                      ]}
+                      onPress={() => establecerRestablecerEnlaceEstado("used")}
+                    >
+                      <Text style={[estilos.estadoChipTexto, restablecerEnlaceEstado === "used" && estilos.estadoChipTextoAdvertencia]}>
+                        Ya usado
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </View>
+              )}
 
               {/* CASO A: ENLACE VENCIDO */}
               {restablecerEnlaceEstado === "expired" ? (

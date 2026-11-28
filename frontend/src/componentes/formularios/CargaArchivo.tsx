@@ -10,6 +10,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { tema } from "@/nucleo/tema";
+import {
+  MAX_BYTES_ARCHIVO_FRONTEND,
+  MAX_BYTES_FOTO_FRONTEND,
+  esUriRecursoSegura,
+  validarArchivoSubidoFrontend,
+} from "@/nucleo/seguridadFrontend";
 
 export interface ArchivoCargado {
   id: string;
@@ -45,22 +51,47 @@ export const CargaArchivo: React.FC<PropiedadesCargaArchivo> = ({
   containerStyle,
 }) => {
   const [esSimulatingSubir, establecerEsSimulatingSubir] = useState(false);
+  const [errorValidacionLocal, establecerErrorValidacionLocal] = useState<string | null>(null);
 
-  // Simulación realista de carga de archivo (Factura, Guía o Foto de Faena)
+  // Simulación realista de carga de archivo (Factura, Guía o Foto de Faena) con validación de seguridad
   const manejarSimulatePick = () => {
     if (files.length >= maxFiles) return;
 
     establecerEsSimulatingSubir(true);
+    establecerErrorValidacionLocal(null);
     setTimeout(() => {
       const esImg = files.length % 2 === 0;
+      const nombreCandidato = esImg ? `Foto_Evidencia_${files.length + 1}.jpg` : `Factura_Guia_${files.length + 1}.pdf`;
+      const mimeCandidato = esImg ? "image/jpeg" : "application/pdf";
+      const bytesCandidatos = esImg ? 2_400_000 : 840_000;
+      const cabeceraReal = esImg
+        ? new Uint8Array([0xff, 0xd8, 0xff, 0xe0])
+        : new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+      const uriCandidata = esImg
+        ? "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=200&q=80"
+        : undefined;
+
+      const validacion = validarArchivoSubidoFrontend({
+        nombre: nombreCandidato,
+        mimeDeclarado: mimeCandidato,
+        tamanoBytes: bytesCandidatos,
+        maxBytes: esImg ? MAX_BYTES_FOTO_FRONTEND : MAX_BYTES_ARCHIVO_FRONTEND,
+        cabeceraBytes: cabeceraReal,
+        uri: uriCandidata,
+      });
+
+      if (!validacion.ok) {
+        establecerErrorValidacionLocal(validacion.error ?? "Archivo rechazado por seguridad");
+        establecerEsSimulatingSubir(false);
+        return;
+      }
+
       const nuevoArchivo: ArchivoCargado = {
         id: "file_" + Date.now(),
-        name: esImg ? `Foto_Evidencia_${files.length + 1}.jpg` : `Factura_Guia_${files.length + 1}.pdf`,
+        name: validacion.nombreSanitizado ?? nombreCandidato,
         sizeStr: esImg ? "2.4 MB" : "840 KB",
         type: esImg ? "image" : "pdf",
-        uri: esImg
-          ? "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=200&q=80"
-          : undefined,
+        uri: uriCandidata,
       };
       onAddFile(nuevoArchivo);
       establecerEsSimulatingSubir(false);
@@ -110,8 +141,8 @@ export const CargaArchivo: React.FC<PropiedadesCargaArchivo> = ({
         <View style={estilos.archivosLista}>
           {files.map((file) => (
             <View key={file.id} style={estilos.archivoElemento}>
-              {/* Thumbnail o Icono */}
-              {file.type === "image" && file.uri ? (
+              {/* Thumbnail o Icono (solo renderiza Image si la URI supera la validación anti-XSS) */}
+              {file.type === "image" && file.uri && esUriRecursoSegura(file.uri) ? (
                 <Image source={{ uri: file.uri }} style={estilos.thumbImage} />
               ) : (
                 <View style={estilos.docIconoCaja}>
@@ -149,10 +180,10 @@ export const CargaArchivo: React.FC<PropiedadesCargaArchivo> = ({
       )}
 
       {/* Error o Helper */}
-      {Boolean(error) ? (
+      {Boolean(error || errorValidacionLocal) ? (
         <View style={estilos.mensajeFila}>
           <Ionicons name="alert-circle" size={14} color={tema.colors.dangerDark} />
-          <Text style={estilos.errorTexto}>{error}</Text>
+          <Text style={estilos.errorTexto}>{error || errorValidacionLocal}</Text>
         </View>
       ) : helper ? (
         <Text style={estilos.helperTexto}>{helper}</Text>

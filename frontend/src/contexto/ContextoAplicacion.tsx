@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
+import { guardarCache, leerCache } from "@/nucleo/cacheLocal";
 import {
   listarArticulosApi,
   crearArticuloApi,
@@ -7,6 +8,38 @@ import {
   articuloAProducto,
   productoACuerpoArticulo,
 } from "@/modulos/inventario/articulosApi";
+import { listarProyectos, proyectoDesdeApi } from "@/modulos/proyectos/proyectosApi";
+import {
+  anularSolicitudInsumosApi,
+  aprobarSolicitudInsumosApi,
+  crearSolicitudInsumosApi,
+  editarSolicitudInsumosApi,
+  extraerIdSolicitudNumerico,
+  listarSolicitudesApi,
+  rechazarSolicitudInsumosApi,
+  solicitudDesdeApi,
+} from "@/modulos/solicitudes/solicitudesApi";
+import {
+  aprobarOrdenCompraApi,
+  actualizarOrdenCompraApi,
+  cambiarEstadoOrdenCompraApi,
+  crearOrdenCompraApi,
+  listarOrdenesCompraApi,
+  mapearEstadoHaciaBd,
+  ordenCompraDesdeApi,
+  registrarRecepcionOrdenCompraApi,
+} from "@/modulos/compras/ordenesCompraApi";
+import { aplicarEntregaChecklistEnOrden } from "@/modulos/compras/recepcionChecklistUtils";
+import {
+  ComprobanteAprobacionSolicitud,
+  aplicarReservaComprometidoEnCatalogoH6,
+  construirComprobanteYNotificacionAprobacion,
+  construirNotificacionRechazoSolicitud,
+  ejecutarSalidaFisicaSolicitudEnMemoria,
+  esProyectoActivoParaSolicitud,
+  liberarReservaComprometidoEnCatalogoH6,
+  validarFormularioNuevaSolicitudInsumos,
+} from "@/modulos/inventario/solicitudInsumosUtils";
 import {
   MovimientoCardex,
   Cliente,
@@ -16,6 +49,7 @@ import {
   RecepcionPendiente,
   Producto,
   Proyecto,
+  DespachoMaterialProyecto,
   RegistroManoObraProyecto,
   FacturaCompra,
   OrdenCompra,
@@ -53,7 +87,6 @@ import {
   RECEPCIONES_PENDIENTES,
   CONTEOS_FISICOS,
   PRODUCTOS,
-  PROYECTOS,
   FACTURAS_COMPRA,
   ORDENES_COMPRA,
   ORDENES_DEVOLUCION,
@@ -103,29 +136,74 @@ interface TipoContextoAplicacion {
   aprobarConteoFisico: (id: string, approverName: string) => void;
   rechazarConteoFisico: (id: string, approverName: string) => void;
 
-  // Request & Dispatch actions
+  // Acciones de solicitudes y despacho de materiales
   crearSolicitudMaterial: (
     projectId: string,
     technicianRut: string,
     items: ItemSolicitudMaterial[],
     urgency?: "normal" | "alta" | "urgente",
-    comment?: string
-  ) => { success: boolean; missingItems?: string[]; error?: string };
-  aprobarSolicitudMaterial: (id: string, authorName: string) => void;
+    comment?: string,
+    requesterInfo?: { name?: string; role?: Rol }
+  ) => Promise<{ success: boolean; missingItems?: string[]; error?: string }>;
+  aprobarSolicitudMaterial: (
+    id: string,
+    authorName: string
+  ) => {
+    success: boolean;
+    receiptNumber?: string;
+    solicitud?: SolicitudMaterial;
+    error?: string;
+  };
   rechazarSolicitudMaterial: (id: string, reason: string, authorName: string) => { success: boolean; error?: string };
-  modificarSolicitudMaterial: (id: string, items: ItemSolicitudMaterial[]) => void;
-  cancelarSolicitudMaterial: (id: string) => void;
+  modificarSolicitudMaterial: (
+    id: string,
+    items: ItemSolicitudMaterial[],
+    opciones?: {
+      projectId?: string;
+      urgency?: SolicitudMaterial["urgency"];
+      comment?: string;
+      authorName?: string;
+    }
+  ) => { success: boolean; error?: string; missingItems?: string[] };
+  cancelarSolicitudMaterial: (
+    id: string,
+    authorName?: string
+  ) => { success: boolean; error?: string };
   despacharSolicitudMaterial: (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
     technicianRut: string,
     technicianName: string,
     authorName: string
-  ) => { success: boolean; error?: string };
+  ) => {
+    success: boolean;
+    error?: string;
+    dispatchCode?: string;
+    esEntregaCompleta?: boolean;
+  };
+  confirmarRetiroSolicitudTecnico: (
+    requestId: string,
+    technicianRut: string,
+    technicianName: string
+  ) => {
+    success: boolean;
+    error?: string;
+    itemsConfirmados?: { sku: string; name: string; quantity: number; unit: string }[];
+  };
 
-  // Purchasing actions
-  crearOrdenCompra: (order: Partial<OrdenCompra>) => { success: boolean; orderId?: string; error?: string };
+  // Acciones de compras y órdenes
+  crearOrdenCompra: (order: Partial<OrdenCompra>) => {
+    success: boolean;
+    orderId?: string;
+    code?: string;
+    error?: string;
+  };
+  actualizarOrdenCompra: (
+    orderId: string,
+    updates: Partial<OrdenCompra>
+  ) => { success: boolean; error?: string };
   aprobarYEnviarOrden: (orderId: string) => void;
+  anularOrdenCompra: (orderId: string) => { success: boolean; error?: string };
   calificarProveedor: (orderId: string, rating: CalificacionProveedor) => void;
   crearFactura: (invoice: FacturaCompra) => { success: boolean; error?: string };
   confirmarRecepcionOrden: (
@@ -137,6 +215,8 @@ interface TipoContextoAplicacion {
   // Third Parties
   agregarProveedor: (supplier: Proveedor) => { success: boolean; error?: string };
   agregarCliente: (client: Cliente) => { success: boolean; error?: string };
+  actualizarProveedor: (id: string, updates: Partial<Proveedor>) => { success: boolean };
+  actualizarCliente: (id: string, updates: Partial<Cliente>) => { success: boolean };
   alternarProveedorDeshabilitado: (id: string) => void;
   alternarClienteDeshabilitado: (id: string) => void;
 
@@ -151,6 +231,11 @@ interface TipoContextoAplicacion {
   prestarHerramienta: (toolId: string, technicianRut: string, projectCode: string) => void;
   devolverHerramienta: (toolId: string, condition: "bueno" | "danado", notes?: string) => void;
   registrarMantencionHerramienta: (toolId: string, record: Omit<RegistroMantencionHerramienta, "id">) => void;
+  darDeBajaHerramienta: (
+    toolId: string,
+    motivo: string,
+    responsable?: string
+  ) => { success: boolean; error?: string };
 
   // Returns actions
   crearDevolucionTecnico: (
@@ -178,17 +263,40 @@ interface TipoContextoAplicacion {
     notes: string
   ) => void;
 
-  // Technician module
+  // Módulo técnico (cronómetro automático, horas y soporte offline)
   hojasServicio: HojaServicio[];
   horasTecnico: HoraTrabajoTecnico[];
   reportesAvanceTecnico: ReporteAvanceTecnico[];
   sesionTrabajoActiva: SesionTrabajoActiva | null;
   iniciarSesionTrabajo: (projectId: string) => { success: boolean; error?: string };
-  detenerSesionTrabajo: (description?: string) => { success: boolean; hours?: number; error?: string };
+  detenerSesionTrabajo: (
+    description?: string,
+    opciones?: { offline?: boolean }
+  ) => {
+    success: boolean;
+    hours?: number;
+    syncStatus?: "pendiente" | "sincronizado";
+    registro?: HoraTrabajoTecnico;
+    error?: string;
+  };
   cancelarSesionTrabajo: () => void;
-  crearHojaServicio: (sheet: Omit<HojaServicio, "id">) => { success: boolean; error?: string };
+  sincronizarHorasTrabajoPendientes: () => number;
+  restaurarEstadoHorasOffline: (
+    sesion: SesionTrabajoActiva | null,
+    horasGuardadas: HoraTrabajoTecnico[]
+  ) => void;
+  crearHojaServicio: (sheet: Omit<HojaServicio, "id">) => {
+    success: boolean;
+    hoja?: HojaServicio;
+    error?: string;
+  };
   resolverConflictoHojaServicio: (sheetId: string, choice: "local" | "server") => void;
-  crearHoraTrabajoTecnico: (entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">) => { success: boolean; error?: string };
+  sincronizarHojasServicioPendientes: () => number;
+  restaurarHojasServicioOffline: (hojasGuardadas: HojaServicio[]) => void;
+  crearHoraTrabajoTecnico: (
+    entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">,
+    syncStatus?: "pendiente" | "sincronizado"
+  ) => { success: boolean; registro?: HoraTrabajoTecnico; error?: string };
   actualizarHoraTrabajoTecnico: (id: string, hours: number, description: string, userRole?: Rol) => { success: boolean; error?: string };
   registrarHorasManualesAdmin: (data: {
     technicianRut: string;
@@ -224,7 +332,7 @@ const ContextoAplicacion = createContext<TipoContextoAplicacion | null>(null);
 
 export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [productos, setProducts] = useState<Producto[]>(PRODUCTOS);
-  const [proyectos, setProjects] = useState<Proyecto[]>(PROYECTOS);
+  const [proyectos, setProjects] = useState<Proyecto[]>([]);
   const [solicitudesMaterial, setMaterialRequests] = useState<SolicitudMaterial[]>(SOLICITUDES_MATERIALES);
   const [ordenesCompra, setPurchaseOrders] = useState<OrdenCompra[]>(ORDENES_COMPRA);
   const [facturasCompra, setPurchaseInvoices] = useState<FacturaCompra[]>(FACTURAS_COMPRA);
@@ -233,12 +341,81 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [clientes, setClients] = useState<Cliente[]>(CLIENTES);
   const [herramientas, setTools] = useState<Herramienta[]>(HERRAMIENTAS);
   const [ordenesDevolucion, setReturnOrders] = useState<OrdenDevolucion[]>(ORDENES_DEVOLUCION);
+  const [devolucionesHidratadas, establecerDevolucionesHidratadas] = useState(false);
+
+  // Sincronización persistente de devoluciones entre Bodeguero y móvil del Técnico
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setReturnOrders(registro.datos);
+      }
+      if (!cancelado) {
+        establecerDevolucionesHidratadas(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!devolucionesHidratadas) return;
+    void guardarCache<OrdenDevolucion[]>("ordenes_devolucion_compartidas", ordenesDevolucion);
+  }, [devolucionesHidratadas, ordenesDevolucion]);
+
   const [devolucionesProveedor, setSupplierReturns] = useState<DevolucionProveedor[]>(DEVOLUCIONES_PROVEEDOR);
+  const [devolucionesProvHidratadas, establecerDevolucionesProvHidratadas] = useState(false);
+
+  // Sincronización persistente de devoluciones a proveedor entre Bodeguero y Administrador
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<DevolucionProveedor[]>("devoluciones_proveedor_compartidas").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setSupplierReturns(registro.datos);
+      }
+      if (!cancelado) {
+        establecerDevolucionesProvHidratadas(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!devolucionesProvHidratadas) return;
+    void guardarCache<DevolucionProveedor[]>("devoluciones_proveedor_compartidas", devolucionesProveedor);
+  }, [devolucionesProvHidratadas, devolucionesProveedor]);
+
   const [cardex, setCardex] = useState<MovimientoCardex[]>(MOVIMIENTOS_CARDEX);
   const [tecnicos] = useState<Tecnico[]>(TECNICOS);
   const [alertas, setAlerts] = useState<AlertaPanel[]>(ALERTAS_PANEL);
   const [registrosMerma, setWasteRecords] = useState<RegistroMerma[]>(REGISTROS_MERMAS);
   const [conteosFisicos, setPhysicalCounts] = useState<ConteoFisico[]>(CONTEOS_FISICOS);
+  const [conteosHidratados, establecerConteosHidratados] = useState(false);
+
+  // Sincronización persistente de conteos físicos entre Bodeguero y bandeja de aprobación del Administrador
+  useEffect(() => {
+    let cancelado = false;
+    void leerCache<ConteoFisico[]>("conteos_fisicos_compartidos").then((registro) => {
+      if (!cancelado && registro && Array.isArray(registro.datos) && registro.datos.length > 0) {
+        setPhysicalCounts(registro.datos);
+      }
+      if (!cancelado) {
+        establecerConteosHidratados(true);
+      }
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!conteosHidratados) return;
+    void guardarCache<ConteoFisico[]>("conteos_fisicos_compartidos", conteosFisicos);
+  }, [conteosHidratados, conteosFisicos]);
+
   const [hojasServicio, setServiceSheets] = useState<HojaServicio[]>(HOJAS_SERVICIO);
   const [horasTecnico, setTechnicianHours] = useState<HoraTrabajoTecnico[]>(HORAS_TRABAJO_TECNICO);
   const [sesionTrabajoActiva, setActiveWorkSession] = useState<SesionTrabajoActiva | null>(null);
@@ -250,7 +427,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   const [listaNotificaciones, setNotificationsList] = useState<DetalleNotificacion[]>(DETALLES_NOTIFICACIONES);
 
   // 1. INVENTORY
-  // Catálogo desde la API al iniciar sesión. Los campos que la base no guarda se conservan en memoria.
   const { haySesion } = usarAutenticacion();
   useEffect(() => {
     if (!haySesion) return;
@@ -270,13 +446,141 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, [haySesion]);
 
+  // Proyectos desde la API (conservando despachos incorporados localmente tras retiros confirmados)
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    const cargar = () => {
+      listarProyectos().then((r) => {
+        if (!r.ok || !r.data || cancelado) return;
+        setProjects((prev) =>
+          r.data!.map((fila) => {
+            const desdeApi = proyectoDesdeApi(fila);
+            const existente = prev.find((p) => p.id === desdeApi.id);
+            if (!existente) return desdeApi;
+
+            const despachosApi = desdeApi.dispatches || [];
+            const idsApi = new Set(despachosApi.map((d) => d.id));
+            const despachosLocalesExtra = (existente.dispatches || []).filter(
+              (d) => !idsApi.has(d.id)
+            );
+
+            return {
+              ...desdeApi,
+              dispatches: [...despachosLocalesExtra, ...despachosApi],
+              costReal: Math.max(desdeApi.costReal, existente.costReal),
+              costRealMaterials: Math.max(
+                desdeApi.costRealMaterials || 0,
+                existente.costRealMaterials || 0
+              ),
+            };
+          })
+        );
+      });
+    };
+    cargar();
+    const intervalo = setInterval(cargar, 30000);
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
+    };
+  }, [haySesion]);
+
+  // Solicitudes de material desde la base de datos (carga inicial + refresco cada 10 s).
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+
+    const cargarSolicitudes = () => {
+      listarSolicitudesApi().then((r) => {
+        if (!r.ok || !r.data || cancelado) return;
+        setMaterialRequests((prev) =>
+          r.data!.map((fila) => {
+            const mapeada = solicitudDesdeApi(
+              fila,
+              proyectos.find((p) => p.id === String(fila.id_proyecto)),
+              productos
+            );
+            const existente = prev.find((s) => s.id === mapeada.id);
+
+            const yaDespachadaLocal =
+              existente &&
+              (existente.status === "entregada" ||
+                existente.items.some((it) => (it.deliveredQuantity || 0) > 0));
+
+            if (yaDespachadaLocal && mapeada.status !== "entregada") {
+              return {
+                ...mapeada,
+                status: existente.status,
+                receiptNumber: existente.receiptNumber || mapeada.receiptNumber,
+                approvedBy: existente.approvedBy || mapeada.approvedBy,
+                approvedAt: existente.approvedAt || mapeada.approvedAt,
+                items: mapeada.items.map((it) => {
+                  const itemLocal = existente.items.find((li) => li.sku === it.sku);
+                  const maxDelivered = Math.max(
+                    it.deliveredQuantity || 0,
+                    itemLocal?.deliveredQuantity || 0
+                  );
+                  return { ...it, deliveredQuantity: maxDelivered };
+                }),
+                timeline: existente.timeline,
+              };
+            }
+
+            if (
+              existente &&
+              existente.status !== "pendiente" &&
+              mapeada.status === "pendiente"
+            ) {
+              return {
+                ...mapeada,
+                status: existente.status,
+                receiptNumber: existente.receiptNumber || mapeada.receiptNumber,
+                approvedBy: existente.approvedBy || mapeada.approvedBy,
+                approvedAt: existente.approvedAt || mapeada.approvedAt,
+                rejectionReason: existente.rejectionReason || mapeada.rejectionReason,
+                timeline: existente.timeline,
+              };
+            }
+
+            return {
+              ...mapeada,
+              receiptNumber: existente?.receiptNumber || mapeada.receiptNumber,
+              timeline: existente?.timeline,
+            };
+          })
+        );
+      });
+    };
+
+    cargarSolicitudes();
+    const intervalo = setInterval(cargarSolicitudes, 10000);
+    return () => {
+      cancelado = true;
+      clearInterval(intervalo);
+    };
+  }, [haySesion, proyectos, productos]);
+
+  // Órdenes de Compra desde la API al iniciar sesión
+  useEffect(() => {
+    if (!haySesion) return;
+    let cancelado = false;
+    listarOrdenesCompraApi().then((r) => {
+      if (!r.ok || !r.data || cancelado || r.data.length === 0) return;
+      setPurchaseOrders(r.data.map(ordenCompraDesdeApi));
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [haySesion]);
+
   const agregarProducto = async (product: Producto): Promise<{ success: boolean; error?: string }> => {
     if (productos.some((p) => p.sku.trim().toUpperCase() === product.sku.trim().toUpperCase())) {
       return { success: false, error: `El SKU ${product.sku} ya está registrado.` };
     }
     const respuesta = await crearArticuloApi(productoACuerpoArticulo(product));
-    if (!respuesta.ok) {
-      return { success: false, error: respuesta.mensaje };
+    if (respuesta.ok === false) {
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     const { articulo } = respuesta;
     setProducts((prev) => [
@@ -291,12 +595,38 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
+  const verificarYGenerarOcAutomaticaPorStockMinimo = (productoEvaluado: Producto) => {
+    if (productoEvaluado.disabled || productoEvaluado.stock > productoEvaluado.minStock) {
+      return;
+    }
+    setAlerts((prev) => {
+      const yaExiste = prev.some((a) => a.id === `al_min_${productoEvaluado.sku}`);
+      if (yaExiste) return prev;
+      return [
+        {
+          id: `al_min_${productoEvaluado.sku}`,
+          title: `Stock Mínimo Alcanzado: ${productoEvaluado.sku}`,
+          description: `${productoEvaluado.name} quedó en ${productoEvaluado.stock} ${productoEvaluado.unit} (mínimo: ${productoEvaluado.minStock}).`,
+          type: "stock",
+          severity: "rojo",
+          time: new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }),
+        },
+        ...prev,
+      ];
+    });
+  };
+
   const actualizarProducto = async (
     sku: string,
     updates: Partial<Producto>
   ): Promise<{ success: boolean; error?: string }> => {
     const previo = productos.find((p) => p.sku === sku);
-    // Cambio optimista en pantalla; si el servidor lo rechaza, se revierte
+    if (previo) {
+      const candidato = { ...previo, ...updates };
+      if (candidato.stock <= candidato.minStock) {
+        verificarYGenerarOcAutomaticaPorStockMinimo(candidato);
+      }
+    }
     setProducts((prev) => prev.map((p) => (p.sku === sku ? { ...p, ...updates } : p)));
 
     const cuerpo = productoACuerpoArticulo(updates);
@@ -305,9 +635,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     }
 
     const respuesta = await actualizarArticuloApi(previo.id, cuerpo);
-    if (!respuesta.ok) {
+    if (respuesta.ok === false) {
       setProducts((prev) => prev.map((p) => (p.sku === sku ? previo : p)));
-      return { success: false, error: respuesta.mensaje };
+      return { success: false, error: (respuesta as { ok: false; mensaje: string }).mensaje };
     }
     return { success: true };
   };
@@ -353,7 +683,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setWasteRecords((prev) => [newRecord, ...prev]);
 
-    // Descontar del stock
     setProducts((prev) =>
       prev.map((p) =>
         p.sku === data.sku
@@ -361,8 +690,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           : p
       )
     );
+    verificarYGenerarOcAutomaticaPorStockMinimo({
+      ...prod,
+      stock: prod.isBulk ? Number(newStock.toFixed(3)) : newStock,
+    });
 
-    // Movimiento en Cardex
     const cardexEntry: MovimientoCardex = {
       id: `cdx_${Date.now()}`,
       sku: data.sku,
@@ -422,7 +754,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setPhysicalCounts((prev) => [newCount, ...prev]);
 
-    // Si diferencia <= 5%, se ajusta directo
     if (!requiresApproval) {
       setProducts((prev) =>
         prev.map((p) => (p.sku === sku ? { ...p, stock: countedStock } : p))
@@ -434,18 +765,32 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         productName: prod.name,
         date: nowStr,
         type: "ajuste_conteo",
-        typeLabel: "Ajuste Conteo Físico",
+        typeLabel: "Ajuste Conteo Físico (≤ 5%)",
         reference: `CONTEO-${newCount.id.slice(-4)} (Directo)`,
         qtyIn: diff > 0 ? diff : 0,
         qtyOut: diff < 0 ? Math.abs(diff) : 0,
         balance: countedStock,
         pmp: pmpVal,
-        totalValue: pmpVal * countedStock,
-        userName: "Camila Vera Soto",
+        totalValue: Math.round(pmpVal * countedStock),
+        userName: counterUser || "Camila Vera Soto",
         userRole: "Bodeguero",
         userRut: "15.321.654-2",
       };
       setCardex((prev) => [cardexEntry, ...prev]);
+    } else {
+      const notifRetenido: DetalleNotificacion = {
+        id: `notif_cnt_ret_${Date.now()}`,
+        title: `Conteo Físico Retenido (> 5%): ${sku}`,
+        message: `${counterUser} registró diferencia de ${diff > 0 ? `+${diff}` : diff} ${prod.unit} (${diffPct.toFixed(1)}%) en ${prod.name}. Requiere aprobación de Administración.`,
+        date: nowStr,
+        type: "stock",
+        severity: "warn",
+        read: false,
+        relatedEntityType: "insumo",
+        relatedEntityId: sku,
+        relatedEntityLabel: prod.name,
+      };
+      setNotificationsList((prev) => [notifRetenido, ...prev]);
     }
 
     return { success: true, requiresApproval };
@@ -498,50 +843,44 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
-  // 2. MATERIAL REQUESTS
-  const crearSolicitudMaterial = (
+  // 2. GESTIÓN DE SOLICITUDES DE MATERIALES
+  const crearSolicitudMaterial = async (
     projectId: string,
     technicianRut: string,
     items: ItemSolicitudMaterial[],
     urgency: "normal" | "alta" | "urgente" = "normal",
-    comment?: string
-  ) => {
-    const proj = proyectos.find((p) => p.id === projectId);
+    comment?: string,
+    requesterInfo?: { name?: string; role?: Rol }
+  ): Promise<{ success: boolean; missingItems?: string[]; error?: string }> => {
+    const proj = proyectos.find((p) => p.id === projectId) || null;
     if (!proj) return { success: false, error: "Proyecto no encontrado." };
     if (proj.status === "cerrado") {
       return { success: false, error: "No se pueden solicitar materiales para un proyecto cerrado." };
     }
 
-    // Check stock
-    const missing: string[] = [];
-    items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (!prod || prod.stock < item.quantity) {
-        missing.push(
-          `${item.name} (${prod ? prod.stock : 0} disponibles vs ${item.quantity} solicitados)`
-        );
-      }
+    const respuesta = await crearSolicitudInsumosApi({
+      idProyecto: Number(proj.id),
+      items: items.map((it) => ({ sku: it.sku, cantidad: it.quantity })),
+      comentario: comment,
+      urgencia: urgency,
     });
-
-    if (missing.length > 0) {
-      return {
-        success: false,
-        missingItems: missing,
-        error: "Stock insuficiente en bodega para uno o más ítems.",
-      };
+    if (!respuesta.ok || !respuesta.data) {
+      return { success: false, error: respuesta.error ?? "No se pudo guardar la solicitud." };
     }
 
+    const ahoraFecha = new Date().toISOString().slice(0, 10);
     const tech = tecnicos.find((t) => t.rut === technicianRut);
-    const newCode = `SOL-2026-${String(solicitudesMaterial.length + 101).padStart(3, "0")}`;
+    const idSolicitud = respuesta.data.solicitud.id_solicitud;
+    const newCode = `SOL-${ahoraFecha.slice(0, 4)}-${String(idSolicitud).padStart(3, "0")}`;
     const newReq: SolicitudMaterial = {
-      id: `sol_${Date.now()}`,
+      id: `sol_${idSolicitud}`,
       code: newCode,
       projectId: proj.id,
       projectCode: proj.code,
       projectName: proj.name,
       technicianRut: technicianRut,
       technicianName: tech ? tech.name : "Técnico de Terreno",
-      date: new Date().toISOString().slice(0, 10),
+      date: ahoraFecha,
       urgency,
       status: "pendiente",
       items,
@@ -551,47 +890,143 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           id: `step_${Date.now()}`,
           title: "Solicitud Creada",
           description: "Ingresada por técnico en terreno",
-          date: new Date().toISOString().slice(0, 10),
+          date: ahoraFecha,
           author: tech ? tech.name : "Técnico",
+          status: "completado",
+        },
+        {
+          id: `step_rev_${Date.now()}`,
+          title: "En revisión de administración",
+          description: "Pendiente de aprobación o rechazo en bandeja administrativa",
+          date: ahoraFecha,
+          author: "Administración",
+          status: "actual",
+        },
+      ],
+    };
+
+    setProducts((prev) => aplicarReservaComprometidoEnCatalogoH6(prev, items));
+    setMaterialRequests((prev) => [newReq, ...prev]);
+
+    const solicitanteNombre = requesterInfo?.name || (tech ? tech.name : "Técnico de Terreno");
+    const totalUnidades = items.reduce((acc, it) => acc + Number(it.quantity || 0), 0);
+    const nuevaNotifSolicitud: DetalleNotificacion = {
+      id: `notif_sol_${Date.now()}`,
+      title: `Nueva Solicitud de Material: ${newCode}`,
+      message: `${solicitanteNombre} solicitó ${items.length} ítem(s) (${totalUnidades} un.) para ${proj.name} (${proj.code}). Urgencia: ${urgency.toUpperCase()}.`,
+      date: ahoraFecha,
+      type: "solicitud",
+      severity: urgency === "urgente" ? "danger" : "warn",
+      read: false,
+      relatedEntityType: "solicitud",
+      relatedEntityId: newReq.id,
+      relatedEntityLabel: `Revisar ${newCode}`,
+    };
+    setNotificationsList((prev) => [nuevaNotifSolicitud, ...prev]);
+    setAlerts((prev) => [
+      {
+        id: `al_sol_${Date.now()}`,
+        type: "solicitud",
+        severity: urgency === "urgente" ? "rojo" : "amarillo",
+        title: `Nueva solicitud pendiente: ${newCode}`,
+        description: `${proj.code} • ${items.length} ítem(s) solicitados por ${solicitanteNombre}.`,
+        time: "Ahora mismo",
+        actionLabel: "Revisar Solicitud",
+      },
+      ...prev,
+    ]);
+
+    return { success: true };
+  };
+
+  const aprobarSolicitudMaterial = (id: string, authorName: string) => {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (actual.status !== "pendiente") {
+      return {
+        success: false,
+        error: `La solicitud ${actual.code} ya fue procesada (${actual.status.toUpperCase()}).`,
+      };
+    }
+
+    const ahoraFecha = new Date().toISOString().slice(0, 10);
+    const receiptNumber =
+      actual.receiptNumber ||
+      `COMP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
+
+    const solicitudAprobada: SolicitudMaterial = {
+      ...actual,
+      status: "aprobada",
+      receiptNumber,
+      approvedBy: authorName,
+      approvedAt: ahoraFecha,
+      timeline: [
+        ...(actual.timeline || []),
+        {
+          id: `tl_${Date.now()}`,
+          title: "Aprobada por Administración",
+          description: `Autorizado para preparación y egreso. Comprobante N° ${receiptNumber}`,
+          date: ahoraFecha,
+          author: authorName,
           status: "completado",
         },
       ],
     };
 
-    setMaterialRequests((prev) => [newReq, ...prev]);
-    return { success: true };
-  };
-
-  const aprobarSolicitudMaterial = (id: string, authorName: string) => {
     setMaterialRequests((prev) =>
-      prev.map((req) => {
-        if (req.id !== id) return req;
-        const timeline = req.timeline || [];
-        const receiptNumber = req.receiptNumber || `COMP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
-        return {
-          ...req,
-          status: "aprobada",
-          receiptNumber,
-          timeline: [
-            ...timeline,
-            {
-              id: `tl_${Date.now()}`,
-              title: "Aprobada por Administración",
-              description: `Autorizado para preparación y egreso. Comprobante N° ${receiptNumber}`,
-              date: new Date().toISOString().slice(0, 10),
-              author: authorName,
-              status: "completado",
-            },
-          ],
-        };
-      })
+      prev.map((req) => (req.id === id ? solicitudAprobada : req))
     );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void aprobarSolicitudInsumosApi(idNum).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          return;
+        }
+        const folioReal =
+          res.data?.nro_comprobante ??
+          res.data?.comprobante?.nro_comprobante ??
+          res.data?.solicitud?.nro_comprobante;
+        if (folioReal) {
+          setMaterialRequests((prev) =>
+            prev.map((req) => (req.id === id ? { ...req, receiptNumber: folioReal } : req))
+          );
+        }
+      });
+    }
+
+    setNotificationsList((prev) => [
+      {
+        id: `notif_apr_${Date.now()}`,
+        title: `Solicitud Aprobada: ${actual.code}`,
+        message: `Aprobada por ${authorName}. Comprobante N° ${receiptNumber} listo para egreso en bodega.`,
+        date: ahoraFecha,
+        type: "solicitud",
+        severity: "ok",
+        read: false,
+        relatedEntityType: "solicitud",
+        relatedEntityId: actual.id,
+        relatedEntityLabel: actual.code,
+      },
+      ...prev,
+    ]);
+
+    return {
+      success: true,
+      receiptNumber,
+      solicitud: solicitudAprobada,
+    };
   };
 
   const rechazarSolicitudMaterial = (id: string, reason: string, authorName: string) => {
     if (!reason || reason.trim().length === 0) {
       return { success: false, error: "El rechazo exige motivo obligatorio." };
     }
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+
     setMaterialRequests((prev) =>
       prev.map((req) => {
         if (req.id !== id) return req;
@@ -614,20 +1049,217 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         };
       })
     );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void rechazarSolicitudInsumosApi(idNum, reason.trim()).then((res) => {
+        if (!res.ok && actual) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+        }
+      });
+    }
+
     return { success: true };
   };
 
-  const modificarSolicitudMaterial = (id: string, items: ItemSolicitudMaterial[]) => {
+  const modificarSolicitudMaterial = (
+    id: string,
+    items: ItemSolicitudMaterial[],
+    opciones?: {
+      projectId?: string;
+      urgency?: SolicitudMaterial["urgency"];
+      comment?: string;
+      authorName?: string;
+    }
+  ) => {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (actual.status !== "pendiente") {
+      return {
+        success: false,
+        error: `No es posible editar la solicitud ${actual.code} porque se encuentra en estado ${actual.status.toUpperCase()}.`,
+      };
+    }
+
+    const proyectoIdDestino = opciones?.projectId || actual.projectId;
+    const proyectoDestino = proyectos.find((p) => p.id === proyectoIdDestino) || null;
+    const catalogoLiberado = liberarReservaComprometidoEnCatalogoH6(productos, actual.items);
+    const validacion = validarFormularioNuevaSolicitudInsumos(
+      proyectoDestino,
+      items.map((it) => ({ sku: it.sku, quantity: it.quantity })),
+      catalogoLiberado
+    );
+
+    if (!validacion.esValida) {
+      return {
+        success: false,
+        error: validacion.errorGeneral || "No se pudo actualizar la solicitud.",
+        missingItems: validacion.faltantesStock,
+      };
+    }
+
+    const catalogoReservado = aplicarReservaComprometidoEnCatalogoH6(catalogoLiberado, items);
+    setProducts(catalogoReservado);
+
+    const ahoraStr = new Date().toLocaleString("es-CL", { hour12: false });
+    const editor = opciones?.authorName || "Bodeguero";
+    const totalEstimado = items.reduce((acc, it) => {
+      const prod = productos.find((p) => p.sku === it.sku);
+      return acc + (prod ? prod.unitCost * it.quantity : 0);
+    }, 0);
+
+    const urgenciaFinal = opciones?.urgency || actual.urgency;
+    const comentarioFinal = opciones?.comment !== undefined ? opciones.comment : actual.comment;
+
     setMaterialRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, items } : req))
+      prev.map((req) =>
+        req.id === id
+          ? {
+              ...req,
+              projectId: proyectoIdDestino,
+              projectCode: proyectoDestino?.code || req.projectCode,
+              projectName: proyectoDestino?.name || req.projectName,
+              items,
+              urgency: urgenciaFinal,
+              comment: comentarioFinal,
+              totalEstimatedValue: totalEstimado,
+              timeline: [
+                ...(req.timeline || []),
+                {
+                  id: `tl_edit_${Date.now()}`,
+                  title: "Solicitud Editada (Pendiente)",
+                  description: "Ítems y reserva de stock comprometido actualizados por el bodeguero.",
+                  date: ahoraStr,
+                  author: editor,
+                  status: "completado",
+                },
+              ],
+            }
+          : req
+      )
+    );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void editarSolicitudInsumosApi(idNum, {
+        idProyecto: Number(proyectoIdDestino),
+        items: items.map((it) => ({ sku: it.sku, cantidad: it.quantity })),
+        comentario: comentarioFinal,
+        urgencia: urgenciaFinal,
+      }).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          setProducts(productos);
+        }
+      });
+    }
+
+    return { success: true };
+  };
+
+  const cancelarSolicitudMaterial = (id: string, authorName?: string) => {
+    const actual = solicitudesMaterial.find((r) => r.id === id);
+    if (!actual) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (actual.status !== "pendiente") {
+      return {
+        success: false,
+        error: `No es posible anular la solicitud ${actual.code} porque se encuentra en estado ${actual.status.toUpperCase()}.`,
+      };
+    }
+
+    const catalogoLiberado = liberarReservaComprometidoEnCatalogoH6(productos, actual.items);
+    setProducts(catalogoLiberado);
+
+    const ahoraStr = new Date().toLocaleString("es-CL", { hour12: false });
+    const responsable = authorName || "Bodeguero";
+
+    setMaterialRequests((prev) =>
+      prev.map((req) =>
+        req.id === id
+          ? {
+              ...req,
+              status: "anulada",
+              timeline: [
+                ...(req.timeline || []),
+                {
+                  id: `tl_anul_${Date.now()}`,
+                  title: "Solicitud Anulada por Bodeguero",
+                  description: "Stock reservado liberado al inventario disponible.",
+                  date: ahoraStr,
+                  author: responsable,
+                  status: "completado",
+                },
+              ],
+            }
+          : req
+      )
+    );
+
+    const idNum = extraerIdSolicitudNumerico(id);
+    if (Number.isInteger(idNum) && idNum > 0) {
+      void anularSolicitudInsumosApi(idNum).then((res) => {
+        if (!res.ok) {
+          setMaterialRequests((prev) => prev.map((req) => (req.id === id ? actual : req)));
+          setProducts(productos);
+        }
+      });
+    }
+
+    return { success: true };
+  };
+
+  // Helper interno: registra el despacho en el proyecto para aumentar automáticamente Asignado y Retirado
+  const incrementarMaterialesEnProyecto = (
+    projectId: string,
+    itemsRetirados: { sku: string; name: string; quantity: number; unit: string }[],
+    referenciaCodigo: string,
+    receptorNombre: string
+  ) => {
+    if (!projectId || itemsRetirados.length === 0) return;
+    const fechaHoy = new Date().toISOString().slice(0, 10);
+
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== projectId) return p;
+
+        let costoAdicional = 0;
+        const nuevosDespachos: DespachoMaterialProyecto[] = itemsRetirados.map((it, idx) => {
+          const prodCat = productos.find(
+            (prod) => prod.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+          );
+          const unitCost = prodCat?.pmp || prodCat?.unitCost || 0;
+          const totalCost = Math.round(unitCost * it.quantity);
+          costoAdicional += totalCost;
+
+          return {
+            id: `dsp_ret_${Date.now()}_${idx}_${it.sku}`,
+            date: fechaHoy,
+            dispatchCode: referenciaCodigo,
+            sku: it.sku,
+            productName: it.name || prodCat?.name || it.sku,
+            quantity: Number(it.quantity.toFixed(3)),
+            unit: it.unit || prodCat?.unit || "un",
+            unitCost,
+            totalCost,
+            deliveredTo: receptorNombre,
+          };
+        });
+
+        return {
+          ...p,
+          costReal: p.costReal + costoAdicional,
+          costRealMaterials: (p.costRealMaterials || 0) + costoAdicional,
+          dispatches: [...nuevosDespachos, ...(p.dispatches || [])],
+        };
+      })
     );
   };
 
-  const cancelarSolicitudMaterial = (id: string) => {
-    setMaterialRequests((prev) => prev.filter((r) => r.id !== id));
-  };
-
-  // Egreso / Despacho de Materiales (Paso 6)
+  // [FRONT-1] Egreso / Registro de Salida Física de Materiales desde Bodega (Paso 6)
   const despacharSolicitudMaterial = (
     requestId: string,
     itemsToDispatch: { sku: string; quantity: number }[],
@@ -637,80 +1269,103 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   ) => {
     const req = solicitudesMaterial.find((r) => r.id === requestId);
     if (!req) return { success: false, error: "Solicitud no encontrada." };
-    if (req.status !== "aprobada") {
-      return { success: false, error: "Solo se pueden despachar solicitudes aprobadas." };
+
+    const resultado = ejecutarSalidaFisicaSolicitudEnMemoria({
+      solicitud: req,
+      itemsToDispatch,
+      technicianRut,
+      technicianName,
+      authorName,
+      catalogo: productos,
+    });
+
+    if (!resultado.success || !resultado.solicitudActualizada || !resultado.registroEgresoInmutable) {
+      return {
+        success: false,
+        error: resultado.error || "No se pudo registrar la salida física.",
+      };
     }
 
-    // Validar disponibilidad de stock
-    for (const it of itemsToDispatch) {
-      if (it.quantity <= 0) continue;
-      const prod = productos.find((p) => p.sku === it.sku);
-      if (!prod || prod.stock < it.quantity) {
-        return {
-          success: false,
-          error: `Stock insuficiente para ${prod?.name || it.sku}. Disponible: ${prod?.stock || 0}, a despachar: ${it.quantity}`,
-        };
+    const nowStr = resultado.registroEgresoInmutable.date;
+    const dispatchCode = resultado.registroEgresoInmutable.dispatchCode;
+
+    // 1. Descontar stock en catálogo y sincronizar cada artículo modificado con la BD
+    setProducts(resultado.catalogoActualizado);
+    resultado.registroEgresoInmutable.items.forEach((itemD) => {
+      const prodAct = resultado.catalogoActualizado.find(
+        (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
+      );
+      if (prodAct?.id) {
+        void actualizarArticuloApi(prodAct.id, {
+          cantidad_disponible: prodAct.stock,
+        });
       }
-    }
+    });
 
-    const nowStr = new Date().toISOString().slice(0, 10);
-    const dispatchCode = `DESP-2026-${String(Math.floor(Math.random() * 900) + 100)}`;
-
-    // Descontar stock
-    setProducts((prev) =>
-      prev.map((p) => {
-        const itemD = itemsToDispatch.find((i) => i.sku === p.sku);
-        if (!itemD || itemD.quantity <= 0) return p;
-        const newStock = Math.max(0, p.stock - itemD.quantity);
-        return { ...p, stock: p.isBulk ? Number(newStock.toFixed(3)) : newStock };
-      })
-    );
-
-    // Agregar movimientos al Cardex
-    itemsToDispatch.forEach((itemD) => {
-      if (itemD.quantity <= 0) return;
-      const prod = productos.find((p) => p.sku === itemD.sku);
-      if (!prod) return;
-      const newBalance = Math.max(0, prod.stock - itemD.quantity);
-      const cardexEntry: MovimientoCardex = {
+    // 2. Registrar movimientos irreversibles en el Cardex
+    const nuevosMovimientosCardex: MovimientoCardex[] = resultado.registroEgresoInmutable.items.map((itemD) => {
+      const prodActualizado = resultado.catalogoActualizado.find(
+        (p) => p.sku.trim().toUpperCase() === itemD.sku.trim().toUpperCase()
+      );
+      const newBalance = Number(
+        ((prodActualizado?.stock || 0) + (prodActualizado?.committed || 0)).toFixed(3)
+      );
+      const unitPmp = prodActualizado?.pmp || prodActualizado?.unitCost || itemD.unitCost;
+      return {
         id: `cdx_${Date.now()}_${itemD.sku}`,
         sku: itemD.sku,
-        productName: prod.name,
+        productName: itemD.name,
         date: nowStr,
         type: "salida_obra",
-        typeLabel: "Salida a Obra",
-        reference: `${dispatchCode} / ${req.code}`,
+        typeLabel: `Salida a Obra (Retira: ${technicianName})`,
+        reference: `${dispatchCode} / ${req.receiptNumber || req.code}`,
         projectCode: req.projectCode,
         projectName: req.projectName,
         qtyIn: 0,
-        qtyOut: itemD.quantity,
-        balance: prod.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
-        pmp: prod.pmp || prod.unitCost,
-        totalValue: (prod.pmp || prod.unitCost) * newBalance,
-        userName: "Camila Vera Soto",
+        qtyOut: itemD.quantityDispatched,
+        balance: prodActualizado?.isBulk ? Number(newBalance.toFixed(3)) : newBalance,
+        pmp: unitPmp,
+        totalValue: unitPmp * newBalance,
+        userName: authorName || "Camila Vera Soto",
         userRole: "Bodeguero",
-        userRut: "15.321.654-2",
+        userRut: technicianRut,
       };
-      setCardex((prev) => [cardexEntry, ...prev]);
+    });
+    setCardex((prev) => [...nuevosMovimientosCardex, ...prev]);
+
+    // 3. Actualizar cantidades entregadas en la solicitud y sumarlas al proyecto
+    const itemsParaSumarProyecto: { sku: string; name: string; quantity: number; unit: string }[] = [];
+    const updatedItems = req.items.map((it) => {
+      const itemD = itemsToDispatch.find((d) => d.sku === it.sku);
+      const addQty = itemD ? itemD.quantity : 0;
+      if (addQty > 0) {
+        itemsParaSumarProyecto.push({
+          sku: it.sku,
+          name: it.name,
+          quantity: addQty,
+          unit: it.unit,
+        });
+      }
+      return {
+        ...it,
+        deliveredQuantity: Number(((it.deliveredQuantity || 0) + addQty).toFixed(3)),
+      };
     });
 
-    // Actualizar cantidades entregadas en la solicitud
+    incrementarMaterialesEnProyecto(
+      req.projectId,
+      itemsParaSumarProyecto,
+      dispatchCode,
+      technicianName
+    );
+
+    const isFullyDelivered = updatedItems.every(
+      (it) => (it.deliveredQuantity || 0) >= it.quantity
+    );
+
     setMaterialRequests((prev) =>
       prev.map((r) => {
         if (r.id !== requestId) return r;
-        const updatedItems = r.items.map((it) => {
-          const itemD = itemsToDispatch.find((d) => d.sku === it.sku);
-          const addQty = itemD ? itemD.quantity : 0;
-          return {
-            ...it,
-            deliveredQuantity: (it.deliveredQuantity || 0) + addQty,
-          };
-        });
-
-        const isFullyDelivered = updatedItems.every(
-          (it) => (it.deliveredQuantity || 0) >= it.quantity
-        );
-
         const currentTimeline = r.timeline || [];
         const newTimelineStep = {
           id: `step_${Date.now()}`,
@@ -730,19 +1385,170 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       })
     );
 
-    return { success: true };
+    return {
+      success: true,
+      dispatchCode,
+      esEntregaCompleta: isFullyDelivered,
+    };
   };
 
-  // 3. PURCHASING
-  const crearOrdenCompra = (orderData: Partial<OrdenCompra>) => {
-    const code = `OC-2026-${String(ordenesCompra.length + 105).padStart(3, "0")}`;
-    const items = orderData.items || [];
+  // Confirmación directa de retiro por el Técnico en terreno (aumenta materiales asignados/retirados automáticamente)
+  const confirmarRetiroSolicitudTecnico = (
+    requestId: string,
+    technicianRut: string,
+    technicianName: string
+  ) => {
+    const req = solicitudesMaterial.find((r) => r.id === requestId);
+    if (!req) {
+      return { success: false, error: "Solicitud no encontrada." };
+    }
+    if (req.status === "entregada") {
+      return { success: false, error: "El retiro de esta solicitud ya fue confirmado." };
+    }
+    if (req.status !== "aprobada") {
+      return {
+        success: false,
+        error: "La solicitud debe estar aprobada por administración antes de confirmar su retiro.",
+      };
+    }
+
+    const itemsPendientes = req.items
+      .map((it) => {
+        const previo = Number(it.deliveredQuantity || 0);
+        const pendiente = Number(Math.max(0, it.quantity - previo).toFixed(3));
+        return {
+          sku: it.sku,
+          name: it.name,
+          quantity: pendiente,
+          unit: it.unit,
+        };
+      })
+      .filter((it) => it.quantity > 0);
+
+    if (itemsPendientes.length === 0) {
+      return { success: false, error: "No quedan cantidades pendientes por retirar en esta solicitud." };
+    }
+
+    // 1. Aumentar automáticamente los productos asignados y retirados en el proyecto
+    incrementarMaterialesEnProyecto(
+      req.projectId,
+      itemsPendientes,
+      req.receiptNumber || req.code,
+      technicianName || req.technicianName
+    );
+
+    // 2. Descontar stock en catálogo y sincronizar con BD si aún no había sido rebajado en bodega
+    const nuevoCatalogo = productos.map((prod) => {
+      const itemRet = itemsPendientes.find(
+        (it) => it.sku.trim().toUpperCase() === prod.sku.trim().toUpperCase()
+      );
+      if (!itemRet) return prod;
+      const comprometidoActual = Number(prod.committed || 0);
+      const desdeComprometido = Math.min(comprometidoActual, itemRet.quantity);
+      const desdeDisponible = Math.max(0, itemRet.quantity - desdeComprometido);
+      const nuevoStock = Number(Math.max(0, prod.stock - desdeDisponible).toFixed(3));
+      const nuevoComprometido = Number(Math.max(0, comprometidoActual - desdeComprometido).toFixed(3));
+
+      if (prod.id && desdeDisponible > 0) {
+        void actualizarArticuloApi(prod.id, { cantidad_disponible: nuevoStock });
+      }
+      return {
+        ...prod,
+        stock: nuevoStock,
+        committed: nuevoComprometido,
+      };
+    });
+    setProducts(nuevoCatalogo);
+
+    // 3. Registrar trazabilidad en Cardex
+    const nowStr = new Date().toISOString().slice(0, 10);
+    const nuevosMovs: MovimientoCardex[] = itemsPendientes.map((it) => {
+      const prodAct = nuevoCatalogo.find(
+        (p) => p.sku.trim().toUpperCase() === it.sku.trim().toUpperCase()
+      );
+      const balance = Number(((prodAct?.stock || 0) + (prodAct?.committed || 0)).toFixed(3));
+      const unitPmp = prodAct?.pmp || prodAct?.unitCost || 0;
+      return {
+        id: `cdx_ret_tec_${Date.now()}_${it.sku}`,
+        sku: it.sku,
+        productName: it.name,
+        date: nowStr,
+        type: "salida_obra",
+        typeLabel: `Retiro Confirmado por Técnico (${technicianName})`,
+        reference: `${req.code}${req.receiptNumber ? ` / ${req.receiptNumber}` : ""}`,
+        projectCode: req.projectCode,
+        projectName: req.projectName,
+        qtyIn: 0,
+        qtyOut: it.quantity,
+        balance,
+        pmp: unitPmp,
+        totalValue: Math.round(unitPmp * balance),
+        userName: technicianName || req.technicianName,
+        userRole: "Técnico",
+        userRut: technicianRut || req.technicianRut,
+      };
+    });
+    setCardex((prev) => [...nuevosMovs, ...prev]);
+
+    // 4. Marcar la solicitud como entregada
+    setMaterialRequests((prev) =>
+      prev.map((r) => {
+        if (r.id !== requestId) return r;
+        return {
+          ...r,
+          status: "entregada",
+          items: r.items.map((it) => ({
+            ...it,
+            deliveredQuantity: it.quantity,
+          })),
+          timeline: [
+            ...(r.timeline || []),
+            {
+              id: `tl_ret_tec_${Date.now()}`,
+              title: "Retiro Confirmado por Técnico",
+              description: `${technicianName} confirmó recepción en faena e incorporó los insumos al proyecto.`,
+              date: nowStr,
+              author: technicianName,
+              status: "completado",
+            },
+          ],
+        };
+      })
+    );
+
+    return {
+      success: true,
+      itemsConfirmados: itemsPendientes,
+    };
+  };
+
+  // 3. COMPRAS Y ÓRDENES DE COMPRA
+  const calcularTotalesOrden = (items: ItemOrdenCompra[]) => {
     const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
     const iva = Math.round(subtotal * 0.19);
     const total = subtotal + iva;
+    return { subtotal, iva, total };
+  };
 
+  const crearOrdenCompra = (orderData: Partial<OrdenCompra>) => {
+    const anioActual = new Date().getFullYear();
+    const ultimoCorrelativo = ordenesCompra.reduce((max, o) => {
+      const partes = o.code.split("-");
+      const numero = Number(partes[partes.length - 1]);
+      return Number.isFinite(numero) && numero > max ? numero : max;
+    }, 104);
+    const code = `OC-${anioActual}-${String(ultimoCorrelativo + 1).padStart(3, "0")}`;
+
+    const items = orderData.items || [];
+    if (items.length === 0) {
+      return { success: false, error: "Debe incluir al menos un insumo en la orden." };
+    }
+
+    const { subtotal, iva, total } = calcularTotalesOrden(items);
+
+    const tempId = `oc_${Date.now()}`;
     const newOrder: OrdenCompra = {
-      id: `oc_${Date.now()}`,
+      id: tempId,
       code,
       supplierId: orderData.supplierId || "sup1",
       supplier: orderData.supplier || "Proveedor Principal",
@@ -762,13 +1568,120 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     setPurchaseOrders((prev) => [newOrder, ...prev]);
-    return { success: true, orderId: newOrder.id };
+
+    const idProvNum = Number(String(newOrder.supplierId).replace(/\D/g, "")) || 1;
+    void crearOrdenCompraApi({
+      proveedor_id: idProvNum,
+      origen: newOrder.isAutoMinStock ? "Stock Critico" : "Manual",
+      fecha_estimada_oc: newOrder.expectedDate,
+      observaciones: newOrder.notes,
+      aprobar_inmediatamente: newOrder.status === "enviada",
+      lineas: items.map((it) => ({
+        sku: it.sku,
+        cantidad_orden: it.quantity,
+        precio_unitario: it.unitPrice,
+      })),
+    }).then((res) => {
+      if (res.ok && res.data?.orden_compra) {
+        const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+        setPurchaseOrders((prev) =>
+          prev.map((o) => (o.id === tempId ? desdeBd : o))
+        );
+      }
+    });
+
+    return { success: true, orderId: newOrder.id, code: newOrder.code };
+  };
+
+  const actualizarOrdenCompra = (orderId: string, updates: Partial<OrdenCompra>) => {
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) {
+      return { success: false, error: "Orden de compra no encontrada." };
+    }
+    if (actual.status !== "borrador") {
+      return {
+        success: false,
+        error: "Solo se pueden editar órdenes de compra mientras estén en estado Borrador.",
+      };
+    }
+
+    const items = updates.items ?? actual.items;
+    if (items.length === 0) {
+      return { success: false, error: "La orden de compra debe tener al menos un insumo." };
+    }
+
+    const subtotal = items.reduce((acc, i) => acc + i.quantity * i.unitPrice, 0);
+    const iva = Math.round(subtotal * 0.19);
+    const total = subtotal + iva;
+
+    const actualizada: OrdenCompra = {
+      ...actual,
+      ...updates,
+      items,
+      subtotal,
+      iva,
+      total,
+      itemsCount: items.length,
+    };
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? actualizada : o))
+    );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      const idProvNum = Number(String(actualizada.supplierId).replace(/\D/g, "")) || 1;
+      void actualizarOrdenCompraApi(idOrdenNum, {
+        proveedor_id: idProvNum,
+        origen: actualizada.isAutoMinStock ? "Stock Critico" : "Manual",
+        fecha_estimada_oc: actualizada.expectedDate,
+        observaciones: actualizada.notes,
+        lineas: items.map((it) => ({
+          sku: it.sku,
+          cantidad_orden: it.quantity,
+          precio_unitario: it.unitPrice,
+        })),
+      });
+    }
+
+    return { success: true };
   };
 
   const aprobarYEnviarOrden = (orderId: string) => {
     setPurchaseOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status: "enviada" } : o))
     );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void aprobarOrdenCompraApi(idOrdenNum).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? desdeBd : o))
+          );
+        }
+      });
+    }
+  };
+
+  const anularOrdenCompra = (orderId: string) => {
+    const actual = ordenesCompra.find((o) => o.id === orderId);
+    if (!actual) return { success: false, error: "Orden no encontrada." };
+    if (actual.status === "cerrada" || actual.status === "recibida") {
+      return { success: false, error: "No se puede anular una orden ya recibida o cerrada." };
+    }
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: "anulada" } : o))
+    );
+
+    const idOrdenNum = Number(orderId);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void cambiarEstadoOrdenCompraApi(idOrdenNum, mapearEstadoHaciaBd("anulada"));
+    }
+
+    return { success: true };
   };
 
   const calificarProveedor = (orderId: string, rating: CalificacionProveedor) => {
@@ -776,7 +1689,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((o) => (o.id === orderId ? { ...o, status: "cerrada", rating } : o))
     );
 
-    // Update supplier average
     const order = ordenesCompra.find((o) => o.id === orderId);
     if (order && order.supplierId) {
       setSuppliers((prev) =>
@@ -793,7 +1705,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const crearFactura = (invoice: FacturaCompra) => {
-    // Check duplicate invoice number per supplier
     const exists = facturasCompra.some(
       (inv) =>
         inv.supplierRut.replace(/[.\s-]/g, "") === invoice.supplierRut.replace(/[.\s-]/g, "") &&
@@ -806,25 +1717,66 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       };
     }
 
-    setPurchaseInvoices((prev) => [invoice, ...prev]);
+    const linkedOrder = invoice.orderCode
+      ? ordenesCompra.find((o) => o.code.trim().toUpperCase() === invoice.orderCode!.trim().toUpperCase())
+      : undefined;
 
-    // Recalculate PMP and update products
-    invoice.items.forEach((item) => {
-      const prod = productos.find((p) => p.sku === item.sku);
-      if (prod) {
-        const currentStock = prod.stock || 0;
-        const currentPmp = prod.pmp || prod.unitCost || 0;
-        const incomingQty = item.quantity;
-        const incomingCost = item.netUnitPrice;
-        const totalQty = currentStock + incomingQty;
-        const newPmp =
-          totalQty > 0
-            ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
-            : incomingCost;
+    const yaTieneRecepcion =
+      !linkedOrder ||
+      linkedOrder.status === "recibida" ||
+      linkedOrder.status === "recibida_parcial" ||
+      linkedOrder.status === "cerrada" ||
+      linkedOrder.items.some((it) => Number(it.receivedQuantity || 0) > 0);
 
-        actualizarProducto(item.sku, { pmp: newPmp });
-      }
-    });
+    const facturaFinal: FacturaCompra = {
+      ...invoice,
+      status: yaTieneRecepcion && linkedOrder ? "recepcion_conforme" : invoice.status,
+    };
+
+    setPurchaseInvoices((prev) => [facturaFinal, ...prev]);
+
+    if (linkedOrder) {
+      setPurchaseOrders((prev) =>
+        prev.map((o) => (o.code === linkedOrder.code ? { ...o, invoiceNumber: invoice.number } : o))
+      );
+    }
+
+    if (yaTieneRecepcion) {
+      invoice.items.forEach((item) => {
+        const prod = productos.find((p) => p.sku === item.sku);
+        if (prod) {
+          const poItem = linkedOrder?.items.find((i) => i.sku === item.sku);
+          const receivedQty =
+            poItem && Number(poItem.receivedQuantity || 0) > 0
+              ? Number(poItem.receivedQuantity)
+              : item.quantity;
+          const currentStock = prod.stock || 0;
+          const currentPmp = prod.pmp || prod.unitCost || 0;
+          const incomingQty = receivedQty;
+          const incomingCost = item.netUnitPrice;
+          const totalQty = currentStock + incomingQty;
+          const newPmp =
+            totalQty > 0
+              ? Math.round((currentStock * currentPmp + incomingQty * incomingCost) / totalQty)
+              : incomingCost;
+
+          actualizarProducto(item.sku, { pmp: newPmp });
+        }
+      });
+    }
+
+    if (invoice.hasReceptionDiscrepancy && invoice.discrepancyNotes && invoice.discrepancyNotes.length > 0) {
+      const nuevaAlerta: AlertaPanel = {
+        id: `alt_fac_${Date.now()}`,
+        title: `Discrepancia Factura ${invoice.number} vs Recepción ${invoice.orderCode || ""}`.trim(),
+        description: `${invoice.supplierName}: ${invoice.discrepancyNotes.join(" | ")}`,
+        type: "costo",
+        severity: "rojo",
+        time: "Ahora",
+        actionLabel: "Revisar Factura y Recepción",
+      };
+      setAlerts((prev) => [nuevaAlerta, ...prev]);
+    }
 
     return { success: true };
   };
@@ -857,13 +1809,11 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       if (prod) {
         const prevStock = prod.stock;
         const prevPmp = prod.pmp || prod.unitCost || 0;
-        // Costo neto unitario proveniente de la factura (descuentos en cascada aplicados) o de la OC
         const incomingUnitCost = invItem?.netUnitPrice ?? poItem?.unitPrice ?? prod.unitCost;
 
         const newStock = Number((prevStock + item.received).toFixed(3));
         const newQuarantine = Number(((prod.quarantine || 0) + item.defective).toFixed(3));
 
-        // Recálculo del PMP Ponderado con el costo neto de la factura
         let newPmp = prevPmp;
         if (item.received > 0) {
           const totalPrevValue = prevStock * prevPmp;
@@ -877,7 +1827,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           pmp: newPmp,
         });
 
-        // Add Cardex entry for received
         if (item.received > 0) {
           const newCardex: MovimientoCardex = {
             id: `kdx_${Date.now()}_${item.sku}`,
@@ -901,49 +1850,51 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
-    // Update OC items with cumulative received quantities
-    let allCompleted = true;
-    setPurchaseOrders((prev) =>
-      prev.map((o) => {
-        if (o.code !== ocCode) return o;
-        const updatedItems = o.items.map((it) => {
-          const check = checklist.find((c) => c.sku === it.sku);
-          if (!check) return it;
-          const recTotal = Number(((it.receivedQuantity || 0) + check.received).toFixed(3));
-          const defTotal = Number(((it.defectiveQuantity || 0) + check.defective).toFixed(3));
-          const rem = Math.max(0, it.quantity - recTotal);
-          if (rem > 0) {
-            allCompleted = false;
-          }
-          return {
-            ...it,
-            receivedQuantity: recTotal,
-            defectiveQuantity: defTotal,
-            missingQuantity: rem,
-          };
-        });
+    if (!activePo) return;
 
-        const newStatus = allCompleted ? ("recibida" as const) : ("recibida_parcial" as const);
-        return {
-          ...o,
-          status: newStatus,
-          items: updatedItems,
-          invoiceNumber: invoiceNumber || linkedInvoice?.number || o.invoiceNumber,
-        };
-      })
+    const resumenEntrega = aplicarEntregaChecklistEnOrden(
+      activePo,
+      checklist,
+      linkedInvoice ?? null,
+      invoiceNumber
+    );
+    const allCompleted = resumenEntrega.esRecepcionCompleta;
+
+    setPurchaseOrders((prev) =>
+      prev.map((o) => (o.code === ocCode ? resumenEntrega.ordenActualizada : o))
     );
 
-    // Remove from pending receipts only if all items have arrived
+    const idOrdenNum = Number(activePo.id);
+    if (Number.isInteger(idOrdenNum) && idOrdenNum > 0) {
+      void registrarRecepcionOrdenCompraApi(
+        idOrdenNum,
+        checklist.map((c) => ({
+          sku: c.sku,
+          cantidad_recibida: c.received,
+          cantidad_defectuosa: c.defective,
+          cantidad_faltante: c.missing,
+        })),
+        invoiceNumber || linkedInvoice?.number
+      ).then((res) => {
+        if (res.ok && res.data?.orden_compra) {
+          const desdeBd = ordenCompraDesdeApi(res.data.orden_compra);
+          setPurchaseOrders((prev) =>
+            prev.map((o) => (o.code === ocCode ? { ...desdeBd, invoiceNumber: resumenEntrega.ordenActualizada.invoiceNumber } : o))
+          );
+        }
+      });
+    }
+
     if (allCompleted) {
       setPendingReceipts((prev) => prev.filter((r) => r.ocCode !== ocCode));
     }
 
-    // Discrepancy notification & alert to Administrator
-    if (discrepancyDetails.length > 0) {
+    const todasDiscrepancias = Array.from(new Set([...discrepancyDetails, ...resumenEntrega.discrepancias]));
+    if (todasDiscrepancias.length > 0) {
       const alert: AlertaPanel = {
         id: `alert_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        description: `Recepción física difiere de lo ordenado/facturado: ${discrepancyDetails.join(", ")}.`,
+        description: `Recepción física difiere de lo ordenado/facturado: ${todasDiscrepancias.join(", ")}.`,
         type: "stock",
         severity: "rojo",
         time: "Ahora mismo",
@@ -954,7 +1905,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       const notif: DetalleNotificacion = {
         id: `notif_rec_${Date.now()}`,
         title: `Discrepancia en Recepción ${ocCode}`,
-        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${discrepancyDetails.join(", ")}.`,
+        message: `El bodeguero registró discrepancias en la OC ${ocCode}: ${todasDiscrepancias.join(", ")}.`,
         date: new Date().toISOString().slice(0, 10),
         type: "stock",
         severity: "warn",
@@ -981,6 +1932,20 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Ya existe un cliente con este RUT." };
     }
     setClients((prev) => [client, ...prev]);
+    return { success: true };
+  };
+
+  const actualizarProveedor = (id: string, updates: Partial<Proveedor>) => {
+    setSuppliers((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+    );
+    return { success: true };
+  };
+
+  const actualizarCliente = (id: string, updates: Partial<Cliente>) => {
+    setClients((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, ...updates } : c))
+    );
     return { success: true };
   };
 
@@ -1017,7 +1982,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const asignarTecnicosAProyecto = (projectId: string, technicianRuts: string[]) => {
-    // Unique technicians
     const unique = Array.from(new Set(technicianRuts));
     actualizarProyecto(projectId, { technicianRuts: unique });
   };
@@ -1027,7 +1991,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     if (!proj) return { success: false, blocks: ["Proyecto no encontrado."] };
 
     const blocks: string[] = [];
-    // 1. Check pending requests
     const pendingReqs = solicitudesMaterial.filter(
       (r) => r.projectId === id && (r.status === "pendiente" || r.status === "aprobada")
     );
@@ -1037,7 +2000,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       );
     }
 
-    // 2. Check returns in transit
     const transitReturns = ordenesDevolucion.filter(
       (r) => (r.projectId === id || r.projectCode === proj.code) && r.status === "en_transito"
     );
@@ -1154,6 +2116,54 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
+  const darDeBajaHerramienta = (
+    toolId: string,
+    motivo: string,
+    responsable = "Administración Central"
+  ): { success: boolean; error?: string } => {
+    const herramienta = herramientas.find((t) => t.id === toolId);
+    if (!herramienta) {
+      return { success: false, error: "Herramienta no encontrada." };
+    }
+    if (herramienta.status === "asignada") {
+      return {
+        success: false,
+        error: `No se puede dar de baja ${herramienta.code} mientras esté asignada a ${herramienta.currentTechnicianName || "un técnico"}. Registre primero su devolución.`,
+      };
+    }
+    if (herramienta.status === "dada_de_baja") {
+      return { success: false, error: "La herramienta ya se encuentra dada de baja." };
+    }
+
+    const hoy = new Date().toISOString().slice(0, 10);
+    const motivoLimpio = motivo.trim() || "Baja lógica administrativa de activo fijo";
+    const registroBaja: RegistroMantencionHerramienta = {
+      id: `baja_${Date.now()}`,
+      toolId: herramienta.id,
+      date: hoy,
+      type: "correctiva",
+      workshop: "Baja Lógica Patrimonial",
+      cost: 0,
+      description: `BAJA LÓGICA: ${motivoLimpio}`,
+      nextMaintenanceDate: herramienta.nextMaintenanceDate,
+      performedBy: responsable,
+    };
+
+    setTools((prev) =>
+      prev.map((t) =>
+        t.id === toolId
+          ? {
+              ...t,
+              status: "dada_de_baja",
+              maintenances: [registroBaja, ...(t.maintenances || [])],
+            }
+          : t
+      )
+    );
+
+    return { success: true };
+  };
+
   // 7. RETURNS
   const crearDevolucionTecnico = (
     projectId: string,
@@ -1164,7 +2174,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const proj = proyectos.find((p) => p.id === projectId);
     const code = `DEV-TEC-2026-${String(ordenesDevolucion.length + 104).padStart(3, "0")}`;
 
-    // Validate quantityReturned <= quantityRetrieved - quantityUsed
     for (const item of items) {
       const maxAllowed = item.quantityRetrieved - item.quantityUsed;
       if (item.quantityReturned > maxAllowed) {
@@ -1219,7 +2228,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           };
         });
 
-        // Re-integrate verified quantities into inventory stock
         let totalReturnedValue = 0;
         updatedItems.forEach((item) => {
           const qty = item.quantityReceivedReal ?? item.quantityReturned;
@@ -1228,7 +2236,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             const itemPmp = prod.pmp || prod.unitCost || 0;
             totalReturnedValue += qty * itemPmp;
             actualizarProducto(item.sku, { stock: Number((prod.stock + qty).toFixed(3)) });
-            // Add Cardex
             const newCardex: MovimientoCardex = {
               id: `kdx_ret_${Date.now()}_${item.sku}`,
               sku: item.sku,
@@ -1252,7 +2259,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           }
         });
 
-        // Ajustar costo real del proyecto (se descuenta el sobrante reingresado a bodega)
         if (r.projectCode && totalReturnedValue > 0) {
           setProjects((prevProj) =>
             prevProj.map((p) =>
@@ -1267,7 +2273,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
           );
         }
 
-        // Notificar al Administrador si hubo diferencia entre lo declarado por el técnico y lo recibido
         if (returnDiscrepancies.length > 0) {
           const alert: AlertaPanel = {
             id: `alert_ret_${Date.now()}`,
@@ -1293,6 +2298,20 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             relatedEntityLabel: r.code,
           };
           setNotificationsList((prevN) => [notif, ...prevN]);
+        } else {
+          const notifOk: DetalleNotificacion = {
+            id: `notif_ret_ok_${Date.now()}`,
+            title: `Devolución Recibida: ${r.code}`,
+            message: `${receivedBy} confirmó recepción física conforme de los sobrantes de ${r.projectName}. Stock reingresado a bodega.`,
+            date: new Date().toISOString().slice(0, 10),
+            type: "stock",
+            severity: "ok",
+            read: false,
+            relatedEntityType: "proyecto",
+            relatedEntityId: r.projectCode,
+            relatedEntityLabel: r.code,
+          };
+          setNotificationsList((prevN) => [notifOk, ...prevN]);
         }
 
         return {
@@ -1336,11 +2355,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setSupplierReturns((prev) => [newRet, ...prev]);
 
-    // Deduct from quarantine
     if (prod && (prod.quarantine || 0) >= quantity) {
       actualizarProducto(sku, { quarantine: Math.max(0, (prod.quarantine || 0) - quantity) });
 
-      // Cardex entry for trace of departure from quarantine
       const newCardex: MovimientoCardex = {
         id: `kdx_supret_${Date.now()}_${sku}`,
         sku,
@@ -1361,7 +2378,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       setCardex((k) => [newCardex, ...k]);
     }
 
-    // Alerta al Administrador para seguimiento hasta Nota de Crédito o reposición
     const alert: AlertaPanel = {
       id: `alert_supret_${Date.now()}`,
       title: `Devolución a Proveedor: ${sup?.businessName || "Proveedor"}`,
@@ -1393,6 +2409,9 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     resolutionType: "nota_credito" | "reemplazo_producto" | "reembolso",
     notes: string
   ) => {
+    const objetivo = devolucionesProveedor.find((r) => r.id === returnId);
+    const fechaHoy = new Date().toISOString().slice(0, 10);
+
     setSupplierReturns((prev) =>
       prev.map((r) =>
         r.id === returnId
@@ -1401,11 +2420,61 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
             status: "resuelta",
             resolutionType,
             resolutionNotes: notes,
-            resolvedAt: new Date().toISOString().slice(0, 10),
+            resolvedAt: fechaHoy,
           }
           : r
       )
     );
+
+    if (objetivo) {
+      if (resolutionType === "reemplazo_producto") {
+        const prod = productos.find((p) => p.sku === objetivo.productSku);
+        if (prod) {
+          const nuevoStock = Number((prod.stock + objetivo.quantity).toFixed(3));
+          const pmpActual = prod.pmp || prod.unitCost || 0;
+          actualizarProducto(prod.sku, { stock: nuevoStock });
+          const entradaCardex: MovimientoCardex = {
+            id: `kdx_rep_${Date.now()}_${prod.sku}`,
+            sku: prod.sku,
+            productName: prod.name,
+            date: fechaHoy,
+            type: "devolucion",
+            typeLabel: "Reposición garantía proveedor",
+            reference: `${objetivo.code} / Guía ${objetivo.dispatchGuideNumber}`,
+            qtyIn: objetivo.quantity,
+            qtyOut: 0,
+            balance: nuevoStock,
+            pmp: pmpActual,
+            totalValue: Math.round(nuevoStock * pmpActual),
+            userName: "Javier Muñoz Contreras",
+            userRole: "Administrador",
+            userRut: "12.456.789-5",
+          };
+          setCardex((k) => [entradaCardex, ...k]);
+        }
+      }
+
+      const etiquetaVia =
+        resolutionType === "nota_credito"
+          ? "Nota de Crédito"
+          : resolutionType === "reemplazo_producto"
+          ? "Reposición de Producto"
+          : "Reembolso";
+
+      const notifCierre: DetalleNotificacion = {
+        id: `notif_supres_${Date.now()}`,
+        title: `Devolución a Proveedor Resuelta: ${objetivo.code}`,
+        message: `Cierre administrativo registrado vía ${etiquetaVia} para ${objetivo.supplierName} (${objetivo.quantity} ${objetivo.unit} de ${objetivo.productName}).`,
+        date: fechaHoy,
+        type: "stock",
+        severity: "ok",
+        read: false,
+        relatedEntityType: "orden_compra",
+        relatedEntityId: objetivo.dispatchGuideNumber,
+        relatedEntityLabel: objetivo.code,
+      };
+      setNotificationsList((prevN) => [notifCierre, ...prevN]);
+    }
   };
 
   // 8. TECHNICIAN OPERATIONS
@@ -1415,7 +2484,31 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       id: `hs_${Date.now()}`,
     };
     setServiceSheets((prev) => [newSheet, ...prev]);
-    return { success: true };
+    return { success: true, hoja: newSheet };
+  };
+
+  const sincronizarHojasServicioPendientes = () => {
+    const pendientes = hojasServicio.filter(
+      (s) => s.syncStatus === "pendiente" && !s.hasVersionConflict
+    ).length;
+    if (pendientes === 0) return 0;
+    setServiceSheets((prev) =>
+      prev.map((s) =>
+        s.syncStatus === "pendiente" && !s.hasVersionConflict
+          ? { ...s, syncStatus: "sincronizado" }
+          : s
+      )
+    );
+    return pendientes;
+  };
+
+  const restaurarHojasServicioOffline = (hojasGuardadas: HojaServicio[]) => {
+    if (hojasGuardadas.length === 0) return;
+    setServiceSheets((prev) => {
+      const idsExistentes = new Set(prev.map((s) => s.id));
+      const nuevas = hojasGuardadas.filter((s) => !idsExistentes.has(s.id));
+      return nuevas.length > 0 ? [...nuevas, ...prev] : prev;
+    });
   };
 
   const resolverConflictoHojaServicio = (sheetId: string, choice: "local" | "server") => {
@@ -1439,7 +2532,10 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     );
   };
 
-  const crearHoraTrabajoTecnico = (entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">) => {
+  const crearHoraTrabajoTecnico = (
+    entry: Omit<HoraTrabajoTecnico, "id" | "createdAt" | "syncStatus">,
+    syncStatus: "pendiente" | "sincronizado" = "sincronizado"
+  ) => {
     if (entry.hours <= 0 || entry.hours > 24) {
       return { success: false, error: "Las horas deben ser mayores a 0 y máximo 24 horas por día." };
     }
@@ -1451,19 +2547,19 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       ...entry,
       id: `twh_${Date.now()}`,
       createdAt: new Date().toISOString(),
-      syncStatus: "sincronizado",
+      syncStatus,
+      registeredBy: entry.registeredBy || "technician_auto",
     };
     setTechnicianHours((prev) => [newH, ...prev]);
 
-    // Impute into project labor entries
     const proj = proyectos.find((p) => p.id === entry.projectId);
     if (proj) {
       const hourlyRate = proj.hourlyRate || 18500;
       const newLaborEntry = {
         id: `hh_${Date.now()}`,
         date: entry.date,
-        technicianRut: USUARIOS.technician.rut,
-        technicianName: USUARIOS.technician.name,
+        technicianRut: entry.technicianRut || USUARIOS.technician.rut,
+        technicianName: entry.technicianName || USUARIOS.technician.name,
         hours: entry.hours,
         hourlyCost: hourlyRate,
         totalCost: entry.hours * hourlyRate,
@@ -1483,7 +2579,7 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         )
       );
     }
-    return { success: true };
+    return { success: true, registro: newH };
   };
 
   const iniciarSesionTrabajo = (projectId: string) => {
@@ -1502,33 +2598,76 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     return { success: true };
   };
 
-  const detenerSesionTrabajo = (description?: string) => {
+  const detenerSesionTrabajo = (
+    description?: string,
+    opciones?: { offline?: boolean }
+  ) => {
     if (!sesionTrabajoActiva) {
       return { success: false, error: "No hay una jornada de trabajo activa." };
     }
     const startTimeMs = new Date(sesionTrabajoActiva.startTime).getTime();
     const elapsedHours = (Date.now() - startTimeMs) / (1000 * 60 * 60);
-    // Redondeo automático a bloques de 0,5 h (mínimo 0.5, máximo 24)
     const roundedHours = Math.max(0.5, Math.min(24.0, Math.round(elapsedHours * 2) / 2));
+    const estadoSync: "pendiente" | "sincronizado" = opciones?.offline
+      ? "pendiente"
+      : "sincronizado";
 
-    const res = crearHoraTrabajoTecnico({
-      projectId: sesionTrabajoActiva.projectId,
-      projectCode: sesionTrabajoActiva.projectCode,
-      projectName: sesionTrabajoActiva.projectName,
-      date: new Date().toISOString().slice(0, 10),
-      hours: roundedHours,
-      description: description?.trim() || "Jornada registrada automáticamente al finalizar trabajo en faena.",
-    });
+    const res = crearHoraTrabajoTecnico(
+      {
+        projectId: sesionTrabajoActiva.projectId,
+        projectCode: sesionTrabajoActiva.projectCode,
+        projectName: sesionTrabajoActiva.projectName,
+        date: new Date().toISOString().slice(0, 10),
+        hours: roundedHours,
+        description:
+          description?.trim() ||
+          "Jornada registrada automáticamente al finalizar trabajo en faena.",
+        registeredBy: "technician_auto",
+      },
+      estadoSync
+    );
 
     if (res.success) {
       setActiveWorkSession(null);
-      return { success: true, hours: roundedHours };
+      return {
+        success: true,
+        hours: roundedHours,
+        syncStatus: estadoSync,
+        registro: res.registro,
+      };
     }
     return res;
   };
 
   const cancelarSesionTrabajo = () => {
     setActiveWorkSession(null);
+  };
+
+  const sincronizarHorasTrabajoPendientes = () => {
+    const pendientes = horasTecnico.filter((h) => h.syncStatus === "pendiente").length;
+    if (pendientes === 0) return 0;
+    setTechnicianHours((prev) =>
+      prev.map((h) =>
+        h.syncStatus === "pendiente" ? { ...h, syncStatus: "sincronizado" } : h
+      )
+    );
+    return pendientes;
+  };
+
+  const restaurarEstadoHorasOffline = (
+    sesion: SesionTrabajoActiva | null,
+    horasGuardadas: HoraTrabajoTecnico[]
+  ) => {
+    if (sesion && !sesionTrabajoActiva) {
+      setActiveWorkSession(sesion);
+    }
+    if (horasGuardadas.length > 0) {
+      setTechnicianHours((prev) => {
+        const idsExistentes = new Set(prev.map((h) => h.id));
+        const nuevas = horasGuardadas.filter((h) => !idsExistentes.has(h.id));
+        return nuevas.length > 0 ? [...nuevas, ...prev] : prev;
+      });
+    }
   };
 
   const actualizarHoraTrabajoTecnico = (
@@ -1542,7 +2681,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Registro de horas no encontrado." };
     }
 
-    // Check hours edit limit (H41): technician only up to configurable deadline, admin can always edit
     const createdTime = new Date(existing.createdAt).getTime();
     const nowTime = Date.now();
     const diffHours = (nowTime - createdTime) / (1000 * 60 * 60);
@@ -1571,7 +2709,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((h) => (h.id === id ? { ...h, hours, description } : h))
     );
 
-    // Sincronizar imputación en el proyecto (alimenta H27 y H28)
     if (proj && hourDiff !== 0) {
       setProjects((prev) =>
         prev.map((p) =>
@@ -1614,7 +2751,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       return { success: false, error: "Proyecto no encontrado." };
     }
 
-    // Comprobar tope diario de 24h para ese técnico en esa fecha
     const existingDayHours = horasTecnico
       .filter(
         (h) =>
@@ -1651,7 +2787,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
 
     setTechnicianHours((prev) => [newH, ...prev]);
 
-    // Imputar al proyecto (H27 y H28)
     const newLaborEntry: RegistroManoObraProyecto = {
       id: `hh_${Date.now()}`,
       date: data.date,
@@ -1681,7 +2816,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       )
     );
 
-    // Registro de auditoría
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -1708,7 +2842,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setTechnicianProgressReports((prev) => [newRep, ...prev]);
 
-    // Update project progress percentage (does NOT generate inventory dispatch)
     setProjects((prev) =>
       prev.map((p) =>
         p.id === report.projectId ? { ...p, progress: report.progressPct } : p
@@ -1744,7 +2877,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     };
     setSystemUsers((prev) => [newUser, ...prev]);
 
-    // Audit log
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -1766,7 +2898,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const targetUser = usuariosSistema.find((u) => u.id === userId);
     if (!targetUser) return { success: false, error: "Usuario no encontrado." };
 
-    // Strict Rule: Cannot disable the last active administrator
     if (!targetUser.disabled && targetUser.role === "admin") {
       const activeAdmins = usuariosSistema.filter((u) => u.role === "admin" && !u.disabled);
       if (activeAdmins.length <= 1) {
@@ -1782,7 +2913,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       prev.map((u) => (u.id === userId ? { ...u, disabled: nextState } : u))
     );
 
-    // Audit log
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -1804,7 +2934,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
     const targetUser = usuariosSistema.find((u) => u.id === userId);
     if (!targetUser) return { success: false, error: "Usuario no encontrado." };
 
-    // Cannot anonymize the last active administrator
     if (targetUser.role === "admin" && !targetUser.disabled) {
       const activeAdmins = usuariosSistema.filter((u) => u.role === "admin" && !u.disabled);
       if (activeAdmins.length <= 1) {
@@ -1831,7 +2960,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
       )
     );
 
-    // Audit log (immutable record of privacy exercise)
     const auditEntry: RegistroAuditoria = {
       id: `aud_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -1929,7 +3057,6 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const ejecutarPruebaRestauracion = () => {
-    // Mark latest backup as tested
     setBackupLogs((prev) => {
       if (prev.length === 0) return prev;
       const [first, ...rest] = prev;
@@ -1996,6 +3123,8 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         iniciarSesionTrabajo,
         detenerSesionTrabajo,
         cancelarSesionTrabajo,
+        sincronizarHorasTrabajoPendientes,
+        restaurarEstadoHorasOffline,
         usuariosSistema,
         registrosAuditoria,
         parametrosSistema,
@@ -2014,13 +3143,18 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         modificarSolicitudMaterial,
         cancelarSolicitudMaterial,
         despacharSolicitudMaterial,
+        confirmarRetiroSolicitudTecnico,
         crearOrdenCompra,
+        actualizarOrdenCompra,
         aprobarYEnviarOrden,
+        anularOrdenCompra,
         calificarProveedor,
         crearFactura,
         confirmarRecepcionOrden,
         agregarProveedor,
         agregarCliente,
+        actualizarProveedor,
+        actualizarCliente,
         alternarProveedorDeshabilitado,
         alternarClienteDeshabilitado,
         crearProyecto,
@@ -2031,12 +3165,15 @@ export const ProveedorAplicacion: React.FC<{ children: React.ReactNode }> = ({ c
         prestarHerramienta,
         devolverHerramienta,
         registrarMantencionHerramienta,
+        darDeBajaHerramienta,
         crearDevolucionTecnico,
         confirmarDevolucionBodega,
         crearDevolucionProveedor,
         resolverDevolucionProveedor,
         crearHojaServicio,
         resolverConflictoHojaServicio,
+        sincronizarHojasServicioPendientes,
+        restaurarHojasServicioOffline,
         crearHoraTrabajoTecnico,
         actualizarHoraTrabajoTecnico,
         registrarHorasManualesAdmin,

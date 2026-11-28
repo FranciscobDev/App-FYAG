@@ -1,12 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  FlatList,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -18,16 +14,16 @@ import { tema } from "@/nucleo/tema";
 import { Insignia } from "@/componentes/base/Insignia";
 import { Boton } from "@/componentes/base/Boton";
 import { Tarjeta } from "@/componentes/base/Tarjeta";
-import { ColumnaTabla, TablaDatos } from "@/componentes/datos/TablaDatos";
 import { EstadoVacio } from "@/componentes/retroalimentacion/EstadoVacio";
-import { InsigniaEstado } from "@/componentes/base/InsigniaEstado";
-import { TarjetaKpi } from "@/componentes/datos/TarjetaKpi";
-import { VistaModal } from "@/componentes/superposicion/VistaModal";
 import { BarraProgreso } from "@/componentes/base/BarraProgreso";
 import { InsigniaSemaforo } from "@/componentes/base/InsigniaSemaforo";
 import { EncabezadoPagina } from "@/componentes/base/EncabezadoPagina";
-import { NotificacionFlotante, TipoNotificacionFlotante } from "@/componentes/retroalimentacion/NotificacionFlotante";
+import {
+  NotificacionFlotante,
+  TipoNotificacionFlotante,
+} from "@/componentes/retroalimentacion/NotificacionFlotante";
 import { ContenedorEstadoPantalla } from "@/componentes/retroalimentacion/ContenedorEstadoPantalla";
+import { ModalComprobanteSolicitud, ModalRechazoSolicitud } from "@/modulos/inventario/componentes";
 import { SolicitudMaterial } from "@/nucleo/tipos";
 
 interface AdminDashboardProps {
@@ -46,23 +42,69 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
   } = usarAplicacion();
   const { usuario } = usarAutenticacion();
 
-  // Metrics
-  const pendienteSolicitudes = solicitudesMaterial.filter((r) => r.status === "pendiente");
-  const lowExistenciaProductos = productos.filter((p) => p.stock <= p.minStock && !p.disabled);
-  const abrirOrdenes = ordenesCompra.filter(
-    (o) => o.status === "borrador" || o.status === "enviada" || o.status === "recibida_parcial"
+  // Indicadores clave
+  const pendienteSolicitudes = useMemo(
+    () => solicitudesMaterial.filter((r) => r.status === "pendiente"),
+    [solicitudesMaterial]
   );
-  const redProyectos = proyectos.filter(
-    (p) => p.status === "activo" && p.budget > 0 && p.costReal / p.budget > 1.0
+  const lowExistenciaProductos = useMemo(
+    () => productos.filter((p) => p.stock <= p.minStock && !p.disabled),
+    [productos]
+  );
+  const abrirOrdenes = useMemo(
+    () =>
+      ordenesCompra.filter(
+        (o) =>
+          o.status === "borrador" ||
+          o.status === "enviada" ||
+          o.status === "recibida_parcial"
+      ),
+    [ordenesCompra]
+  );
+  const redProyectos = useMemo(
+    () =>
+      proyectos.filter(
+        (p) => p.status === "activo" && p.budget > 0 && p.costReal / p.budget > 1.0
+      ),
+    [proyectos]
   );
 
-  // Reject Modal State
-  const [rechazarModalVisible, establecerRechazarModalVisible] = useState(false);
-  const [seleccionadoSolicitud, establecerSeleccionadoSolicitud] = useState<SolicitudMaterial | null>(null);
-  const [rejectionMotivo, establecerRejectionMotivo] = useState("");
-  const [rechazarError, establecerRechazarError] = useState("");
+  // Pulso financiero consolidado en tiempo real
+  const pulsoFinanciero = useMemo(() => {
+    let stockValorizado = 0;
+    productos.forEach((p) => {
+      if (p.disabled) return;
+      const costoUnit = Number(p.pmp || 0) > 0 ? Number(p.pmp) : Number(p.unitCost || 0);
+      stockValorizado += p.stock * costoUnit;
+    });
 
-  // Toast State
+    let presupuestoTotalObras = 0;
+    let costoRealTotalObras = 0;
+    proyectos.forEach((pr) => {
+      presupuestoTotalObras += Number(pr.budget || 0);
+      costoRealTotalObras += Number(pr.costReal || 0);
+    });
+
+    const margenObras = presupuestoTotalObras - costoRealTotalObras;
+    const pctMargen =
+      presupuestoTotalObras > 0 ? Math.round((margenObras / presupuestoTotalObras) * 100) : 0;
+
+    return {
+      stockValorizado: Math.round(stockValorizado),
+      presupuestoTotalObras: Math.round(presupuestoTotalObras),
+      costoRealTotalObras: Math.round(costoRealTotalObras),
+      margenObras: Math.round(margenObras),
+      pctMargen,
+    };
+  }, [productos, proyectos]);
+
+  // Estado de modales de rechazo y comprobante numerado
+  const [seleccionadoSolicitudRechazar, establecerSeleccionadoSolicitudRechazar] =
+    useState<SolicitudMaterial | null>(null);
+  const [comprobanteSolicitud, establecerComprobanteSolicitud] =
+    useState<SolicitudMaterial | null>(null);
+
+  // Estado de notificación flotante
   const [avisoVisible, establecerAvisoVisible] = useState(false);
   const [avisoMensaje, establecerAvisoMensaje] = useState("");
   const [avisoTipo, establecerAvisoTipo] = useState<TipoNotificacionFlotante>("ok");
@@ -74,114 +116,23 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
   };
 
   const manejarAbrirRechazar = (req: SolicitudMaterial) => {
-    establecerSeleccionadoSolicitud(req);
-    establecerRejectionMotivo("");
-    establecerRechazarError("");
-    establecerRechazarModalVisible(true);
+    establecerSeleccionadoSolicitudRechazar(req);
   };
 
-  const manejarConfirmarRechazar = () => {
-    if (!seleccionadoSolicitud) return;
-    if (!rejectionMotivo.trim()) {
-      establecerRechazarError("Debe ingresar un motivo para rechazar la solicitud.");
+  const manejarAprobarSolicitud = (req: SolicitudMaterial) => {
+    const resultado = aprobarSolicitudMaterial(req.id, usuario.name);
+    if (!resultado.success) {
+      mostrarAviso(resultado.error || "No fue posible aprobar la solicitud.", "danger");
       return;
     }
-    const resultado = rechazarSolicitudMaterial(seleccionadoSolicitud.id, rejectionMotivo, usuario.name);
-    if (resultado.success) {
-      establecerRechazarModalVisible(false);
-      establecerSeleccionadoSolicitud(null);
-      mostrarAviso("Solicitud rechazada con motivo informado.", "warn");
-    } else if (resultado.error) {
-      establecerRechazarError(resultado.error);
+    if (resultado.solicitud) {
+      establecerComprobanteSolicitud(resultado.solicitud);
     }
+    mostrarAviso(
+      `Solicitud ${req.code} aprobada (${resultado.receiptNumber}). Resultado notificado al bodeguero solicitante.`,
+      "ok"
+    );
   };
-
-  // Columnas para la Tabla de Solicitudes Pendientes (Paso 5)
-  const solicitudColumnas: ColumnaTabla<SolicitudMaterial>[] = [
-    {
-      key: "code",
-      title: "CÓDIGO / URGENCIA",
-      width: 150,
-      render: (req) => (
-        <View>
-          <Text style={estilos.tablaCodigoTexto}>{req.code}</Text>
-          <Insignia
-            label={req.urgency.toUpperCase()}
-            tone={req.urgency === "urgente" ? "danger" : req.urgency === "alta" ? "warn" : "info"}
-            size="sm"
-            style={{ marginTop: 4, alignSelf: "flex-start" }}
-          />
-        </View>
-      ),
-    },
-    {
-      key: "projectName",
-      title: "PROYECTO",
-      width: 190,
-      render: (req) => (
-        <View>
-          <Text style={estilos.tablaProyectoNombre} numberOfLines={2}>
-            {req.projectName}
-          </Text>
-        </View>
-      ),
-    },
-    {
-      key: "technicianName",
-      title: "SOLICITA",
-      width: 160,
-      render: (req) => (
-        <View>
-          <Text style={estilos.tablaTecnicoTexto}>{req.technicianName}</Text>
-          <Text style={estilos.tablaFechaTexto}>{formatearFecha(req.date)}</Text>
-        </View>
-      ),
-    },
-    {
-      key: "items",
-      title: "MATERIALES",
-      render: (req) => (
-        <View>
-          <Text style={estilos.tablaElementosTexto} numberOfLines={2}>
-            {req.items.map((it) => `${it.quantity} ${it.unit} ${it.name}`).join(" • ")}
-          </Text>
-          {req.comment ? (
-            <Text style={estilos.tablaComentarioTexto} numberOfLines={1}>
-              Nota: "{req.comment}"
-            </Text>
-          ) : null}
-        </View>
-      ),
-    },
-    {
-      key: "actions",
-      title: "ACCIONES",
-      width: 190,
-      render: (req) => (
-        <View style={estilos.tablaAccionesFila}>
-          <Boton
-            title="Rechazar"
-            variant="outline"
-            size="sm"
-            icon="close-outline"
-            onPress={() => manejarAbrirRechazar(req)}
-            style={{ borderColor: tema.colors.danger, marginRight: 6 }}
-            textStyle={{ color: tema.colors.danger }}
-          />
-          <Boton
-            title="Aprobar"
-            variant="success"
-            size="sm"
-            icon="checkmark-outline"
-            onPress={() => {
-              aprobarSolicitudMaterial(req.id, usuario.name);
-              mostrarAviso(`Solicitud ${req.code} aprobada para despacho.`, "ok");
-            }}
-          />
-        </View>
-      ),
-    },
-  ];
 
   return (
     <ContenedorEstadoPantalla
@@ -189,7 +140,8 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
       skeletonType="kpis"
       emptyProps={{
         title: "No hay actividad reciente en el Dashboard",
-        description: "No se registran solicitudes pendientes, proyectos activos ni alertas en el sistema.",
+        description:
+          "No se registran solicitudes pendientes, proyectos activos ni alertas en el sistema.",
         actionTitle: "Ver Inventario",
         onAction: () => onNavigate && onNavigate("inventario"),
       }}
@@ -199,269 +151,723 @@ export const PanelAdmin: React.FC<AdminDashboardProps> = ({ onNavigate }) => {
       }}
       forbiddenProps={{
         title: "Acceso Restringido al Dashboard Administrativo",
-        message: "Solo usuarios con rol Administrador tienen autorización para consultar métricas financieras y aprobar solicitudes.",
+        message:
+          "Solo usuarios con rol Administrador tienen autorización para consultar métricas financieras y aprobar solicitudes.",
       }}
     >
       <View style={estilos.contenedor}>
-        {/* ENCABEZADO EJECUTIVO INTEGRADO EN FONDO OSCURO */}
         <EncabezadoPagina
           title="Dashboard General"
-          subtitle="Monitoreo ejecutivo de bodega, compras y estados de obra en tiempo real"
+          subtitle="Resumen ejecutivo de aprobaciones, stock crítico y control presupuestario de obras"
         />
 
         <ScrollView style={estilos.scrollArea} contentContainerStyle={estilos.contenido}>
-          {/* 1. KPI CARDS */}
-        <View style={estilos.kpiGrilla}>
-        <TarjetaKpi
-          label="Solicitudes Pendientes"
-          value={pendienteSolicitudes.length}
-          subtitle="Requieren aprobación"
-          tone={pendienteSolicitudes.length > 0 ? "warn" : "ok"}
-          icon="clipboard-outline"
-          onPress={() => onNavigate && onNavigate("inventario")}
-        />
-        <TarjetaKpi
-          label="Insumos Bajo Mínimo"
-          value={lowExistenciaProductos.length}
-          subtitle="Stock crítico bodega"
-          tone={lowExistenciaProductos.length > 0 ? "danger" : "ok"}
-          icon="warning-outline"
-          onPress={() => onNavigate && onNavigate("inventario")}
-        />
-        <TarjetaKpi
-          label="Órdenes de Compra"
-          value={abrirOrdenes.length}
-          subtitle="Abiertas / en curso"
-          tone="info"
-          icon="cart-outline"
-          onPress={() => onNavigate && onNavigate("compras")}
-        />
-        <TarjetaKpi
-          label="Proyectos en Rojo"
-          value={redProyectos.length}
-          subtitle="Sobregiro > 100%"
-          tone={redProyectos.length > 0 ? "danger" : "ok"}
-          icon="trending-down-outline"
-          onPress={() => onNavigate && onNavigate("proyectos")}
-        />
-      </View>
-
-      {/* 2. RECENT ALERTS */}
-      <Tarjeta variant="outlined">
-        <View style={estilos.seccionEncabezado}>
-          <View style={estilos.tituloWithIcono}>
-            <Ionicons name="notifications-outline" size={18} color={tema.colors.warn} />
-            <Text style={estilos.seccionTitulo}>Alertas Críticas Recientes</Text>
-          </View>
-        </View>
-        {alertas.slice(0, 3).map((alert) => (
-          <View key={alert.id} style={estilos.alertaFila}>
+          {/* 1. CABECERA EJECUTIVA DE PULSO FINANCIERO + ACCESOS RÁPIDOS */}
+          <Tarjeta variant="outlined" style={{ padding: 14, borderRadius: 12, marginBottom: 12 }}>
             <View
-              style={[
-                estilos.alertaPunto,
-                {
-                  backgroundColor:
-                    alert.severity === "rojo"
-                      ? tema.colors.danger
-                      : alert.severity === "amarillo"
-                      ? tema.colors.warn
-                      : tema.colors.info,
-                },
-              ]}
-            />
-            <View style={estilos.alertaTextoColumna}>
-              <Text style={estilos.alertaTitulo}>{alert.title}</Text>
-              <Text style={estilos.alertaDescripcion}>{alert.description}</Text>
-            </View>
-            <Text style={estilos.alertaTiempo}>{alert.time}</Text>
-          </View>
-        ))}
-      </Tarjeta>
-
-      {/* 3. PROYECTOS CON SEMÁFORO DE COSTO */}
-      <Tarjeta variant="elevated">
-        <View style={estilos.seccionEncabezado}>
-          <View style={estilos.tituloWithIcono}>
-            <Ionicons name="business-outline" size={18} color={tema.colors.primary} />
-            <Text style={estilos.seccionTitulo}>Semáforo de Costos por Proyecto</Text>
-          </View>
-          <TouchableOpacity onPress={() => onNavigate && onNavigate("proyectos")}>
-            <Text style={estilos.enlaceTexto}>Ver todos ({proyectos.length})</Text>
-          </TouchableOpacity>
-        </View>
-
-        {proyectos.slice(0, 4).map((proj) => {
-          const ratio = proj.budget > 0 ? proj.costReal / proj.budget : 0;
-          const porcentaje = Math.round(ratio * 100);
-
-          return (
-            <View key={proj.id} style={estilos.proyectoFila}>
-              <View style={estilos.proyectoInfoColumna}>
-                <View style={estilos.proyectoEncabezado}>
-                  <Text style={estilos.proyectoCodigo}>{proj.code}</Text>
-                  <InsigniaEstado status={proj.status} size="sm" />
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 220 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: tema.colors.primaryLight,
+                    borderWidth: 1,
+                    borderColor: tema.colors.primaryBorder,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name="speedometer-outline" size={21} color={tema.colors.primaryDark} />
                 </View>
-                <Text style={estilos.proyectoNombre}>{proj.name}</Text>
-                <Text style={estilos.proyectoCliente}>Cliente: {proj.client}</Text>
-              </View>
-
-              <View style={estilos.proyectoFinancialColumna}>
-                <View style={estilos.financialNumbers}>
-                  <Text style={estilos.costoRealTexto}>{formatearCLP(proj.costReal)}</Text>
-                  <Text style={estilos.presupuestoTexto}> / {formatearCLP(proj.budget)}</Text>
-                </View>
-
-                <BarraProgreso
-                  value={proj.costReal}
-                  max={proj.budget}
-                  height={8}
-                  semaforo
-                  containerStyle={{ marginVertical: 6 }}
-                />
-
-                <View style={estilos.semaphoreFila}>
-                  <InsigniaSemaforo percentage={porcentaje} size="sm" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: "900", color: tema.colors.text }}>
+                    Centro de Mando Operativo
+                  </Text>
+                  <Text style={{ fontSize: 11, color: tema.colors.textSecondary, marginTop: 1 }}>
+                    Cartera Obras:{" "}
+                    <Text style={{ fontWeight: "800", color: tema.colors.primaryDark }}>
+                      {formatearCLP(pulsoFinanciero.presupuestoTotalObras)}
+                    </Text>{" "}
+                    (Margen{" "}
+                    <Text
+                      style={{
+                        fontWeight: "800",
+                        color: pulsoFinanciero.margenObras >= 0 ? tema.colors.okDark : tema.colors.danger,
+                      }}
+                    >
+                      {pulsoFinanciero.pctMargen}%
+                    </Text>
+                    ) • Stock:{" "}
+                    <Text style={{ fontWeight: "800", color: tema.colors.text }}>
+                      {formatearCLP(pulsoFinanciero.stockValorizado)}
+                    </Text>
+                  </Text>
                 </View>
               </View>
+
+              {/* Pastillas de Acceso Directo en 1 Toque */}
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                {[
+                  { id: "compras", label: "Órdenes OC", icon: "cart-outline" as const },
+                  { id: "facturas", label: "Facturas", icon: "receipt-outline" as const },
+                  { id: "proyectos", label: "Obras", icon: "construct-outline" as const },
+                  { id: "informes", label: "Informes", icon: "bar-chart-outline" as const },
+                ].map((acc) => (
+                  <TouchableOpacity
+                    key={acc.id}
+                    activeOpacity={0.8}
+                    onPress={() => onNavigate && onNavigate(acc.id)}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 4,
+                      backgroundColor: "#f8fafc",
+                      borderWidth: 1,
+                      borderColor: tema.colors.borderDark,
+                      borderRadius: 8,
+                      paddingHorizontal: 9,
+                      paddingVertical: 6,
+                    }}
+                  >
+                    <Ionicons name={acc.icon} size={13} color={tema.colors.primaryDark} />
+                    <Text style={{ fontSize: 11, fontWeight: "800", color: tema.colors.text }}>
+                      {acc.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
-          );
-        })}
-      </Tarjeta>
+          </Tarjeta>
 
-      {/* 4. TABLA DE SOLICITUDES PENDIENTES DE APROBACIÓN */}
-      <Tarjeta variant="elevated">
-        <View style={estilos.seccionEncabezado}>
-          <View style={estilos.tituloWithIcono}>
-            <Ionicons name="clipboard-outline" size={18} color={tema.colors.warn} />
-            <Text style={estilos.seccionTitulo}>
-              Tabla de Solicitudes Pendientes de Aprobación ({pendienteSolicitudes.length})
-            </Text>
+          {/* 2. GRILLA 2x2 COMPACTA DE TARJETAS KPI INTERACTIVAS CON SEMÁFORO DE SUPERFICIE */}
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {[
+              {
+                id: "solicitudes",
+                titulo: "Por Aprobar",
+                valor: pendienteSolicitudes.length,
+                sub: "Solicitudes faena",
+                icon: "clipboard-outline" as const,
+                bg: pendienteSolicitudes.length > 0 ? "#fffbeb" : "#f0fdf4",
+                border: pendienteSolicitudes.length > 0 ? "#fcd34d" : "#86efac",
+                borderActivo: pendienteSolicitudes.length > 0 ? "#d97706" : "#16a34a",
+                textColor: pendienteSolicitudes.length > 0 ? "#92400e" : "#166534",
+              },
+              {
+                id: "inventario",
+                titulo: "Stock Crítico",
+                valor: lowExistenciaProductos.length,
+                sub: "Bajo mínimo",
+                icon: "warning-outline" as const,
+                bg: lowExistenciaProductos.length > 0 ? "#fef2f2" : "#f0fdf4",
+                border: lowExistenciaProductos.length > 0 ? "#fca5a5" : "#86efac",
+                borderActivo: lowExistenciaProductos.length > 0 ? "#dc2626" : "#16a34a",
+                textColor: lowExistenciaProductos.length > 0 ? "#991b1b" : "#166534",
+              },
+              {
+                id: "compras",
+                titulo: "Órdenes Compra",
+                valor: abrirOrdenes.length,
+                sub: "Abiertas / curso",
+                icon: "cart-outline" as const,
+                bg: "#fff7ed",
+                border: "#fdba74",
+                borderActivo: "#ea580c",
+                textColor: "#9a3412",
+              },
+              {
+                id: "proyectos",
+                titulo: "Obras en Rojo",
+                valor: redProyectos.length,
+                sub: redProyectos.length > 0 ? "Sobregiro > 100%" : `${proyectos.length} obras en regla`,
+                icon:
+                  redProyectos.length > 0
+                    ? ("trending-down-outline" as const)
+                    : ("checkmark-done-circle-outline" as const),
+                bg: redProyectos.length > 0 ? "#fef2f2" : "#f0fdf4",
+                border: redProyectos.length > 0 ? "#fca5a5" : "#86efac",
+                borderActivo: redProyectos.length > 0 ? "#dc2626" : "#16a34a",
+                textColor: redProyectos.length > 0 ? "#991b1b" : "#166534",
+              },
+            ].map((kpi) => (
+              <TouchableOpacity
+                key={kpi.id}
+                activeOpacity={0.82}
+                onPress={() => onNavigate && onNavigate(kpi.id)}
+                style={{
+                  flexBasis: "48%",
+                  flexGrow: 1,
+                  minWidth: 140,
+                  backgroundColor: kpi.bg,
+                  borderWidth: 1.5,
+                  borderColor: kpi.border,
+                  borderLeftWidth: 5,
+                  borderLeftColor: kpi.borderActivo,
+                  borderRadius: 11,
+                  paddingHorizontal: 11,
+                  paddingVertical: 9,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "800",
+                      color: kpi.textColor,
+                      textTransform: "uppercase",
+                    }}
+                    numberOfLines={1}
+                  >
+                    {kpi.titulo}
+                  </Text>
+                  <Ionicons name={kpi.icon} size={16} color={kpi.textColor} />
+                </View>
+
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    marginTop: 3,
+                  }}
+                >
+                  <Text style={{ fontSize: 22, fontWeight: "900", color: kpi.textColor }}>
+                    {kpi.valor}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                    <Text
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: "700",
+                        color: kpi.textColor,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {kpi.sub}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={12} color={kpi.textColor} />
+                  </View>
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
 
-        {pendienteSolicitudes.length === 0 ? (
-          <EstadoVacio
-            icon="checkmark-circle-outline"
-            title="¡Todo al día!"
-            description="No hay solicitudes pendientes de aprobación en este momento."
-            actionTitle="Ver Inventario"
-            onAction={() => onNavigate && onNavigate("inventario")}
-            containerStyle={{ borderWidth: 0, paddingVertical: 24 }}
-          />
-        ) : (
-          <TablaDatos
-            columns={solicitudColumnas}
-            data={pendienteSolicitudes}
-            keyExtractor={(r) => r.id}
-            pageSize={5}
-            showSearch={false}
-            cardRender={(req) => (
-              <View style={estilos.solicitudTarjeta}>
-                <View style={estilos.solicitudSuperior}>
-                  <View>
-                    <View style={estilos.solicitudCodigoFila}>
-                      <Text style={estilos.solicitudCodigo}>{req.code}</Text>
-                      <Insignia
-                        label={req.urgency.toUpperCase()}
-                        tone={req.urgency === "urgente" ? "danger" : req.urgency === "alta" ? "warn" : "info"}
+          {/* 3. SOLICITUDES PENDIENTES DE APROBACIÓN (CON SEMÁFORO DE URGENCIA Y FICHA DE ÍTEMS) */}
+          <Tarjeta variant="outlined" style={estilos.bloqueTarjeta}>
+            <View style={estilos.seccionEncabezado}>
+              <View style={estilos.tituloWithIcono}>
+                <View
+                  style={[
+                    estilos.iconoSeccionCaja,
+                    {
+                      backgroundColor: tema.colors.primaryLight,
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                    },
+                  ]}
+                >
+                  <Ionicons name="clipboard-outline" size={16} color={tema.colors.primaryDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={estilos.seccionTitulo}>
+                    Solicitudes por Aprobar ({pendienteSolicitudes.length})
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => onNavigate && onNavigate("solicitudes")}
+                style={estilos.enlaceBoton}
+              >
+                <Text style={estilos.enlaceTexto}>Ver todas</Text>
+                <Ionicons name="chevron-forward" size={14} color={tema.colors.primary} />
+              </TouchableOpacity>
+            </View>
+
+            {pendienteSolicitudes.length === 0 ? (
+              <EstadoVacio
+                icon="checkmark-circle-outline"
+                title="¡Todo al día!"
+                description="No hay solicitudes pendientes de aprobación."
+                containerStyle={{ borderWidth: 0, paddingVertical: 16 }}
+              />
+            ) : (
+              pendienteSolicitudes.slice(0, 3).map((req, idx) => {
+                const esUrgente = req.urgency === "urgente";
+                const semaforoSol = esUrgente
+                  ? {
+                      bg: "#fef2f2",
+                      border: "#fca5a5",
+                      stripe: "#dc2626",
+                      text: "#991b1b",
+                      divider: "#fecaca",
+                    }
+                  : {
+                      bg: "#fffbeb",
+                      border: "#fcd34d",
+                      stripe: "#d97706",
+                      text: "#92400e",
+                      divider: "#fde68a",
+                    };
+
+                return (
+                  <View
+                    key={req.id}
+                    style={{
+                      backgroundColor: semaforoSol.bg,
+                      borderColor: semaforoSol.border,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: semaforoSol.stripe,
+                      borderRadius: 11,
+                      padding: 12,
+                      marginBottom: idx === Math.min(pendienteSolicitudes.length, 3) - 1 ? 0 : 10,
+                    }}
+                  >
+                    <View style={estilos.solicitudCompactaTop}>
+                      <View style={estilos.solicitudCodigoFila}>
+                        <Text style={[estilos.solicitudCodigo, { color: semaforoSol.text }]}>
+                          {req.code}
+                        </Text>
+                        <Insignia
+                          label={req.urgency.toUpperCase()}
+                          tone={
+                            req.urgency === "urgente"
+                              ? "danger"
+                              : req.urgency === "alta"
+                                ? "warn"
+                                : "info"
+                          }
+                          size="sm"
+                        />
+                      </View>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: semaforoSol.text }}>
+                        {formatearFecha(req.date)}
+                      </Text>
+                    </View>
+
+                    <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "800", color: tema.colors.text }}>
+                      {req.projectName}
+                    </Text>
+                    <Text style={{ fontSize: 11.5, fontWeight: "600", color: semaforoSol.text, marginTop: 1 }}>
+                      Solicitante: {req.technicianName}
+                    </Text>
+
+                    {/* Ficha Blanca Interna con el Detalle Completo de Insumos Pedidos */}
+                    <View
+                      style={{
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: semaforoSol.divider,
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 7,
+                        marginVertical: 8,
+                        gap: 4,
+                      }}
+                    >
+                      {req.items.map((it, itemIdx) => {
+                        const prodCat = productos.find((p) => p.sku === it.sku);
+                        const stockDisp = prodCat ? prodCat.stock : null;
+                        return (
+                          <View
+                            key={`${req.id}_${it.sku}_${itemIdx}`}
+                            style={{
+                              flexDirection: "row",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <Text
+                              style={{ fontSize: 11.5, color: tema.colors.text, flex: 1 }}
+                              numberOfLines={1}
+                            >
+                              <Text style={{ fontWeight: "900", color: semaforoSol.text }}>
+                                {it.quantity} {it.unit}
+                              </Text>{" "}
+                              {it.name}
+                            </Text>
+                            {stockDisp !== null && (
+                              <Text
+                                style={{
+                                  fontSize: 10.5,
+                                  fontWeight: "700",
+                                  color:
+                                    stockDisp >= it.quantity
+                                      ? tema.colors.okDark
+                                      : tema.colors.danger,
+                                }}
+                              >
+                                Stock: {stockDisp} {it.unit}
+                              </Text>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    <View style={estilos.solicitudAccionFila}>
+                      <Boton
+                        title="Rechazar"
+                        variant="outline"
                         size="sm"
+                        icon="close-outline"
+                        onPress={() => manejarAbrirRechazar(req)}
+                        style={{
+                          flex: 1,
+                          minHeight: 36,
+                          borderColor: tema.colors.danger,
+                          backgroundColor: "#ffffff",
+                        }}
+                        textStyle={{ color: tema.colors.danger }}
+                      />
+                      <Boton
+                        title="Aprobar y Ver Comprobante"
+                        variant="success"
+                        size="sm"
+                        icon="checkmark-outline"
+                        style={{ flex: 1.4, minHeight: 36 }}
+                        onPress={() => manejarAprobarSolicitud(req)}
                       />
                     </View>
-                    <Text style={estilos.solicitudProyecto}>{req.projectName}</Text>
-                    <Text style={estilos.solicitudTecnico}>
-                      Solicita: {req.technicianName} • {formatearFecha(req.date)}
+                  </View>
+                );
+              })
+            )}
+          </Tarjeta>
+
+          {/* 4. PANEL RÁPIDO DE STOCK CRÍTICO ACCIONABLE */}
+          {lowExistenciaProductos.length > 0 && (
+            <Tarjeta variant="outlined" style={estilos.bloqueTarjeta}>
+              <View style={estilos.seccionEncabezado}>
+                <View style={estilos.tituloWithIcono}>
+                  <View
+                    style={[
+                      estilos.iconoSeccionCaja,
+                      {
+                        backgroundColor: "#fef2f2",
+                        borderWidth: 1,
+                        borderColor: "#fca5a5",
+                      },
+                    ]}
+                  >
+                    <Ionicons name="warning-outline" size={16} color="#dc2626" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={estilos.seccionTitulo}>
+                      Insumos en Stock Crítico ({lowExistenciaProductos.length})
                     </Text>
                   </View>
                 </View>
 
-                <View style={estilos.solicitudElementosCaja}>
-                  <Text style={estilos.solicitudElementosEtiqueta}>Materiales solicitados:</Text>
-                  {req.items.map((it, idx) => (
-                    <Text key={idx} style={estilos.solicitudElementoLinea}>
-                      • {it.quantity} {it.unit} - {it.name}
-                    </Text>
-                  ))}
-                  {req.comment && (
-                    <Text style={estilos.solicitudComentarioTexto}>
-                      Nota: "{req.comment}"
-                    </Text>
-                  )}
-                </View>
+                <TouchableOpacity
+                  onPress={() => onNavigate && onNavigate("compras")}
+                  style={estilos.enlaceBoton}
+                >
+                  <Text style={estilos.enlaceTexto}>Reponer con OC</Text>
+                  <Ionicons name="chevron-forward" size={14} color={tema.colors.primary} />
+                </TouchableOpacity>
+              </View>
 
-                <View style={estilos.solicitudAccionFila}>
-                  <Boton
-                    title="Rechazar"
-                    variant="outline"
-                    size="sm"
-                    icon="close-outline"
-                    onPress={() => manejarAbrirRechazar(req)}
-                    style={{ borderColor: tema.colors.danger, marginRight: 8 }}
-                    textStyle={{ color: tema.colors.danger }}
-                  />
-                  <Boton
-                    title="Aprobar Solicitud"
-                    variant="success"
-                    size="sm"
-                    icon="checkmark-outline"
-                    onPress={() => {
-                      aprobarSolicitudMaterial(req.id, usuario.name);
-                      mostrarAviso(`Solicitud ${req.code} aprobada para despacho.`, "ok");
-                    }}
-                  />
+              <View style={{ gap: 8 }}>
+                {lowExistenciaProductos.slice(0, 3).map((prod) => {
+                  const agotado = prod.stock === 0;
+                  return (
+                    <TouchableOpacity
+                      key={prod.sku}
+                      activeOpacity={0.82}
+                      onPress={() => onNavigate && onNavigate("inventario")}
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        backgroundColor: agotado ? "#fef2f2" : "#fffbeb",
+                        borderWidth: 1.5,
+                        borderColor: agotado ? "#fca5a5" : "#fcd34d",
+                        borderLeftWidth: 5,
+                        borderLeftColor: agotado ? "#dc2626" : "#d97706",
+                        borderRadius: 10,
+                        paddingHorizontal: 11,
+                        paddingVertical: 8,
+                        gap: 8,
+                      }}
+                    >
+                      <View style={{ flex: 1, minWidth: 170 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: tema.colors.text }} numberOfLines={1}>
+                          {prod.name}
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: agotado ? "#991b1b" : "#92400e",
+                            marginTop: 1,
+                          }}
+                        >
+                          {prod.sku} • {prod.category}
+                        </Text>
+                      </View>
+
+                      <View
+                        style={{
+                          backgroundColor: "#ffffff",
+                          borderWidth: 1,
+                          borderColor: agotado ? "#fecaca" : "#fde68a",
+                          borderRadius: 8,
+                          paddingHorizontal: 9,
+                          paddingVertical: 4,
+                          alignItems: "flex-end",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            fontWeight: "900",
+                            color: agotado ? "#dc2626" : "#d97706",
+                          }}
+                        >
+                          {prod.stock} / {prod.minStock} {prod.unit}
+                        </Text>
+                        <Text style={{ fontSize: 9.5, fontWeight: "700", color: tema.colors.textMuted }}>
+                          {agotado ? "AGOTADO" : "BAJO MÍNIMO"}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </Tarjeta>
+          )}
+
+          {/* 5. SEMÁFORO EJECUTIVO DE COSTOS EN OBRA (CON SUPERFICIE COLOREADA) */}
+          <Tarjeta variant="outlined" style={estilos.bloqueTarjeta}>
+            <View style={estilos.seccionEncabezado}>
+              <View style={estilos.tituloWithIcono}>
+                <View
+                  style={[
+                    estilos.iconoSeccionCaja,
+                    {
+                      backgroundColor: tema.colors.primaryLight,
+                      borderWidth: 1,
+                      borderColor: tema.colors.primaryBorder,
+                    },
+                  ]}
+                >
+                  <Ionicons name="construct-outline" size={16} color={tema.colors.primaryDark} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={estilos.seccionTitulo}>
+                    Semáforo de Costos en Obra
+                  </Text>
                 </View>
               </View>
-            )}
-          />
-        )}
-      </Tarjeta>
+              <TouchableOpacity
+                onPress={() => onNavigate && onNavigate("proyectos")}
+                style={estilos.enlaceBoton}
+              >
+                <Text style={estilos.enlaceTexto}>Ver obras ({proyectos.length})</Text>
+                <Ionicons name="chevron-forward" size={14} color={tema.colors.primary} />
+              </TouchableOpacity>
+            </View>
 
-      {/* REJECT MODAL */}
-      <VistaModal
-        visible={rechazarModalVisible}
-        onClose={() => establecerRechazarModalVisible(false)}
-        title="Rechazar Solicitud de Material"
-        subtitle={seleccionadoSolicitud ? `${seleccionadoSolicitud.code} • ${seleccionadoSolicitud.projectName}` : ""}
-      >
-        <Text style={estilos.modalInstruction}>
-          El rechazo exige motivo obligatorio para informar al técnico en terreno:
-        </Text>
-        <TextInput
-          value={rejectionMotivo}
-          onChangeText={(text) => {
-            establecerRejectionMotivo(text);
-            if (rechazarError) establecerRechazarError("");
-          }}
-          placeholder="Ej: Insumos no contemplados en cubicación o proyecto sin disponibilidad..."
-          placeholderTextColor={tema.colors.textLight}
-          multiline
-          numberOfLines={3}
-          style={[estilos.motivoEntrada, Boolean(rechazarError) && estilos.entradaErrorBorde]}
-        />
-        {Boolean(rechazarError) && <Text style={estilos.errorTexto}>{rechazarError}</Text>}
+            <View style={{ gap: 10 }}>
+              {proyectos.slice(0, 3).map((proj) => {
+                const ratio = proj.budget > 0 ? proj.costReal / proj.budget : 0;
+                const porcentaje = Math.round(ratio * 100);
+                const margen = proj.budget - proj.costReal;
 
-        <View style={estilos.modalAcciones}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerRechazarModalVisible(false)}
-            style={{ marginRight: 8 }}
-          />
-          <Boton
-            title="Confirmar Rechazo"
-            variant="danger"
-            icon="trash-outline"
-            onPress={manejarConfirmarRechazar}
-          />
-        </View>
-      </VistaModal>
+                const semaforoObra =
+                  porcentaje > 100
+                    ? {
+                        bg: "#fef2f2",
+                        border: "#fca5a5",
+                        stripe: "#dc2626",
+                        text: "#991b1b",
+                        divider: "#fecaca",
+                      }
+                    : porcentaje >= 80
+                      ? {
+                          bg: "#fffbeb",
+                          border: "#fcd34d",
+                          stripe: "#d97706",
+                          text: "#92400e",
+                          divider: "#fde68a",
+                        }
+                      : {
+                          bg: "#f0fdf4",
+                          border: "#86efac",
+                          stripe: "#16a34a",
+                          text: "#166534",
+                          divider: "#bbf7d0",
+                        };
 
-      {/* TOAST FLOTANTE */}
-      <NotificacionFlotante
-        visible={avisoVisible}
-        message={avisoMensaje}
-        type={avisoTipo}
-        onDismiss={() => establecerAvisoVisible(false)}
-      />
+                return (
+                  <TouchableOpacity
+                    key={proj.id}
+                    activeOpacity={0.85}
+                    onPress={() => onNavigate && onNavigate("proyectos")}
+                    style={{
+                      backgroundColor: semaforoObra.bg,
+                      borderColor: semaforoObra.border,
+                      borderWidth: 1.5,
+                      borderLeftWidth: 6,
+                      borderLeftColor: semaforoObra.stripe,
+                      borderRadius: 11,
+                      padding: 11,
+                    }}
+                  >
+                    <View style={estilos.proyectoEncabezado}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text numberOfLines={1} style={estilos.proyectoNombre}>
+                          <Text style={[estilos.proyectoCodigo, { color: semaforoObra.text }]}>
+                            {proj.code}
+                          </Text>{" "}
+                          · {proj.name}
+                        </Text>
+                        <Text numberOfLines={1} style={{ fontSize: 11, fontWeight: "700", color: semaforoObra.text, marginTop: 1 }}>
+                          Cliente: {proj.client}
+                        </Text>
+                      </View>
+                      <InsigniaSemaforo percentage={porcentaje} size="sm" />
+                    </View>
+
+                    <View
+                      style={{
+                        backgroundColor: "#ffffff",
+                        borderWidth: 1,
+                        borderColor: semaforoObra.divider,
+                        borderRadius: 8,
+                        paddingHorizontal: 10,
+                        paddingVertical: 7,
+                        marginTop: 7,
+                      }}
+                    >
+                      <BarraProgreso
+                        value={proj.costReal}
+                        max={proj.budget}
+                        height={6}
+                        semaforo
+                        containerStyle={{ marginBottom: 6 }}
+                      />
+
+                      <View style={estilos.proyectoMetaInferior}>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: semaforoObra.text }}>
+                          Margen: {formatearCLP(margen)}
+                        </Text>
+                        <Text style={estilos.financialNumbersTexto}>
+                          <Text style={estilos.costoRealTexto}>{formatearCLP(proj.costReal)}</Text>
+                          <Text style={estilos.presupuestoTexto}> / {formatearCLP(proj.budget)}</Text>
+                        </Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Tarjeta>
+
+          {/* 6. ALERTAS RECIENTES INTERACTIVAS */}
+          {alertas.length > 0 && (
+            <Tarjeta variant="outlined" style={estilos.bloqueTarjeta}>
+              <View style={[estilos.seccionEncabezado, { marginBottom: 10 }]}>
+                <View style={estilos.tituloWithIcono}>
+                  <View
+                    style={[
+                      estilos.iconoSeccionCaja,
+                      {
+                        backgroundColor: "#fef2f2",
+                        borderWidth: 1,
+                        borderColor: "#fca5a5",
+                      },
+                    ]}
+                  >
+                    <Ionicons name="notifications-outline" size={16} color={tema.colors.danger} />
+                  </View>
+                  <Text style={estilos.seccionTitulo}>Avisos Críticos ({alertas.length})</Text>
+                </View>
+              </View>
+
+              <View style={{ gap: 8 }}>
+                {alertas.slice(0, 3).map((alert) => {
+                  const esRoja = alert.severity === "rojo";
+                  const esAmarilla = alert.severity === "amarillo";
+                  return (
+                    <TouchableOpacity
+                      key={alert.id}
+                      activeOpacity={0.8}
+                      onPress={() => onNavigate && onNavigate(esRoja ? "inventario" : "compras")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        backgroundColor: esRoja ? "#fef2f2" : esAmarilla ? "#fffbeb" : "#f1f5f9",
+                        borderWidth: 1,
+                        borderColor: esRoja ? "#fca5a5" : esAmarilla ? "#fcd34d" : "#cbd5e1",
+                        borderLeftWidth: 4,
+                        borderLeftColor: esRoja ? "#dc2626" : esAmarilla ? "#d97706" : "#475569",
+                        borderRadius: 9,
+                        paddingHorizontal: 10,
+                        paddingVertical: 8,
+                      }}
+                    >
+                      <View style={estilos.alertaTextoColumna}>
+                        <Text numberOfLines={1} style={estilos.alertaTitulo}>
+                          {alert.title}
+                        </Text>
+                        <Text numberOfLines={1} style={estilos.alertaDescripcion}>
+                          {alert.description}
+                        </Text>
+                      </View>
+                      <Text style={estilos.alertaTiempo}>{alert.time}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </Tarjeta>
+          )}
+
+          {/* MODAL DE MOTIVO OBLIGATORIO AL RECHAZAR */}
+          <ModalRechazoSolicitud
+            solicitud={seleccionadoSolicitudRechazar}
+            onClose={() => establecerSeleccionadoSolicitudRechazar(null)}
+            onConfirmarRechazo={(solicitud, motivo) => {
+              const resultado = rechazarSolicitudMaterial(solicitud.id, motivo, usuario.name);
+              if (resultado.success) {
+                mostrarAviso(
+                  `Solicitud ${solicitud.code} rechazada. Motivo notificado al bodeguero solicitante.`,
+                  "warn"
+                );
+                return { success: true };
+              }
+              return {
+                success: false,
+                error: resultado.error || "Debe ingresar un motivo obligatorio.",
+              };
+            }}
+          />
+
+          {/* MODAL DE VISTA DE COMPROBANTE NUMERADO AL APROBAR */}
+          <ModalComprobanteSolicitud
+            solicitud={comprobanteSolicitud}
+            onClose={() => establecerComprobanteSolicitud(null)}
+            onNotify={(mensaje) => mostrarAviso(mensaje, "ok")}
+          />
+
+          <NotificacionFlotante
+            visible={avisoVisible}
+            message={avisoMensaje}
+            type={avisoTipo}
+            onDismiss={() => establecerAvisoVisible(false)}
+          />
         </ScrollView>
       </View>
     </ContenedorEstadoPantalla>
@@ -478,272 +884,137 @@ const estilos = StyleSheet.create({
   },
   contenido: {
     padding: tema.spacing.md,
-    paddingBottom: 40,
+    paddingBottom: 36,
   },
-  kpiGrilla: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginHorizontal: -tema.spacing.xs,
+  bloqueTarjeta: {
     marginBottom: tema.spacing.md,
+    padding: 14,
+    borderRadius: 12,
   },
   seccionEncabezado: {
     flexDirection: "row",
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: tema.spacing.md,
+    paddingBottom: 10,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: tema.colors.borderLight,
+    gap: 8,
   },
   tituloWithIcono: {
     flexDirection: "row",
     alignItems: "center",
+    flex: 1,
+    minWidth: 160,
+    gap: 8,
+  },
+  iconoSeccionCaja: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   seccionTitulo: {
-    fontSize: tema.fontSize.md,
-    fontWeight: "bold",
+    fontSize: 15.5,
+    fontWeight: "800",
+    letterSpacing: -0.2,
     color: tema.colors.text,
-    marginLeft: 6,
+    flexShrink: 1,
+  },
+  enlaceBoton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
   },
   enlaceTexto: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "700",
     color: tema.colors.primary,
   },
-  alertaFila: {
+  solicitudCompactaTop: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    paddingVertical: tema.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: tema.colors.borderLight,
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
   },
-  alertaPunto: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 5,
-    marginRight: tema.spacing.sm,
+  solicitudCodigoFila: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  solicitudCodigo: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: tema.colors.text,
+  },
+  solicitudAccionFila: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 8,
+  },
+  proyectoEncabezado: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 6,
+  },
+  proyectoCodigo: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: tema.colors.primaryDark,
+  },
+  proyectoNombre: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: tema.colors.text,
+    lineHeight: 18,
+  },
+  proyectoMetaInferior: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  financialNumbersTexto: {
+    fontSize: 12,
+  },
+  costoRealTexto: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: tema.colors.text,
+  },
+  presupuestoTexto: {
+    fontSize: 11,
+    color: tema.colors.textMuted,
   },
   alertaTextoColumna: {
     flex: 1,
   },
   alertaTitulo: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "800",
     color: tema.colors.text,
   },
   alertaDescripcion: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textMuted,
-    marginTop: 2,
+    fontSize: 11,
+    color: tema.colors.textSecondary,
+    marginTop: 1,
   },
   alertaTiempo: {
     fontSize: 10,
-    color: tema.colors.textLight,
-    marginLeft: tema.spacing.sm,
-  },
-  proyectoFila: {
-    paddingVertical: tema.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: tema.colors.borderLight,
-  },
-  proyectoInfoColumna: {
-    marginBottom: tema.spacing.xs,
-  },
-  proyectoEncabezado: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  proyectoCodigo: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "bold",
-    color: tema.colors.primaryDark,
-  },
-  proyectoNombre: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "600",
-    color: tema.colors.text,
-    marginTop: 2,
-  },
-  proyectoCliente: {
-    fontSize: tema.fontSize.xs,
+    fontWeight: "700",
     color: tema.colors.textMuted,
-  },
-  proyectoFinancialColumna: {
-    marginTop: tema.spacing.xs,
-  },
-  financialNumbers: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    marginBottom: 4,
-  },
-  costoRealTexto: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "bold",
-    color: tema.colors.text,
-  },
-  presupuestoTexto: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textMuted,
-  },
-  progresoBarraFondo: {
-    height: 6,
-    backgroundColor: tema.colors.surfaceAlt,
-    borderRadius: 3,
-    overflow: "hidden",
-    marginVertical: 4,
-  },
-  progresoBarraFill: {
-    height: "100%",
-    borderRadius: 3,
-  },
-  semaphoreFila: {
-    marginTop: 4,
-  },
-  vacioCaja: {
-    alignItems: "center",
-    paddingVertical: tema.spacing.xl,
-  },
-  vacioTitulo: {
-    fontSize: tema.fontSize.md,
-    fontWeight: "bold",
-    color: tema.colors.text,
-    marginTop: 8,
-  },
-  vacioSub: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textMuted,
-    marginTop: 2,
-  },
-  solicitudTarjeta: {
-    backgroundColor: tema.colors.surfaceAlt,
-    borderRadius: tema.radius.md,
-    padding: tema.spacing.md,
-    marginBottom: tema.spacing.md,
-    borderWidth: 1,
-    borderColor: tema.colors.border,
-  },
-  solicitudSuperior: {
-    marginBottom: tema.spacing.sm,
-  },
-  solicitudCodigoFila: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  solicitudCodigo: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "bold",
-    color: tema.colors.text,
-  },
-  solicitudProyecto: {
-    fontSize: tema.fontSize.sm,
-    fontWeight: "600",
-    color: tema.colors.primaryDark,
-    marginTop: 2,
-  },
-  solicitudTecnico: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textMuted,
-    marginTop: 2,
-  },
-  solicitudElementosCaja: {
-    backgroundColor: tema.colors.card,
-    borderRadius: tema.radius.sm,
-    padding: tema.spacing.sm,
-    marginBottom: tema.spacing.md,
-  },
-  solicitudElementosEtiqueta: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "bold",
-    color: tema.colors.textMuted,
-    marginBottom: 4,
-  },
-  solicitudElementoLinea: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.text,
-    marginVertical: 1,
-  },
-  solicitudComentarioTexto: {
-    fontSize: tema.fontSize.xs,
-    fontStyle: "italic",
-    color: tema.colors.textMuted,
-    marginTop: 4,
-  },
-  solicitudAccionFila: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  modalInstruction: {
-    fontSize: tema.fontSize.sm,
-    color: tema.colors.text,
-    marginBottom: tema.spacing.sm,
-  },
-  motivoEntrada: {
-    borderWidth: 1,
-    borderColor: tema.colors.borderDark,
-    borderRadius: tema.radius.md,
-    padding: tema.spacing.md,
-    height: 80,
-    textAlignVertical: "top",
-    color: tema.colors.text,
-    backgroundColor: tema.colors.card,
-  },
-  entradaErrorBorde: {
-    borderColor: tema.colors.danger,
-    backgroundColor: "#fff5f5",
-  },
-  errorTexto: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.danger,
-    marginTop: 4,
-  },
-  modalAcciones: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: tema.spacing.lg,
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  tablaCodigoTexto: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "bold",
-    color: tema.colors.text,
-  },
-  tablaProyectoNombre: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "600",
-    color: tema.colors.text,
-  },
-  tablaTecnicoTexto: {
-    fontSize: tema.fontSize.xs,
-    fontWeight: "600",
-    color: tema.colors.text,
-  },
-  tablaFechaTexto: {
-    fontSize: 11,
-    color: tema.colors.textMuted,
-    marginTop: 2,
-  },
-  tablaElementosTexto: {
-    fontSize: tema.fontSize.xs,
-    color: tema.colors.textSecondary,
-    lineHeight: 18,
-  },
-  tablaComentarioTexto: {
-    fontSize: 11,
-    color: tema.colors.textMuted,
-    fontStyle: "italic",
-    marginTop: 2,
-  },
-  tablaAccionesFila: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
+    marginLeft: 8,
   },
 });

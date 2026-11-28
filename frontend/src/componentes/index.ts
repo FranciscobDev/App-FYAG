@@ -5,3 +5,8 @@ export * from "./retroalimentacion";
 export * from "./superposicion";
 export * from "./dominio";
 export * from "./Insumos";
+export * from "./AsignacionTecnicos";
+export * from "./DistintivoEstadoProyecto";
+export * from "./BandejaOrdenesCompra";
+export * from "./FormularioReporteAvance";
+export * from "./FormularioRegistroMermas";

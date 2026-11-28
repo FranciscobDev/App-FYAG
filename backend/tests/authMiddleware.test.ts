@@ -4,11 +4,20 @@ import bcrypt from 'bcryptjs';
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import pool from '../config/db';
-import { login } from '../controllers/authController';
+import { login, logout, renovarSesion, verificar2faLogin } from '../controllers/authController';
 import { actualizarUsuario, deshabilitarUsuario } from '../controllers/usuarioController';
+import {
+    listarAvancesProyecto,
+    obtenerReporteFinalProyecto,
+    sanitizarProyectoParaRol,
+} from '../controllers/proyectoController';
+import { registrarHorasProyectoEnTransaccion } from '../controllers/motorFinancieroProyectoController';
+import { emitirSolicitudInsumosEnTransaccion } from '../controllers/solicitudController';
 import { verificarAdmin, verificarToken } from '../middleware/authMiddleware';
+import { fijarEnviadorCorreo } from '../services/correo';
+import { hashToken } from '../services/claves';
 
-const JWT_SECRET_PRUEBA = 'auth-middleware-test-secret';
+const JWT_SECRET_PRUEBA = 'auth-middleware-test-secret-with-32-characters';
 const jwtSecretOriginal = process.env.JWT_SECRET;
 const consultaOriginal = pool.query;
 const conexionOriginal = pool.connect;
@@ -165,6 +174,19 @@ test('un token sin claim sid (anterior al modelo de sesiones) es rechazado', asy
 
     assert.equal(captura.obtenerStatus(), 401);
     assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+});
+
+test('JWT_SECRET ausente responde error de configuración del servidor', async () => {
+    delete process.env.JWT_SECRET;
+    const req = { headers: { authorization: 'Bearer token-prueba' } } as Request;
+    const captura = crearCapturaRespuesta();
+
+    await verificarToken(req, captura.respuesta, () => undefined);
+
+    assert.equal(captura.obtenerStatus(), 500);
+    assert.deepEqual(captura.obtenerCuerpo(), {
+        mensaje: 'La autenticación no está configurada correctamente',
+    });
 });
 
 test('[BACK-2] bloquea deshabilitar al único Administrador activo (PATCH /deshabilitar)', async () => {
@@ -338,4 +360,311 @@ test('[BACK-2] una cuenta bloqueada responde 423 aunque la clave sea correcta', 
     assert.equal(captura.obtenerStatus(), 423);
     assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'CUENTA_BLOQUEADA');
     assert.equal(consultasDeClaveEjecutadas, 0, 'no debe contar ni registrar intentos sobre una cuenta bloqueada');
+});
+
+test('un Refresh Token o token 2FA no puede usarse como Access Token en verificarToken', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    const tokenRefresh = jwt.sign({ id: 1, rol: 'Administrador', sid: 'sid-1', tipo: 'refresh' }, JWT_SECRET_PRUEBA);
+
+    const req = { headers: { authorization: `Bearer ${tokenRefresh}` } } as Request;
+    const captura = crearCapturaRespuesta();
+
+    await verificarToken(req, captura.respuesta, () => undefined);
+
+    assert.equal(captura.obtenerStatus(), 401);
+    assert.equal((captura.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+});
+
+test('POST /auth/logout invalida la sesión activa en sesion_usuario y borra el refresh_token_hash', async () => {
+    const sentencias: { sql: string; params: unknown[] }[] = [];
+    pool.query = (async (sql: string, params: unknown[] = []) => {
+        sentencias.push({ sql, params });
+        return { rowCount: 1, rows: [] };
+    }) as unknown as typeof pool.query;
+
+    const req = {
+        usuario: { id: 12, rol: 'Tecnico' },
+        sid: 'sid-a-cerrar',
+    } as unknown as Request;
+    const captura = crearCapturaRespuesta();
+
+    await logout(req, captura.respuesta);
+
+    assert.equal(captura.obtenerStatus(), 200);
+    assert.equal(sentencias.length, 1);
+    assert.ok(sentencias[0].sql.includes('SET revocada = TRUE, refresh_token_hash = NULL'));
+    assert.deepEqual(sentencias[0].params, ['sid-a-cerrar', 12]);
+});
+
+test('POST /auth/refresh rota el Refresh Token, emite nuevo Access Token de 15m y bloquea reutilización', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    const refreshInicial = jwt.sign(
+        { id: 7, rol: 'Bodeguero', sid: 'sid-rotacion', jti: 'jti-1', tipo: 'refresh' },
+        JWT_SECRET_PRUEBA,
+        { expiresIn: '7d' }
+    );
+    let hashActualEnBd = hashToken(refreshInicial);
+    let sesionRevocada = false;
+
+    pool.query = (async (sql: string, params: unknown[] = []) => {
+        if (sql.includes('FROM usuario u')) {
+            return {
+                rows: [
+                    {
+                        id_usuario: 7,
+                        nombre_usuario: 'Roberto',
+                        apellido_usuario: 'Gómez',
+                        correo_usuario: 'rgomez@fyag.cl',
+                        rut: '14.555.666-7',
+                        id_rol: 2,
+                        nombre_rol: 'Bodeguero',
+                        activo: true,
+                        id_sesion: 'sid-rotacion',
+                        revocada: sesionRevocada,
+                        inactiva: false,
+                        refresh_token_hash: hashActualEnBd,
+                        refresh_vencido: false,
+                    },
+                ],
+            };
+        }
+        if (sql.includes('SET refresh_token_hash = $2')) {
+            hashActualEnBd = String(params[1]);
+            return { rowCount: 1, rows: [] };
+        }
+        if (sql.includes('SET revocada = TRUE')) {
+            sesionRevocada = true;
+            return { rowCount: 1, rows: [] };
+        }
+        return { rows: [] };
+    }) as unknown as typeof pool.query;
+
+    // 1. Primera renovación exitosa
+    const req1 = { body: { refresh_token: refreshInicial } } as unknown as Request;
+    const cap1 = crearCapturaRespuesta();
+    await renovarSesion(req1, cap1.respuesta);
+
+    assert.equal(cap1.obtenerStatus(), 200);
+    const cuerpo1 = cap1.obtenerCuerpo() as {
+        token: string;
+        refresh_token: string;
+        expira_en_segundos: number;
+    };
+    assert.equal(cuerpo1.expira_en_segundos, 900); // 15 minutos
+    assert.ok(cuerpo1.token && cuerpo1.refresh_token);
+    assert.notEqual(cuerpo1.refresh_token, refreshInicial);
+
+    // 2. Reutilizar el refresh token antiguo revoca la sesión por seguridad
+    const reqReuso = { body: { refresh_token: refreshInicial } } as unknown as Request;
+    const capReuso = crearCapturaRespuesta();
+    await renovarSesion(reqReuso, capReuso.respuesta);
+
+    assert.equal(capReuso.obtenerStatus(), 401);
+    assert.equal((capReuso.obtenerCuerpo() as { codigo: string }).codigo, 'SESSION_REVOKED');
+    assert.equal(sesionRevocada, true);
+});
+
+test('Login de Administrador con 2FA envía OTP de 6 dígitos por correo y verificar2faLogin entrega los tokens', async () => {
+    process.env.JWT_SECRET = JWT_SECRET_PRUEBA;
+    const clavePlana = 'ClaveAdminSegura123';
+    const hash = await bcrypt.hash(clavePlana, 10);
+    const correos: { para: string; asunto: string; texto: string }[] = [];
+    let desafioGuardado: { id_desafio: string; id_usuario: number; codigo_hash: string; intentos: number } | null = null;
+
+    fijarEnviadorCorreo(async (c) => {
+        correos.push(c);
+    });
+
+    try {
+        pool.query = (async (sql: string, params: unknown[] = []) => {
+            if (sql.includes('LOWER(u.correo_usuario) = LOWER($1)')) {
+                return {
+                    rows: [
+                        {
+                            id_usuario: 1,
+                            nombre_usuario: 'Admin',
+                            apellido_usuario: 'Principal',
+                            correo_usuario: 'admin@fyag.cl',
+                            rut: '11.111.111-1',
+                            id_rol: 1,
+                            nombre_rol: 'Administrador',
+                            activo: true,
+                            contrasena_hash: hash,
+                            bloqueada: false,
+                            requiere_2fa: true,
+                        },
+                    ],
+                };
+            }
+            if (sql.includes('INSERT INTO desafio_2fa_admin')) {
+                desafioGuardado = {
+                    id_desafio: String(params[0]),
+                    id_usuario: Number(params[1]),
+                    codigo_hash: String(params[2]),
+                    intentos: 0,
+                };
+                return { rowCount: 1, rows: [] };
+            }
+            if (sql.includes('FROM desafio_2fa_admin')) {
+                return { rows: desafioGuardado ? [desafioGuardado] : [] };
+            }
+            if (sql.includes('WHERE u.id_usuario = $1 AND u.activo = TRUE')) {
+                return {
+                    rows: [
+                        {
+                            id_usuario: 1,
+                            nombre_usuario: 'Admin',
+                            apellido_usuario: 'Principal',
+                            correo_usuario: 'admin@fyag.cl',
+                            rut: '11.111.111-1',
+                            id_rol: 1,
+                            nombre_rol: 'Administrador',
+                            activo: true,
+                        },
+                    ],
+                };
+            }
+            return { rowCount: 1, rows: [] };
+        }) as unknown as typeof pool.query;
+
+        // Paso 1: Login devuelve desafío 2FA sin entregar token de acceso todavía
+        const reqLogin = {
+            body: { correo_usuario: 'admin@fyag.cl', contrasena: clavePlana },
+        } as unknown as Request<Record<string, string>, unknown, { correo_usuario?: string; contrasena?: string }>;
+        const capLogin = crearCapturaRespuesta();
+        await login(reqLogin, capLogin.respuesta);
+
+        assert.equal(capLogin.obtenerStatus(), 200);
+        const resPaso1 = capLogin.obtenerCuerpo() as {
+            requiere_2fa?: boolean;
+            desafio_token?: string;
+            token?: string;
+        };
+        assert.equal(resPaso1.requiere_2fa, true);
+        assert.equal(resPaso1.token, undefined);
+        assert.ok(resPaso1.desafio_token);
+        assert.equal(correos.length, 1);
+
+        const matchCodigo = correos[0].texto.match(/\b(\d{6})\b/);
+        assert.ok(matchCodigo, 'el correo debe incluir el código OTP de 6 dígitos');
+        const codigoOtp = matchCodigo[1];
+
+        // Paso 2: Código incorrecto responde 401 CODIGO_2FA_INVALIDO
+        const reqMalo = {
+            body: { desafio_token: resPaso1.desafio_token, codigo: codigoOtp === '000000' ? '999999' : '000000' },
+        } as unknown as Request;
+        const capMalo = crearCapturaRespuesta();
+        await verificar2faLogin(reqMalo, capMalo.respuesta);
+        assert.equal(capMalo.obtenerStatus(), 401);
+        assert.equal((capMalo.obtenerCuerpo() as { codigo: string }).codigo, 'CODIGO_2FA_INVALIDO');
+
+        // Paso 3: Código correcto entrega Access Token (15m) y Refresh Token (7d)
+        const reqOk = {
+            body: { desafio_token: resPaso1.desafio_token, codigo: codigoOtp },
+        } as unknown as Request;
+        const capOk = crearCapturaRespuesta();
+        await verificar2faLogin(reqOk, capOk.respuesta);
+
+        assert.equal(capOk.obtenerStatus(), 200);
+        const resPaso2 = capOk.obtenerCuerpo() as {
+            token: string;
+            refresh_token: string;
+            expira_en_segundos: number;
+            usuario: { id_usuario: number };
+        };
+        assert.ok(resPaso2.token);
+        assert.ok(resPaso2.refresh_token);
+        assert.equal(resPaso2.expira_en_segundos, 900);
+        assert.equal(resPaso2.usuario.id_usuario, 1);
+    } finally {
+        fijarEnviadorCorreo(undefined);
+    }
+});
+
+test('Principio de mínimo privilegio: sanitizarProyectoParaRol oculta montos financieros al Técnico y los conserva para Admin', () => {
+    const proyectoCompleto = {
+        id_proyecto: 15,
+        nombre_proyecto: 'Climatización Clínica',
+        estado_proyecto: 'En Proceso',
+        presupuesto_inicial: 5_000_000,
+        presupuesto_materiales: 3_500_000,
+        valor_venta: 8_000_000,
+        costo_real_acumulado: 2_100_000,
+        margen_estimado: 5_900_000,
+        semaforo_financiero: 'verde',
+    };
+
+    const vistaTecnico = sanitizarProyectoParaRol(proyectoCompleto, true);
+    assert.equal(vistaTecnico.id_proyecto, 15);
+    assert.equal(vistaTecnico.nombre_proyecto, 'Climatización Clínica');
+    assert.equal('valor_venta' in vistaTecnico, false);
+    assert.equal('presupuesto_inicial' in vistaTecnico, false);
+    assert.equal('costo_real_acumulado' in vistaTecnico, false);
+    assert.equal('margen_estimado' in vistaTecnico, false);
+
+    const vistaAdmin = sanitizarProyectoParaRol(proyectoCompleto, false);
+    assert.equal(vistaAdmin.valor_venta, 8_000_000);
+    assert.equal(vistaAdmin.margen_estimado, 5_900_000);
+});
+
+test('Anti-IDOR: Técnico no asignado al proyecto #16 recibe 403 al consultar avances, reporte final, registrar horas o emitir solicitud', async () => {
+    // Cliente simulado donde el proyecto 16 existe y está activo, pero el técnico #99 NO está asignado
+    const clienteMock: any = {
+        query: async (sql: string) => {
+            if (sql.includes('idor:verificar-asignacion-proyecto')) {
+                return { rows: [] }; // No asignado
+            }
+            if (sql.includes('FROM proyecto')) {
+                return {
+                    rows: [
+                        {
+                            id_proyecto: 16,
+                            nombre_proyecto: 'Proyecto Ajeno',
+                            estado_proyecto: 'En Proceso',
+                        },
+                    ],
+                };
+            }
+            return { rows: [] };
+        },
+    };
+    pool.query = clienteMock.query;
+
+    // 1. GET /proyectos/16/avances -> 403
+    const reqAvances = {
+        params: { id: '16' },
+        usuario: { id: 99, rol: 'Tecnico' },
+    } as unknown as Request<{ id: string }>;
+    const capAvances = crearCapturaRespuesta();
+    await listarAvancesProyecto(reqAvances, capAvances.respuesta);
+    assert.equal(capAvances.obtenerStatus(), 403);
+
+    // 2. GET /proyectos/16/reporte-final -> 403
+    const capReporte = crearCapturaRespuesta();
+    await obtenerReporteFinalProyecto(reqAvances, capReporte.respuesta);
+    assert.equal(capReporte.obtenerStatus(), 403);
+
+    // 3. POST /proyectos/16/horas (proyecto no asignado) -> 403
+    await assert.rejects(
+        () => registrarHorasProyectoEnTransaccion(clienteMock, 16, { horas: 4 }, 99, 'Tecnico'),
+        (e: any) => e.estado === 403 && /no estás asignado/.test(e.message)
+    );
+
+    // 4. POST /proyectos/16/horas intentando suplantar a otro técnico (tecnico_id: 50) -> 403
+    await assert.rejects(
+        () => registrarHorasProyectoEnTransaccion(clienteMock, 16, { horas: 4, tecnico_id: 50 }, 99, 'Tecnico'),
+        (e: any) => e.estado === 403 && /otro técnico/.test(e.message)
+    );
+
+    // 5. POST /solicitudes sobre proyecto no asignado -> 403
+    await assert.rejects(
+        () =>
+            emitirSolicitudInsumosEnTransaccion(clienteMock, {
+                id_proyecto: 16,
+                id_usuario: 99,
+                rol_ejecutor: 'Tecnico',
+                items: [{ id_articulo: 1, cantidad: 2 }],
+            }),
+        (e: any) => e.estado === 403 && /no estás asignado/.test(e.message)
+    );
 });

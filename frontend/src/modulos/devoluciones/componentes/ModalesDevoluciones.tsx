@@ -95,276 +95,527 @@ export const ModalesDevoluciones: React.FC<PropiedadesModalesDevoluciones> = ({
   return (
     <>
       {/* ========================================================================= */}
-      {/* MODAL 1: BODEGA - CONFIRMAR CANTIDAD REAL FÍSICA                          */}
+      {/* MODAL 1: BODEGA - CONFIRMAR CANTIDAD REAL FÍSICA RECIBIDA                 */}
       {/* ========================================================================= */}
       <VistaModal
         visible={Boolean(confirmarDevolucionModal)}
         onClose={() => establecerConfirmarDevolucionModal(null)}
-        title="Confirmar Cantidad Física en Bodega"
-        subtitle={confirmarDevolucionModal ? `${confirmarDevolucionModal.code} • ${confirmarDevolucionModal.technicianName}` : ""}
+        title="Confirmar Cantidad Real Recibida"
+        subtitle={
+          confirmarDevolucionModal
+            ? `${confirmarDevolucionModal.code} • ${confirmarDevolucionModal.projectCode} • ${confirmarDevolucionModal.technicianName}`
+            : ""
+        }
+        maxWidth={560}
       >
-        <Text style={estilos.modalInstruction}>
-          Realice el conteo físico de los insumos recepcionados. Si la cantidad difiere de lo declarado por el técnico, el sistema emitirá una alerta y registrará la nota de discrepancia:
-        </Text>
-
-        {confirmarDevolucionModal?.items?.map((it: any) => {
-          const verificado = verificadoLista.find((v: any) => v.sku === it.sku);
-          const actualRealValor = verificado?.quantityReceivedReal ?? it.quantityReturned;
-          const tieneDiferencia = actualRealValor !== it.quantityReturned;
+        {(() => {
+          const itemsModal = confirmarDevolucionModal?.items || [];
+          const totalDeclarado = itemsModal.reduce(
+            (acc: number, it: any) => acc + Number(it.quantityReturned || 0),
+            0
+          );
+          const totalReal = itemsModal.reduce((acc: number, it: any) => {
+            const verif = verificadoLista.find((v: any) => v.sku === it.sku);
+            return acc + Number(verif?.quantityReceivedReal ?? it.quantityReturned ?? 0);
+          }, 0);
+          const hayDiscrepancia = itemsModal.some((it: any) => {
+            const verif = verificadoLista.find((v: any) => v.sku === it.sku);
+            const realVal = verif?.quantityReceivedReal ?? it.quantityReturned;
+            return Number(realVal) !== Number(it.quantityReturned);
+          });
+          const faltaJustificacion = hayDiscrepancia && !String(discrepancyNota || "").trim();
 
           return (
-            <View key={it.sku} style={[estilos.verificarElementoTarjeta, tieneDiferencia && estilos.verificarElementoTarjetaDiferencia]}>
-              <View style={estilos.verificarElementoSuperior}>
-                <View style={{ flex: 1 }}>
-                  <Text style={estilos.verificarElementoTitulo}>{it.name}</Text>
-                  <Text style={estilos.verificarElementoEsperado}>
-                    Declarado por técnico en terreno: <Text style={{ fontWeight: "bold" }}>{it.quantityReturned} {it.unit}</Text>
+            <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator={false}>
+              <Text style={estilos.modalInstruction}>
+                Verifica físicamente cada insumo retornado de obra. Al confirmar, el estado cambia a{" "}
+                <Text style={{ fontWeight: "bold" }}>Recibida</Text>, reingresa al stock/Cardex y se
+                refleja en el móvil del técnico.
+              </Text>
+
+              {/* Resumen comparativo en vivo */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginBottom: 12,
+                }}
+              >
+                <View
+                  style={{
+                    flex: 1,
+                    minWidth: 130,
+                    backgroundColor: tema.colors.surface,
+                    borderWidth: 1,
+                    borderColor: tema.colors.border,
+                    borderRadius: tema.radius.sm,
+                    padding: 10,
+                  }}
+                >
+                  <Text style={{ fontSize: 10, color: tema.colors.textMuted, fontWeight: "600" }}>
+                    TOTAL DECLARADO
+                  </Text>
+                  <Text style={{ fontSize: 16, fontWeight: "bold", color: tema.colors.text, marginTop: 2 }}>
+                    {totalDeclarado} un.
                   </Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => manejarEstablecerExactCoincidencia(it.sku, it.quantityReturned)}
-                  style={estilos.coincidenciaBoton}
+
+                <View
+                  style={{
+                    flex: 1,
+                    minWidth: 130,
+                    backgroundColor: hayDiscrepancia ? tema.colors.warnLight : tema.colors.okLight,
+                    borderWidth: 1,
+                    borderColor: hayDiscrepancia ? tema.colors.warnBorder : "#bbf7d0",
+                    borderRadius: tema.radius.sm,
+                    padding: 10,
+                  }}
                 >
-                  <Text style={estilos.coincidenciaBotonTexto}>Coincide ({it.quantityReturned})</Text>
-                </TouchableOpacity>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: hayDiscrepancia ? tema.colors.warnDark : tema.colors.okDark,
+                      fontWeight: "600",
+                    }}
+                  >
+                    REAL A REINGRESAR
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: "bold",
+                      color: hayDiscrepancia ? tema.colors.warnDark : tema.colors.okDark,
+                      marginTop: 2,
+                    }}
+                  >
+                    {totalReal} un.
+                  </Text>
+                </View>
               </View>
 
-              <View style={estilos.verificarEntradaFila}>
-                <Text style={estilos.verificarEntradaEtiqueta}>Cantidad Física Real Recibida:</Text>
-                <TextInput
-                  value={String(actualRealValor)}
-                  onChangeText={(v: any) => {
-                    const numero = Number(v) || 0;
-                    establecerVerificadoLista((prev: any) =>
-                      prev.map((x: any) => (x.sku === it.sku ? { ...x, quantityReceivedReal: numero } : x))
-                    );
+              {itemsModal.map((it: any) => {
+                const verificado = verificadoLista.find((v: any) => v.sku === it.sku);
+                const actualRealValor = verificado?.quantityReceivedReal ?? it.quantityReturned;
+                const tieneDiferencia = Number(actualRealValor) !== Number(it.quantityReturned);
+
+                const actualizarValorReal = (nuevoValor: number) => {
+                  const seguro = Math.max(0, Number(nuevoValor.toFixed(3)));
+                  establecerVerificadoLista((prev: any) =>
+                    prev.map((x: any) =>
+                      x.sku === it.sku ? { ...x, quantityReceivedReal: seguro } : x
+                    )
+                  );
+                };
+
+                return (
+                  <View
+                    key={it.sku}
+                    style={[
+                      estilos.verificarElementoTarjeta,
+                      tieneDiferencia && estilos.verificarElementoTarjetaDiferencia,
+                    ]}
+                  >
+                    <View style={[estilos.verificarElementoSuperior, { flexWrap: "wrap", gap: 8 }]}>
+                      <View style={{ flex: 1, minWidth: 160 }}>
+                        <Text style={estilos.verificarElementoTitulo}>{it.name}</Text>
+                        <Text style={estilos.verificarElementoEsperado}>
+                          SKU: {it.sku} • Declarado:{" "}
+                          <Text style={{ fontWeight: "bold" }}>
+                            {it.quantityReturned} {it.unit}
+                          </Text>
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => manejarEstablecerExactCoincidencia(it.sku, it.quantityReturned)}
+                        style={estilos.coincidenciaBoton}
+                      >
+                        <Text style={estilos.coincidenciaBotonTexto}>
+                          Coincide ({it.quantityReturned})
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View
+                      style={[
+                        estilos.verificarEntradaFila,
+                        { flexWrap: "wrap", gap: 8, marginTop: 8 },
+                      ]}
+                    >
+                      <Text style={estilos.verificarEntradaEtiqueta}>
+                        Cantidad Real Recibida ({it.unit}):
+                      </Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <TouchableOpacity
+                          onPress={() => actualizarValorReal(Number(actualRealValor) - 1)}
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: tema.radius.sm,
+                            borderWidth: 1,
+                            borderColor: tema.colors.borderDark,
+                            backgroundColor: tema.colors.card,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Ionicons name="remove" size={16} color={tema.colors.text} />
+                        </TouchableOpacity>
+
+                        <TextInput
+                          value={String(actualRealValor)}
+                          onChangeText={(v: string) => {
+                            const limpio = v.replace(/[^0-9.]/g, "");
+                            const numero = limpio === "" ? 0 : Number(limpio);
+                            actualizarValorReal(Number.isFinite(numero) ? numero : 0);
+                          }}
+                          keyboardType="numeric"
+                          style={[
+                            estilos.verificarTextoEntrada,
+                            { minWidth: 64, textAlign: "center" },
+                            tieneDiferencia && {
+                              borderColor: tema.colors.warn,
+                              backgroundColor: tema.colors.warnLight,
+                            },
+                          ]}
+                        />
+
+                        <TouchableOpacity
+                          onPress={() => actualizarValorReal(Number(actualRealValor) + 1)}
+                          style={{
+                            width: 34,
+                            height: 34,
+                            borderRadius: tema.radius.sm,
+                            borderWidth: 1,
+                            borderColor: tema.colors.borderDark,
+                            backgroundColor: tema.colors.card,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Ionicons name="add" size={16} color={tema.colors.text} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+
+                    {tieneDiferencia && (
+                      <View style={estilos.diferenciaAdvertenciaCaja}>
+                        <Ionicons
+                          name="warning"
+                          size={16}
+                          color={tema.colors.warnDark}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={estilos.diferenciaAdvertencia}>
+                          Discrepancia detectada: técnico declaró {it.quantityReturned} {it.unit},
+                          recibido físico {actualRealValor} {it.unit} (
+                          {actualRealValor - it.quantityReturned > 0
+                            ? `+${Number((actualRealValor - it.quantityReturned).toFixed(3))}`
+                            : Number((actualRealValor - it.quantityReturned).toFixed(3))}{" "}
+                          {it.unit}).
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+
+              <CampoTexto
+                label={
+                  hayDiscrepancia
+                    ? "Justificación obligatoria de la discrepancia *"
+                    : "Observación de recepción (opcional)"
+                }
+                value={discrepancyNota}
+                onChangeText={establecerDiscrepancyNota}
+                placeholder="Ej: Faltaron 2 metros por merma en corte de terreno..."
+              />
+
+              {faltaJustificacion && (
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: tema.colors.danger,
+                    fontWeight: "600",
+                    marginBottom: 8,
                   }}
-                  keyboardType="numeric"
-                  style={[
-                    estilos.verificarTextoEntrada,
-                    tieneDiferencia && { borderColor: tema.colors.warn, backgroundColor: tema.colors.warnLight },
-                  ]}
+                >
+                  Debe indicar el motivo de la diferencia antes de confirmar el ingreso.
+                </Text>
+              )}
+
+              <View
+                style={[
+                  estilos.modalBotonesFila,
+                  { flexWrap: "wrap", gap: 10, marginTop: 12 },
+                ]}
+              >
+                <Boton
+                  title="Cancelar"
+                  variant="ghost"
+                  onPress={() => establecerConfirmarDevolucionModal(null)}
+                  style={{ flex: 1, minWidth: 110, minHeight: 44 }}
+                />
+                <Boton
+                  title="Confirmar Ingreso (Recibida)"
+                  variant="success"
+                  icon="checkmark-done-outline"
+                  disabled={faltaJustificacion}
+                  onPress={manejarConfirmarBodegaRecepcion}
+                  style={{ flex: 1.6, minWidth: 180, minHeight: 46 }}
                 />
               </View>
-
-              {/* Advertencia obligatoria si difiere */}
-              {tieneDiferencia && (
-                <View style={estilos.diferenciaAdvertenciaCaja}>
-                  <Ionicons name="warning" size={16} color={tema.colors.warnDark} style={{ marginRight: 6 }} />
-                  <Text style={estilos.diferenciaAdvertencia}>
-                    ⚠️ ¡Discrepancia detectada! El técnico declaró {it.quantityReturned} {it.unit}, pero se están recibiendo {actualRealValor} {it.unit}. (Diferencia: {actualRealValor - it.quantityReturned > 0 ? `+${actualRealValor - it.quantityReturned}` : actualRealValor - it.quantityReturned} {it.unit}).
-                  </Text>
-                </View>
-              )}
-            </View>
+            </ScrollView>
           );
-        })}
-
-        <CampoTexto
-          label="Observación o justificación de la discrepancia"
-          value={discrepancyNota}
-          onChangeText={establecerDiscrepancyNota}
-          placeholder="Ej: Faltaron 2 metros por merma en corte de terreno..."
-        />
-
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerConfirmarDevolucionModal(null)}
-            style={{ marginRight: 8, flex: 1 }}
-          />
-          <Boton
-            title="Confirmar e Ingresar a Stock"
-            variant="success"
-            onPress={manejarConfirmarBodegaRecepcion}
-            style={{ flex: 2, height: 46 }}
-          />
-        </View>
+        })()}
       </VistaModal>
 
       {/* ========================================================================= */}
-      {/* MODAL 2: NUEVA DEVOLUCIÓN A PROVEEDOR (DEFECTUOSOS)                       */}
+      {/* MODAL 2: BODEGUERO - EMITIR DEVOLUCIÓN A PROVEEDOR CON GUÍA               */}
       {/* ========================================================================= */}
       <VistaModal
         visible={nuevoProveedorDevolucionModal}
         onClose={() => establecerNuevoProveedorDevolucionModal(false)}
-        title="Devolver Insumo a Proveedor"
-        subtitle="Egreso de insumo defectuoso desde cuarentena con Guía de Despacho"
+        title="Emitir Devolución a Proveedor con Guía"
+        subtitle="Despacho de insumo defectuoso desde cuarentena • Estado inicial: Pendiente de resolución"
+        maxWidth={560}
       >
-        <Text style={estilos.campoEtiqueta}>1. Proveedor Destino:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-          {proveedores.map((s: any) => (
-            <TouchableOpacity
-              key={s.id}
-              onPress={() => establecerSupRetProveedorId(s.id)}
-              style={[
-                estilos.chipBoton,
-                supRetProveedorId === s.id && estilos.chipBotonActivo,
-              ]}
-            >
-              <Text style={[estilos.chipTexto, supRetProveedorId === s.id && estilos.chipTextoActivo]}>
-                {s.businessName} ({s.rut})
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={estilos.campoEtiqueta}>2. Insumo Defectuoso (en Cuarentena):</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
-          {cuarentenaProductos.length === 0 ? (
-            <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
-              <Text style={{ fontSize: 12, color: tema.colors.textMuted }}>
-                No hay insumos registrados en cuarentena actualmente.
-              </Text>
-            </View>
-          ) : (
-            cuarentenaProductos.map((p: any) => (
+        <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator={false}>
+          <Text style={estilos.campoEtiqueta}>1. Proveedor Destino:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
+            {proveedores.map((s: any) => (
               <TouchableOpacity
-                key={p.sku}
-                onPress={() => establecerSupRetSku(p.sku)}
+                key={s.id}
+                onPress={() => establecerSupRetProveedorId(s.id)}
                 style={[
                   estilos.chipBoton,
-                  supRetSku === p.sku && estilos.chipBotonActivo,
+                  supRetProveedorId === s.id && estilos.chipBotonActivo,
                 ]}
               >
-                <Text style={[estilos.chipTexto, supRetSku === p.sku && estilos.chipTextoActivo]}>
-                  {p.name} ({p.quarantine} {p.unit} en cuarentena)
+                <Text
+                  style={[
+                    estilos.chipTexto,
+                    supRetProveedorId === s.id && estilos.chipTextoActivo,
+                  ]}
+                >
+                  {s.businessName} ({s.rut})
                 </Text>
               </TouchableOpacity>
-            ))
-          )}
+            ))}
+          </ScrollView>
+
+          <Text style={estilos.campoEtiqueta}>2. Insumo Defectuoso (en Cuarentena):</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.chipsScroll}>
+            {cuarentenaProductos.length === 0 ? (
+              <View style={{ paddingVertical: 8, paddingHorizontal: 12 }}>
+                <Text style={{ fontSize: 12, color: tema.colors.textMuted }}>
+                  No hay insumos registrados en cuarentena actualmente.
+                </Text>
+              </View>
+            ) : (
+              cuarentenaProductos.map((p: any) => (
+                <TouchableOpacity
+                  key={p.sku}
+                  onPress={() => {
+                    establecerSupRetSku(p.sku);
+                    establecerSupRetCantidad(String(Math.min(Number(supRetCantidad) || 1, p.quarantine || 1)));
+                  }}
+                  style={[
+                    estilos.chipBoton,
+                    supRetSku === p.sku && estilos.chipBotonActivo,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      estilos.chipTexto,
+                      supRetSku === p.sku && estilos.chipTextoActivo,
+                    ]}
+                  >
+                    {p.name} ({p.quarantine} {p.unit} en cuarentena)
+                  </Text>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+
+          <CampoTexto
+            label="3. Cantidad a Devolver"
+            value={supRetCantidad}
+            onChangeText={establecerSupRetCantidad}
+            keyboardType="numeric"
+          />
+
+          <CampoTexto
+            label="4. N° de Guía de Despacho de Salida *"
+            value={supRetGuia}
+            onChangeText={establecerSupRetGuia}
+            placeholder="Ej: GD-2026-905"
+          />
+
+          <CampoTexto
+            label="5. Motivo Detallado del Defecto / Falla *"
+            value={supRetMotivo}
+            onChangeText={establecerSupRetMotivo}
+            placeholder="Ej: Aislación deficiente, microfuga o daño de empaque..."
+            multiline
+            numberOfLines={2}
+          />
+
+          {Boolean(supRetError) && <Text style={estilos.errorTexto}>{supRetError}</Text>}
+
+          <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 10, marginTop: 12 }]}>
+            <Boton
+              title="Cancelar"
+              variant="ghost"
+              onPress={() => establecerNuevoProveedorDevolucionModal(false)}
+              style={{ flex: 1, minWidth: 110, minHeight: 44 }}
+            />
+            <Boton
+              title="Emitir Devolución con Guía"
+              variant="danger"
+              icon="document-text-outline"
+              onPress={manejarGuardarProveedorDevolucion}
+              style={{ flex: 1.6, minWidth: 170, minHeight: 46 }}
+            />
+          </View>
         </ScrollView>
-
-        <CampoTexto
-          label="Cantidad a Devolver"
-          value={supRetCantidad}
-          onChangeText={establecerSupRetCantidad}
-          keyboardType="numeric"
-        />
-
-        <CampoTexto
-          label="N° de Guía de Despacho de Salida"
-          value={supRetGuia}
-          onChangeText={establecerSupRetGuia}
-          placeholder="Ej: GD-2026-905"
-        />
-
-        <CampoTexto
-          label="Motivo Detallado del Defecto / Falla"
-          value={supRetMotivo}
-          onChangeText={establecerSupRetMotivo}
-          placeholder="Ej: Aislación deficiente, microfuga o daño de empaque..."
-        />
-
-        {Boolean(supRetError) && <Text style={estilos.errorTexto}>{supRetError}</Text>}
-
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerNuevoProveedorDevolucionModal(false)}
-            style={{ marginRight: 8, flex: 1 }}
-          />
-          <Boton
-            title="Generar Devolución"
-            variant="danger"
-            onPress={manejarGuardarProveedorDevolucion}
-            style={{ flex: 2, height: 46 }}
-          />
-        </View>
       </VistaModal>
 
       {/* ========================================================================= */}
-      {/* MODAL 3: RESOLVER DEVOLUCIÓN DE PROVEEDOR                                 */}
+      {/* MODAL 3: ADMINISTRADOR - CIERRE ADMINISTRATIVO DE DEVOLUCIÓN              */}
       {/* ========================================================================= */}
       <VistaModal
         visible={Boolean(resolverDevolucionModal)}
         onClose={() => establecerResolverDevolucionModal(null)}
-        title="Resolver Devolución a Proveedor"
-        subtitle={resolverDevolucionModal ? `${resolverDevolucionModal.code} • ${resolverDevolucionModal.supplierName}` : ""}
+        title="Cierre Administrativo de Devolución"
+        subtitle={
+          resolverDevolucionModal
+            ? `${resolverDevolucionModal.code} • ${resolverDevolucionModal.supplierName} • Guía ${resolverDevolucionModal.dispatchGuideNumber}`
+            : ""
+        }
+        maxWidth={560}
       >
-        <Text style={estilos.modalInstruction}>
-          Seleccione la vía formal acordada con el proveedor para cerrar esta devolución:
-        </Text>
+        <ScrollView style={{ maxHeight: 500 }} showsVerticalScrollIndicator={false}>
+          <Text style={estilos.modalInstruction}>
+            Selecciona la vía formal de cierre acordada con el proveedor para cambiar el estado de{" "}
+            <Text style={{ fontWeight: "bold" }}>Pendiente de resolución</Text> a{" "}
+            <Text style={{ fontWeight: "bold" }}>Resuelta</Text>:
+          </Text>
 
-        <View style={estilos.resolutionOpcionesGrilla}>
-          <TouchableOpacity
-            onPress={() => establecerResolverTipo("nota_credito")}
-            style={[
-              estilos.resolutionOpcionTarjeta,
-              resolverTipo === "nota_credito" && estilos.resolutionOpcionActivo,
-            ]}
-          >
-            <Ionicons
-              name="document-text-outline"
-              size={24}
-              color={resolverTipo === "nota_credito" ? tema.colors.primary : tema.colors.textMuted}
-            />
-            <Text style={[estilos.resolutionOpcionTitulo, resolverTipo === "nota_credito" && estilos.resolutionOpcionTituloActivo]}>
-              Nota de Crédito
-            </Text>
-            <Text style={estilos.resolutionOpcionDescripcion}>Ajuste contable en cuenta corriente</Text>
-          </TouchableOpacity>
+          <View style={[estilos.resolutionOpcionesGrilla, { flexWrap: "wrap", gap: 8 }]}>
+            <TouchableOpacity
+              onPress={() => establecerResolverTipo("nota_credito")}
+              style={[
+                estilos.resolutionOpcionTarjeta,
+                { minWidth: 130 },
+                resolverTipo === "nota_credito" && estilos.resolutionOpcionActivo,
+              ]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={24}
+                color={resolverTipo === "nota_credito" ? tema.colors.primary : tema.colors.textMuted}
+              />
+              <Text
+                style={[
+                  estilos.resolutionOpcionTitulo,
+                  resolverTipo === "nota_credito" && estilos.resolutionOpcionTituloActivo,
+                ]}
+              >
+                Nota de Crédito
+              </Text>
+              <Text style={estilos.resolutionOpcionDescripcion}>
+                Ajuste contable en cuenta corriente
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => establecerResolverTipo("reemplazo_producto")}
-            style={[
-              estilos.resolutionOpcionTarjeta,
-              resolverTipo === "reemplazo_producto" && estilos.resolutionOpcionActivo,
-            ]}
-          >
-            <Ionicons
-              name="repeat-outline"
-              size={24}
-              color={resolverTipo === "reemplazo_producto" ? tema.colors.ok : tema.colors.textMuted}
-            />
-            <Text style={[estilos.resolutionOpcionTitulo, resolverTipo === "reemplazo_producto" && estilos.resolutionOpcionTituloActivo]}>
-              Reemplazo
-            </Text>
-            <Text style={estilos.resolutionOpcionDescripcion}>Entrega de producto nuevo conforme</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => establecerResolverTipo("reemplazo_producto")}
+              style={[
+                estilos.resolutionOpcionTarjeta,
+                { minWidth: 130 },
+                resolverTipo === "reemplazo_producto" && estilos.resolutionOpcionActivo,
+              ]}
+            >
+              <Ionicons
+                name="repeat-outline"
+                size={24}
+                color={
+                  resolverTipo === "reemplazo_producto" ? tema.colors.ok : tema.colors.textMuted
+                }
+              />
+              <Text
+                style={[
+                  estilos.resolutionOpcionTitulo,
+                  resolverTipo === "reemplazo_producto" && estilos.resolutionOpcionTituloActivo,
+                ]}
+              >
+                Reposición
+              </Text>
+              <Text style={estilos.resolutionOpcionDescripcion}>
+                Reingresa stock nuevo al Cardex
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => establecerResolverTipo("reembolso")}
-            style={[
-              estilos.resolutionOpcionTarjeta,
-              resolverTipo === "reembolso" && estilos.resolutionOpcionActivo,
-            ]}
-          >
-            <Ionicons
-              name="cash-outline"
-              size={24}
-              color={resolverTipo === "reembolso" ? tema.colors.info : tema.colors.textMuted}
-            />
-            <Text style={[estilos.resolutionOpcionTitulo, resolverTipo === "reemplazo_producto" && estilos.resolutionOpcionTituloActivo]}>
-              Reembolso
-            </Text>
-            <Text style={estilos.resolutionOpcionDescripcion}>Devolución de fondos bancarios</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              onPress={() => establecerResolverTipo("reembolso")}
+              style={[
+                estilos.resolutionOpcionTarjeta,
+                { minWidth: 130 },
+                resolverTipo === "reembolso" && estilos.resolutionOpcionActivo,
+              ]}
+            >
+              <Ionicons
+                name="cash-outline"
+                size={24}
+                color={resolverTipo === "reembolso" ? tema.colors.info : tema.colors.textMuted}
+              />
+              <Text
+                style={[
+                  estilos.resolutionOpcionTitulo,
+                  resolverTipo === "reembolso" && estilos.resolutionOpcionTituloActivo,
+                ]}
+              >
+                Reembolso
+              </Text>
+              <Text style={estilos.resolutionOpcionDescripcion}>
+                Devolución de fondos bancarios
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-        <CampoTexto
-          label="N° de Documento y Notas de Respaldo"
-          value={resolverNotas}
-          onChangeText={establecerResolverNotas}
-          placeholder="Ej: Nota de Crédito N° 4519 recibida y conciliada..."
-        />
-
-        <View style={estilos.modalBotonesFila}>
-          <Boton
-            title="Cancelar"
-            variant="ghost"
-            onPress={() => establecerResolverDevolucionModal(null)}
-            style={{ marginRight: 8, flex: 1 }}
+          <CampoTexto
+            label="N° de Documento (NC / Guía Reposición) y Notas de Cierre *"
+            value={resolverNotas}
+            onChangeText={establecerResolverNotas}
+            placeholder={
+              resolverTipo === "nota_credito"
+                ? "Ej: Nota de Crédito N° 4519 recibida y conciliada en contabilidad..."
+                : resolverTipo === "reemplazo_producto"
+                ? "Ej: Reposición conforme recibida en bodega bajo Guía N° 8842..."
+                : "Ej: Transferencia de reembolso confirmada en cartola bancaria..."
+            }
+            multiline
+            numberOfLines={2}
           />
-          <Boton
-            title="Confirmar Resolución"
-            variant="success"
-            onPress={manejarConfirmarResolution}
-            style={{ flex: 2, height: 46 }}
-          />
-        </View>
+
+          <View style={[estilos.modalBotonesFila, { flexWrap: "wrap", gap: 10, marginTop: 12 }]}>
+            <Boton
+              title="Cancelar"
+              variant="ghost"
+              onPress={() => establecerResolverDevolucionModal(null)}
+              style={{ flex: 1, minWidth: 110, minHeight: 44 }}
+            />
+            <Boton
+              title="Marcar como Resuelta"
+              variant="success"
+              icon="checkmark-done-outline"
+              disabled={!String(resolverNotas || "").trim()}
+              onPress={manejarConfirmarResolution}
+              style={{ flex: 1.6, minWidth: 170, minHeight: 46 }}
+            />
+          </View>
+        </ScrollView>
       </VistaModal>
     </>
   );

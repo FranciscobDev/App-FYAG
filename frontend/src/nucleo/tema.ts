@@ -1,10 +1,10 @@
 import { Platform } from "react-native";
 
 /**
- * FYAG MULTISYSTEM - PALETA INDUSTRIAL AMBER & DARK TITANIUM
+ * FYAG MULTISYSTEM - PALETA CORPORATE INDIGO & COOL SLATE
  *
  * Fuente única de verdad para tokens de diseño:
- * - Paleta Industrial de Alta Precisión: Ámbar Industrial 600 (#d97706), Titanio/Carbón (#1c1917) y Blanco Hueso (#fafaf9).
+ * - Paleta Corporativa: Índigo 600 (#4f46e5), Índigo Noche (#1e1b4b) y Gris Perla (#f8fafc). Ámbar reservado a advertencias.
  * - Cero azules y morados genéricos: Estética técnica de faena, maquinaria e ingeniería de precisión.
  * - Tipografía de Alta Legibilidad: Escala (11, 12, 14, 16, 20, 24, 32) con pesos 400, 500, 600 y 700.
  * - Espaciados en múltiplos de 4 y 8 px.
@@ -14,28 +14,28 @@ import { Platform } from "react-native";
 export const tema = {
   colors: {
     // 1. Primario: Ámbar Industrial (Visibilidad, precisión y energía de obra)
-    primary: "#d97706",       // Amber 600 principal
-    primaryDark: "#b45309",   // Amber 700 para contraste sobre fondo claro (>4.5:1)
-    primaryDeep: "#78350f",   // Amber 900
-    primaryLight: "#fef3c7",  // Amber 100 para fondos suaves de badges y alertas
-    primaryBorder: "#fde68a", // Amber 200 para bordes de acento
-    accent: "#f59e0b",        // Amber 500 vivo para cronómetros e indicadores activos
+    primary: "#4f46e5",       // Amber 600 principal
+    primaryDark: "#4338ca",   // Amber 700 para contraste sobre fondo claro (>4.5:1)
+    primaryDeep: "#312e81",   // Amber 900
+    primaryLight: "#eef2ff",  // Amber 100 para fondos suaves de badges y alertas
+    primaryBorder: "#c7d2fe", // Amber 200 para bordes de acento
+    accent: "#818cf8",        // Amber 500 vivo para cronómetros e indicadores activos
 
     // 2. Neutros: Stone / Titanio y Blanco Hueso Técnico (Sin brillo clínico azulado)
-    background: "#fafaf9",    // Stone 50 (Blanco Hueso cálido técnico)
+    background: "#f8fafc",    // Stone 50 (Blanco Hueso cálido técnico)
     card: "#ffffff",          // Blanco puro para tarjetas
     surface: "#ffffff",       // Blanco de superficie
-    surfaceAlt: "#f5f5f4",    // Stone 100 suave
-    border: "#e7e5e4",        // Stone 200 fino (1px)
-    borderLight: "#f5f5f4",   // Stone 100 ultraligero
-    borderDark: "#d6d3d1",    // Stone 300
-    borderFocus: "#d97706",   // Foco accesible ámbar industrial
+    surfaceAlt: "#f1f5f9",    // Stone 100 suave
+    border: "#e2e8f0",        // Stone 200 fino (1px)
+    borderLight: "#f1f5f9",   // Stone 100 ultraligero
+    borderDark: "#cbd5e1",    // Stone 300
+    borderFocus: "#4f46e5",   // Foco accesible ámbar industrial
 
     // Tipografía con contraste AA > 4.5:1
-    text: "#1c1917",          // Stone 900 (Carbón cálido profundo, contraste 16.5:1)
-    textSecondary: "#44403c", // Stone 700 (Contraste 8.5:1)
-    textMuted: "#78716c",     // Stone 500 (Contraste 4.6:1)
-    textLight: "#a8a29e",     // Stone 400 (Placeholder / Deshabilitado)
+    text: "#0f172a",          // Stone 900 (Carbón cálido profundo, contraste 16.5:1)
+    textSecondary: "#334155", // Stone 700 (Contraste 8.5:1)
+    textMuted: "#64748b",     // Stone 500 (Contraste 4.6:1)
+    textLight: "#94a3b8",     // Stone 400 (Placeholder / Deshabilitado)
     textInverse: "#ffffff",   // Blanco sobre fondos oscuros
 
     // 3. Estados Semánticos Armonizados (Sin azules ni morados)
@@ -58,28 +58,28 @@ export const tema = {
     dangerBorder: "#fecaca",  // Red 200 fino
 
     // Carbón Titanio (En tránsito / Movimiento de insumos)
-    transit: "#292524",       // Stone 800
-    transitDark: "#1c1917",   // Stone 900
-    transitLight: "#f5f5f4",  // Stone 100 suave
-    transitBorder: "#e7e5e4", // Stone 200 fino
+    transit: "#334155",       // Stone 800
+    transitDark: "#0f172a",   // Stone 900
+    transitLight: "#f1f5f9",  // Stone 100 suave
+    transitBorder: "#e2e8f0", // Stone 200 fino
 
     // Planificado / Asignada: Ámbar Industrial Cálido
-    celeste: "#d97706",       // Amber 600
-    celesteDark: "#b45309",   // Amber 700
-    celesteLight: "#fef3c7",  // Amber 100 suave
-    celesteBorder: "#fde68a", // Amber 200 fino
+    celeste: "#4f46e5",       // Amber 600
+    celesteDark: "#4338ca",   // Amber 700
+    celesteLight: "#eef2ff",  // Amber 100 suave
+    celesteBorder: "#c7d2fe", // Amber 200 fino
 
     // Gris Mineral (Cerrado, Anulada, Borrador, Dada de baja)
-    mute: "#57534e",          // Stone 600
-    muteDark: "#44403c",      // Stone 700
-    muteLight: "#f5f5f4",     // Stone 100 suave
-    muteBorder: "#e7e5e4",    // Stone 200 fino
+    mute: "#475569",          // Stone 600
+    muteDark: "#334155",      // Stone 700
+    muteLight: "#f1f5f9",     // Stone 100 suave
+    muteBorder: "#e2e8f0",    // Stone 200 fino
 
     // Información / KPIs / Rentabilidad
-    info: "#b45309",          // Amber 700
-    infoDark: "#78350f",      // Amber 900
-    infoLight: "#fef3c7",     // Amber 100 suave
-    infoBorder: "#fde68a",    // Amber 200 fino
+    info: "#4338ca",          // Amber 700
+    infoDark: "#312e81",      // Amber 900
+    infoLight: "#eef2ff",     // Amber 100 suave
+    infoBorder: "#c7d2fe",    // Amber 200 fino
   },
 
   // Espaciado consistente en múltiplos de 4 y 8 px
@@ -150,49 +150,49 @@ export const tema = {
       fontSize: 32,
       fontWeight: "700" as const,
       lineHeight: 38,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     h2: {
       fontSize: 24,
       fontWeight: "600" as const,
       lineHeight: 30,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     h3: {
       fontSize: 20,
       fontWeight: "600" as const,
       lineHeight: 26,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     body: {
       fontSize: 16,
       fontWeight: "400" as const,
       lineHeight: 24,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     bodyBold: {
       fontSize: 16,
       fontWeight: "600" as const,
       lineHeight: 24,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     callout: {
       fontSize: 14,
       fontWeight: "500" as const,
       lineHeight: 20,
-      color: "#44403c",
+      color: "#334155",
     },
     caption: {
       fontSize: 12,
       fontWeight: "400" as const,
       lineHeight: 16,
-      color: "#78716c",
+      color: "#64748b",
     },
     label: {
       fontSize: 12,
       fontWeight: "600" as const,
       lineHeight: 16,
-      color: "#1c1917",
+      color: "#0f172a",
     },
     overline: {
       fontSize: 11,
@@ -200,7 +200,7 @@ export const tema = {
       lineHeight: 14,
       letterSpacing: 0.5,
       textTransform: "uppercase" as const,
-      color: "#78716c",
+      color: "#64748b",
     },
   },
 
@@ -214,28 +214,28 @@ export const tema = {
       elevation: 0,
     },
     subtle: {
-      shadowColor: "#1c1917",
+      shadowColor: "#0f172a",
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.03,
       shadowRadius: 2,
       elevation: 1,
     },
     sm: {
-      shadowColor: "#1c1917",
+      shadowColor: "#0f172a",
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.04,
       shadowRadius: 3,
       elevation: 1,
     },
     md: {
-      shadowColor: "#1c1917",
+      shadowColor: "#0f172a",
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.05,
       shadowRadius: 5,
       elevation: 2,
     },
     lg: {
-      shadowColor: "#1c1917",
+      shadowColor: "#0f172a",
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.07,
       shadowRadius: 8,

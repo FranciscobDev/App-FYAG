@@ -45,13 +45,31 @@ export const CeldaStock: React.FC<PropiedadesCeldaStock> = ({
     );
   }
 
+  const esBajoMinimo = minStock !== undefined && available <= minStock;
+
   return (
     <View style={[estilos.contenedor, style]}>
-      {/* 1. Disponible (Verde) */}
-      <View style={[estilos.pastilla, estilos.pastillaDisponible]}>
-        <View style={[estilos.punto, { backgroundColor: tema.colors.ok }]} />
+      {/* 1. Disponible (Verde si OK, Rojo si bajo mínimo) */}
+      <View
+        style={[
+          estilos.pastilla,
+          esBajoMinimo ? estilos.pastillaCuarentena : estilos.pastillaDisponible,
+        ]}
+      >
+        <View
+          style={[
+            estilos.punto,
+            { backgroundColor: esBajoMinimo ? tema.colors.danger : tema.colors.ok },
+          ]}
+        />
         <Text style={estilos.pastillaEtiqueta}>Disp:</Text>
-        <Text style={estilos.pastillaValorDisponible}>
+        <Text
+          style={
+            esBajoMinimo
+              ? estilos.pastillaValorCuarentena
+              : estilos.pastillaValorDisponible
+          }
+        >
           {available} {unit}
         </Text>
       </View>

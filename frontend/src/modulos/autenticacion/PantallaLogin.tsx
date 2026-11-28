@@ -8,10 +8,10 @@ import {
   View,
 } from "react-native";
 import { tema } from "@/nucleo/tema";
-import { usarSesion } from "@/contexto/ContextoSesion";
+import { usarAutenticacion } from "@/contexto/ContextoAutenticacion";
 
 export const PantallaLogin: React.FC = () => {
-  const { iniciarSesion } = usarSesion();
+  const { iniciarSesion } = usarAutenticacion();
   const [correo, establecerCorreo] = useState("");
   const [contrasena, establecerContrasena] = useState("");
   const [error, establecerError] = useState<string | null>(null);
