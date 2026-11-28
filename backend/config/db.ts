@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { Pool, types } from 'pg';
 import dotenv from 'dotenv';
@@ -5,8 +6,10 @@ import { resolverSslBaseDatos } from './entorno';
 
 types.setTypeParser(1082, (valor: string) => valor);
 
-// Carga backend/.env como fallback; variables inyectadas por el entorno tienen prioridad.
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
+// Carga backend/.env como fallback (soporta ejecución desde src/ con tsx y desde dist/ con node).
+const rutaEnvUno = path.resolve(__dirname, '../.env');
+const rutaEnvDos = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: fs.existsSync(rutaEnvUno) ? rutaEnvUno : rutaEnvDos });
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 

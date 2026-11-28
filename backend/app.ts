@@ -38,6 +38,8 @@ import { obtenerOrigenesCors } from './config/entorno';
 
 /** Aplicación Express sin arrancar el servidor (permite probarla con pruebas de integración). */
 export const app = express();
+// Confía en el primer proxy inverso (Render / Railway / Cloudflare) para req.ip y req.secure
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(cabecerasSeguridadHttp);
 app.use(exigirHttpsEnProduccion);

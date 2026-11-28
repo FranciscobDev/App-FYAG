@@ -49,6 +49,8 @@ La base se aprovisiona **una sola vez** con el esquema consolidado y los datos s
 
 Esos dos archivos son la **fuente de verdad** del esquema. Los scripts de `backend/migraciones/` se conservan solo como historial y **no deben ejecutarse** sobre una base aprovisionada así: algunos chocan con el esquema consolidado (por ejemplo, `devoluciones_tecnico` es una vista de compatibilidad, no una tabla).
 
+Para el primer despliegue, usa un proyecto y datos de **staging**. Revisa las cuentas y contraseñas de demostración en `datos_iniciales.md` y no cargues esas cuentas ni información de prueba en una base de producción.
+
 El motor `backend/services/migraciones.ts` controla este comportamiento con la variable `APLICAR_MIGRACIONES`:
 
 | Valor | Comportamiento |
@@ -101,7 +103,24 @@ El servidor valida todas las variables críticas al iniciar (`backend/config/ent
 
 ## 3. Certificado HTTPS y Proxy Inverso en Producción
 
-El backend Express escucha en `127.0.0.1:3000` (o en la red interna del contenedor) detrás de un proxy inverso que termina TLS/HTTPS y reenvía `X-Forwarded-For` para el rate limiting por IP.
+El backend Express escucha en `0.0.0.0:$PORT` (en local, `0.0.0.0:3000`) detrás del proxy del proveedor, que termina TLS/HTTPS y reenvía la petición al servicio.
+
+### 3.1 Render (Blueprint)
+
+El archivo [`render.yaml`](./render.yaml) define un Web Service para este monorepo:
+
+- Root Directory: `backend`.
+- Build: instala dependencias de desarrollo para compilar TypeScript, luego las elimina.
+- Start: ejecuta `dist/index.js`; `/api/health` se usa como health check.
+- Render proporciona `PORT` y termina HTTPS automáticamente.
+- `DATABASE_URL`, `CORS_ORIGIN` y credenciales SMTP se ingresan en el panel de Render; nunca se guardan en el repositorio. `JWT_SECRET` se genera automáticamente.
+- `APLICAR_MIGRACIONES=false` asume que Supabase ya fue aprovisionado siguiendo la sección 1.3.
+
+En Supabase, usa el URI del **Session Pooler** (puerto `5432`) y configura la región de Render lo más cerca posible de la región de la base. El puerto `6543` es el Transaction Pooler; no es la opción configurada/recomendada para este servicio persistente.
+
+La primera publicación está pensada como **staging** en el plan gratuito: úsala solo para validar conectividad y el APK. El servicio puede suspenderse; no confíes en esa instancia para ejecutar a su hora los procesos programados de alertas, préstamos, mantenimiento y respaldos. Antes de operar con usuarios o datos reales, selecciona una instancia que permanezca activa y revisa su costo.
+
+Como el servicio Render usa `NODE_ENV=production`, configura SMTP válido aunque la base sea de staging: la validación del backend exige estas credenciales en modo producción. Mantén cuentas y mensajes de prueba separados de los destinatarios reales.
 
 ### Ejemplo con Caddy (certificado Let's Encrypt automático)
 
@@ -166,11 +185,25 @@ npx expo export --platform web
   npm run android   # Android
   npm run ios       # iOS (macOS)
   ```
-* **Build de producción con EAS Build:**
-  Definir `EXPO_PUBLIC_API_URL=https://api.fyag.cl/api` en el perfil `production` de `eas.json` o en los secretos de EAS y ejecutar:
+* **APK de prueba (staging):**
+  1. Desde `frontend`, inicia sesión en Expo y vincula el proyecto EAS:
+     ```powershell
+     npx eas-cli login
+     npx eas-cli build:configure
+     ```
+     Conserva el `extra.eas.projectId` que EAS agregue a `app.json`.
+  2. En la configuración del proyecto EAS, define `EXPO_PUBLIC_API_URL` en el entorno **preview**, con la URL HTTPS de Render seguida de `/api` (por ejemplo, `https://<servicio>.onrender.com/api`). Es una variable pública incluida en el binario, no un secreto; nunca pongas credenciales allí.
+  3. Genera el APK instalable:
+     ```powershell
+     npx eas-cli build --platform android --profile preview
+     ```
+     El perfil `preview` de [eas.json](./frontend/eas.json) configura distribución interna y formato APK.
+* **Publicación en tienda (producción):**
+  Define `EXPO_PUBLIC_API_URL` en el entorno EAS **production**, usando el dominio HTTPS de producción, y ejecuta:
   ```powershell
-  npx eas-cli build --platform all --profile production
+  npx eas-cli build --platform android --profile production
   ```
+  El perfil genera un Android App Bundle (`.aab`); requiere una instancia backend estable y base de producción independiente. El identificador Android configurado es `cl.fyag.app`; mantenlo estable después de distribuir la app.
 
 ---
 

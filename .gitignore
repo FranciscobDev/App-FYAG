@@ -160,9 +160,11 @@ $RECYCLE.BIN/
 Icon?
 ._*
 
-# 14. Asistentes IA y configuraciones locales de agentes
+# 14. Asistentes IA, herramientas CLI de despliegue y configuraciones locales
 .agents/
 **/.agents/
+skills-lock.json
+**/skills-lock.json
 AGENTS.md
 agents.md
 **/AGENTS.md
@@ -171,3 +173,19 @@ agents.md
 **/.claude/
 CLAUDE.md
 **/CLAUDE.md
+.gemini/
+**/.gemini/
+.cursor/
+**/.cursor/
+.supabase/
+**/.supabase/
+.vercel/
+**/.vercel/
+.railway/
+**/.railway/
+.render/
+**/.render/
+.eas/
+**/.eas/
+credentials.json
+**/credentials.json

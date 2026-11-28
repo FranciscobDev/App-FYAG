@@ -16,7 +16,11 @@ node_modules/
 google-services.json
 GoogleService-Info.plist
 *credentials*.json
+credentials.json
 *service-account*.json
+*secret*.json
+.eas/
+.vercel/
 
 # Expo & Bundler
 .expo/

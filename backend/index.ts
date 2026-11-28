@@ -1,8 +1,11 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { validarConfiguracionEntorno } from './config/entorno';
 
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+const rutaEnvLocal = path.resolve(__dirname, '.env');
+const rutaEnvPadre = path.resolve(__dirname, '../.env');
+dotenv.config({ path: fs.existsSync(rutaEnvLocal) ? rutaEnvLocal : rutaEnvPadre });
 
 const iniciarServidor = async (): Promise<void> => {
     const configuracion = validarConfiguracionEntorno();
