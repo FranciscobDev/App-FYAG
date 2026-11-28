@@ -27,7 +27,7 @@
     "eslint-plugin-security": "^4.2.1",
     "husky": "^9.1.7",
     "snyk": "^1.1309.0",
-    "typescript": "~6.0.3"
+    "typescript": "~7.0.2"
   },
   "scripts": {
     "start": "expo start",
