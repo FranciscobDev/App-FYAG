@@ -32,10 +32,12 @@ export interface ResultadoResolucionCodigoBodega {
  */
 export function resolverCodigoEscaneadoBodega(
   codigoCrudo: string,
-  productos: Producto[],
+  productos: Producto[] = [],
   registrosQrH47: RegistroQrInsumo[] = [],
   tiempoMs?: number
 ): ResultadoResolucionCodigoBodega {
+  const listaProductos = Array.isArray(productos) ? productos : [];
+  const listaRegistrosQr = Array.isArray(registrosQrH47) ? registrosQrH47 : [];
   const limpio = String(codigoCrudo || "").trim();
   if (!limpio) {
     return {
@@ -57,7 +59,7 @@ export function resolverCodigoEscaneadoBodega(
     const skuPayload = (payloadH47.sku || "").trim().toUpperCase();
     const codigoQrPayload = (payloadH47.codigoQr || "").trim().toUpperCase();
     const productoEncontrado =
-      productos.find(
+      listaProductos.find(
         (p) =>
           p.sku.toUpperCase() === skuPayload ||
           (p.barcode && p.barcode.toUpperCase() === codigoQrPayload)
@@ -90,14 +92,14 @@ export function resolverCodigoEscaneadoBodega(
   }
 
   // 2. Buscar coincidencia en los registros QR emitidos en H47
-  const registroQr = registrosQrH47.find(
+  const registroQr = listaRegistrosQr.find(
     (r) =>
       r.codigoQr.toUpperCase() === limpioUpper ||
       r.payloadEmbebido.trim() === limpio
   );
   if (registroQr) {
     const productoPorRegistro =
-      productos.find(
+      listaProductos.find(
         (p) =>
           p.sku.toUpperCase() === registroQr.sku.toUpperCase() ||
           (p.barcode && p.barcode.toUpperCase() === registroQr.codigoQr.toUpperCase())
@@ -119,7 +121,7 @@ export function resolverCodigoEscaneadoBodega(
   }
 
   // 3. Buscar coincidencia directa por SKU en el catálogo
-  const productoPorSku = productos.find(
+  const productoPorSku = listaProductos.find(
     (p) => p.sku.trim().toUpperCase() === limpioUpper
   );
   if (productoPorSku) {
@@ -134,7 +136,7 @@ export function resolverCodigoEscaneadoBodega(
   }
 
   // 4. Buscar coincidencia por código de barras o código QR asignado en el producto
-  const productoPorBarcode = productos.find(
+  const productoPorBarcode = listaProductos.find(
     (p) => p.barcode && p.barcode.trim().toUpperCase() === limpioUpper
   );
   if (productoPorBarcode) {
@@ -167,7 +169,8 @@ export function resolverCodigoEscaneadoBodega(
  */
 export async function cargarRegistrosQrH47ParaEscaner(): Promise<RegistroQrInsumo[]> {
   try {
-    return await leerRegistrosQrLocal();
+    const regs = await leerRegistrosQrLocal();
+    return Array.isArray(regs) ? regs : [];
   } catch {
     return [];
   }

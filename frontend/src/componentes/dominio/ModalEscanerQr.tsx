@@ -49,6 +49,23 @@ const ETIQUETA_MODULO: Record<ModuloOrigenEscaner, string> = {
   catalogo: "Catálogo de Insumos",
 };
 
+// Carga perezosa de expo-camera para soportar cámara trasera nativa en Android/iOS (APK de EAS Build)
+// sin romper compilación ni pruebas unitarias si aún no se ha instalado localmente.
+let ExpoCameraModule: {
+  CameraView?: React.ComponentType<any>;
+  Camera?: {
+    getCameraPermissionsAsync?: () => Promise<{ status: string; granted: boolean }>;
+    requestCameraPermissionsAsync?: () => Promise<{ status: string; granted: boolean }>;
+  };
+} | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  ExpoCameraModule = require("expo-camera");
+} catch {
+  ExpoCameraModule = null;
+}
+const NativeCameraView = ExpoCameraModule?.CameraView ?? null;
+
 export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
   visible,
   onClose,
@@ -128,7 +145,7 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
 
     let activo = true;
     cargarRegistrosQrH47ParaEscaner().then((regs) => {
-      if (activo) establecerRegistrosQrH47(regs);
+      if (activo) establecerRegistrosQrH47(Array.isArray(regs) ? regs : []);
     });
 
     const timer = setInterval(() => {
@@ -242,9 +259,38 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
     }
 
     if (Platform.OS !== "web") {
-      establecerEstadoCamara("sin_camara");
-      establecerSoportaDetectorNativo(false);
-      return;
+      let canceladoNativo = false;
+      const iniciarCamaraNativa = async () => {
+        if (!NativeCameraView || !ExpoCameraModule?.Camera?.requestCameraPermissionsAsync) {
+          if (!canceladoNativo) {
+            establecerEstadoCamara("sin_camara");
+            establecerSoportaDetectorNativo(false);
+          }
+          return;
+        }
+        try {
+          establecerEstadoCamara("iniciando");
+          const perm = await ExpoCameraModule.Camera.requestCameraPermissionsAsync();
+          if (canceladoNativo) return;
+          if (perm?.granted || perm?.status === "granted") {
+            establecerEstadoCamara("activa");
+            establecerSoportaDetectorNativo(true);
+          } else {
+            establecerEstadoCamara("permiso_denegado");
+            establecerSoportaDetectorNativo(false);
+          }
+        } catch {
+          if (!canceladoNativo) {
+            establecerEstadoCamara("sin_camara");
+            establecerSoportaDetectorNativo(false);
+          }
+        }
+      };
+      iniciarCamaraNativa();
+      return () => {
+        canceladoNativo = true;
+        detenerCamara();
+      };
     }
 
     let cancelado = false;
@@ -356,9 +402,10 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
       esH47: boolean;
     }[] = [];
 
-    const prioridadSkus = new Set((sugerenciaSkus || []).map((s) => s.toUpperCase()));
-    const productosOrdenados = [...(productos || [])]
-      .filter((p) => !p.disabled)
+    const prioridadSkus = new Set((sugerenciaSkus || []).map((s) => String(s || "").toUpperCase()));
+    const listaSeguraQr = Array.isArray(registrosQrH47) ? registrosQrH47 : [];
+    const productosOrdenados = [...(Array.isArray(productos) ? productos : [])]
+      .filter((p) => p && !p.disabled && p.sku)
       .sort((a, b) => {
         const aPrio = prioridadSkus.has(a.sku.toUpperCase()) ? 0 : 1;
         const bPrio = prioridadSkus.has(b.sku.toUpperCase()) ? 0 : 1;
@@ -366,8 +413,8 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
       });
 
     for (const prod of productosOrdenados.slice(0, 4)) {
-      const regH47 = registrosQrH47.find(
-        (r) => r.sku.toUpperCase() === prod.sku.toUpperCase()
+      const regH47 = listaSeguraQr.find(
+        (r) => r && r.sku && r.sku.toUpperCase() === prod.sku.toUpperCase()
       );
       if (regH47) {
         lista.push({
@@ -474,8 +521,34 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
               </View>
             )}
 
-            {/* Visor de Cámara Real (Web/Tablet) + Marco Óptico */}
+            {/* Visor de Cámara Real (Android/iOS nativo con expo-camera y Web/Tablet con getUserMedia) + Marco Óptico */}
             <View style={estilos.cameraViewfinder}>
+              {Platform.OS !== "web" && estadoCamara === "activa" && NativeCameraView && (
+                <NativeCameraView
+                  style={StyleSheet.absoluteFill}
+                  facing="back"
+                  enableTorch={linternaActiva}
+                  barcodeScannerSettings={{
+                    barcodeTypes: [
+                      "qr",
+                      "code128",
+                      "code39",
+                      "ean13",
+                      "ean8",
+                      "upc_a",
+                      "upc_e",
+                    ],
+                  }}
+                  onBarcodeScanned={(evento: { data?: string }) => {
+                    if (lecturaEnCursoRef.current) return;
+                    const valor = evento?.data;
+                    if (valor) {
+                      procesarCodigoDetectado(valor);
+                    }
+                  }}
+                />
+              )}
+
               {Platform.OS === "web" && estadoCamara === "activa" && (
                 // Elemento de video HTML nativo para cámara trasera de tablet en navegador
                 <video
@@ -586,6 +659,41 @@ export const ModalEscanerQr: React.FC<QrScannerModalProps> = ({
                 />
               </View>
             </View>
+
+            {/* Accesos rápidos a etiquetas QR / SKU del catálogo para lectura rápida en terreno */}
+            {muestrasRapidas.length > 0 && (
+              <View style={estilos.simulatorSeccion}>
+                <Text style={estilos.simEncabezado}>
+                  {sugerenciaSkus && sugerenciaSkus.length > 0
+                    ? "Etiquetas QR de este Pedido (toque para escanear):"
+                    : "Etiquetas QR / Códigos del Catálogo (toque para escanear):"}
+                </Text>
+                <View style={estilos.chipsFila}>
+                  {muestrasRapidas.map((m) => (
+                    <TouchableOpacity
+                      key={m.id}
+                      style={[estilos.simChip, m.esH47 && estilos.simChipH47]}
+                      onPress={() => procesarCodigoDetectado(m.codigo, 240)}
+                      activeOpacity={0.75}
+                    >
+                      <Ionicons
+                        name={m.esH47 ? "qr-code" : "barcode-outline"}
+                        size={18}
+                        color={m.esH47 ? tema.colors.okDark : tema.colors.primaryDark}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={estilos.simChipTexto} numberOfLines={1}>
+                          {m.etiqueta}
+                        </Text>
+                        <Text style={estilos.simChipSub} numberOfLines={1}>
+                          {m.subetiqueta}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           <Boton
