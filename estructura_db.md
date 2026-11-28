@@ -131,21 +131,26 @@ FOR EACH ROW EXECUTE FUNCTION fn_impedir_borrado_fisico();
 CREATE TABLE herramienta (
     id_herramienta SERIAL PRIMARY KEY,
     numero_serie_herramienta VARCHAR(50) UNIQUE,
-    nombre_herramienta VARCHAR(100) NOT NULL,
-    categoria categoria_enum NOT NULL,
+    nombre_herramienta VARCHAR(100),
+    categoria categoria_enum NOT NULL DEFAULT 'Herramientas',
     marca_herramienta VARCHAR(250),
     modelo_herramienta VARCHAR(250),
     frecuencia_mantencion INT,
     codigo_unico VARCHAR(50) NOT NULL UNIQUE,
+    codigo_herramienta VARCHAR(50),
     nombre VARCHAR(100) NOT NULL,
     valor NUMERIC(12,2) NOT NULL DEFAULT 0.00 CHECK (valor >= 0),
     estado VARCHAR(20) NOT NULL DEFAULT 'Disponible'
         CHECK (estado IN ('Disponible', 'Asignada', 'En mantención', 'Dada de baja')),
     fecha_prox_mantenimiento DATE,
+    fecha_proximo_mantenimiento DATE,
     aviso_mant_previo_para DATE NULL,
     aviso_mant_final_para DATE NULL,
     codigo_qr VARCHAR(255) UNIQUE,
+    ubicacion VARCHAR(120) NULL,
     activo BOOLEAN NOT NULL DEFAULT TRUE,
+    fecha_creacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_actualizacion TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT chk_herramienta_baja_activo
         CHECK (activo OR estado = 'Dada de baja')
 );
@@ -154,18 +159,64 @@ CREATE INDEX idx_herramienta_estado_activo ON herramienta (estado, activo);
 CREATE INDEX idx_herramienta_fecha_mantenimiento ON herramienta (fecha_prox_mantenimiento)
     WHERE activo = TRUE;
 
-CREATE OR REPLACE VIEW herramientas AS
+CREATE OR REPLACE FUNCTION fn_sync_herramienta_campos()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.codigo_unico IS NULL AND NEW.codigo_herramienta IS NOT NULL THEN
+        NEW.codigo_unico := NEW.codigo_herramienta;
+    ELSIF NEW.codigo_herramienta IS NULL OR NEW.codigo_herramienta <> NEW.codigo_unico THEN
+        NEW.codigo_herramienta := NEW.codigo_unico;
+    END IF;
+
+    IF NEW.fecha_prox_mantenimiento IS NULL AND NEW.fecha_proximo_mantenimiento IS NOT NULL THEN
+        NEW.fecha_prox_mantenimiento := NEW.fecha_proximo_mantenimiento;
+    ELSIF NEW.fecha_proximo_mantenimiento IS DISTINCT FROM NEW.fecha_prox_mantenimiento THEN
+        NEW.fecha_proximo_mantenimiento := NEW.fecha_prox_mantenimiento;
+    END IF;
+
+    IF NEW.nombre_herramienta IS NULL OR BTRIM(NEW.nombre_herramienta) = '' THEN
+        NEW.nombre_herramienta := NEW.nombre;
+    END IF;
+    IF NEW.nombre IS NULL OR BTRIM(NEW.nombre) = '' THEN
+        NEW.nombre := NEW.nombre_herramienta;
+    END IF;
+
+    IF NEW.estado IS NOT NULL THEN
+        CASE LOWER(BTRIM(NEW.estado))
+            WHEN 'disponible' THEN NEW.estado := 'Disponible';
+            WHEN 'asignada' THEN NEW.estado := 'Asignada';
+            WHEN 'en mantencion', 'en mantención' THEN NEW.estado := 'En mantención';
+            WHEN 'dada de baja' THEN NEW.estado := 'Dada de baja';
+            ELSE NULL;
+        END CASE;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_sync_herramienta_campos
+BEFORE INSERT OR UPDATE ON herramienta
+FOR EACH ROW EXECUTE FUNCTION fn_sync_herramienta_campos();
+
+CREATE OR REPLACE VIEW herramientas
+WITH (security_invoker = true) AS
 SELECT
     id_herramienta,
     codigo_unico,
     nombre,
     valor,
-    estado,
+    (LOWER(estado))::varchar(20) AS estado,
     fecha_prox_mantenimiento,
     aviso_mant_previo_para,
     aviso_mant_final_para,
     codigo_qr,
-    activo
+    activo,
+    codigo_herramienta,
+    categoria,
+    fecha_proximo_mantenimiento,
+    ubicacion,
+    fecha_creacion,
+    fecha_actualizacion
 FROM herramienta;
 
 CREATE TRIGGER trg_impedir_borrado_herramienta

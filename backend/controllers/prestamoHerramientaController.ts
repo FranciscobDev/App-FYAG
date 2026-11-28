@@ -118,7 +118,7 @@ export const procesarAlertasPrestamosEnTransaccion = async (
         `/* prestamos:abiertos */
          SELECT p.id_prestamo, p.fecha_entrega, p.id_tecnico, h.codigo_herramienta, h.nombre,
                 (pr.estado_proyecto IS NOT NULL
-                 AND pr.estado_proyecto ~* '(cerrad|complet|cancel|finaliz)') AS proyecto_cerrado
+                 AND pr.estado_proyecto::text ~* '(cerrad|complet|cancel|finaliz)') AS proyecto_cerrado
          FROM prestamos_herramienta p
          JOIN herramientas h ON h.id_herramienta = p.id_herramienta
          LEFT JOIN proyecto pr ON pr.id_proyecto = p.id_proyecto
