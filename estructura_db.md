@@ -219,6 +219,75 @@ SELECT
     fecha_actualizacion
 FROM herramienta;
 
+CREATE OR REPLACE FUNCTION fn_trg_vista_herramientas()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO herramienta (
+            codigo_unico, codigo_herramienta, nombre, nombre_herramienta,
+            categoria, valor, estado,
+            fecha_prox_mantenimiento, fecha_proximo_mantenimiento,
+            aviso_mant_previo_para, aviso_mant_final_para,
+            codigo_qr, ubicacion, activo
+        ) VALUES (
+            COALESCE(NEW.codigo_herramienta, NEW.codigo_unico),
+            COALESCE(NEW.codigo_herramienta, NEW.codigo_unico),
+            NEW.nombre,
+            NEW.nombre,
+            COALESCE(NEW.categoria, 'Herramientas'::categoria_enum),
+            COALESCE(NEW.valor, 0),
+            COALESCE(NEW.estado, 'Disponible'),
+            COALESCE(NEW.fecha_proximo_mantenimiento, NEW.fecha_prox_mantenimiento),
+            COALESCE(NEW.fecha_proximo_mantenimiento, NEW.fecha_prox_mantenimiento),
+            NEW.aviso_mant_previo_para,
+            NEW.aviso_mant_final_para,
+            NEW.codigo_qr,
+            NEW.ubicacion,
+            COALESCE(NEW.activo, TRUE)
+        )
+        RETURNING
+            id_herramienta, codigo_unico, nombre, valor,
+            (LOWER(estado))::varchar(20),
+            fecha_prox_mantenimiento, aviso_mant_previo_para, aviso_mant_final_para,
+            codigo_qr, activo, codigo_herramienta, categoria,
+            fecha_proximo_mantenimiento, ubicacion, fecha_creacion, fecha_actualizacion
+        INTO NEW;
+        RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' THEN
+        UPDATE herramienta SET
+            codigo_unico = COALESCE(NEW.codigo_herramienta, NEW.codigo_unico),
+            codigo_herramienta = COALESCE(NEW.codigo_herramienta, NEW.codigo_unico),
+            nombre = NEW.nombre,
+            nombre_herramienta = NEW.nombre,
+            categoria = COALESCE(NEW.categoria, categoria),
+            valor = NEW.valor,
+            estado = NEW.estado,
+            fecha_prox_mantenimiento = COALESCE(NEW.fecha_proximo_mantenimiento, NEW.fecha_prox_mantenimiento),
+            fecha_proximo_mantenimiento = COALESCE(NEW.fecha_proximo_mantenimiento, NEW.fecha_prox_mantenimiento),
+            aviso_mant_previo_para = NEW.aviso_mant_previo_para,
+            aviso_mant_final_para = NEW.aviso_mant_final_para,
+            codigo_qr = NEW.codigo_qr,
+            ubicacion = NEW.ubicacion,
+            activo = NEW.activo,
+            fecha_actualizacion = COALESCE(NEW.fecha_actualizacion, CURRENT_TIMESTAMP)
+        WHERE id_herramienta = OLD.id_herramienta
+        RETURNING
+            id_herramienta, codigo_unico, nombre, valor,
+            (LOWER(estado))::varchar(20),
+            fecha_prox_mantenimiento, aviso_mant_previo_para, aviso_mant_final_para,
+            codigo_qr, activo, codigo_herramienta, categoria,
+            fecha_proximo_mantenimiento, ubicacion, fecha_creacion, fecha_actualizacion
+        INTO NEW;
+        RETURN NEW;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trg_vista_herramientas_dml
+INSTEAD OF INSERT OR UPDATE ON herramientas
+FOR EACH ROW EXECUTE FUNCTION fn_trg_vista_herramientas();
+
 CREATE TRIGGER trg_impedir_borrado_herramienta
 BEFORE DELETE ON herramienta
 FOR EACH ROW EXECUTE FUNCTION fn_impedir_borrado_fisico();
