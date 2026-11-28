@@ -89,7 +89,7 @@ const esRolAdministrativo = (nombreRol: string | null | undefined, idRol?: numbe
     normalizarRol(nombreRol) === 'admin' || Number(idRol) === 1;
 
 export const login = async (req: Request<Record<string, string>, unknown, LoginBody>, res: Response): Promise<void> => {
-    const { correo_usuario, contrasena, soportar_2fa } = req.body ?? {};
+    const { correo_usuario, contrasena } = req.body ?? {};
 
     if (!correo_usuario || !contrasena) {
         res.status(400).json({ mensaje: 'Correo y contraseña son obligatorios' });
@@ -162,7 +162,7 @@ export const login = async (req: Request<Record<string, string>, unknown, LoginB
 
         const exige2faAdmin =
             esRolAdministrativo(fila.nombre_rol, fila.id_rol) &&
-            (Boolean(fila.requiere_2fa) || Boolean(soportar_2fa) || process.env.EXIGIR_2FA_ADMIN === 'true');
+            (Boolean(fila.requiere_2fa) || process.env.EXIGIR_2FA_ADMIN === 'true');
 
         if (exige2faAdmin) {
             const codigoOtp = String(randomInt(100000, 1000000));

@@ -40,6 +40,9 @@ const enviarCorreoSmtp: EnviadorCorreo = async ({ para, asunto, texto, html, adj
             host: process.env.SMTP_HOST,
             port: Number(process.env.SMTP_PORT) || 587,
             secure: Number(process.env.SMTP_PORT) === 465,
+            connectionTimeout: 8000,
+            greetingTimeout: 8000,
+            socketTimeout: 10000,
             auth: process.env.SMTP_USER
                 ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
                 : undefined,
