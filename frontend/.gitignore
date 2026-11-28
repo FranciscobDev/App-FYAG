@@ -1,0 +1,72 @@
+# =============================================================================
+# FYAG Frontend - .gitignore (Expo & React Native)
+# =============================================================================
+
+# Dependencias
+node_modules/
+.pnp
+.pnp.js
+
+# Expo & Bundler
+.expo/
+web-build/
+dist/
+dist-ssr/
+build/
+out/
+.metro-health-check*
+
+# Carpetas nativas generadas por prebuild
+/ios
+/android
+.kotlin/
+*.orig.*
+
+# Claves y certificados de firma
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.cer
+
+# Binarios
+*.apk
+*.aab
+*.ipa
+
+# Logs y depuración
+logs/
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+pnpm-debug.*
+
+# Variables de entorno locales (se permite .env)
+.env*.local
+!.env
+!.env.example
+
+# Caches y compilación
+.cache/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# Archivos de respaldo locales
+*.bak
+*.backup
+*.tmp
+*~
+
+# Sistema Operativo y Editores
+.DS_Store
+Thumbs.db
+[Dd]esktop.ini
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/

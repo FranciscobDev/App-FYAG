@@ -1,0 +1,141 @@
+# =============================================================================
+# FYAG Multisystem - .gitignore
+# Repositorio: App-FYAG (React Native, Expo, TypeScript, Node.js)
+# =============================================================================
+
+
+node_modules/
+.expo/
+# 1. Dependencias (Node.js & Gestores de paquetes)
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnpm-store/
+
+# 2. Expo, Metro Bundler y Builds Web
+.expo/
+**/.expo/
+.expo-shared/
+web-build/
+**/web-build/
+dist/
+**/dist/
+dist-ssr/
+build/
+**/build/
+out/
+.metro-health-check*
+
+# 3. Android & iOS (Prebuilds y artefactos nativos)
+ios/
+**/ios/
+android/
+**/android/
+.kotlin/
+**/.kotlin/
+*.orig.*
+
+# 4. Claves, certificados de firma y keystores (Seguridad estricta)
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.pem
+*.cer
+*.der
+*.crt
+*.pfx
+
+# 5. Binarios de aplicación compilados
+*.apk
+*.aab
+*.ipa
+*.app
+*.dSYM/
+
+# 6. Variables de entorno y secretos (nunca commitear secretos)
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!.env.example
+!backend/.env.example
+
+# 7. Caches, linters y compilación TypeScript
+.cache/
+**/.cache/
+.vite/
+**/.vite/
+.turbo/
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# 8. Logs y depuración
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 9. Cobertura de pruebas (Testing)
+coverage/
+**/coverage/
+.nyc_output/
+
+# 10. Archivos de respaldo locales y temporales
+frontend-web-backup/
+**/frontend-web-backup/
+*.bak
+*.backup
+*.tmp
+*.temp
+*~
+
+# 11. IDEs y Editores de código
+.idea/
+**/.idea/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
+# 12. Archivos del Sistema Operativo (Windows / macOS / Linux)
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# 13. Asistentes IA y configuraciones locales de agentes
+.agents/
+**/.agents/
+AGENTS.md
+agents.md
+**/AGENTS.md
+**/agents.md
+
+backend/.env
