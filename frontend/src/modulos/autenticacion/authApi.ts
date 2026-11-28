@@ -35,7 +35,9 @@ const intentarLoginEnUrl = async (
   contrasena: string
 ): Promise<{ conectado: boolean; respuesta?: RespuestaLogin }> => {
   const controlador = new AbortController();
-  const temporizador = setTimeout(() => controlador.abort(), 5000);
+  // Render Free Tier puede tardar 30-50s en despertar (cold start) tras inactividad
+  const timeoutMs = baseUrl.includes(".onrender.com") ? 45000 : 8000;
+  const temporizador = setTimeout(() => controlador.abort(), timeoutMs);
 
   try {
     const res = await fetch(`${baseUrl}/auth/login`, {

@@ -53,6 +53,9 @@ export const obtenerUrlsCandidatasApi = (): string[] => {
   const urlConfigurada = typeof process.env.EXPO_PUBLIC_API_URL === "string"
     ? process.env.EXPO_PUBLIC_API_URL.trim()
     : "";
+  const urlAlternativa = typeof process.env.EXPO_PUBLIC_API_URL_ALT === "string"
+    ? process.env.EXPO_PUBLIC_API_URL_ALT.trim()
+    : "";
 
   if (urlBaseResuelta) {
     candidatas.push(urlBaseResuelta);
@@ -61,6 +64,14 @@ export const obtenerUrlsCandidatasApi = (): string[] => {
   if (urlConfigurada) {
     candidatas.push(urlConfigurada);
   }
+
+  if (urlAlternativa) {
+    candidatas.push(urlAlternativa);
+  }
+
+  // Respaldo de producción en Render por si EAS compiló sin leer .env local (que está en .gitignore)
+  candidatas.push("https://app-fyag.onrender.com/api");
+  candidatas.push("https://app-fyag-1.onrender.com/api");
 
   if (process.env.NODE_ENV === "production") {
     return Array.from(new Set(candidatas));

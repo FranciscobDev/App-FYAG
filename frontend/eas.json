@@ -10,12 +10,20 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://app-fyag.onrender.com/api",
+        "EXPO_PUBLIC_API_URL_ALT": "https://app-fyag-1.onrender.com/api"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://app-fyag.onrender.com/api",
+        "EXPO_PUBLIC_API_URL_ALT": "https://app-fyag-1.onrender.com/api"
+      },
       "android": {
         "buildType": "app-bundle"
       }

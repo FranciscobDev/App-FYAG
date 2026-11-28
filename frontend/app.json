@@ -26,6 +26,11 @@
     "plugins": [
       "expo-status-bar",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f28af4ac-4d29-4d87-b42c-eb8f86ccec21"
+      }
+    }
   }
 }
