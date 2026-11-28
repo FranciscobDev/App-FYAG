@@ -578,30 +578,28 @@ export const asignarTecnico = async (
     }
 
     try {
-<<<<<<< HEAD
-        // Validar proyecto Activo
+        // Validar proyecto Activo (o En Proceso)
         const proyecto = await pool.query<Proyecto>('SELECT estado_proyecto FROM proyecto WHERE id_proyecto = $1', [id]);
-        if (proyecto.rows.length === 0 || proyecto.rows[0].estado_proyecto !== 'Activo') {
+        if (
+            proyecto.rows.length === 0 ||
+            !['Activo', 'En Proceso'].includes(String(proyecto.rows[0].estado_proyecto))
+        ) {
             res.status(400).json({ mensaje: 'Solo se pueden asignar técnicos a proyectos Activos' });
             return;
         }
 
         // Validar técnico habilitado y rol
         const usuario = await pool.query(
-            `SELECT u.activo, r.nombre_rol 
-             FROM usuario u
-             JOIN roles r ON r.id_rol = u.id_rol
-             WHERE u.id_usuario = $1`,
-=======
-        const esTecnico = await pool.query(
-            `SELECT u.id_usuario
+            `SELECT u.activo, u.id_rol, r.nombre_rol 
              FROM usuario u
              LEFT JOIN roles r ON r.id_rol = u.id_rol
-             WHERE u.id_usuario = $1 AND (u.id_rol = 3 OR LOWER(r.nombre_rol::text) LIKE '%tecnic%')`,
->>>>>>> 84fdad5739d5c521828911885345aecb0befca1c
+             WHERE u.id_usuario = $1`,
             [id_usuario]
         );
-        if (usuario.rows.length === 0 || usuario.rows[0].nombre_rol !== 'Tecnico') {
+        if (
+            usuario.rows.length === 0 ||
+            !(usuario.rows[0].id_rol === 3 || String(usuario.rows[0].nombre_rol ?? '').toLowerCase().includes('tecnic'))
+        ) {
             res.status(400).json({ mensaje: 'El usuario seleccionado no es un técnico' });
             return;
         }
