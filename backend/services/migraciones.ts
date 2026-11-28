@@ -16,7 +16,9 @@ export const aplicarMigraciones = async (): Promise<void> => {
         return;
     }
 
-    const carpeta = path.resolve(__dirname, '../migraciones');
+    const carpetaLocal = path.resolve(__dirname, '../migraciones');
+    const carpetaRaiz = path.resolve(process.cwd(), 'migraciones');
+    const carpeta = fs.existsSync(carpetaLocal) ? carpetaLocal : carpetaRaiz;
     const archivos = fs.readdirSync(carpeta).filter((f) => f.endsWith('.sql')).sort();
 
     for (const archivo of archivos) {

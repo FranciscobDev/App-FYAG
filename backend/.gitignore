@@ -15,8 +15,13 @@ build/
 !.env.example
 .npmrc
 *credentials*.json
+credentials.json
 *service-account*.json
 *secret*.json
+.supabase/
+.railway/
+.render/
+.vercel/
 
 # Certificados TLS/SSL y llaves privadas
 *.key

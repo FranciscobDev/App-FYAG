@@ -1,9 +1,10 @@
 {
   "name": "fyag-backend",
   "version": "1.0.0",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "scripts": {
-    "start": "tsx index.ts",
+    "start": "node dist/index.js",
+    "start:tsx": "tsx index.ts",
     "dev": "tsx watch index.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
