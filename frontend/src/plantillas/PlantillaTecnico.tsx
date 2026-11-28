@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,6 +42,9 @@ export interface PropiedadesPlantillaTecnico {
 export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogout }) => {
   const { usuario, rolActual, establecerRol } = usarAutenticacion();
   const { solicitudesMaterial, hojasServicio } = usarAplicacion();
+  const { width } = useWindowDimensions();
+  const esCompacto = width < 480;
+  const esMuyCompacto = width < 380;
   const insets = useSafeAreaInsets();
   const superiorInset = Math.max(
     insets.top,
@@ -148,19 +152,24 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
         ]}
       >
         <View style={estilos.superiorIzquierda}>
-          <View style={estilos.marcaCirculo}>
-            <Ionicons name="hammer" size={16} color={tema.colors.textInverse} />
+          <View style={[estilos.marcaCirculo, esMuyCompacto && { width: 28, height: 28, borderRadius: 14, marginRight: 6 }]}>
+            <Ionicons name="hammer" size={esMuyCompacto ? 14 : 16} color={tema.colors.textInverse} />
           </View>
-          <View>
-            <Text style={estilos.marcaTitulo}>FYAG TÉCNICO</Text>
-            <Text style={estilos.usuarioNombre}>{usuario.name.split(" ")[0]} • Faena</Text>
+          <View style={estilos.marcaTextos}>
+            <Text numberOfLines={1} style={[estilos.marcaTitulo, esMuyCompacto && { fontSize: 12 }]}>
+              {esMuyCompacto ? "TÉCNICO" : "FYAG TÉCNICO"}
+            </Text>
+            <Text numberOfLines={1} style={estilos.usuarioNombre}>
+              {usuario.name.split(" ")[0]} • Faena
+            </Text>
           </View>
         </View>
 
-        {/* SyncStatusChip y Selector de Usuario */}
+        {/* SyncStatusChip, Notificaciones y Botón de Perfil / Cerrar Sesión */}
         <View style={estilos.superiorDerecha}>
           <ChipSincronizacion
             variant="dark"
+            compact={esCompacto}
             status={sinConexionEfectiva || pendienteSincronizacionConteo > 0 ? "pendiente" : "sincronizado"}
             pendingCount={pendienteSincronizacionConteo}
             onPress={() => {
@@ -172,8 +181,6 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
               }
             }}
           />
-
-
 
           <CampanaNotificaciones
             variant="dark"
@@ -191,9 +198,11 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
           <TouchableOpacity
             onPress={() => establecerUsuarioMenuAbrir(true)}
             style={estilos.avatarBoton}
-            accessibilityLabel="Menú de usuario"
+            accessibilityLabel="Menú de usuario y cerrar sesión"
+            accessibilityRole="button"
           >
             <Text style={estilos.avatarTexto}>{usuario.initials}</Text>
+            <Ionicons name="log-out-outline" size={14} color="#fca5a5" style={{ marginLeft: 3 }} />
           </TouchableOpacity>
         </View>
       </View>
@@ -372,44 +381,15 @@ export const PlantillaTecnico: React.FC<PropiedadesPlantillaTecnico> = ({ onLogo
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={estilos.usuarioMenuNombre}>{usuario.name}</Text>
-                <Text style={estilos.usuarioMenuRut}>{usuario.rut}</Text>
-                <Insignia label="Técnico Especialista" tone="primary" size="sm" style={{ marginTop: 4 }} />
+                {Boolean(usuario.email) && (
+                  <Text style={estilos.usuarioMenuRut} numberOfLines={1}>{usuario.email}</Text>
+                )}
+                {Boolean(usuario.rut) && (
+                  <Text style={estilos.usuarioMenuRut}>RUT: {usuario.rut}</Text>
+                )}
+                <Insignia label={ROLES[rolActual]?.label ?? "Técnico Especialista"} tone="primary" size="sm" style={{ marginTop: 4 }} />
               </View>
             </View>
-
-            <View style={estilos.usuarioMenuDivisor} />
-
-            <Text style={estilos.usuarioMenuSeccionTitulo}>Cambiar a otro rol:</Text>
-            {ORDEN_ROLES.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[
-                  estilos.rolSwitchBoton,
-                  r === rolActual && estilos.rolSwitchBotonActual,
-                ]}
-                onPress={() => {
-                  establecerRol(r);
-                  establecerUsuarioMenuAbrir(false);
-                }}
-              >
-                <Ionicons
-                  name={r === "admin" ? "briefcase" : r === "warehouse" ? "cube" : "hammer"}
-                  size={18}
-                  color={r === rolActual ? tema.colors.primaryDark : tema.colors.textMuted}
-                />
-                <Text
-                  style={[
-                    estilos.rolSwitchTexto,
-                    r === rolActual && estilos.rolSwitchTextoActual,
-                  ]}
-                >
-                  {ROLES[r].label}
-                </Text>
-                {r === rolActual && (
-                  <Ionicons name="checkmark" size={16} color={tema.colors.primaryDark} />
-                )}
-              </TouchableOpacity>
-            ))}
 
             <View style={estilos.usuarioMenuDivisor} />
 
@@ -460,6 +440,11 @@ const estilos = StyleSheet.create({
   superiorIzquierda: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 1,
+    marginRight: 6,
+  },
+  marcaTextos: {
+    flexShrink: 1,
   },
   marcaCirculo: {
     width: 32,
@@ -469,6 +454,7 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginRight: 8,
+    flexShrink: 0,
   },
   marcaTitulo: {
     fontSize: tema.fontSize.sm,
@@ -483,6 +469,8 @@ const estilos = StyleSheet.create({
   superiorDerecha: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
+    gap: 6,
   },
   designBoton: {
     padding: 6,
@@ -491,15 +479,16 @@ const estilos = StyleSheet.create({
     marginHorizontal: 8,
   },
   avatarBoton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    height: 34,
+    paddingHorizontal: 9,
+    borderRadius: 17,
     backgroundColor: "#312e81",
     borderWidth: 1.5,
     borderColor: "#a5b4fc",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 6,
+    flexShrink: 0,
   },
   avatarTexto: {
     fontSize: tema.fontSize.caption,

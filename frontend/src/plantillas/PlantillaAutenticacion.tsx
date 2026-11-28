@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -230,7 +231,11 @@ export const PlantillaAutenticacion: React.FC<PropiedadesPlantillaAutenticacion>
         {/* LOGO CENTRADO */}
         <View style={estilos.marcaContenedor}>
           <View style={estilos.logoCirculo}>
-            <Ionicons name="flash" size={32} color={tema.colors.textInverse} />
+            <Image
+              source={require("../../assets/icon.png")}
+              style={estilos.logoImagen}
+              resizeMode="cover"
+            />
           </View>
           <Text style={estilos.marcaTitulo}>FYAG</Text>
           <Text style={estilos.marcaSubtitulo}>MULTISYSTEM</Text>
@@ -679,14 +684,21 @@ const estilos = StyleSheet.create({
     marginBottom: tema.spacing.lg,
   },
   logoCirculo: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: tema.colors.primary,
+    width: 92,
+    height: 92,
+    borderRadius: 24,
+    backgroundColor: "#E3F4F9",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 8,
+    marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "#CBE8F6",
     ...tema.shadows.md,
+  },
+  logoImagen: {
+    width: "100%",
+    height: "100%",
   },
   marcaTitulo: {
     fontSize: 26,

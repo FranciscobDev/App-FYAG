@@ -17,6 +17,7 @@ export interface PropiedadesChipSincronizacion {
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
   variant?: "light" | "dark";
+  compact?: boolean;
 }
 
 export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
@@ -26,6 +27,7 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
   onPress,
   style,
   variant = "light",
+  compact = false,
 }) => {
   const esPendiente = status === "pendiente";
   const esOscuro = variant === "dark";
@@ -53,11 +55,17 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
       minute: "2-digit",
     });
 
-  const etiqueta = esPendiente
-    ? pendingCount && pendingCount > 0
-      ? `${pendingCount} pend. • Últ. sinc: ${horaSinc}`
-      : `Pendiente • Últ. sinc: ${horaSinc}`
-    : `Sincronizado • ${horaSinc}`;
+  const etiqueta = compact
+    ? esPendiente
+      ? pendingCount && pendingCount > 0
+        ? `${pendingCount} pend.`
+        : "Pendiente"
+      : "En línea"
+    : esPendiente
+      ? pendingCount && pendingCount > 0
+        ? `${pendingCount} pend. • Últ. sinc: ${horaSinc}`
+        : `Pendiente • Últ. sinc: ${horaSinc}`
+      : `Sincronizado • ${horaSinc}`;
 
   const Contenido = (
     <View
@@ -66,6 +74,7 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
       accessibilityLabel={`Estado de sincronización: ${etiqueta}`}
       style={[
         estilos.chip,
+        compact && estilos.chipCompacto,
         {
           backgroundColor: bg,
           borderColor: borde,
@@ -74,7 +83,13 @@ export const ChipSincronizacion: React.FC<PropiedadesChipSincronizacion> = ({
       ]}
     >
       <Ionicons name={iconoNombre} size={14} color={iconoColumna} style={estilos.icono} />
-      <Text style={[estilos.texto, { color: textoColumna }]}>{etiqueta}</Text>
+      <Text
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        style={[estilos.texto, compact && estilos.textoCompacto, { color: textoColumna }]}
+      >
+        {etiqueta}
+      </Text>
     </View>
   );
 
@@ -100,6 +115,11 @@ const estilos = StyleSheet.create({
     paddingHorizontal: 10,
     minHeight: 30,
   },
+  chipCompacto: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    minHeight: 28,
+  },
   icono: {
     marginRight: 5,
   },
@@ -107,5 +127,9 @@ const estilos = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.3,
+  },
+  textoCompacto: {
+    fontSize: 10,
+    letterSpacing: 0.1,
   },
 });

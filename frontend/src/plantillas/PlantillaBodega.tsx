@@ -563,44 +563,15 @@ export const PlantillaBodega: React.FC<PropiedadesPlantillaBodega> = ({ onLogout
               </View>
               <View style={{ flex: 1, marginLeft: 10 }}>
                 <Text style={estilos.usuarioMenuNombre}>{usuario.name}</Text>
-                <Text style={estilos.usuarioMenuRut}>{usuario.rut}</Text>
-                <Insignia label="Bodeguero Central" tone="primary" size="sm" style={{ marginTop: 4 }} />
+                {Boolean(usuario.email) && (
+                  <Text style={estilos.usuarioMenuRut} numberOfLines={1}>{usuario.email}</Text>
+                )}
+                {Boolean(usuario.rut) && (
+                  <Text style={estilos.usuarioMenuRut}>RUT: {usuario.rut}</Text>
+                )}
+                <Insignia label={ROLES[rolActual]?.label ?? "Bodeguero Central"} tone="primary" size="sm" style={{ marginTop: 4 }} />
               </View>
             </View>
-
-            <View style={estilos.usuarioMenuDivisor} />
-
-            <Text style={estilos.usuarioMenuSeccionTitulo}>Cambiar a otro rol:</Text>
-            {ORDEN_ROLES.map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[
-                  estilos.rolSwitchBoton,
-                  r === rolActual && estilos.rolSwitchBotonActual,
-                ]}
-                onPress={() => {
-                  establecerRol(r);
-                  establecerUsuarioMenuAbrir(false);
-                }}
-              >
-                <Ionicons
-                  name={r === "admin" ? "briefcase" : r === "warehouse" ? "cube" : "hammer"}
-                  size={18}
-                  color={r === rolActual ? tema.colors.primaryDark : tema.colors.textMuted}
-                />
-                <Text
-                  style={[
-                    estilos.rolSwitchTexto,
-                    r === rolActual && estilos.rolSwitchTextoActual,
-                  ]}
-                >
-                  {ROLES[r].label}
-                </Text>
-                {r === rolActual && (
-                  <Ionicons name="checkmark" size={16} color={tema.colors.primaryDark} />
-                )}
-              </TouchableOpacity>
-            ))}
 
             <View style={estilos.usuarioMenuDivisor} />
 
